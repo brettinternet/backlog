@@ -194,6 +194,49 @@ func TestLoadAndArchive(t *testing.T) {
 	_, err = s.Read(context.Background(), "BL-7.2")
 	reason(t, err, "duplicate-id")
 }
+func TestIndexedReadPreservesAliasesAndDuplicates(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	s, err := native.New(native.Options{
+		ID: "tasks", Prefix: "BL", Path: filepath.Join(root, "backlog"),
+		CommonDir: filepath.Join(root, "git-common"), ProjectID: "test-project",
+		CacheDir: filepath.Join(root, "cache"), Now: func() time.Time { return now },
+		Statuses: map[string]model.StatusCategory{"todo": model.Todo, "done": model.Done},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "backlog", "BL-007.md"), fixture(t, "BL-007"))
+	item, err := s.Read(context.Background(), "BL-7")
+	if err != nil || item.Ref.ID != "BL-007" {
+		t.Fatalf("canonical lookup: %#v %v", item, err)
+	}
+
+	archiveDuplicate := filepath.Join(root, "backlog", "archive", "BL-7.md")
+	write(t, archiveDuplicate, fixture(t, "BL-7"))
+	_, err = s.Read(context.Background(), "BL-7")
+	reason(t, err, "duplicate-id")
+	if err := os.Remove(archiveDuplicate); err != nil {
+		t.Fatal(err)
+	}
+	item, err = s.Read(context.Background(), "BL-7")
+	if err != nil || item.Ref.ID != "BL-007" {
+		t.Fatalf("lookup after archive removal: %#v %v", item, err)
+	}
+
+	activeDuplicate := filepath.Join(root, "backlog", "BL-7.md")
+	write(t, activeDuplicate, fixture(t, "BL-7"))
+	_, err = s.Read(context.Background(), "BL-007")
+	reason(t, err, "duplicate-id")
+	if err := os.Remove(activeDuplicate); err != nil {
+		t.Fatal(err)
+	}
+	item, err = s.Read(context.Background(), "BL-7")
+	if err != nil || item.Ref.ID != "BL-007" {
+		t.Fatalf("lookup after active removal: %#v %v", item, err)
+	}
+}
+
 func git(t *testing.T, root string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)

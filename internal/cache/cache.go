@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schema = 2
+const schema = 3
 
 // build identifies the executable that wrote cached rows. Parsed items are
 // opaque gob values, so a parser or model change in a new binary must discard
@@ -60,6 +60,152 @@ type Store struct{ Path string }
 // New separates sources and checkout paths as well as project identities.
 func New(root, project, source, path string) Store {
 	return Store{filepath.Join(root, "projects", fmt.Sprintf("%x", sha256.Sum256([]byte(project))), fmt.Sprintf("%x.sqlite", sha256.Sum256([]byte(source+"\x00"+path))))}
+}
+
+// FindPaths returns files whose names map to key. It persists a directory-name
+// index so detail lookups avoid reading every item directory on each invocation.
+// identify receives a filename and returns its normalized key when it is an item.
+func (s Store) FindPaths(ctx context.Context, directories []string, key string, identify func(string) (string, bool)) ([]string, error) {
+	lock, err := s.lock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock(lock)
+	db, err := s.open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	identities := make(map[string]string, len(directories))
+	for _, dir := range directories {
+		if _, exists := identities[dir]; exists {
+			continue
+		}
+		identity, e := directoryIdentity(dir)
+		if e != nil {
+			return nil, e
+		}
+		identities[dir] = identity
+	}
+	indexed := make(map[string]string, len(directories))
+	rows, err := tx.QueryContext(ctx, `SELECT path,identity FROM id_directories`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var path, identity string
+		if err = rows.Scan(&path, &identity); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		indexed[path] = identity
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	stale := len(indexed) != len(identities)
+	if !stale {
+		for dir, identity := range identities {
+			if indexed[dir] != identity {
+				stale = true
+				break
+			}
+		}
+	}
+	if stale {
+		stable := false
+		for attempt := 0; attempt < 2; attempt++ {
+			if _, err = tx.ExecContext(ctx, `DELETE FROM id_items; DELETE FROM id_directories;`); err != nil {
+				return nil, err
+			}
+			changed := false
+			for dir, identity := range identities {
+				entries, e := os.ReadDir(dir)
+				if e != nil && !errors.Is(e, os.ErrNotExist) {
+					return nil, e
+				}
+				for _, entry := range entries {
+					if err = ctx.Err(); err != nil {
+						return nil, err
+					}
+					if !entry.Type().IsRegular() {
+						continue
+					}
+					id, ok := identify(entry.Name())
+					if !ok {
+						continue
+					}
+					if _, err = tx.ExecContext(ctx, `INSERT INTO id_items(id,path) VALUES(?,?)`, id, filepath.Join(dir, entry.Name())); err != nil {
+						return nil, err
+					}
+				}
+				current, e := directoryIdentity(dir)
+				if e != nil {
+					return nil, e
+				}
+				if current != identity {
+					changed = true
+					break
+				}
+			}
+			if !changed {
+				for dir, identity := range identities {
+					if _, err = tx.ExecContext(ctx, `INSERT INTO id_directories(path,identity) VALUES(?,?)`, dir, identity); err != nil {
+						return nil, err
+					}
+				}
+				stable = true
+				break
+			}
+			if attempt == 1 {
+				return nil, fmt.Errorf("item directory changed while indexing")
+			}
+			identities = make(map[string]string, len(directories))
+			for _, dir := range directories {
+				if _, exists := identities[dir]; exists {
+					continue
+				}
+				identity, e := directoryIdentity(dir)
+				if e != nil {
+					return nil, e
+				}
+				identities[dir] = identity
+			}
+		}
+		if !stable {
+			return nil, fmt.Errorf("item directory changed while indexing")
+		}
+	}
+	rows, err = tx.QueryContext(ctx, `SELECT path FROM id_items WHERE id=? ORDER BY path`, key)
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{}
+	for rows.Next() {
+		var path string
+		if err = rows.Scan(&path); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return paths, nil
 }
 
 func (s Store) lock(ctx context.Context) (*os.File, error) {
@@ -107,14 +253,24 @@ func (s Store) open(ctx context.Context) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version != 0 && version != schema {
+	if version != 0 && version != 2 && version != schema {
 		return fail(fmt.Errorf("cache schema %d, expected %d", version, schema))
 	}
 	if version == 0 {
 		_, err = db.ExecContext(ctx, `CREATE TABLE items(path TEXT PRIMARY KEY, identity TEXT NOT NULL, data BLOB NOT NULL);
 CREATE VIRTUAL TABLE search USING fts5(path UNINDEXED, text, tokenize='trigram case_sensitive 1');
 CREATE TABLE metadata(generation TEXT NOT NULL, build TEXT NOT NULL);
-INSERT INTO metadata VALUES ('',''); PRAGMA user_version=2;`)
+INSERT INTO metadata VALUES ('','');
+CREATE TABLE id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
+CREATE TABLE id_items(id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(id,path));
+PRAGMA user_version=3;`)
+		if err != nil {
+			return fail(err)
+		}
+	} else if version == 2 {
+		_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS id_items(id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(id,path));
+PRAGMA user_version=3;`)
 		if err != nil {
 			return fail(err)
 		}

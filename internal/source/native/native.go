@@ -295,33 +295,58 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	sort.Slice(result.Findings, func(i, j int) bool { return result.Findings[i].Path < result.Findings[j].Path })
 	return result, nil
 }
-func (s *Source) locate(id string) (string, error) {
+func (s *Source) locate(ctx context.Context, id string) (string, error) {
 	if !idPattern.MatchString(id) {
 		return "", source.Refuse("invalid-id", id)
+	}
+	find := func(paths []string) (string, error) {
+		found := ""
+		for _, path := range paths {
+			if canonical(strings.TrimSuffix(filepath.Base(path), ".md")) == canonical(id) {
+				if found != "" {
+					return "", source.Refuse("duplicate-id", id)
+				}
+				found = path
+			}
+		}
+		if found == "" {
+			return "", source.Refuse("not-found", id)
+		}
+		return found, nil
+	}
+	if s.options.CacheDir != "" {
+		archive := filepath.Join(s.options.Path, "archive")
+		if info, err := os.Lstat(archive); err == nil && !info.IsDir() {
+			return "", source.Refuse("invalid-path", "archive is not a directory")
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		store := cache.New(s.options.CacheDir, s.options.ProjectID, s.options.ID, s.options.Path)
+		paths, err := store.FindPaths(ctx, []string{s.options.Path, archive}, canonical(id), func(name string) (string, bool) {
+			if !strings.HasSuffix(name, ".md") {
+				return "", false
+			}
+			fileID := strings.TrimSuffix(name, ".md")
+			if !idPattern.MatchString(fileID) {
+				return "", false
+			}
+			return canonical(fileID), true
+		})
+		if err == nil {
+			return find(paths)
+		}
 	}
 	paths, err := s.paths(true)
 	if err != nil {
 		return "", err
 	}
-	found := ""
-	for _, path := range paths {
-		if canonical(strings.TrimSuffix(filepath.Base(path), ".md")) == canonical(id) {
-			if found != "" {
-				return "", source.Refuse("duplicate-id", id)
-			}
-			found = path
-		}
-	}
-	if found == "" {
-		return "", source.Refuse("not-found", id)
-	}
-	return found, nil
+	return find(paths)
 }
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Item{}, err
 	}
-	path, err := s.locate(id)
+	path, err := s.locate(ctx, id)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -431,7 +456,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		}
 		return s.item(doc), nil
 	}
-	path, err := s.locate(m.Ref.ID)
+	path, err := s.locate(ctx, m.Ref.ID)
 	if err != nil {
 		return fail(err)
 	}

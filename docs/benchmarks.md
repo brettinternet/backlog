@@ -66,11 +66,27 @@ fixture tests but never runs `BenchmarkCLI`.
 
 ## Results
 
-`task bench` completed successfully: `PASS`, package elapsed 2,242.742 s.
-Each row contains 20 measured samples. Cache population dominates total runtime
-and is excluded from the warm measurements. The 10k `ls` p95 includes background
-validation activity during that portion of the run; even the preliminary run
-(308.6 ms) missed 150 ms. These are observations, not a claim of host isolation.
+The original full `task bench` completed successfully: `PASS`, package elapsed
+2,242.742 s. Each row contains 20 measured samples. Cache population dominates
+total runtime and is excluded from the warm measurements. The 10k `ls` p95
+includes background validation activity during that portion of the run; even
+the preliminary run (308.6 ms) missed 150 ms. These are observations, not a
+claim of host isolation.
+
+BL-49 focused rerun on 2026-10-22 (Apple M5 Max, 64 GiB, Darwin 27.0.0 arm64,
+Go 1.27.3, `GOMAXPROCS=18`):
+
+```sh
+task bench -- -bench 'BenchmarkCLI/(10000|50000)/show$'
+```
+
+The focused run passed with 20 samples at each size: 10k p95 12.30 ms and peak
+CLI RSS 22.41 MiB; 50k p95 12.48 ms and peak CLI RSS 22.47 MiB. The harness's
+unmeasured warm-up builds or validates the persistent filename index; a first
+lookup after index creation or a directory change enumerates item filenames.
+Every `show` still reads and parses its selected item directly from the source.
+Only the `show` row below uses this focused rerun; all other rows retain the
+original full-run measurements.
 
 | Operation | 10k p95 (ms) | 50k p95 (ms) | 10k peak CLI RSS (MiB) | 50k peak CLI RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: |
@@ -78,14 +94,14 @@ validation activity during that portion of the run; even the preliminary run
 | Warm native load | 288.0 | 1,311 | — | — |
 | `bl ls` | 574.6 | 1,529 | 182.5 | 806.3 |
 | `bl next` | 309.4 | 1,379 | 166.0 | 752.5 |
-| `bl show BL-1` | 14.61 | 48.23 | 16.17 | 32.44 |
+| `bl show BL-1` | 12.30 | 12.48 | 22.41 | 22.47 |
 | Single-field write | 37.84 | 95.25 | 17.27 | 33.98 |
 
 ### Every applicable CLI budget in design §11
 
 | Budget | Reference result | Outcome / follow-up |
 | --- | --- | --- |
-| `bl show ID` ≤ 30 ms p95 | 10k 14.61 ms; 50k 48.23 ms | 10k pass; 50k miss: [BL-49](../backlog/tasks/bl-49%20-%20Meet-the-show-latency-budget-at-50k-items.md) |
+| `bl show ID` ≤ 30 ms p95 | 10k 12.30 ms; 50k 12.48 ms | Both pass on the D26 reference host |
 | Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 574.6 ms; `next` 309.4 ms | Both miss: [BL-47](../backlog/tasks/bl-47%20-%20Meet-the-warm-ls-and-next-CLI-latency-budget.md) |
 | Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 37.84 ms; 50k 95.25 ms | 10k pass; 50k miss: [BL-50](../backlog/tasks/bl-50%20-%20Meet-the-single-field-write-latency-budget-at-50k-items.md) |
 | Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 182.5 MiB and 806.3 MiB (`ls`) | Both miss: [BL-48](../backlog/tasks/bl-48%20-%20Meet-the-CLI-peak-RSS-budgets-at-10k-and-50k.md); `next` also misses at both sizes |

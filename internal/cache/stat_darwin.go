@@ -17,3 +17,18 @@ func fileIdentity(path string) (string, error) {
 	stat := info.Sys().(*syscall.Stat_t)
 	return fmt.Sprintf("%d:%d:%d:%d:%d", info.Size(), info.ModTime().UnixNano(), stat.Ino, stat.Ctimespec.Sec, stat.Ctimespec.Nsec), nil
 }
+
+func directoryIdentity(path string) (string, error) {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return "missing", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("item path is not a directory")
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	return fmt.Sprintf("%d:%d:%d:%d:%d", info.Size(), info.ModTime().UnixNano(), stat.Ino, stat.Ctimespec.Sec, stat.Ctimespec.Nsec), nil
+}
