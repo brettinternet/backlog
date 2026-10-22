@@ -114,74 +114,71 @@ func (s Store) FindPaths(ctx context.Context, directories []string, key string, 
 	stale := len(indexed) != len(identities)
 	if !stale {
 		for dir, identity := range identities {
-			if indexed[dir] != identity {
+			stat, _, _ := strings.Cut(indexed[dir], "/")
+			if stat != identity {
 				stale = true
 				break
 			}
 		}
 	}
 	if stale {
-		stable := false
-		for attempt := 0; attempt < 2; attempt++ {
-			if _, err = tx.ExecContext(ctx, `DELETE FROM id_items; DELETE FROM id_directories;`); err != nil {
+		namesByDir := make(map[string][]string, len(identities))
+		validated := make(map[string]string, len(identities))
+		sameNames := len(indexed) == len(identities)
+		for dir, identity := range identities {
+			var names []string
+			directory, e := os.Open(dir)
+			if e == nil {
+				names, e = directory.Readdirnames(-1)
+				_ = directory.Close()
+			}
+			if e != nil && !errors.Is(e, os.ErrNotExist) {
+				return nil, e
+			}
+			// Atomic replacement changes directory stats but not the filename
+			// index. Hash names before deciding to rebuild SQL rows. A change in
+			// enumeration order conservatively rebuilds too; sorting is unnecessary
+			// for correctness. NUL separates names and cannot occur in a filename.
+			// File types are checked only for matching paths below.
+			namesByDir[dir] = names
+			digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(names, "\x00"))))
+			_, oldDigest, _ := strings.Cut(indexed[dir], "/")
+			sameNames = sameNames && oldDigest == digest
+			validated[dir] = identity + "/" + digest
+		}
+		if !sameNames {
+			if _, err = tx.ExecContext(ctx, `DELETE FROM id_items`); err != nil {
 				return nil, err
 			}
-			changed := false
-			for dir, identity := range identities {
-				entries, e := os.ReadDir(dir)
-				if e != nil && !errors.Is(e, os.ErrNotExist) {
-					return nil, e
-				}
-				for _, entry := range entries {
+			for dir, names := range namesByDir {
+				for _, name := range names {
 					if err = ctx.Err(); err != nil {
 						return nil, err
 					}
-					if !entry.Type().IsRegular() {
-						continue
-					}
-					id, ok := identify(entry.Name())
+					id, ok := identify(name)
 					if !ok {
 						continue
 					}
-					if _, err = tx.ExecContext(ctx, `INSERT INTO id_items(id,path) VALUES(?,?)`, id, filepath.Join(dir, entry.Name())); err != nil {
+					if _, err = tx.ExecContext(ctx, `INSERT INTO id_items(id,path) VALUES(?,?)`, id, filepath.Join(dir, name)); err != nil {
 						return nil, err
 					}
 				}
-				current, e := directoryIdentity(dir)
-				if e != nil {
-					return nil, e
-				}
-				if current != identity {
-					changed = true
-					break
-				}
-			}
-			if !changed {
-				for dir, identity := range identities {
-					if _, err = tx.ExecContext(ctx, `INSERT INTO id_directories(path,identity) VALUES(?,?)`, dir, identity); err != nil {
-						return nil, err
-					}
-				}
-				stable = true
-				break
-			}
-			if attempt == 1 {
-				return nil, fmt.Errorf("item directory changed while indexing")
-			}
-			identities = make(map[string]string, len(directories))
-			for _, dir := range directories {
-				if _, exists := identities[dir]; exists {
-					continue
-				}
-				identity, e := directoryIdentity(dir)
-				if e != nil {
-					return nil, e
-				}
-				identities[dir] = identity
 			}
 		}
-		if !stable {
-			return nil, fmt.Errorf("item directory changed while indexing")
+		if _, err = tx.ExecContext(ctx, `DELETE FROM id_directories`); err != nil {
+			return nil, err
+		}
+		for dir, identity := range identities {
+			current, e := directoryIdentity(dir)
+			if e != nil {
+				return nil, e
+			}
+			if current != identity {
+				return nil, fmt.Errorf("item directory changed while indexing")
+			}
+			if _, err = tx.ExecContext(ctx, `INSERT INTO id_directories(path,identity) VALUES(?,?)`, dir, validated[dir]); err != nil {
+				return nil, err
+			}
 		}
 	}
 	rows, err = tx.QueryContext(ctx, `SELECT path FROM id_items WHERE id=? ORDER BY path`, key)
@@ -195,7 +192,17 @@ func (s Store) FindPaths(ctx context.Context, directories []string, key string, 
 			_ = rows.Close()
 			return nil, err
 		}
-		paths = append(paths, path)
+		info, e := os.Lstat(path)
+		if errors.Is(e, os.ErrNotExist) {
+			continue
+		}
+		if e != nil {
+			_ = rows.Close()
+			return nil, e
+		}
+		if info.Mode().IsRegular() {
+			paths = append(paths, path)
+		}
 	}
 	err = rows.Err()
 	_ = rows.Close()
@@ -246,7 +253,10 @@ func (s Store) open(ctx context.Context) (*sql.DB, error) {
 	}
 	db.SetMaxOpenConns(1)
 	fail := func(err error) (*sql.DB, error) { _ = db.Close(); return nil, err }
-	if _, err = db.ExecContext(ctx, `PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;`); err != nil {
+	// WAL with NORMAL synchronization keeps transactions atomic, but may lose
+	// recent cache updates on power loss. This cache is disposable; item writes
+	// retain their independent fsync and version checks.
+	if _, err = db.ExecContext(ctx, `PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`); err != nil {
 		return fail(err)
 	}
 	var version int

@@ -102,10 +102,32 @@ items are reparsed and FTS updates remain incremental. When any item changes,
 the snapshot payload is re-encoded. Build identity invalidates older cache
 encodings automatically. Query and ranking semantics are unchanged.
 
-The 10k `ls`/`next` cells below use this rerun. Their 50k cells and all other
-non-`show` rows retain the original full-run measurements. RSS remains above
+The 10k `ls`/`next` cells below use this rerun. Their 50k cells and the load
+rows retain the original full-run measurements. RSS remains above
 budget and the focused run's peaks exceed the old 10k measurements; BL-48 must
 address memory separately. This change does not claim the RSS budget is met.
+
+BL-50 focused rerun on 2026-10-22 on the same D26 reference host and toolchain:
+
+```sh
+task bench -- -bench 'BenchmarkCLI/(10000|50000)/write$'
+```
+
+The run passed in 13.361 s, with 20 measured production subprocess samples per
+size: 10k write p95 29.05 ms and peak RSS 23.52 MiB; 50k p95 42.02 ms and peak
+RSS 26.75 MiB. Both single-field write budgets pass. A same-host pre-change
+rerun measured 84.86 ms at 10k and 319.8 ms at 50k: atomic replacement had
+invalidated the BL-49 filename index on every write, rebuilding all SQL rows.
+
+Directory stat changes now trigger a filename digest comparison. Unchanged
+names retain the SQL index; membership or enumeration-order changes rebuild it.
+Matching paths are always checked for regular-file type, and item contents are
+still read directly and version-checked under the repository write lock before
+the atomic/fsynced replacement. Directory scans do not sort filenames or stat
+every item. Disposable SQLite WAL transactions use NORMAL synchronization;
+source-file fsync and conflict checks are unchanged. Losing a recent cache
+transaction after power loss only causes validation or rebuilding on the next
+read. The write row below uses this focused rerun; hooks and Git remain disabled.
 
 | Operation | 10k p95 (ms) | 50k p95 (ms) | 10k peak CLI RSS (MiB) | 50k peak CLI RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: |
@@ -114,7 +136,7 @@ address memory separately. This change does not claim the RSS budget is met.
 | `bl ls` | 135.4 | 1,529 | 204.1 | 806.3 |
 | `bl next` | 115.6 | 1,379 | 251.1 | 752.5 |
 | `bl show BL-1` | 12.30 | 12.48 | 22.41 | 22.47 |
-| Single-field write | 37.84 | 95.25 | 17.27 | 33.98 |
+| Single-field write | 29.05 | 42.02 | 23.52 | 26.75 |
 
 ### Every applicable CLI budget in design §11
 
@@ -122,7 +144,7 @@ address memory separately. This change does not claim the RSS budget is met.
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms p95 | 10k 12.30 ms; 50k 12.48 ms | Both pass on the D26 reference host |
 | Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 135.4 ms; `next` 115.6 ms | Both pass ([BL-47](../backlog/BL-47.md)) |
-| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 37.84 ms; 50k 95.25 ms | 10k pass; 50k miss: [BL-50](../backlog/BL-50.md) |
+| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 29.05 ms; 50k 42.02 ms | Both pass ([BL-50](../backlog/BL-50.md)) |
 | Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 251.1 MiB (10k `next`) and 806.3 MiB (50k `ls`) | Both miss: [BL-48](../backlog/BL-48.md); `ls` and `next` miss at both sizes |
 
 Cold/warm native load and 50k `ls`/`next` timings are baselines without separate

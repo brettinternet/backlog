@@ -41,6 +41,31 @@ func cachePath(root string) string {
 	return cache.New(filepath.Join(root, "cache"), "cache-test", "tasks", filepath.Join(root, "backlog")).Path
 }
 
+// Catches a full filename-index rebuild after every atomic item replacement.
+func TestFilenameIndexSurvivesAtomicReplacement(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "backlog", "BL-1.md")
+	write(t, path, fixture(t, "BL-1"))
+	s := cachedSource(t, root, nil)
+	item, err := s.Read(context.Background(), "BL-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Apply(context.Background(), model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "title", Value: "Replaced atomically"}); err != nil {
+		t.Fatal(err)
+	}
+	store := cache.New(filepath.Join(root, "cache"), "cache-test", "tasks", filepath.Join(root, "backlog"))
+	identified := 0
+	paths, err := store.FindPaths(context.Background(), []string{filepath.Dir(path), filepath.Join(root, "backlog", "archive")}, "BL-1", func(name string) (string, bool) {
+		identified++
+		return strings.TrimSuffix(name, ".md"), strings.HasSuffix(name, ".md")
+	})
+	if err != nil || !reflect.DeepEqual(paths, []string{path}) || identified != 0 {
+		t.Fatalf("lookup after replacement: paths=%v identified=%d err=%v", paths, identified, err)
+	}
+}
+
 // Catches warm reparsing and lossy serialization of raw fields/body metadata.
 func TestCacheWarmAndChanges(t *testing.T) {
 	t.Parallel()
