@@ -4,7 +4,7 @@ title: Serve MCP over stdio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:28'
+updated_date: '2026-10-22 02:46'
 labels:
   - mcp
   - agents
@@ -43,6 +43,7 @@ ordinal: 27000
 - [ ] #2 A parity test fails when a CLI write option has no MCP equivalent
 - [ ] #3 A subprocess test runs initialize, tools/list, and tools/call over stdio
 - [ ] #4 docs/mcp.md documents every tool and its setup
+- [ ] #5 Write tools accept an optional `version`; a stale version returns reason `conflict` and writes nothing, matching `--if-version`
 <!-- AC:END -->
 
 ## Definition of Done

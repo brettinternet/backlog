@@ -4,7 +4,7 @@ title: 'Add the read commands: ls, show, and next'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:46'
 labels:
   - cli
   - agents
@@ -47,6 +47,7 @@ Agents and scripts need fast, stable, short read commands (D19). These freeze th
 - [ ] #3 `bl next --explain --json` lists included and excluded items with the engine's reasons
 - [ ] #4 Titles and bodies containing CSI and OSC sequences print without them in text output
 - [ ] #5 docs/cli.md documents ls, show, and next, and design.md §7 marks those names frozen
+- [ ] #6 `bl show --json` reports the item's `version`, the value `--if-version` accepts
 <!-- AC:END -->
 
 ## Definition of Done

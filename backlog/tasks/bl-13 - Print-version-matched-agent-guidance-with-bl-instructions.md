@@ -4,7 +4,7 @@ title: Print version-matched agent guidance with bl instructions
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:28'
+updated_date: '2026-10-22 02:46'
 labels:
   - agents
   - docs
@@ -34,7 +34,7 @@ Agents should learn the workflow from the binary they're running, not from stale
 `bl instructions [TOPIC]` prints embedded Markdown:
 
 - `overview` (shown with the topic list when no topic is supplied)
-- `workflow`: pick, claim, start, record evidence, finish
+- `workflow`: pick, claim, start, record evidence, finish. Pass `--if-version` with the version from the last read or write whenever a write depends on what was read, such as `bl ac ID check N`.
 - `query`
 - `format`
 - `json`: envelope, reasons, and exit codes
