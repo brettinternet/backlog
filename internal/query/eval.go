@@ -11,7 +11,8 @@ import (
 )
 
 // State carries derived engine facts. An absent readiness/claim stays unknown;
-// it never proves an item ready, claimed, or free.
+// it never proves an item ready, claimed, or free. Claim uses the query
+// vocabulary (me, others, none), so callers map engine.ClaimMine to "me".
 type State struct {
 	Readiness, Claim  string
 	Archived, Pending bool
@@ -259,24 +260,32 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 	case "outcome":
 		return e != nil && (e.Type == "hook.finished" || e.Type == "action.finished") && strings.EqualFold(e.Outcome, text)
 	default:
-		if strings.HasPrefix(f, "field.") {
-			value, ok := i.Fields[strings.TrimPrefix(f, "field.")]
-			if !ok || value == nil {
-				return lower == "none"
-			}
-			switch x := value.(type) {
-			case []string:
-				return list(x)
-			case []any:
-				for _, a := range x {
-					if fmt.Sprint(a) == text {
+		if name, ok := strings.CutPrefix(f, "field."); ok {
+			// f is lowercased; raw keys keep their file spelling.
+			present := false
+			for key, value := range i.Fields {
+				if !strings.EqualFold(key, name) || value == nil {
+					continue
+				}
+				present = true
+				switch x := value.(type) {
+				case []string:
+					if list(x) {
+						return true
+					}
+				case []any:
+					for _, a := range x {
+						if fmt.Sprint(a) == text {
+							return true
+						}
+					}
+				default:
+					if fmt.Sprint(value) == text {
 						return true
 					}
 				}
-				return false
-			default:
-				return fmt.Sprint(value) == text
 			}
+			return !present && lower == "none"
 		}
 	}
 	return false

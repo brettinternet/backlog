@@ -30,7 +30,7 @@ func QuickAdd(input, me string) (model.Item, error) {
 			return item, fail(at, "expected quick-add token value")
 		}
 		ref := model.Ref{ID: value}
-		if source, id, ok := strings.Cut(value, ":"); ok {
+		if source, id, ok := strings.Cut(value, ":"); ok && (first == '^' || first == '<') {
 			ref = model.Ref{Source: source, ID: id}
 			if source == "" || id == "" {
 				return item, fail(at, "invalid reference")

@@ -39,6 +39,11 @@ func TestQuickAdd(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got.Labels, []string{"two words"}) || !reflect.DeepEqual(got.Assignees, []string{"@a b"}) || got.Milestone != "release one" || got.Type != "feature request" || len(got.BlockedBy) != 1 || got.Parent.ID != "b" {
 		t.Fatalf("%#v %v", got, err)
 	}
+	// Colons are reference syntax only for ^ and <.
+	got, err = query.QuickAdd(`title #area: ~:q3 ::bug @:x`, "")
+	if err != nil || !reflect.DeepEqual(got.Labels, []string{"area:"}) || got.Milestone != ":q3" || got.Type != ":bug" || !reflect.DeepEqual(got.Assignees, []string{"@:x"}) {
+		t.Fatalf("%#v %v", got, err)
+	}
 	for _, input := range []string{"", "!high", `title !nope`, `title @me`, `title #`, `title ^`, `title <`, `title ~`, `title :`, `title !`, `title @`, `title ^remote:`, `"unfinished`, `unfinished\`} {
 		_, err := query.QuickAdd(input, "")
 		var pe *query.Error

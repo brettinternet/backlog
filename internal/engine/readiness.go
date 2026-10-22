@@ -82,24 +82,23 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			index[key] = i
 		}
 	}
-	resolve := func(ref model.Ref, owner model.Ref) int {
+	// resolve qualifies a source-local ref and returns its index, or -1 when
+	// it is missing or ambiguous.
+	resolve := func(ref model.Ref, owner model.Ref) (model.Ref, int) {
 		if ref.Source == "" {
 			ref.Source = owner.Source
 		}
 		if i, ok := index[canonical(ref)]; ok {
-			return i
+			return ref, i
 		}
-		return -1
+		return ref, -1
 	}
 	deps, reverse, children := make([][]int, n), make([][]int, n), make([][]int, n)
-	missing := make([][]model.Ref, n)
+	missing, missingChildren := make([][]model.Ref, n), make([][]model.Ref, n)
 	for i, item := range in.Items {
 		for _, ref := range item.BlockedBy {
-			j := resolve(ref, item.Ref)
+			ref, j := resolve(ref, item.Ref)
 			if j < 0 {
-				if ref.Source == "" {
-					ref.Source = item.Ref.Source
-				}
 				missing[i] = append(missing[i], ref)
 				continue
 			}
@@ -107,10 +106,14 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			reverse[j] = append(reverse[j], i)
 		}
 		for _, ref := range item.Children {
-			children[i] = append(children[i], resolve(ref, item.Ref))
+			if ref, j := resolve(ref, item.Ref); j < 0 {
+				missingChildren[i] = append(missingChildren[i], ref)
+			} else {
+				children[i] = append(children[i], j)
+			}
 		}
 		if item.Parent != nil {
-			if j := resolve(*item.Parent, item.Ref); j >= 0 {
+			if _, j := resolve(*item.Parent, item.Ref); j >= 0 {
 				children[j] = append(children[j], i)
 			}
 		}
@@ -132,12 +135,8 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			add("status", nil, []string{string(item.Category)})
 		}
 		if in.Config.SkipContainers {
-			var open []model.Ref
+			open := slices.Clone(missingChildren[i])
 			for _, j := range children[i] {
-				if j < 0 {
-					open = append(open, model.Ref{})
-					continue
-				}
 				if !closed(in.Items[j]) && !in.Archived[in.Items[j].Ref] {
 					open = append(open, in.Items[j].Ref)
 				}

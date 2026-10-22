@@ -20,6 +20,16 @@ func (s Snapshot) Complete(field, prefix string, options Options) []Candidate {
 				candidates = append(candidates, Candidate{Value: f + ":"})
 			}
 		}
+		var raw []string
+		for _, i := range s.Items {
+			for key := range i.Fields {
+				raw = append(raw, "field."+strings.ToLower(key)+":")
+			}
+		}
+		slices.Sort(raw)
+		for _, f := range slices.Compact(raw) {
+			candidates = append(candidates, Candidate{Value: f})
+		}
 	} else if !hookField(field) || options.Hook {
 		candidates = s.values(field)
 	}
@@ -111,12 +121,6 @@ func (s Snapshot) values(field string) []Candidate {
 			used = append(used, i.Type)
 		case "source":
 			used = append(used, i.Ref.Source)
-		default:
-			if strings.HasPrefix(field, "field.") {
-				for key := range i.Fields {
-					used = append(used, "field."+key+":")
-				}
-			}
 		}
 	}
 	slices.Sort(used)

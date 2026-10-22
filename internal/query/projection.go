@@ -161,6 +161,8 @@ func (s Snapshot) groupCompare(key, a, b string) int {
 		}
 	case "category":
 		order = categories
+	case "priority":
+		order = []string{"urgent", "high", "medium", "low"}
 	case "milestone":
 		for _, v := range s.Settings.Milestones {
 			order = append(order, v.Key)

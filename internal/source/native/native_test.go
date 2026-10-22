@@ -148,6 +148,9 @@ func TestLoadAndArchive(t *testing.T) {
 	if err != nil || delta.Coverage != source.Partial || len(delta.Items) != 1 || len(delta.Findings) != 2 {
 		t.Fatalf("load: %#v %v", delta, err)
 	}
+	if delta.Findings[0].Code != "invalid-frontmatter" || delta.Findings[1].Code != "filename-mismatch" {
+		t.Fatalf("finding codes: %#v", delta.Findings)
+	}
 	if delta.Items[0].Ref.Source != "tasks" || delta.Items[0].Category != model.Todo {
 		t.Fatalf("source metadata: %#v", delta.Items[0])
 	}

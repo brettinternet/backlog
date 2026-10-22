@@ -15,7 +15,7 @@ import (
 
 func fixture() (model.Item, query.Snapshot) {
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	item := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-001"}, Title: `Detail "pane" rendering`, Status: "doing", Category: model.Active, Priority: model.High, Rank: "a", Type: "feature", Assignees: []string{"@brett"}, Labels: []string{"tui", "perf"}, Milestone: "m-2", Due: "2026-10-21", Parent: &model.Ref{ID: "BL-3"}, Children: []model.Ref{{ID: "BL-4"}}, BlockedBy: []model.Ref{{ID: "BL-5"}}, Blocks: []model.Ref{{ID: "BL-6"}}, Created: now.Add(-14 * 24 * time.Hour), Updated: now.Add(-6 * time.Hour), Description: "Unicode café", Criteria: []model.Criterion{{Text: "body criterion"}}, DoD: []model.Criterion{{Text: "body dod"}}, Plan: "body plan", Notes: "body notes", Summary: "body summary", Comments: []model.Comment{{Body: "body comment"}}, Fields: map[string]any{"score": 3, "tags": []any{"x", "y"}, "list": []string{"z"}}}
+	item := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-001"}, Title: `Detail "pane" rendering`, Status: "doing", Category: model.Active, Priority: model.High, Rank: "a", Type: "feature", Assignees: []string{"@brett"}, Labels: []string{"tui", "perf"}, Milestone: "m-2", Due: "2026-10-21", Parent: &model.Ref{ID: "BL-3"}, Children: []model.Ref{{ID: "BL-4"}}, BlockedBy: []model.Ref{{ID: "BL-5"}}, Blocks: []model.Ref{{ID: "BL-6"}}, Created: now.Add(-14 * 24 * time.Hour), Updated: now.Add(-6 * time.Hour), Description: "Unicode café", Criteria: []model.Criterion{{Text: "body criterion"}}, DoD: []model.Criterion{{Text: "body dod"}}, Plan: "body plan", Notes: "body notes", Summary: "body summary", Comments: []model.Comment{{Body: "body comment"}}, Fields: map[string]any{"score": 3, "tags": []any{"x", "y"}, "list": []string{"z"}, "Owner": "ops"}}
 	s := query.Snapshot{Items: []model.Item{item}, Now: now, Me: []string{"@brett"}, Coordination: true, States: map[model.Ref]query.State{item.Ref: {Readiness: "ready", Claim: "me", Archived: true, Pending: true}}, Settings: project.Settings{Statuses: []project.StatusConfig{{Key: "todo", Name: "To Do"}, {Key: "doing", Name: "In Progress"}, {Key: "done", Name: "Done"}}, Labels: []string{"declared", "perf"}, Milestones: []project.Milestone{{Key: "m-2", Name: "Release two"}, {Key: "m-1", Name: "Release one"}, {Key: "old", Name: "Old", Archived: true}}}}
 	return item, s
 }
@@ -46,7 +46,7 @@ func TestFields(t *testing.T) {
 		{`parent:3`, true}, {`parent:none`, false}, {`blocked-by:5`, true}, {`blocked-by:4`, false}, {`blocks:6`, true}, {`blocks:5`, false},
 		{`created:2026-10-08`, true}, {`created:>=2026-10-09`, false}, {`created:2w`, true}, {`updated:<7d`, true}, {`updated:>12h`, false}, {`updated:<=6h`, true}, {`updated:>=6h`, true}, {`due:<today`, true}, {`due:>today`, false},
 		{`"detail \"pane\""`, true}, {`bl-001`, true}, {`café`, false}, {`text:CAFÉ`, true}, {`text:"body criterion"`, true}, {`text:"body dod"`, true}, {`text:"body comment"`, true}, {`text:"body plan"`, true}, {`text:"body notes"`, true}, {`text:"body summary"`, true},
-		{`field.score:3`, true}, {`field.score:4`, false}, {`field.tags:x`, true}, {`field.list:z`, true}, {`field.missing:none`, true},
+		{`field.score:3`, true}, {`field.score:4`, false}, {`field.tags:x`, true}, {`field.list:z`, true}, {`field.missing:none`, true}, {`field.owner:ops`, true}, {`field.Owner:none`, false},
 		{`claimed:me`, true}, {`claimed:others`, false}, {`claimed:none`, false},
 		{`is:open`, true}, {`is:closed`, false}, {`is:ready`, true}, {`is:blocked`, false}, {`is:waiting`, false}, {`is:unknown`, false}, {`is:mine`, true}, {`is:claimed`, true}, {`is:archived`, true}, {`is:pending`, true},
 		{`has:parent`, true}, {`has:children`, true}, {`has:blockers`, true}, {`has:assignee`, true}, {`has:due`, true}, {`has:criteria`, true}, {`has:claim`, true},
@@ -288,7 +288,7 @@ func TestGroupsAndCompletion(t *testing.T) {
 	for _, tc := range []struct {
 		key  string
 		want []string
-	}{{"status", []string{"todo", "doing"}}, {"category", []string{"todo", "active"}}, {"priority", []string{"high", "urgent"}}, {"assignee", []string{"@amy", "@brett"}}, {"label", []string{"other", "perf", "tui"}}, {"milestone", []string{"m-2", "m-1", "a", "z"}}, {"type", []string{"bug", "feature"}}, {"parent", []string{"", "tasks:BL-3"}}, {"source", []string{"remote", "tasks"}}, {"none", []string{""}}} {
+	}{{"status", []string{"todo", "doing"}}, {"category", []string{"todo", "active"}}, {"priority", []string{"urgent", "high"}}, {"assignee", []string{"@amy", "@brett"}}, {"label", []string{"other", "perf", "tui"}}, {"milestone", []string{"m-2", "m-1", "a", "z"}}, {"type", []string{"bug", "feature"}}, {"parent", []string{"", "tasks:BL-3"}}, {"source", []string{"remote", "tasks"}}, {"none", []string{""}}} {
 		groups := s.Group(s.Items, tc.key)
 		values := make([]string, len(groups))
 		for n, g := range groups {
@@ -313,6 +313,9 @@ func TestGroupsAndCompletion(t *testing.T) {
 		t.Fatal(values)
 	}
 	if got := s.Complete("milestone", "Release", query.Options{}); len(got) != 2 {
+		t.Fatal(got)
+	}
+	if got := s.Complete("", "field.o", query.Options{}); !reflect.DeepEqual(got, []query.Candidate{{Value: "field.owner:"}}) {
 		t.Fatal(got)
 	}
 	if got := s.Complete("", "cha", query.Options{}); len(got) != 0 {

@@ -124,8 +124,9 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
 The native source loads only regular files with native ID filenames directly in
 its source directory. It ignores other files, nested directories, and symlinks.
 Archive loading is opt-in; `Read` can find active or archived items. Malformed
-items and filename/status mismatches produce per-file findings and partial
-coverage without hiding successfully parsed items. Loads use at most GOMAXPROCS
+items, filename/status mismatches, and unreadable files (code `unreadable`)
+produce per-file findings and partial coverage without hiding successfully
+parsed items. Loads use at most GOMAXPROCS
 parsers. The configured source path is resolved against the control root before
 opening the source; Git discovery never runs a subprocess.
 

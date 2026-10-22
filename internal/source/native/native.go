@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -146,6 +147,22 @@ func (s *Source) item(doc *format.Document) model.Item {
 	item.Category = s.options.Statuses[item.Status]
 	return item
 }
+
+// loadFinding classifies a per-file Load failure with a stable code.
+func loadFinding(path string, err error) source.Finding {
+	var refusal *source.Error
+	var pathErr *fs.PathError
+	f := source.Finding{Code: format.ErrorCode(err), Severity: "error", Path: path, Line: 1, Message: err.Error()}
+	switch {
+	case errors.As(err, &refusal):
+		f.Code = refusal.Reason
+	case errors.As(err, &pathErr):
+		f.Code = "unreadable"
+	default:
+		f.Line = format.ErrorLine(err)
+	}
+	return f
+}
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
 	paths, err := s.paths(cursor.IncludeArchive)
@@ -165,8 +182,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				doc, e := s.document(path)
 				mu.Lock()
 				if e != nil {
-					code, _, _ := strings.Cut(e.Error(), ":")
-					result.Findings = append(result.Findings, source.Finding{Code: code, Severity: "error", Path: path, Line: 1, Message: e.Error()})
+					result.Findings = append(result.Findings, loadFinding(path, e))
 					result.Coverage = source.Partial
 				} else {
 					result.Items = append(result.Items, s.item(doc))

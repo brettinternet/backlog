@@ -74,6 +74,7 @@ func TestReadiness(t *testing.T) {
 		}, engine.Unknown, []string{"blocker-unknown"}},
 		{"container", func(in *engine.Input) { r := ref("BL-1"); in.Items[1].Parent = &r }, engine.Ineligible, []string{"container"}},
 		{"explicit children", func(in *engine.Input) { in.Items[0].Children = []model.Ref{ref("BL-2")} }, engine.Ineligible, []string{"container"}},
+		{"missing child", func(in *engine.Input) { in.Items[0].Children = []model.Ref{{ID: "BL-99"}} }, engine.Ineligible, []string{"container"}},
 		{"closed child", func(in *engine.Input) {
 			in.Items[0].Children = []model.Ref{ref("BL-2")}
 			in.Items[1].Category = model.Done
@@ -120,6 +121,11 @@ func TestReadiness(t *testing.T) {
 			}
 			if got.Readiness != tc.state || !reflect.DeepEqual(codes, tc.reasons) {
 				t.Fatalf("got %s %v; want %s %v", got.Readiness, codes, tc.state, tc.reasons)
+			}
+			for _, r := range got.Reasons {
+				if slices.ContainsFunc(r.Refs, func(x model.Ref) bool { return x.Source == "" }) {
+					t.Fatalf("reason %s has unqualified refs: %v", r.Code, r.Refs)
+				}
 			}
 		})
 	}
