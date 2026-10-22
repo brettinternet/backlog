@@ -3,12 +3,12 @@ staticcheck = "go:honnef.co/go/tools/cmd/staticcheck"
 
 [tools]
 go = "1.27.3"
-git-cliff = "2.14.2"
-betterleaks = "1.9.0"
-lefthook = "2.2.2"
-task = "3.54.0"
-worktrunk = "0.80.0"
+git-cliff = "latest"
+betterleaks = "latest"
+lefthook = "latest"
+task = "latest"
+worktrunk = "latest"
 staticcheck = "0.8.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 # Claims for parallel agents and the D20 integration.
-"github:brettinternet/worklease" = "1.9.3"
+"github:brettinternet/worklease" = "latest"
