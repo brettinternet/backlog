@@ -327,22 +327,27 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			st.publish(n)
 		})
 	}
-	load := func(replaceInitial bool) {
+	// Preview records stay provisional until a load succeeds; a failed first
+	// load must not leave them to be retained by later partial loads.
+	provisional := false
+	load := func() {
 		delta, err := w.backend.Load(s.ctx, source.Cursor{})
-		publish(delta, err, replaceInitial)
+		publish(delta, err, provisional)
+		provisional = provisional && err != nil
 	}
 	if initial, ok := w.backend.(source.InitialLoader); ok {
 		if delta, err := initial.LoadInitial(s.ctx); err == nil && len(delta.Items) > 0 {
 			publish(delta, nil, false)
+			provisional = true
 		}
 	}
-	load(true)
+	load()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-w.refresh:
-			load(false)
+			load()
 		case job := <-w.jobs:
 			s.runEdit(w, job)
 		}

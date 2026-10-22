@@ -74,6 +74,7 @@ type controlledSource struct {
 	failure      error
 	coverage     source.Coverage
 	empty        bool
+	loadFailures int
 	calls        atomic.Int32
 }
 
@@ -108,6 +109,10 @@ func (s *controlledSource) Load(ctx context.Context, _ source.Cursor) (source.De
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.loadFailures > 0 {
+		s.loadFailures--
+		return source.Delta{}, errors.New("cache unavailable")
+	}
 	delta := source.Delta{Coverage: s.coverage}
 	if !s.empty {
 		delta.Items = []model.Item{s.current()}
@@ -194,6 +199,25 @@ func TestInitialSnapshotBeforeFullLoad(t *testing.T) {
 			}
 		})
 	}
+	// A failed first load must leave the preview provisional, so the first
+	// successful partial refresh still discards items it no longer lists.
+	t.Run("after failed load", func(t *testing.T) {
+		t.Parallel()
+		backend := fakeSource(t, "tasks")
+		backend.coverage, backend.loadFailures = source.Partial, 1
+		initial := backend.current()
+		initial.Ref.ID = "BL-2"
+		s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": &initialSource{backend, initial}})
+		defer s.Close()
+		awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Source("tasks").Error != "" })
+		s.Refresh()
+		full := awaitSnapshot(t, s, func(s *engine.Snapshot) bool {
+			return s.Source("tasks").Coverage == source.Partial && s.Source("tasks").Error == ""
+		})
+		if _, _, ok := full.Get(initial.Ref); ok || full.Len() != 1 {
+			t.Fatal("partial refresh after a failed load retained a removed preview item")
+		}
+	})
 }
 
 func TestOptimisticFailureAndConflict(t *testing.T) {
