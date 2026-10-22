@@ -44,6 +44,7 @@ type Options struct {
 	Views                                   []project.SavedView
 	Session                                 *Session
 	Warning                                 string
+	TrustWarning                            string
 	SaveView                                func(project.ViewConfig, bool) (project.SavedView, error)
 	Keys                                    map[string]string
 	GoToItems                               func(context.Context) ([]GoToItem, error)
@@ -994,7 +995,11 @@ func (m Model) View() tea.View {
 		}
 	}
 	header := "backlog · " + textutil.Line(m.opts.Project) + " · " + strings.Join(tabs, "  ")
-	lines = append(lines, m.title.Render(cell(header, m.width)), cell(m.badges, m.width))
+	badges := m.badges
+	if m.opts.TrustWarning != "" {
+		badges = m.opts.TrustWarning
+	}
+	lines = append(lines, m.title.Render(cell(header, m.width)), cell(badges, m.width))
 	listWidth := m.width
 	if m.detailOpen && m.width >= 120 {
 		listWidth = m.listWidth()

@@ -74,6 +74,20 @@ func golden(t *testing.T, name, content string) {
 	}
 }
 
+// A later source refresh must not hide the warning that executable project
+// declarations are still inert pending explicit consent.
+func TestTrustBannerSurvivesNavigation(t *testing.T) {
+	t.Parallel()
+	m := shellFixture(2)
+	m.opts.TrustWarning = "Untrusted project config · bl trust --show"
+	m.width, m.height = 100, 24
+	m = send(m, "j")
+	view := m.View().Content
+	if !strings.Contains(view, m.opts.TrustWarning) || strings.Contains(view, "tasks ✓ synced") {
+		t.Fatal(view)
+	}
+}
+
 // Catches count prefixes being treated as view switches, incorrect group/page
 // offsets, and cursor/fold regressions. Goldens cover the resulting viewport.
 func TestShellNavigation(t *testing.T) {

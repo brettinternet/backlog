@@ -25,6 +25,8 @@ type Finding struct {
 	Line                          int
 }
 type Delta struct {
+	// Archived identifies archived items when IncludeArchive is requested.
+	Archived map[model.Ref]bool
 	Items    []model.Item
 	Findings []Finding
 	Coverage Coverage

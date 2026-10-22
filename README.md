@@ -67,6 +67,9 @@ while loading configuration. Trust grants and diagnostics remain BL-29 work.
 `details`. Usage errors exit 2; see [the exit-code contract](docs/design.md#7-agent-interface)
 for all stable reasons and codes.
 
+`bl events --follow --json` watches source edits and streams deduplicated project
+events. Use `--since ID` to resume across rotation; see [events](docs/events.md).
+
 The product sketch above describes the target; only the features noted here are implemented.
 
 ## Docs

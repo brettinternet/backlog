@@ -119,8 +119,8 @@ type Provenance struct {
 	Line  int    `json:"line,omitempty"`
 }
 
-// Privileged identifies an effective declaration and its trust boundary. Trust
-// grants and execution belong to BL-29 and the source/hook runners, not loading.
+// Privileged identifies an effective declaration and its resolved trust boundary.
+// Source and hook runners must enforce this boundary before executing entries.
 type Privileged struct {
 	Key     string     `json:"key"`
 	Trusted bool       `json:"trusted"`
