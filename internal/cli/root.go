@@ -138,6 +138,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
+	root.Commands = append(root.Commands, importCommands(&directory, out)...)
 	valueFlags := map[string]bool{}
 	_ = root.Walk(func(cmd *urfave.Command) error {
 		for _, flag := range cmd.Flags {
@@ -208,7 +209,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber":
+	case "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
 		return true
 	}
 	return false

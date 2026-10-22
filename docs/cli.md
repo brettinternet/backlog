@@ -13,6 +13,16 @@ bl show tasks:BL-012 --section criteria --json
 bl next 'label:cli' -n 3 --explain --json
 ```
 
+## `bl import backlog-md [PATH] [--to DIR] [--dry-run]`
+
+Imports Backlog.md files directly into a separate native project. PATH defaults
+to the invocation directory; a repository root or backlog directory is accepted.
+`--to` defaults to `backlog-import` relative to `-C`. The destination must be empty
+or absent, including for a dry run; refusal exits 5. The source is never changed.
+`--dry-run` prints the validated plan without writing. Human output is an indented
+mapping report; `--json` puts that report in the standard envelope's `data`.
+See [import.md](import.md) for field mappings and skipped content.
+
 ## `bl ls [QUERY] [--view V] [--sort S] [--group G] [-n N]`
 
 Lists native items, excluding archives. It includes closed items unless the
