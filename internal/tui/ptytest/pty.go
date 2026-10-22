@@ -65,6 +65,9 @@ func Start(cmd *exec.Cmd, width, height uint16) (*Session, error) {
 }
 func (s *Session) Write(input string) error { _, err := s.terminal.Write([]byte(input)); return err }
 func (s *Session) Output() string           { s.mu.Lock(); defer s.mu.Unlock(); return s.output }
+
+// ProcessState returns child accounting after Close has joined the process.
+func (s *Session) ProcessState() *os.ProcessState { return s.cmd.ProcessState }
 func (s *Session) contains(text string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

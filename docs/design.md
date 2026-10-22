@@ -85,7 +85,7 @@ Non-goals:
 | D23 | **Cache.** A disposable SQLite cache (`modernc.org/sqlite`, WAL) gives every source a warm start, provides FTS search, and holds remote sync cursors. Native sources validate cached rows by file stat and reparse only changed files. Refresh is single-flight per source across processes. |
 | D24 | **Backends**, in delivery order: native, Backlog.md (file adapter), Beads (`bd` 1.3.0 JSON CLI), GitHub Issues (with Projects v2 status), Linear, Jira Cloud, external. Port from Worklease v1.9.3 where it applies, but drop Worklease's receipt and recovery journal; D15 replaces it. |
 | D25 | **Worklease becomes claims-only.** Worklease TASK-156 removes its work queue. Its provider probe evidence stays referenced at tag `v1.9.3` (§10). |
-| D26 | **Budgets.** The §11 budgets are acceptance criteria, measured on the reference host (Apple M5 Max, 64 GiB; updated with owner approval in BL-12) with the deterministic fixture generator. CI tracks relative regressions only and never asserts absolute latency. |
+| D26 | **Budgets.** The §11 budgets are acceptance criteria, measured on the reference host (Apple M5 Max, 64 GiB; updated with owner approval in BL-12) with the deterministic fixture generator. CI tracks relative regressions only and never asserts absolute latency. In BL-25 the owner clarified idle CPU at 10k as ≤ 2% of one core (not host-normalized), retaining the two-second native stat sweep. |
 | D28 | **Evidence and merges.** Evidence for a criterion is written under that criterion, never in Notes by number, so it can't point at the wrong one after a renumber. A file with conflict markers fails to parse with `merge-conflict`. `bl check --fix` resolves the two conflicts that every edit and comment produce, `updated` and appended comments, and leaves anything else for you. `bl` doesn't install a Git merge driver, because a driver needs per-clone Git config and runs without the project's lock. |
 | D29 | **Drafts.** A draft is an item in a `backlog`-category status, so it is open but never ready. `bl init` and `bl import backlog-md` configure a `draft` status, and `bl new --status draft` creates one without a moment in which it is ready to claim. Native IDs never change on promotion, so the importer numbers Backlog.md drafts in the source prefix, as `backlog draft promote` would. A Backlog.md source keeps its folders: changing a status to or from draft moves the file between `drafts/` and `tasks/` and allocates an ID there, as `draft promote` and `task demote` do, and also rewrites references, which Backlog.md 1.52 leaves dangling. |
 
@@ -466,7 +466,7 @@ All budgets are measured on the reference host with the fixture generator (BL-12
 | `bl show ID` | ≤ 30 ms |
 | `bl ls` and `bl next`, warm, 10k | ≤ 150 ms |
 | Native single-field write, excluding hooks and Git | ≤ 50 ms |
-| Idle for 1 h | ~0 % CPU, no goroutine or heap growth, input still responsive |
+| Idle for 1 h, 10k | ≤ 2% of one CPU core, no goroutine or heap growth, input still responsive |
 | Peak RSS | 10k ≤ 150 MiB; 50k ≤ 400 MiB |
 
 Known hazards and their required mitigations:
