@@ -114,6 +114,14 @@ func TestViewsRestoreSession(t *testing.T) {
 	if row, ok := again.selectedRow(); !ok || row.Ref.ID != "BL-3" {
 		t.Fatalf("restart selection: %+v", row)
 	}
+	// A changed declaration (e.g. a teammate edits the project view) must win
+	// over a session query captured from the old one.
+	edited := viewOptions(cfg)
+	edited.Session = restored
+	edited.Views[0].Query = "is:open label:new"
+	if got := New(edited).views[4].Config.Query; got != "is:open label:new" {
+		t.Fatalf("stale session shadowed config: %q", got)
+	}
 	again.switchView(1)
 	again = viewRows(again, "BL-3", "BL-2", "BL-1")
 	if row, ok := again.selectedRow(); !ok || row.Ref.ID != "BL-1" {

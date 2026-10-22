@@ -291,7 +291,9 @@ is saved atomically outside the update loop. Invalid, unsupported-version or
 oversized state is ignored with a visible footer warning. Missing views fall
 back to Next; missing selections fall back to the first row. State is disposable
 and never recreates deleted config views. Session query/layout overrides take
-precedence over a tab's config until the session state is removed. Folds are
+precedence over a tab's config while that declaration is unchanged; editing
+the view in config (or a new built-in) discards the stale override. Saving a
+view locks the config file's directory and leaves no lock file behind. Folds are
 retained while switching tabs but are not persisted across restarts.
 
 ## Rendering and safety

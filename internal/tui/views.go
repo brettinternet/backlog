@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -25,8 +26,11 @@ type viewState struct {
 	ID        string             `json:"id"`
 	Config    project.ViewConfig `json:"config"`
 	Selection selection          `json:"selection"`
-	folded    *foldState
-	foldAll   bool
+	// Base is the declared config Config started from. Restored edits apply
+	// only while the declaration is unchanged, so config edits are not shadowed.
+	Base    project.ViewConfig `json:"base"`
+	folded  *foldState
+	foldAll bool
 }
 
 // Session is disposable per-project state, not a source of backlog truth.
@@ -90,19 +94,22 @@ func viewQuery(v project.ViewConfig) string {
 }
 func (m *Model) initViews() {
 	for i, name := range viewNames {
-		m.views = append(m.views, viewState{ID: "builtin:" + name, Config: project.ViewConfig{Name: name, Query: viewQueries[i], Layout: "list"}})
+		c := project.ViewConfig{Name: name, Query: viewQueries[i], Layout: "list"}
+		m.views = append(m.views, viewState{ID: "builtin:" + name, Config: c, Base: c})
 	}
 	for _, v := range m.opts.Views {
 		v.Query = viewQuery(v.ViewConfig)
 		v.Sort = ""
 		v.Group = ""
-		m.views = append(m.views, viewState{ID: v.ID, Config: v.ViewConfig})
+		m.views = append(m.views, viewState{ID: v.ID, Config: v.ViewConfig, Base: v.ViewConfig})
 	}
 	if s := m.opts.Session; s != nil {
 		for i := range m.views {
 			for _, saved := range s.Views {
 				if saved.ID == m.views[i].ID {
-					m.views[i].Config = saved.Config
+					if reflect.DeepEqual(saved.Base, m.views[i].Base) {
+						m.views[i].Config = saved.Config
+					}
 					m.views[i].Selection = saved.Selection
 					break
 				}
@@ -203,6 +210,7 @@ func (m *Model) saved(msg viewSaved) {
 	previous := m.views[m.view].ID
 	state := msg.state
 	state.ID = msg.view.ID
+	state.Base = state.Config
 	index := -1
 	for i, v := range m.views {
 		if v.ID == state.ID {
