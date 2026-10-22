@@ -258,6 +258,9 @@ func (m *Model) expandCapture() {
 	}
 	if item.Status == "" {
 		item.Status = m.opts.CreateStatus
+		if m.isBoard() && m.boardStatusGroup() && len(m.data.starts) > 0 {
+			item.Status = m.data.rows[m.data.starts[m.boardColumn()]].value
+		}
 		if item.Status == "" {
 			for _, s := range m.opts.Statuses {
 				if s.Category == "todo" {

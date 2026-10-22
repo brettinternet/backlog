@@ -117,13 +117,13 @@ func TestShellNavigation(t *testing.T) {
 		next, _ = m.Update(viewDue(m.inputSerial))
 		m = next.(Model)
 		want := 0
-		if n <= 4 {
+		if n <= len(viewNames) {
 			want = n - 1
 		}
 		if m.view != want {
 			t.Fatalf("view %d: %d", n, m.view)
 		}
-		if n <= 4 {
+		if n <= len(viewNames) {
 			fmt.Fprintf(&transcript, "== view %d ==\n%s\n", n, m.View().Content)
 		}
 	}

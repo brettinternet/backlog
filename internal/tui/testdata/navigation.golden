@@ -1,5 +1,5 @@
 == down ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   ▾ To Do (20)                                                                  
@@ -24,7 +24,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == up ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 > ▾ To Do (20)                                                                  
@@ -49,7 +49,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == count ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   ▾ To Do (20)                                                                  
@@ -74,7 +74,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == first ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 > ▾ To Do (20)                                                                  
@@ -99,7 +99,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == last ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   BL-42        ▲  Done           1   2/3     ● 修正 🚀 selection                
@@ -124,7 +124,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == numbered ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
@@ -149,7 +149,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == half ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   ▾ To Do (20)                                                                  
@@ -174,7 +174,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == full ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 > BL-19        ▲  To Do          1   2/3     修正 🚀 selection                  
@@ -199,7 +199,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == groups ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 > ▾ Active (20)                                                                 
@@ -224,7 +224,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == fold ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
@@ -249,7 +249,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == unfold ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
   BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
@@ -274,7 +274,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
 == view 1 ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 ⠋ Loading…                                                                      
@@ -299,7 +299,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 3 pending · 0 failed · ? help · q quit        
 == view 2 ==
-backlog · fixture · Next  [Active]  Mine  All                                   
+backlog · fixture · Next  [Active]  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 ⠋ Loading…                                                                      
@@ -324,7 +324,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 category:active group:status · 3 pending · 0 failed · ? help · q quit           
 == view 3 ==
-backlog · fixture · Next  Active  [Mine]  All                                   
+backlog · fixture · Next  Active  [Mine]  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 ⠋ Loading…                                                                      
@@ -349,7 +349,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 assignee:me group:status · 3 pending · 0 failed · ? help · q quit               
 == view 4 ==
-backlog · fixture · Next  Active  Mine  [All]                                   
+backlog · fixture · Next  Active  Mine  [All]  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 ⠋ Loading…                                                                      
@@ -373,8 +373,33 @@ tasks ✓ synced
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
 is:open group:status · 3 pending · 0 failed · ? help · q quit                   
+== view 5 ==
+backlog · fixture · Next  Active  Mine  All  [Board]                            
+tasks ✓ synced                                                                  
+⠋ Loading…                                                                      
+⠋ Loading…                                                                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+is:open group:status · 3 pending · 0 failed · ? help · q quit                   
 == help ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 j/k ↓/↑ · count + move · gg/G/NG · [/]/groups                                   

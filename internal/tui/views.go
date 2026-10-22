@@ -95,6 +95,9 @@ func viewQuery(v project.ViewConfig) string {
 func (m *Model) initViews() {
 	for i, name := range viewNames {
 		c := project.ViewConfig{Name: name, Query: viewQueries[i], Layout: "list"}
+		if name == "Board" {
+			c.Layout = "board"
+		}
 		m.views = append(m.views, viewState{ID: "builtin:" + name, Config: c, Base: c})
 	}
 	for _, v := range m.opts.Views {
