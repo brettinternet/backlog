@@ -121,6 +121,14 @@ func TestRemoteIdentity(t *testing.T) {
 	if err != nil || !local || id != root {
 		t.Fatalf("fallback: %s %t %v", id, local, err)
 	}
+	// A clone of a local repository must still resolve, as host-local.
+	for _, remote := range []string{"/srv/git/repo.git", "../upstream", "file:///srv/git/repo.git"} {
+		git(t, root, "config", "remote.origin.url", remote)
+		id, local, err = project.Identity(d)
+		if err != nil || !local || id != root {
+			t.Fatalf("local origin %s: %s %t %v", remote, id, local, err)
+		}
+	}
 	git(t, root, "config", "remote.origin.url", "ssh://git@github.com:2222/owner/repo.git")
 	id, local, err = project.Identity(d)
 	if err != nil || local || id != "github.com/owner/repo" {

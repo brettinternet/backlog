@@ -57,7 +57,7 @@ disables styling. See the [project schema](docs/schemas/project-config.json) and
 `bl -C DIR config show --json` reports discovery, effective settings, per-value
 provenance, and trust boundaries without creating files or changing cwd. Linked
 worktrees share the primary checkout's control root; `root: checkout` opts out.
-Origin URLs become stable project IDs; no origin means a host-local path identity.
+Origin URLs become stable project IDs; no origin, or a local-path or `file://` origin, means a host-local path identity.
 Without project config, Backlog.md and Beads are detected read-only, not loaded as
 writable sources. Privileged project entries remain untrusted and nothing runs
 while loading configuration. Trust grants and diagnostics remain BL-29 work.

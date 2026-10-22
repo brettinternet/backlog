@@ -137,7 +137,15 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	}
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
+	valueFlags := map[string]bool{}
 	_ = root.Walk(func(cmd *urfave.Command) error {
+		for _, flag := range cmd.Flags {
+			if f, ok := flag.(urfave.DocGenerationFlag); ok && f.TakesValue() {
+				for _, name := range flag.Names() {
+					valueFlags[name] = true
+				}
+			}
+		}
 		cmd.OnUsageError = func(_ context.Context, selected *urfave.Command, err error, _ bool) error {
 			command = commandName(selected)
 			return &Error{Reason: "usage", Message: err.Error()}
@@ -159,7 +167,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if !errors.As(err, &failure) {
 			failure = &Error{Reason: "internal", Message: err.Error()}
 		}
-		if jsonRequested(args) {
+		if jsonRequested(args, valueFlags) {
 			if err := json.NewEncoder(out).Encode(Envelope{SchemaVersion: 1, Command: command, Data: failure.Data, Error: failure}); err != nil {
 				fmt.Fprintf(errOut, "bl: write JSON: %v\n", err)
 				return 1
@@ -211,7 +219,7 @@ func commandName(cmd *urfave.Command) string {
 
 // Inspect output flags even when parsing fails before reaching --json.
 // Skip values of non-boolean flags and positional data after "--".
-func jsonRequested(args []string) bool {
+func jsonRequested(args []string, valueFlags map[string]bool) bool {
 	if len(args) < 2 {
 		return false
 	}
@@ -222,7 +230,7 @@ func jsonRequested(args []string) bool {
 			break
 		}
 		name, raw, hasValue := strings.Cut(arg, "=")
-		if (name == "-C" || name == "--C" || name == "--section" || name == "--view" || name == "--sort" || name == "--group" || name == "-n" || name == "--n" || name == "--if-version" || name == "--body" || name == "--ac" || name == "--source" || name == "--author" || name == "--evidence") && !hasValue {
+		if strings.HasPrefix(name, "-") && valueFlags[strings.TrimLeft(name, "-")] && !hasValue {
 			i++
 			continue
 		}

@@ -135,7 +135,28 @@ func (d *Document) sectionEdit(name, text string, appendText bool) ([]byte, erro
 		return nil, fmt.Errorf("invalid-value: unknown section")
 	}
 	text = strings.Trim(normalize(text, d.nl), "\r\n")
-	if s, ok := d.sections[name]; ok {
+	s, ok := d.sections[name]
+	if text == "" && !appendText {
+		// Empty replacement removes a section rather than leaving an empty heading.
+		switch {
+		case !ok:
+			return d.Bytes(), nil
+		case name == "Description":
+			if s.end == len(d.lines) {
+				return d.splice(s.start, s.end, ""), nil
+			}
+			return d.splice(s.start, s.end, d.nl), nil
+		case s.end == len(d.lines):
+			start := s.heading
+			for start > d.close+1 && strings.TrimSpace(d.lines[start-1]) == "" {
+				start--
+			}
+			return d.splice(start, s.end, ""), nil
+		default:
+			return d.splice(s.heading, s.end, ""), nil
+		}
+	}
+	if ok {
 		if appendText {
 			at := s.end
 			for at > s.start && strings.TrimSpace(d.lines[at-1]) == "" {
@@ -153,9 +174,6 @@ func (d *Document) sectionEdit(name, text string, appendText bool) ([]byte, erro
 			return d.splice(at, at, prefix+text+d.nl), nil
 		}
 		prefix := d.nl
-		if name == "Description" {
-			prefix = d.nl
-		}
 		suffix := d.nl
 		if s.end < len(d.lines) {
 			suffix += d.nl
@@ -179,7 +197,27 @@ func (d *Document) sectionEdit(name, text string, appendText bool) ([]byte, erro
 			prefix += d.nl
 		}
 	}
-	return d.splice(at, at, prefix+"## "+name+d.nl+d.nl+text+d.nl+d.nl), nil
+	suffix := d.nl
+	if at < len(d.lines) {
+		suffix += d.nl
+	}
+	return d.splice(at, at, prefix+"## "+name+d.nl+d.nl+text+suffix), nil
+}
+
+// structureChanged reports edits whose text would add, remove, or swallow a
+// recognized section (for example an unclosed fence or a pasted heading).
+func structureChanged(before, after *Document, target string, removable bool) bool {
+	for name := range after.sections {
+		if _, ok := before.sections[name]; !ok && name != target {
+			return true
+		}
+	}
+	for name := range before.sections {
+		if _, ok := after.sections[name]; !ok && !(removable && name == target) {
+			return true
+		}
+	}
+	return false
 }
 
 // Apply is pure: it returns a newly parsed document and a representation-exact
@@ -195,6 +233,7 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 	}
 	var data []byte
 	var err error
+	target := ""
 	switch m.Op {
 	case model.Batch:
 		next := d
@@ -258,8 +297,10 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 		if sectionName(m.Section) == "Comments" {
 			return fail(fmt.Errorf("unsupported mutation: comments are append-only"))
 		}
+		target = sectionName(m.Section)
 		data, err = d.sectionEdit(m.Section, m.Text, false)
 	case model.AppendNote:
+		target = "Notes"
 		data, err = d.sectionEdit("Notes", m.Text, true)
 	case model.AppendComment:
 		c := m.Comment
@@ -267,6 +308,7 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 			return fail(fmt.Errorf("invalid-value: comment author"))
 		}
 		text := "### " + c.Time.UTC().Truncate(time.Second).Format(time.RFC3339) + " " + c.Author + d.nl + d.nl + c.Body
+		target = "Comments"
 		data, err = d.sectionEdit("Comments", text, true)
 	case model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion:
 		name := sectionName(m.Section)
@@ -274,9 +316,10 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 			return fail(fmt.Errorf("invalid-value: expected criteria section"))
 		}
 		if m.Op == model.AddCriterion {
-			if strings.TrimSpace(m.Text) == "" {
-				return fail(fmt.Errorf("invalid-value: empty criterion"))
+			if strings.TrimSpace(m.Text) == "" || strings.ContainsAny(m.Text, "\r\n") {
+				return fail(fmt.Errorf("invalid-value: criterion must be nonempty and single-line"))
 			}
+			target = name
 			text := "- [ ] " + normalize(m.Text, d.nl)
 			data, err = d.sectionEdit(name, text, true)
 			break
@@ -326,6 +369,12 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 	next, err := Parse(data)
 	if err != nil {
 		return fail(err)
+	}
+	if target != "" && structureChanged(d, next, target, m.Op == model.ReplaceSection) {
+		return fail(fmt.Errorf("invalid-value: text must not add, remove, or hide sections; fence code and avoid level-2 section headings"))
+	}
+	if m.Op == model.AppendComment && len(next.Item().Comments) != len(d.Item().Comments)+1 {
+		return fail(fmt.Errorf("invalid-value: comment body must not contain comment headers"))
 	}
 	data, err = next.fieldEdit("updated", now.UTC().Truncate(time.Second).Format(time.RFC3339), false)
 	if err != nil {
@@ -416,9 +465,10 @@ func Serialize(item model.Item) ([]byte, error) {
 		}
 		b.WriteString(encode(scalar(k, 0)) + ": " + encode(n) + "\n")
 	}
-	b.WriteString("---\n\n")
-	b.WriteString(strings.Trim(normalize(item.Description, "\n"), "\r\n"))
-	b.WriteString("\n")
+	b.WriteString("---\n")
+	if description := strings.Trim(normalize(item.Description, "\n"), "\r\n"); description != "" {
+		b.WriteString("\n" + description + "\n")
+	}
 	sections := map[string]string{"Plan": item.Plan, "Notes": item.Notes, "Summary": item.Summary}
 	for name, criteria := range map[string][]model.Criterion{"Acceptance criteria": item.Criteria, "Definition of done": item.DoD} {
 		var lines []string
@@ -440,14 +490,20 @@ func Serialize(item model.Item) ([]byte, error) {
 		comments = append(comments, "### "+c.Time.UTC().Truncate(time.Second).Format(time.RFC3339)+" "+c.Author+"\n\n"+c.Body)
 	}
 	sections["Comments"] = strings.Join(comments, "\n\n")
+	written := 1 // Description is always present in a parsed document.
 	for _, name := range sectionOrder {
 		if text := strings.Trim(normalize(sections[name], "\n"), "\r\n"); text != "" {
 			b.WriteString("\n## " + name + "\n\n" + text + "\n")
+			written++
 		}
 	}
 	data := []byte(b.String())
-	if _, err := Parse(data); err != nil {
+	d, err := Parse(data)
+	if err != nil {
 		return nil, err
+	}
+	if len(d.sections) != written || len(d.Item().Comments) != len(item.Comments) {
+		return nil, fmt.Errorf("invalid-value: text must not add, remove, or hide sections or comments; fence code and avoid level-2 section headings")
 	}
 	return data, nil
 }

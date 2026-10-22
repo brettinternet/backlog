@@ -175,7 +175,7 @@ explicit `false`. `BL_HIGH_CONTRAST` and `--high-contrast` are the current envir
 and flag overrides. `root: primary` is the default; `root: checkout` in the invoking
 or primary project config opts out of sharing. Only the selected checkout supplies
 project facts. Origin identity ignores transport, credentials, ports, and `.git`;
-without an origin it is the absolute control-root path, marked host-local.
+without an origin, or with a local-path origin, it is the absolute control-root path, marked host-local.
 
 Files are strict single-document YAML, limited to 1 MiB; unknown keys, duplicate
 keys and milestone keys, and YAML aliases/anchors are rejected with file, line,
@@ -190,7 +190,7 @@ opening a multi-project workspace remains BL-43 work.
 
 **Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Show them read-only and suggest `bl import` or an explicit source. Outside any repository, open the user's default workspace, if configured.
 
-**Identity.** `project.id` defaults to the normalized `origin` remote (`github.com/owner/repo`). If there is no remote, it falls back to the control root path, marked host-local, and claims show as host-local. The project ID keys caches, trust, events, and claim resources.
+**Identity.** `project.id` defaults to the normalized `origin` remote (`github.com/owner/repo`). If there is no remote, or `origin` is a local path or `file://` URL, it falls back to the control root path, marked host-local, and claims show as host-local. The project ID keys caches, trust, events, and claim resources.
 
 **Files.**
 

@@ -164,15 +164,30 @@ func NormalizeRemote(remote string) (string, error) {
 	}
 	return host + "/" + path, nil
 }
+
+// localRemote follows Git's rule: without "://", a remote is SCP-like only when
+// a colon precedes any slash; otherwise it is a local path.
+func localRemote(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if scheme, _, ok := strings.Cut(raw, "://"); ok {
+		return strings.EqualFold(scheme, "file")
+	}
+	before, _, ok := strings.Cut(raw, ":")
+	return !ok || strings.ContainsAny(before, "/\\")
+}
 func Identity(d Discovery) (string, bool, error) {
 	if d.CommonDir != "" {
 		origin, err := gitConfigValue(filepath.Join(d.CommonDir, "config"), "remote", "origin", "url")
 		if err != nil {
 			return "", false, err
 		}
-		if origin != "" {
+		// A local-path or file:// origin names no shared identity; treat it as no remote.
+		if origin != "" && !localRemote(origin) {
 			id, err := NormalizeRemote(origin)
-			return id, false, err
+			if err != nil {
+				return "", false, fmt.Errorf("remote.origin.url: %w; set project.id in .config/backlog.yaml", err)
+			}
+			return id, false, nil
 		}
 	}
 	return d.ControlRoot, true, nil

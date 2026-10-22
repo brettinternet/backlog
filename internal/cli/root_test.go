@@ -107,6 +107,7 @@ func TestInvocationDirectory(t *testing.T) {
 		{"--unknown", "-C", "--json"},
 		{"-C=--json", "version"},
 		{"version", "--", "--json"},
+		{"show", "--section", "--json"}, // subcommand value flags are derived, not listed by hand
 		{"missing"},
 		{"--unknown"},
 	} {

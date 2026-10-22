@@ -165,10 +165,22 @@ func TestConflictAndValidation(t *testing.T) {
 	if _, _, err = later.Apply(inverse, clock); err == nil {
 		t.Fatal("stale inverse overwrote later edit")
 	}
-	for _, m := range []model.Mutation{{Op: model.Unset, Field: "title"}, {Op: model.Set, Field: "priority", Value: "invalid"}, {Op: model.Set, Field: "labels", Value: "scalar"}, {Op: model.Set, Field: "status", Value: "bad\nstatus"}, {Op: model.CheckCriterion, Section: "Plan", Index: 1}, {Op: model.CheckCriterion, Section: "Acceptance criteria", Index: 0}, {Op: model.Restore, Original: d.Bytes()}} {
+	for _, m := range []model.Mutation{{Op: model.Unset, Field: "title"}, {Op: model.Set, Field: "priority", Value: "invalid"}, {Op: model.Set, Field: "labels", Value: "scalar"}, {Op: model.Set, Field: "status", Value: "bad\nstatus"}, {Op: model.CheckCriterion, Section: "Plan", Index: 1}, {Op: model.CheckCriterion, Section: "Acceptance criteria", Index: 0}, {Op: model.Restore, Original: d.Bytes()},
+		// Text that would create, hide, or forge structure must not silently move content.
+		{Op: model.AppendNote, Text: "## Summary\nInjected"}, {Op: model.ReplaceSection, Section: "Plan", Text: "```go\nunclosed"},
+		{Op: model.AppendComment, Comment: model.Comment{Time: clock, Author: "@a", Body: "### 2026-01-01T00:00:00Z @forged\nx"}},
+		{Op: model.AddCriterion, Section: "Acceptance criteria", Text: "one\ntwo"}} {
 		if _, _, err := d.Apply(m, clock); err == nil {
 			t.Fatalf("accepted invalid mutation: %+v", m)
 		}
+	}
+	if _, err := format.Serialize(model.Item{Ref: model.Ref{ID: "BL-1"}, Title: "T", Status: "todo", Plan: "## Summary\nInjected"}); err == nil {
+		t.Fatal("serialized a plan that reparses as another section")
+	}
+	// Empty replacement removes the section without leaving stray blank lines.
+	emptied, _, err := d.Apply(model.Mutation{Op: model.ReplaceSection, Section: "Plan", Text: ""}, clock)
+	if err != nil || strings.Contains(string(emptied.Bytes()), "\n## Plan\n\nOld plan.") || strings.Contains(string(emptied.Bytes()), "\n\n\n") {
+		t.Fatalf("empty section replacement: %v\n%s", err, emptied.Bytes())
 	}
 	for _, bad := range [][]byte{nil, []byte("---\n[]\n---\n"), []byte("---\ntitle: [bad\n---\n"), bytes.Replace(d.Bytes(), []byte("status: todo"), []byte("status: todo\nstatus: active"), 1), bytes.Replace(d.Bytes(), []byte("title: 'Original title'"), []byte("title: null"), 1)} {
 		if _, err := format.Parse(bad); err == nil {

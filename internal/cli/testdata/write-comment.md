@@ -30,4 +30,3 @@ Existing note.
 ### <TIME> @agent
 
 Comment from stdin.
-
