@@ -1,5 +1,5 @@
 == first paint ==
-backlog ·  · [Next]  Active  Mine  All                                          
+backlog ·  · [Next]  Active  Mine  All  Board                                   
                                                                                 
   ID           P  Status         ⊘   ▣       Title                              
 ⠋ Loading…                                                                      
@@ -24,7 +24,7 @@ backlog ·  · [Next]  Active  Mine  All
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 0 pending · 0 failed · ? help · q quit        
 == loaded ==
-backlog ·  · [Next]  Active  Mine  All                                          
+backlog ·  · [Next]  Active  Mine  All  Board                                   
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 > ▾ todo (1)                                                                    
@@ -49,7 +49,7 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:ready sort:next group:status · 0 pending · 0 failed · ? help · q quit        
 == refreshed ==
-backlog ·  · [Next]  Active  Mine  All                                          
+backlog ·  · [Next]  Active  Mine  All  Board                                   
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
 > ▾ todo (1)                                                                    
