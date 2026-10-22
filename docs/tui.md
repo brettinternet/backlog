@@ -117,7 +117,7 @@ These apply to the marked items if any, otherwise to the current item. An edit t
 | `e`, `E` | Edit the description in `$EDITOR`; edit the whole item (the file for native sources, a full form for others) |
 | `c`, `i` | Add a comment; append a note (native sources) |
 | `x`, `space` | In the Criteria tab, toggle the criterion under the cursor |
-| `S`, `D` | Start (claims first with Worklease); Done |
+| `S`, `D` | Start (claims first with Worklease); Done (releases your claim) |
 | `C` | Claim or release (Worklease) |
 | `dd` | Archive (asks for confirmation) |
 | `.` | Repeat the last edit on the current or marked items |

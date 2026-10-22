@@ -12,6 +12,7 @@ milestone: m-4
 dependencies:
   - BL-26
   - BL-32
+  - BL-33
   - BL-44
 references:
   - docs/import.md
@@ -40,12 +41,15 @@ For each chosen Backlog.md repository (hum, worklease, tell, noon, and others):
 - Run `bl import backlog-md`.
 - Port the repository's backlog Taskfile targets and AGENTS.md workflow to `bl`.
 - Commit separately in that repository.
+
+Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-source-workflow`, `backlog-md`, `worklease`). In a `bl` project they must select, claim, and start through `bl next --claim --start` or MCP `next`. Today's skills treat setting In Progress as the claim and derive `backlog-md:` keys, which never contend with `bl`'s keys (D20). Mixed clients could then take the same task.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Each migrated repository passes `bl check`, and a pre- and post-migration comparison shows nothing lost
 - [ ] #2 Each repository's agent workflow runs one full task loop with `bl`
+- [ ] #3 With the updated skills, two agent loops started together in one migrated repository claim different items with no contention or `claim-held` error, and no skill sets status as a claim or calls `worklease key` for a `bl` item
 <!-- AC:END -->
 
 ## Definition of Done

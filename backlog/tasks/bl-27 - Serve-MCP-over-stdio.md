@@ -30,7 +30,7 @@ ordinal: 27000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## What
 
-`bl mcp` serves the §7 tools over stdio with `github.com/modelcontextprotocol/go-sdk`: `next`, `query`, `show`, `create`, `update`, `append`, and `criteria`. BL-31 adds `action`, and BL-32 adds `claim` and `release`.
+`bl mcp` serves the §7 tools over stdio with `github.com/modelcontextprotocol/go-sdk`: `next`, `query`, `show`, `create`, `update`, `append`, and `criteria`. BL-31 adds `action`. BL-32 adds `claim`, `release`, and the required `session` on status-changing `update` calls. BL-33 adds `claim`, `start`, and `session` to `next`.
 
 - Tools share types and validation with the CLI and map errors to the same reasons.
 - `bl instructions` is exposed as a resource.

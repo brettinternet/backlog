@@ -46,7 +46,7 @@ The §8 hooks: `name`, `on` (any event type), `if` (an item query plus the event
 - `cwd` defaults to the directory the originating command ran in, carried along the chain, or the control root for sync-originated chains.
 - Depth: events from a hook carry `cause` and depth + 1. `bl` calls inside hooks inherit `BL_HOOK_DEPTH`. Hooks don't run for events deeper than 3.
 - No shell, ever (D21). A minimal environment with the §8 variables and credentials removed.
-- docs/automation.md documents hooks with tested examples: `notify-ready` on `item.readiness`, release on done, and the §8 `agent` hook chained after the `work` action (BL-31 adds the action side).
+- docs/automation.md documents hooks with tested examples: `notify-ready` on `item.readiness` and the §8 `agent` hook chained after the `work` action (BL-31 adds the action side).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -57,7 +57,6 @@ The §8 hooks: `name`, `on` (any event type), `if` (an item query plus the event
 - [ ] #4 A placeholder value with a leading `-` or a control character, or a missing `{result.KEY}`, produces outcome `refused` and runs nothing; shell metacharacters pass literally
 - [ ] #5 A hook chain that loops stops at depth 3, through both `hook.finished` chaining and `bl` calls inside hooks
 - [ ] #6 A canary test proves hooks receive only the documented variables and no credential variables
-- [ ] #7 With BL_PROVIDER_TESTS=1, the docs/automation.md release-on-done hook releases a real isolated Worklease claim after a done mutation; acquisition and cleanup are recorded. This is the live hook portion transferred from BL-32 AC#6 to avoid a dependency cycle.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -77,6 +76,6 @@ The §8 hooks: `name`, `on` (any event type), `if` (an item query plus the event
 2. Build one argv-only executor shared with BL-31. Expand argv and cwd with the design.md §8 placeholders, reusing BL-20 branch names and BL-32 resource identity. Validate each expanded value for controls, a leading dash and the 1 KiB limit; missing values refuse execution. Carry originating cwd through chains, with the control root only for sync-originated chains.
 3. Provide the exact §8 allowlisted environment and triggering event JSON on stdin. Capture at most one 8 KiB JSON object from BL_RESULT, otherwise single-object JSON stdout; bound reads/output, refuse malformed/oversized results with a documented outcome and never publish credentials. Propagate cause and depth through both completion chains and nested bl calls.
 4. After hooks execute with bounded concurrency through the detached CLI runner or TUI worker. Emit exactly one hook.finished including outcome, exit code, duration and result, then route it through ordinary subscriptions; events beyond depth 3 trigger no further hooks. Do not retry or run hooks for deduplicated events.
-5. Verify veto/timeout no-write, result precedence/bounds, placeholder refusal, originating-cwd propagation, canary isolation and both recursion paths. Exercise a fake wt -> fake worklease result chain and docs/automation.md examples; run task test and task race. This task owns the real release-on-done hook round trip formerly bundled into BL-32: use BL_PROVIDER_TESTS=1 with isolated claim identity and guaranteed cleanup.
+5. Verify veto/timeout no-write, result precedence/bounds, placeholder refusal, originating-cwd propagation, canary isolation and both recursion paths. Exercise a fake wt -> fake worklease result chain and docs/automation.md examples; run task test and task race. Release on done is built in (D20) and tested in BL-32, not a hook.
 6. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
