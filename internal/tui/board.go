@@ -148,7 +148,7 @@ func (m *Model) navigateBoard(key string, n int, counted bool, prefix string) bo
 	return true
 }
 func (m Model) boardLine(line int) string {
-	if m.loading || m.failure != "" || len(m.data.starts) == 0 || m.showHelp || m.editor.open || m.prefix == "f" || m.prefix == "o" || m.prefix == "z" {
+	if m.loading || m.failure != "" || len(m.data.starts) == 0 || m.showHelp || m.editor.open || m.keyPrefix != "" || m.prefix == "f" || m.prefix == "o" || m.prefix == "z" {
 		// The header has no list row; rendering row 0 there would show it twice.
 		if line < 0 {
 			return cell("", m.boardWidth())

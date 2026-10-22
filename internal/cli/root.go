@@ -79,6 +79,9 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err != nil {
 			return err
 		}
+		if err := tui.ValidateKeys(cfg.Keys); err != nil {
+			return &Error{Reason: "invalid-config", Message: err.Error()}
+		}
 		session, cancel := context.WithCancel(ctx)
 		defer cancel()
 		store, err := engine.OpenProjectStore(session, cfg)
@@ -115,7 +118,8 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				return false
 			},
 			EditorDir: directory, CommentAuthor: cfg.Me.Default,
-			Views: cfg.SavedViews, Session: restored, Warning: warning,
+			Views: cfg.SavedViews, Session: restored, Warning: warning, Keys: cfg.Keys,
+			GoToItems: func(ctx context.Context) ([]tui.GoToItem, error) { return engine.GoToItems(ctx, cfg) },
 			SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
 				path, scope := cfg.Paths.ConfigFile, "user"
 				if shared {

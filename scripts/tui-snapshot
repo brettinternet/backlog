@@ -41,7 +41,7 @@ def main():
         previous = None
         while time.monotonic() < deadline:
             pane = tmux('capture-pane', '-p', '-t', 'snapshot:0.0').stdout
-            ready = ('q quit' in pane or 'esc/q back' in pane) and 'Loading' not in pane and '⠋ syncing' not in pane
+            ready = ('q quit' in pane or 'esc/q back' in pane or 'esc back' in pane) and 'Loading' not in pane and '⠋ syncing' not in pane and '⠋ Searching' not in pane
             if ready and not keys_sent and args.keys:
                 tmux('send-keys', '-t', 'snapshot:0.0', *args.keys)
                 keys_sent = True

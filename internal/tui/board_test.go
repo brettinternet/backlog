@@ -66,8 +66,8 @@ func TestBoardNavigation(t *testing.T) {
 		m = next.(Model)
 		golden(t, fmt.Sprintf("board-%d", width), m.View().Content)
 	}
-	// Overlays render in list rows; the column header must not repeat row 0.
-	if help := send(m, "?").View().Content; strings.Count(help, "j/k ↓/↑") != 1 {
+	// Help replaces the board; the column header must not repeat its first action.
+	if help := send(m, "?").View().Content; strings.Count(help, "Move down / scroll detail [move-down]") != 1 {
 		t.Fatalf("help header duplicated:\n%s", help)
 	}
 }

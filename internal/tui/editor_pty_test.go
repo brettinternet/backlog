@@ -85,7 +85,10 @@ func TestEditorRestoresPTYAndInput(t *testing.T) {
 	if _, err := session.KeyToOutput("e", "Editor saved.", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.KeyToOutput("?", "R resync", 5*time.Second); err != nil {
+	if _, err := session.KeyToOutput("?", "Move down / scroll detail", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.KeyToOutput("\x1b", "backlog ·", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := session.KeyToOutput("q", "PTY_EDITOR_DONE", 5*time.Second); err != nil {

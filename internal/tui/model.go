@@ -45,6 +45,9 @@ type Options struct {
 	Session                                 *Session
 	Warning                                 string
 	SaveView                                func(project.ViewConfig, bool) (project.SavedView, error)
+	Keys                                    map[string]string
+	GoToItems                               func(context.Context) ([]GoToItem, error)
+	Now                                     func() time.Time
 }
 
 type screenRow struct {
@@ -137,6 +140,15 @@ type Model struct {
 	capture                  captureState
 	longEdit                 longEditState
 	board                    boardState
+	keymap                   []action
+	keyError                 error
+	keyPrefix                string
+	launcher                 launcherState
+	launcherSerial           uint64
+	goToSession              uint64
+	goToWorker               *goToWorker
+	goToSelection            *engine.Row
+	mouse                    mouseState
 }
 
 var viewNames = []string{"Next", "Active", "Mine", "All", "Board"}
@@ -170,6 +182,10 @@ func New(opts Options) Model {
 	}
 	model.initViews()
 	model.notice = opts.Warning
+	model.keymap, model.keyError = buildKeymap(opts.Keys)
+	if opts.GoToItems != nil {
+		model.goToWorker = newGoToWorker(opts.Context, opts.GoToItems)
+	}
 	return model
 }
 
@@ -180,6 +196,9 @@ func (m Model) Init() tea.Cmd {
 	var commands []tea.Cmd
 	if m.opts.Store != nil {
 		commands = append(commands, m.waitSnapshot(), m.waitProjection())
+	}
+	if m.goToWorker != nil {
+		commands = append(commands, m.waitGoTo())
 	}
 	if m.detailWorker != nil {
 		m.detailWorker.start()
@@ -239,6 +258,9 @@ func (m Model) waitDetail() tea.Cmd {
 	}
 }
 func (m Model) selectedRow() (engine.Row, bool) {
+	if m.goToSelection != nil && m.detailOpen {
+		return *m.goToSelection, true
+	}
 	if m.selected < 0 || m.selected >= len(m.data.rows) {
 		return engine.Row{}, false
 	}
@@ -396,6 +418,7 @@ func (m *Model) switchView(n int) {
 	m.captureView()
 	m.serial++
 	m.view = n
+	m.goToSelection = nil
 	m.query = m.views[n].Config.Query
 	m.restore = &m.views[n].Selection
 	m.editor = queryEditor{}
@@ -412,6 +435,15 @@ func (m *Model) switchView(n int) {
 }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case goToResult:
+		return m.receiveGoTo(msg)
+	case launcherFiltered:
+		if m.launcher.open && msg.serial == m.launcherSerial {
+			m.launcher.rows, m.launcher.cursor, m.launcher.loading = msg.rows, 0, false
+		}
+		return m, nil
+	case tea.MouseMsg:
+		return m.updateMouse(msg)
 	case tea.WindowSizeMsg:
 		oldDetailWidth := m.detailWidth()
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
@@ -542,8 +574,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		s := msg.String()
-		if s == "ctrl+c" {
+		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.save.open || m.editor.open) {
 			return m, tea.Quit
+		}
+		if m.launcher.open {
+			return m.updateLauncher(s, msg.Text)
 		}
 		if m.longEdit.choice != "" {
 			return m, m.updateLongEdit(s)
@@ -571,314 +606,342 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.editor.open {
 			return m.updateQuery(msg)
 		}
-		if s == "ctrl+s" {
-			m.save = savePrompt{open: true, name: m.views[m.view].Config.Name}
-			m.notice = ""
+		return m.dispatchKey(s)
+	}
+	m.keepBoardVisible()
+	page := max(1, m.height-5)
+	if m.selected < m.top {
+		m.top = m.selected
+	}
+	if m.selected >= m.top+page {
+		m.top = m.selected - page + 1
+	}
+	m.top = max(0, min(m.top, max(0, len(m.data.rows)-page)))
+	return m, nil
+}
+
+// canonicalKey keeps the established contextual action semantics in one place.
+func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
+	if !m.detailOpen {
+		m.goToSelection = nil
+	}
+	if s == "pagedown" {
+		s = "ctrl+d"
+	}
+	if s == "pageup" {
+		s = "ctrl+u"
+	}
+	if s == "ctrl+s" {
+		m.save = savePrompt{open: true, name: m.views[m.view].Config.Name}
+		m.notice = ""
+		return m, nil
+	}
+	if m.detailOpen && m.width >= 120 && (s == "ctrl+left" || s == "ctrl+right") {
+		delta := 5
+		if s == "ctrl+left" {
+			delta = -5
+		}
+		m.splitWidth = max(30, min(m.listWidth()+delta, m.width-31))
+		return m, m.scheduleDetail()
+	}
+	if m.prefix == "g" && (s == "t" || s == "T") {
+		m.prefix = ""
+		m.count = 0
+		m.inputSerial++
+		if s == "t" {
+			m.switchView((m.view + 1) % len(m.views))
+		} else {
+			m.switchView((m.view + len(m.views) - 1) % len(m.views))
+		}
+		return m, nil
+	}
+	if m.prefix == "y" && s != "esc" {
+		m.prefix = ""
+		m.count = 0
+		m.inputSerial++
+		return m, m.yank(s)
+	}
+	if m.prefix == "d" && s != "esc" {
+		m.prefix = ""
+		m.count = 0
+		m.inputSerial++
+		if s == "d" {
+			m.archivePrompt()
+		}
+		return m, nil
+	}
+	if (m.prefix == "f" || m.prefix == "o" || m.prefix == "z") && s != "esc" {
+		prefix := m.prefix
+		m.prefix = ""
+		m.count = 0
+		m.inputSerial++
+		_, cmd := m.queryMenu(prefix, s)
+		return m, cmd
+	}
+	if !m.detailFocus {
+		switch s {
+		case "/":
+			m.editQuery(m.query, false)
 			return m, nil
-		}
-		if m.detailOpen && m.width >= 120 && (s == "ctrl+left" || s == "ctrl+right") {
-			delta := 5
-			if s == "ctrl+left" {
-				delta = -5
-			}
-			m.splitWidth = max(30, min(m.listWidth()+delta, m.width-31))
-			return m, m.scheduleDetail()
-		}
-		if m.prefix == "g" && (s == "t" || s == "T") {
-			m.prefix = ""
+		case "f", "o", "z":
+			m.prefix = s
 			m.count = 0
 			m.inputSerial++
-			if s == "t" {
-				m.switchView((m.view + 1) % len(m.views))
-			} else {
-				m.switchView((m.view + len(m.views) - 1) % len(m.views))
-			}
+			return m, nil
+		case "F":
+			m.query = clearQuery(m.query)
+			m.queryError = ""
+			m.queryWarning = ""
+			m.serial++
+			m.project()
 			return m, nil
 		}
-		if m.prefix == "y" && s != "esc" {
-			m.prefix = ""
-			m.count = 0
-			m.inputSerial++
-			return m, m.yank(s)
-		}
-		if m.prefix == "d" && s != "esc" {
-			m.prefix = ""
-			m.count = 0
-			m.inputSerial++
-			if s == "d" {
-				m.archivePrompt()
-			}
+	}
+	if s == "?" {
+		m.showHelp = !m.showHelp
+		return m, nil
+	}
+	if s == "esc" {
+		if m.showHelp {
+			m.showHelp = false
 			return m, nil
 		}
-		if (m.prefix == "f" || m.prefix == "o" || m.prefix == "z") && s != "esc" {
-			prefix := m.prefix
-			m.prefix = ""
-			m.count = 0
-			m.inputSerial++
-			_, cmd := m.queryMenu(prefix, s)
-			return m, cmd
-		}
-		if !m.detailFocus {
-			switch s {
-			case "/":
-				m.editQuery(m.query, false)
-				return m, nil
-			case "f", "o", "z":
-				m.prefix = s
-				m.count = 0
-				m.inputSerial++
-				return m, nil
-			case "F":
-				m.query = clearQuery(m.query)
-				m.queryError = ""
-				m.queryWarning = ""
-				m.serial++
-				m.project()
-				return m, nil
-			}
-		}
-		if s == "?" {
-			m.showHelp = !m.showHelp
-			return m, nil
-		}
-		if s == "esc" {
-			if m.showHelp {
-				m.showHelp = false
-				return m, nil
-			}
-			if m.detailOpen {
-				m.detailOpen = false
-				m.detailFocus = false
-				m.detailGeneration++
-				m.detailLoading = false
-				m.detailLines = nil
-				return m, nil
-			}
-			m.count = 0
-			m.prefix = ""
-			m.inputSerial++
-			m.visual = false
-			if m.marks != nil && m.marks.size() > 0 {
-				m.marks.clear()
-				m.notice = "Marks cleared."
-			}
-			return m, nil
-		}
-		if m.detailOpen && m.detailFocus {
-			switch s {
-			case "h", "left":
-				if m.width >= 120 {
-					m.detailFocus = false
-				}
-				return m, nil
-			case "q", "enter":
-				m.detailOpen = false
-				m.detailFocus = false
-				m.detailGeneration++
-				m.detailLoading = false
-				m.detailLines = nil
-				return m, nil
-			case "tab":
-				m.detailTab = (m.detailTab + 1) % detailTab(len(detailTabNames))
-				m.detailExpanded = false
-				if m.detailTab == tabCriteria {
-					m.criteriaCursor = 0
-				}
-				return m, m.scheduleDetail()
-			case "shift+tab":
-				m.detailTab = (m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames))
-				m.detailExpanded = false
-				if m.detailTab == tabCriteria {
-					m.criteriaCursor = 0
-				}
-				return m, m.scheduleDetail()
-			case "m":
-				if m.detailTruncated || m.detailExpanded {
-					m.detailExpanded = !m.detailExpanded
-					return m, m.scheduleDetail()
-				}
-				return m, nil
-			case "x", "space", " ":
-				if m.detailTab == tabCriteria {
-					return m, m.toggleCriterion()
-				}
-			case "j", "down":
-				if m.detailTab == tabCriteria {
-					if count := m.criterionCount(); count > 0 {
-						m.criteriaCursor = min(count-1, m.criteriaCursor+1)
-						m.keepCriterionVisible()
-					}
-					return m, nil
-				}
-				m.scrollDetail(1)
-			case "k", "up":
-				if m.detailTab == tabCriteria {
-					m.criteriaCursor = max(0, m.criteriaCursor-1)
-					m.keepCriterionVisible()
-					return m, nil
-				}
-				m.scrollDetail(-1)
-			case "ctrl+d", "pagedown":
-				m.scrollDetail(max(1, (m.height-6)/2))
-			case "ctrl+u", "pageup":
-				m.scrollDetail(-max(1, (m.height-6)/2))
-			case "ctrl+f":
-				m.scrollDetail(max(1, m.height-6))
-			case "ctrl+b":
-				m.scrollDetail(-max(1, m.height-6))
-			}
-			return m, nil
-		}
-		if s == "enter" {
-			m.detailOpen = !m.detailOpen
-			m.detailFocus = m.detailOpen
-			if m.detailOpen {
-				return m, m.scheduleDetail()
-			}
+		if m.detailOpen {
+			m.detailOpen = false
+			m.detailFocus = false
 			m.detailGeneration++
 			m.detailLoading = false
 			m.detailLines = nil
 			return m, nil
 		}
-		if s == "tab" || s == "shift+tab" {
-			if !m.detailOpen {
-				m.detailOpen = true
-				m.detailFocus = true
-				m.detailTab = tabOverview
-				return m, m.scheduleDetail()
-			}
-			m.detailFocus = true
-			return m, nil
+		m.count = 0
+		m.prefix = ""
+		m.inputSerial++
+		m.visual = false
+		if m.marks != nil && m.marks.size() > 0 {
+			m.marks.clear()
+			m.notice = "Marks cleared."
 		}
-		if s == "q" {
-			return m, tea.Quit
-		}
-		if !m.detailFocus {
-			if s == "y" || s == "d" {
-				m.prefix = s
-				m.inputSerial++
-				return m, nil
-			}
-			if s == "space" || s == " " {
-				m.markCurrent()
-				return m, nil
-			}
-			if s == "V" {
-				m.visual = !m.visual
-				if m.visual {
-					m.visualAnchor = m.selected
-				}
-				return m, nil
-			}
-			if s == "ctrl+a" {
-				return m, m.markAll()
-			}
-			if m.isTree() && (s == "h" || s == "l" || s == "left" || s == "right") {
-				m.count = 0
-				m.inputSerial++
-				cmd := m.navigateTree(s)
-				page := max(1, m.height-5)
-				if m.selected < m.top {
-					m.top = m.selected
-				}
-				if m.selected >= m.top+page {
-					m.top = m.selected - page + 1
-				}
-				return m, cmd
-			}
-			if m.isBoard() && (s == "h" || s == "l" || s == "left" || s == "right") {
-				previous := m.selected
-				m.navigateBoard(s, max(1, m.count), m.count > 0, "")
-				m.count = 0
-				m.inputSerial++
-				if m.detailOpen && m.selected != previous {
+		return m, nil
+	}
+	if m.detailOpen && m.detailFocus {
+		switch s {
+		case "h", "left":
+			if m.width >= 120 {
+				m.detailFocus = false
+				if m.goToSelection != nil {
+					m.goToSelection = nil
 					return m, m.scheduleDetail()
 				}
+			}
+			return m, nil
+		case "q", "enter":
+			m.detailOpen = false
+			m.detailFocus = false
+			m.detailGeneration++
+			m.detailLoading = false
+			m.detailLines = nil
+			return m, nil
+		case "tab":
+			m.detailTab = (m.detailTab + 1) % detailTab(len(detailTabNames))
+			m.detailExpanded = false
+			if m.detailTab == tabCriteria {
+				m.criteriaCursor = 0
+			}
+			return m, m.scheduleDetail()
+		case "shift+tab":
+			m.detailTab = (m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames))
+			m.detailExpanded = false
+			if m.detailTab == tabCriteria {
+				m.criteriaCursor = 0
+			}
+			return m, m.scheduleDetail()
+		case "m":
+			if m.detailTruncated || m.detailExpanded {
+				m.detailExpanded = !m.detailExpanded
+				return m, m.scheduleDetail()
+			}
+			return m, nil
+		case "x", "space", " ":
+			if m.detailTab == tabCriteria {
+				return m, m.toggleCriterion()
+			}
+		case "j", "down":
+			if m.detailTab == tabCriteria {
+				if count := m.criterionCount(); count > 0 {
+					m.criteriaCursor = min(count-1, m.criteriaCursor+1)
+					m.keepCriterionVisible()
+				}
 				return m, nil
 			}
-			if cmd, handled := m.updateEditKey(s); handled {
-				return m, cmd
+			m.scrollDetail(1)
+		case "k", "up":
+			if m.detailTab == tabCriteria {
+				m.criteriaCursor = max(0, m.criteriaCursor-1)
+				m.keepCriterionVisible()
+				return m, nil
 			}
+			m.scrollDetail(-1)
+		case "ctrl+d", "pagedown":
+			m.scrollDetail(max(1, (m.height-6)/2))
+		case "ctrl+u", "pageup":
+			m.scrollDetail(-max(1, (m.height-6)/2))
+		case "ctrl+f":
+			m.scrollDetail(max(1, m.height-6))
+		case "ctrl+b":
+			m.scrollDetail(-max(1, m.height-6))
 		}
-		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
-			m.count = min(1000000, m.count*10+int(s[0]-'0'))
+		return m, nil
+	}
+	if s == "enter" {
+		m.detailOpen = !m.detailOpen
+		m.detailFocus = m.detailOpen
+		if m.detailOpen {
+			return m, m.scheduleDetail()
+		}
+		m.detailGeneration++
+		m.detailLoading = false
+		m.detailLines = nil
+		return m, nil
+	}
+	if s == "tab" || s == "shift+tab" {
+		if !m.detailOpen {
+			m.detailOpen = true
+			m.detailFocus = true
+			m.detailTab = tabOverview
+			return m, m.scheduleDetail()
+		}
+		m.detailFocus = true
+		return m, nil
+	}
+	if s == "q" {
+		return m, tea.Quit
+	}
+	if !m.detailFocus {
+		if s == "y" || s == "d" {
+			m.prefix = s
 			m.inputSerial++
-			serial := m.inputSerial
-			return m, tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg { return viewDue(serial) })
+			return m, nil
 		}
-		previousSelection := m.selected
-		n := max(1, m.count)
-		hadCount := m.count > 0
-		m.count = 0
-		m.inputSerial++
-		prefix := m.prefix
-		m.prefix = ""
-		page := max(1, m.height-5)
-		if m.isBoard() && m.navigateBoard(s, n, hadCount, prefix) {
-			if m.detailOpen && m.selected != previousSelection {
+		if s == "space" || s == " " {
+			m.markCurrent()
+			return m, nil
+		}
+		if s == "V" {
+			m.visual = !m.visual
+			if m.visual {
+				m.visualAnchor = m.selected
+			}
+			return m, nil
+		}
+		if s == "ctrl+a" {
+			return m, m.markAll()
+		}
+		if m.isTree() && (s == "h" || s == "l" || s == "left" || s == "right") {
+			m.count = 0
+			m.inputSerial++
+			cmd := m.navigateTree(s)
+			page := max(1, m.height-5)
+			if m.selected < m.top {
+				m.top = m.selected
+			}
+			if m.selected >= m.top+page {
+				m.top = m.selected - page + 1
+			}
+			return m, cmd
+		}
+		if m.isBoard() && (s == "h" || s == "l" || s == "left" || s == "right") {
+			previous := m.selected
+			m.navigateBoard(s, max(1, m.count), m.count > 0, "")
+			m.count = 0
+			m.inputSerial++
+			if m.detailOpen && m.selected != previous {
 				return m, m.scheduleDetail()
 			}
 			return m, nil
 		}
-		switch {
-		case prefix == "g" && s == "g":
-			m.selected = 0
-		case prefix == "g" && s == "t":
-			m.switchView((m.view + 1) % len(m.views))
-		case prefix == "g" && s == "T":
-			m.switchView((m.view + len(m.views) - 1) % len(m.views))
-		case s == "g":
-			m.prefix = s
-			m.count = n
-			if !hadCount {
-				m.count = 0
-			}
-		case s == "j" || s == "down":
-			m.selected += n
-		case s == "k" || s == "up":
-			m.selected -= n
-		case s == "G":
-			if hadCount {
-				m.selected = n - 1
-			} else {
-				m.selected = len(m.data.rows) - 1
-			}
-		case s == "ctrl+d":
-			m.selected += max(1, page/2) * n
-		case s == "ctrl+u":
-			m.selected -= max(1, page/2) * n
-		case s == "ctrl+f":
-			m.selected += page * n
-		case s == "ctrl+b":
-			m.selected -= page * n
-		case s == "]":
-			g := sort.SearchInts(m.data.starts, m.selected+1)
-			if g < len(m.data.starts) {
-				m.selected = m.data.starts[g]
-			}
-		case s == "[":
-			g := sort.SearchInts(m.data.starts, m.selected) - 1
-			if g >= 0 {
-				m.selected = m.data.starts[g]
-			}
-		case s == "R":
-			if m.opts.Store != nil {
-				m.opts.Store.Refresh()
-			}
+		if cmd, handled := m.updateEditKey(s); handled {
+			return m, cmd
 		}
-		m.selected = max(0, min(m.selected, len(m.data.rows)-1))
-		if m.selected < m.top {
-			m.top = m.selected
-		}
-		if m.selected >= m.top+page {
-			m.top = m.selected - page + 1
-		}
+	}
+	if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
+		m.count = min(1000000, m.count*10+int(s[0]-'0'))
+		m.inputSerial++
+		serial := m.inputSerial
+		return m, tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg { return viewDue(serial) })
+	}
+	previousSelection := m.selected
+	n := max(1, m.count)
+	hadCount := m.count > 0
+	m.count = 0
+	m.inputSerial++
+	prefix := m.prefix
+	m.prefix = ""
+	page := max(1, m.height-5)
+	if m.isBoard() && m.navigateBoard(s, n, hadCount, prefix) {
 		if m.detailOpen && m.selected != previousSelection {
 			return m, m.scheduleDetail()
 		}
+		return m, nil
+	}
+	switch {
+	case prefix == "g" && s == "g":
+		m.selected = 0
+	case prefix == "g" && s == "t":
+		m.switchView((m.view + 1) % len(m.views))
+	case prefix == "g" && s == "T":
+		m.switchView((m.view + len(m.views) - 1) % len(m.views))
+	case s == "g":
+		m.prefix = s
+		m.count = n
+		if !hadCount {
+			m.count = 0
+		}
+	case s == "j" || s == "down":
+		m.selected += n
+	case s == "k" || s == "up":
+		m.selected -= n
+	case s == "G":
+		if hadCount {
+			m.selected = n - 1
+		} else {
+			m.selected = len(m.data.rows) - 1
+		}
+	case s == "ctrl+d":
+		m.selected += max(1, page/2) * n
+	case s == "ctrl+u":
+		m.selected -= max(1, page/2) * n
+	case s == "ctrl+f":
+		m.selected += page * n
+	case s == "ctrl+b":
+		m.selected -= page * n
+	case s == "]":
+		g := sort.SearchInts(m.data.starts, m.selected+1)
+		if g < len(m.data.starts) {
+			m.selected = m.data.starts[g]
+		}
+	case s == "[":
+		g := sort.SearchInts(m.data.starts, m.selected) - 1
+		if g >= 0 {
+			m.selected = m.data.starts[g]
+		}
+	case s == "R":
+		if m.opts.Store != nil {
+			m.opts.Store.Refresh()
+		}
+	}
+	m.selected = max(0, min(m.selected, len(m.data.rows)-1))
+	if m.selected < m.top {
+		m.top = m.selected
+	}
+	if m.selected >= m.top+page {
+		m.top = m.selected - page + 1
+	}
+	if m.detailOpen && m.selected != previousSelection {
+		return m, m.scheduleDetail()
 	}
 	m.keepBoardVisible()
-	page := max(1, m.height-5)
+	page = max(1, m.height-5)
 	if m.selected < m.top {
 		m.top = m.selected
 	}
@@ -918,6 +981,9 @@ func priority(p model.Priority) string {
 	return "─"
 }
 func (m Model) View() tea.View {
+	if m.launcher.open {
+		return m.launcherView()
+	}
 	lines := make([]string, 0, m.height)
 	tabs := make([]string, len(m.views))
 	for i, v := range m.views {
@@ -1034,25 +1100,16 @@ func (m Model) View() tea.View {
 	}
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 func (m Model) listLine(index int, wide bool) string {
 	if line, ok := m.queryOverlay(index - m.top); ok {
 		return line
 	}
-	if m.showHelp {
-		hints := []string{
-			"j/k ↓/↑ · count + move · gg/G/NG · [/]/groups",
-			"enter detail · tab focus/cycle · detail j/k scroll · esc back",
-			"s status · </> workflow · p priority · a/A assignee · l labels",
-			"m milestone · b blocker · P parent · t title · S/D start/done",
-			"Criteria: x/space toggle · dd archive · . repeat · u/ctrl-r undo/redo",
-			"space mark · V range · ctrl-a mark all · esc clear marks",
-			"y + key yank · yb branch name · O open safe URL · ? help",
-			"R resync · 1–9 views · gt/gT cycle · q/ctrl-c quit",
-		}
-		if index < len(hints) {
-			return hints[index]
+	if lines := m.prefixLines(); len(lines) > 0 {
+		if index-m.top < len(lines) {
+			return lines[index-m.top]
 		}
 		return ""
 	}

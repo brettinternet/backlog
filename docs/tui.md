@@ -64,7 +64,8 @@ and column-status quick-add defaults, including empty columns. Picker catalogs,
 board preparation, and fuzzy filtering run in Bubble Tea commands; source I/O
 and backlog-sized work stay off `Update` (D14).
 Tree layouts support parent navigation, folds, ancestor context and descendant
-progress. Key remapping, the command palette, and mouse remain planned.
+progress. Go-to, the command palette, searchable help, key remapping and mouse
+are implemented.
 Claim columns await BL-32.
 
 Capture a real render without opening a user's pane:
@@ -227,65 +228,144 @@ Markdown renders asynchronously and is cached. While the selection moves, the he
 
 ## Default keymap
 
-**Navigation**
+Bindings below use Bubble Tea names (`down` is ↓, `ctrl+d` is Ctrl-D).
+Spaces separate a sequence (`g g`); counts prefix motions (`5j`, `25G`).
+The same contextual action runs from a key or the palette. Digit shortcuts wait
+350 ms so they can become counts. Keys in an active text editor/picker remain
+local to that input; Ctrl-C quits there.
 
-| Keys | Action |
-| --- | --- |
-| `j`/`k`, `↓`/`↑` | Move. A count prefix works (`5j`). |
-| `gg`, `G`, `NG` | First row, last row, row N |
-| `ctrl-d`/`ctrl-u`, `ctrl-f`/`ctrl-b` | Half page, full page |
-| `[`/`]` | Previous or next group |
-| `enter` | Toggle the detail pane and focus it when opening |
-| `tab`/`shift-tab` | In list focus, focus detail; in detail focus, cycle tabs |
-| `j`/`k`, arrows, page keys | In detail focus, scroll the current body |
-| `m` | In detail focus, show more of a capped body (or show less) |
-| `h`/`←` in split detail | Focus the list without closing the pane |
-| `esc` | Close detail, clear marks, or cancel |
-| `1`–`9`, `gt`/`gT` | Jump to a view; next or previous view |
-| `ctrl-p` | Go to any item by fuzzy ID or title, including done and archived |
-| `?`, `:` | Help (searchable); command palette |
-| `W` | Toggle between project and workspace scope |
-| `R` | Resync sources |
-| `q`, `ctrl-c` | In detail, `q` goes back; otherwise quit. `ctrl-c` quits. |
+`ctrl-p` loads a cache-backed ID/title catalog, including closed and archived
+items, on a single background worker. Typing fuzzy-filters the catalog with
+latest-wins results and at most 100 matches; enter opens the selected item's
+detail without changing the current view or its query. Esc/q returns to the view.
+Each new go-to session refreshes the catalog. No source I/O or catalog scans run
+on the update loop.
 
-**Filter, sort, and group**
+`:` lists every action, its effective bindings, and any disabled reason. Type to
+fuzzy-search, use arrows to select and enter to run. `?` opens the same searchable
+catalog as read-only help. Esc closes either. Every prefix, including remapped
+prefixes, displays its available continuations. Planned workspace, coordination,
+and configured-action entries remain explicitly disabled until their tasks ship.
 
-| Keys | Action |
-| --- | --- |
-| `/` | Edit the query with completion (query.md). `enter` applies; `esc` restores the previous query. |
-| `f` + key | Quick filter. The second key picks the filter: `s` status, `p` priority, `a` assignee, `l` label, `t` type, `m` milestone, `r` ready only, `d` show done, `c` clear. |
-| `F` | Clear the filter |
-| `o` + key | Sort. The second key picks the sort: `n` next, `p` priority, `r` rank, `u` updated, `c` created, `d` due, `i` ID, `o` reverse. |
-| `z` + key | Group and fold. The second key picks the group: `s` status, `c` category, `p` priority, `A` assignee, `l` label, `m` milestone, `t` type, `P` parent, `n` none. `za` toggles a fold, `zM`/`zR` fold or unfold all. |
-| `ctrl-s` | Save the current query, sort, group, and layout as a view |
+User config maps stable action IDs to one key sequence; an empty value unbinds
+an action. An override replaces all aliases. Unknown actions, invalid key names,
+exact collisions and ambiguous prefix bindings fail TUI startup with both
+conflicting action IDs and bindings. Swap bindings by overriding both actions:
 
-**Item edits**
+```yaml
+keys:
+  move-down: J
+  move-up: K
+  first: v v
+  workspace: ''
+```
 
-These apply to the marked items if any, otherwise to the current item. An edit takes effect at once, and `u` reverts it.
-
-| Keys | Action |
-| --- | --- |
-| `s` | Status picker |
-| `<`/`>` | Previous or next status in workflow order |
-| `p` | Priority picker. Hotkeys inside it: `u`, `h`, `m`, `l`, `n`. |
-| `a`, `A` | Assignee picker; toggle assigning yourself |
-| `l` | Label picker: multi-select, type to filter or create. Configured labels come first. |
-| `m` | Milestone picker. Shows names and hides archived milestones. Typing an undeclared key sets it as free text. |
-| `b` | Blocker editor: fuzzy item picker to add, `d` to remove |
-| `P` | Parent picker |
-| `t` | Edit the title inline |
-| `e`, `E` | Edit the description in `$EDITOR`; edit the whole item (the file for native sources, a full form for others) |
-| `c`, `i` | Add a comment; append a note (native sources) |
-| `x`, `space` | In the Criteria tab, toggle the criterion under the cursor |
-| `S`, `D` | Start at workflow status (claim acquisition is BL-32); Done status |
-| `C` | Claim or release (Worklease) |
-| `dd` | Archive (asks for confirmation) |
-| `.` | Repeat the last edit on the current or marked items |
-| `u`, `ctrl-r` | Undo, redo |
-| `n`, `N` | Quick-add; quick-add a child of the current item. In board layout, the new item takes the column's status. |
-| `!` | Actions menu (design.md §8). An action's own `key` binds directly. |
-| `y` + key | Yank. The second key picks what to copy: `y` ID, `t` title, `b` branch name (`{branch}`, design.md §8), `u` URL, `m` Markdown link. |
-| `O` | Open the item's URL or provider page (absolute HTTP(S), no credentials) |
+<!-- keymap:start -->
+| Action ID | Keys | Action |
+| --- | --- | --- |
+| `move-down` | `j`, `down` | Move down / scroll detail |
+| `move-up` | `k`, `up` | Move up / scroll detail |
+| `first` | `g g` | First row |
+| `last` | `G` | Last row / count G to row N |
+| `half-down` | `ctrl+d`, `pagedown` | Half page down |
+| `half-up` | `ctrl+u`, `pageup` | Half page up |
+| `page-down` | `ctrl+f` | Full page down |
+| `page-up` | `ctrl+b` | Full page up |
+| `previous-group` | `[` | Previous group / board column |
+| `next-group` | `]` | Next group / board column |
+| `left` | `h`, `left` | Tree parent / board left / focus list |
+| `right` | `l`, `right` | Tree child / board right / labels in list |
+| `detail` | `enter` | Toggle detail |
+| `next-detail-tab` | `tab` | Focus detail / next detail tab |
+| `previous-detail-tab` | `shift+tab` | Focus detail / previous detail tab |
+| `cancel` | `esc` | Close detail / clear marks / cancel |
+| `next-view` | `g t` | Next view |
+| `previous-view` | `g T` | Previous view |
+| `go-to` | `ctrl+p` | Go to any item (including archives) |
+| `help` | `?` | Search help |
+| `palette` | `:` | Command palette |
+| `workspace` | `W` | Toggle project / workspace scope |
+| `refresh` | `R` | Resync sources |
+| `quit` | `q` | Back from detail / quit |
+| `quit-now` | `ctrl+c` | Quit |
+| `query` | `/` | Edit query |
+| `clear-filter` | `F` | Clear filter |
+| `save-view` | `ctrl+s` | Save view |
+| `status` | `s` | Status picker |
+| `previous-status` | `<` | Previous workflow status |
+| `next-status` | `>` | Next workflow status |
+| `priority` | `p` | Priority picker |
+| `assignees` | `a` | Assignee picker |
+| `assign-me` | `A` | Toggle assigning yourself |
+| `milestone` | `m` | Milestone picker / expand detail body |
+| `blocker` | `b` | Blocker editor |
+| `parent` | `P` | Parent picker |
+| `title` | `t` | Edit title |
+| `description` | `e` | Edit description in editor |
+| `edit` | `E` | Edit whole item |
+| `comment` | `c` | Add comment |
+| `note` | `i` | Append note |
+| `criterion` | `x` | Toggle criterion (Criteria tab) |
+| `start` | `S` | Start item |
+| `done` | `D` | Finish item |
+| `claim` | `C` | Claim / release |
+| `archive` | `d d` | Archive (confirm) |
+| `repeat` | `.` | Repeat last edit |
+| `undo` | `u` | Undo |
+| `redo` | `ctrl+r` | Redo |
+| `new` | `n` | Quick-add |
+| `new-child` | `N` | Quick-add child |
+| `actions` | `!` | Actions menu |
+| `yank-id` | `y y` | Copy ID |
+| `yank-title` | `y t` | Copy title |
+| `yank-branch` | `y b` | Copy branch name |
+| `yank-url` | `y u` | Copy URL |
+| `yank-markdown` | `y m` | Copy Markdown link |
+| `open-url` | `O` | Open safe provider URL |
+| `mark` | `space` | Mark item / toggle criterion |
+| `visual` | `V` | Visual range |
+| `mark-all` | `ctrl+a` | Mark current view |
+| `split-left` | `ctrl+left` | Shrink list pane |
+| `split-right` | `ctrl+right` | Grow list pane |
+| `filter-status` | `f s` | Filter: status |
+| `filter-priority` | `f p` | Filter: priority |
+| `filter-assignee` | `f a` | Filter: assignee |
+| `filter-label` | `f l` | Filter: label |
+| `filter-type` | `f t` | Filter: type |
+| `filter-milestone` | `f m` | Filter: milestone |
+| `filter-is:ready` | `f r` | Filter: ready only |
+| `filter-is:open,closed` | `f d` | Filter: show done |
+| `filter-clear` | `f c` | Filter: clear |
+| `sort-next` | `o n` | Sort: next |
+| `sort-priority` | `o p` | Sort: priority |
+| `sort-rank` | `o r` | Sort: rank |
+| `sort-updated` | `o u` | Sort: updated |
+| `sort-created` | `o c` | Sort: created |
+| `sort-due` | `o d` | Sort: due |
+| `sort-id` | `o i` | Sort: ID |
+| `sort-reverse` | `o o` | Sort: reverse |
+| `group-status` | `z s` | Group: status |
+| `group-category` | `z c` | Group: category |
+| `group-priority` | `z p` | Group: priority |
+| `group-assignee` | `z A` | Group: assignee |
+| `group-label` | `z l` | Group: label |
+| `group-milestone` | `z m` | Group: milestone |
+| `group-type` | `z t` | Group: type |
+| `group-parent` | `z P` | Group: parent |
+| `group-none` | `z n` | Group: none |
+| `group-fold` | `z a` | Group: toggle fold |
+| `group-fold-all` | `z M` | Group: fold all |
+| `group-unfold-all` | `z R` | Group: unfold all |
+| `view-1` | `1` | Jump to view 1 |
+| `view-2` | `2` | Jump to view 2 |
+| `view-3` | `3` | Jump to view 3 |
+| `view-4` | `4` | Jump to view 4 |
+| `view-5` | `5` | Jump to view 5 |
+| `view-6` | `6` | Jump to view 6 |
+| `view-7` | `7` | Jump to view 7 |
+| `view-8` | `8` | Jump to view 8 |
+| `view-9` | `9` | Jump to view 9 |
+<!-- keymap:end -->
 
 Pickers preselect the current value and fuzzy-filter as you type. Assignee and
 label pickers are multi-select; configured labels appear before labels in use.
@@ -319,7 +399,13 @@ an argv-based platform opener, never a shell.
 | `V` | Visual range: move to extend, `esc` to end |
 | `ctrl-a` | Mark every item in the view |
 
-The mouse works too. Click a row to select it and double-click to open it. Click a tab or column header. The wheel scrolls. Dragging the split divider resizes the panes.
+The mouse works too. Click a row to select it and double-click the same cell
+within 400 ms to open it. Click a view tab or detail tab. Board column headers
+focus that column, including empty columns; list headers sort by ID, priority,
+status or title (custom column layouts ignore header sorting). The wheel moves
+three rows in the list/board or scrolls detail under the pointer. Dragging the
+split divider resizes the panes, retaining the width in UI state. Mouse routing
+is disabled while a modal input is open.
 
 ## Quick-add
 
@@ -385,6 +471,36 @@ precedence over a tab's config while that declaration is unchanged; editing
 the view in config (or a new built-in) discards the stale override. Saving a
 view locks the config file's directory and leaves no lock file behind. Folds are
 retained while switching tabs but are not persisted across restarts.
+
+## Go-to measurements
+
+On Apple M5 Max / Go 1.27.3, run:
+
+```sh
+task cli:test PKG=./internal/tui -- -run '^$' -bench '^BenchmarkGoTo50k$' -benchtime=20x -count=1
+```
+
+The benchmark measures Update → worker results → View over a synthetic immutable
+50k-item ID/title catalog (all closed), not initial native cache construction.
+`TestGoToNativeCatalog` separately verifies native cache coverage for open,
+closed and archived items; `TestGoToWorkerAndDetachedDetail` verifies that a
+blocked catalog load does not block input and stale results cannot reopen it.
+The target `BL-50000` is found after the final keystroke. Per-keystroke p95:
+
+| Query | ms |
+| --- | --- |
+| `B` | 5.632 |
+| `BL` | 5.851 |
+| `BL-` | 6.036 |
+| `BL-5` | 6.469 |
+| `BL-50` | 6.808 |
+| `BL-500` | 6.713 |
+| `BL-5000` | 6.690 |
+| `BL-50000` | 7.757 |
+
+Real 120×20 tmux captures with isolated XDG state confirmed the palette and
+searchable help (`?`, then `workflow`): both show effective bindings and disabled
+reasons, without exposing the underlying board/list or duplicating its header.
 
 ## Rendering and safety
 
