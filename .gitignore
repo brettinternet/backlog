@@ -1,0 +1,23 @@
+# Root Taskfile overrides and local mise configuration
+/Taskfile.yaml
+/Taskfile.yml
+mise.local.toml
+mise.*.local.toml
+
+# Local Git worktrees
+/.worktrees/
+
+# AI
+.claude/settings.local.json
+.opencode/
+CLAUDE.local.md
+GEMINI.local.md
+AGENTS.local.md
+
+# Go outputs
+/bin/
+/dist/
+coverage.out
+
+# System
+.DS_Store

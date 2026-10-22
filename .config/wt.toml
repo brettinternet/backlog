@@ -1,0 +1,3 @@
+# Required preparation completes before a person or agent enters the worktree.
+[[pre-start]]
+tools = "mise trust && mise install"

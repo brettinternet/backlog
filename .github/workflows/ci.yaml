@@ -1,0 +1,59 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOFLAGS: -count=1
+
+jobs:
+  ci:
+    name: Go CI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+
+      - name: Resolve Go cache settings
+        id: go-cache
+        run: |
+          {
+            echo "build=$(go env GOCACHE)"
+            echo "modules=$(go env GOMODCACHE)"
+            echo "version=$(go env GOVERSION)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore Go caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+          key: ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-
+
+      - name: Run CI
+        run: task ci

@@ -1,0 +1,87 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+includes:
+  setup: .taskfiles/setup.yaml
+  cli: .taskfiles/cli.yaml
+  backlog: .taskfiles/backlog.yaml
+
+tasks:
+  default:
+    silent: true
+    cmd: task -l
+
+  init:
+    desc: Install toolchain, dependencies, and hooks
+    aliases: [setup]
+    deps:
+      - task: setup:init
+    cmds:
+      - task: cli:init
+
+  changelog:
+    desc: Regenerate CHANGELOG.md from conventional commits
+    cmd: mise exec git-cliff -- git-cliff --output CHANGELOG.md
+
+  changelog:check:
+    desc: Verify changelog generation
+    cmd: mise exec git-cliff -- git-cliff > /dev/null
+
+  ci:
+    desc: The gate. Everything that must pass before a backlog task is Done.
+    cmds:
+      - task: security
+      - task: check
+      - task: test
+      - task: race
+      - task: smoke
+
+  security:
+    desc: Scan repository history for secrets and Go code for reachable vulnerabilities
+    cmds:
+      - mise exec betterleaks -- betterleaks git --redact --verbose --no-banner
+      - mise exec go:golang.org/x/vuln/cmd/govulncheck -- govulncheck ./...
+
+  check:
+    desc: Run all project checks
+    deps:
+      - task: cli:check
+      - task: changelog:check
+
+  check:staged:
+    desc: Run pre-commit checks on staged files
+    aliases: [check-staged]
+    cmd: mise exec lefthook -- lefthook run pre-commit
+
+  fix:staged:
+    desc: Format and re-stage staged files
+    aliases: [fix-staged]
+    cmd: mise exec lefthook -- lefthook run pre-commit --tag fix
+
+  fix:
+    desc: Fix all project files
+    deps:
+      - task: cli:fix
+
+  test:
+    desc: Run all tests
+    deps:
+      - task: cli:test
+
+  race:
+    desc: Run tests with the race detector
+    deps:
+      - task: cli:race
+
+  bench:
+    desc: Run benchmarks (report only; never a gate)
+    deps:
+      - task: cli:bench
+
+  smoke:
+    desc: Build the binary and run it once
+    deps:
+      - task: cli:build
+    cmds:
+      - bin/bl --version

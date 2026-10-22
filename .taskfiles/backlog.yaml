@@ -1,0 +1,35 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+#
+# Backlog.md tracks this repository's tasks until BL-26 migrates them to bl.
+# Backlog state lives in the primary checkout (design.md D5), so these tasks
+# target it from any linked worktree.
+version: "3"
+
+vars:
+  CONTROL_ROOT:
+    sh: git worktree list --porcelain | sed -n '1s/^worktree //p'
+
+tasks:
+  cli:
+    desc: "Run the backlog CLI against the primary checkout: task backlog:cli -- task list --plain"
+    dir: "{{.CONTROL_ROOT}}"
+    env:
+      BACKLOG_CWD: "{{.CONTROL_ROOT}}"
+    cmd: mise exec -- backlog {{.CLI_ARGS}}
+
+  next:
+    desc: Show the first ready To Do task that needs no owner action
+    dir: "{{.CONTROL_ROOT}}"
+    silent: true
+    cmd: |
+      mise exec -- backlog task list --ready --status "To Do" --json | python3 -c '
+      import json, sys
+      unavailable = {"blocked", "deferred", "escalated", "human"}
+      for task in json.load(sys.stdin)["tasks"]:
+          if not {label.casefold() for label in task["labels"]} & unavailable:
+              print(task["id"] + " - " + task["title"])
+              break
+      else:
+          print("No available To Do tasks.")
+      '

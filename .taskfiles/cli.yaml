@@ -1,0 +1,52 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+vars:
+  GO_FILES_CMD: find . \( -type d \( -name .git -o -name .worktrees -o -name bin -o -name dist -o -name vendor -o -name testdata \) -prune \) -o -type f -name '*.go'
+
+tasks:
+  init:
+    desc: Initialize the Go workspace
+    cmd:
+      task: setup
+
+  setup:
+    desc: Download Go modules
+    cmd: mise exec go -- go mod download
+
+  build:
+    desc: Build bin/bl
+    cmds:
+      - mkdir -p bin
+      - >-
+        CGO_ENABLED=0 mise exec go -- go build -trimpath
+        -ldflags "-X main.buildVersion=${VERSION:-dev} -X main.buildCommit=${BUILD_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+        -o bin/bl ./cmd/bl
+
+  run:
+    desc: Run bl from source
+    cmd: mise exec go -- go run ./cmd/bl {{.CLI_ARGS}}
+
+  check:
+    desc: Run source checks
+    cmds:
+      - test -z "$({{.GO_FILES_CMD}} -exec mise exec go -- gofmt -l {} +)"
+      - mise exec go -- go vet ./...
+      - mise exec staticcheck -- staticcheck ./...
+
+  fix:
+    desc: Format Go files
+    cmd: "{{.GO_FILES_CMD}} -exec mise exec go -- gofmt -w {} +"
+
+  test:
+    desc: Run tests
+    cmd: mise exec go -- go test ./...
+
+  race:
+    desc: Run tests with the race detector
+    cmd: mise exec go -- go test -race ./...
+
+  bench:
+    desc: Run benchmarks
+    cmd: mise exec go -- go test -run '^$' -bench . -benchmem ./...

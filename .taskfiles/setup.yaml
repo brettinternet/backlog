@@ -1,0 +1,31 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+tasks:
+  init:
+    desc: Install dependencies
+    cmds:
+      - task: mise
+      - task: lefthook
+
+  mise:
+    desc: Install workstation dependencies
+    cmds:
+      - mise trust -q -a
+      - mise install -q
+    preconditions:
+      - sh: command -v mise
+        msg: Mise is not installed
+
+  upgrade:
+    desc: Upgrade pinned project tools and rewrite mise.toml
+    cmd: mise upgrade --bump --local
+
+  lefthook:
+    desc: Synchronize Lefthook hooks
+    cmds:
+      - mise exec lefthook -- lefthook uninstall
+      - mise exec lefthook -- lefthook install
+    preconditions:
+      - test -f lefthook.yaml
