@@ -4,7 +4,7 @@ title: Read and write Backlog.md backlogs directly
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:46'
+updated_date: '2026-10-22 02:39'
 labels:
   - backlog-md
   - source
@@ -37,6 +37,8 @@ Some repositories can't move off Backlog.md, such as team repositories. `bl` sho
 
 - Status, fields, sections, criteria, and comments, with minimal diffs and Backlog.md's own conventions (HTML markers, `updated_date`, quoting).
 - Create follows Backlog.md's ID and filename rules (next number, configured zero padding, `<id> - <Title>.md`).
+- `tasks/`, `completed/`, `drafts/`, and their archives, as in BL-10.
+- The source's milestone catalog comes from `milestones/` and `archive/milestones/`, and its label list from `config.yml` (design.md §5). Both are read-only, and a task may reference a milestone by ID or title.
 - A repository with only Backlog.md config opens read-only until the source is configured.
 <!-- SECTION:DESCRIPTION:END -->
 
@@ -46,6 +48,7 @@ Some repositories can't move off Backlog.md, such as team repositories. `bl` sho
 - [ ] #2 Edits and creates made by `bl` read back identically through Backlog.md 1.52, and golden diffs show minimal changes
 - [ ] #3 Capabilities are documented, and unsupported operations are not offered
 - [ ] #4 A repository with only Backlog.md config opens read-only with a prompt to configure it
+- [ ] #5 Milestone names, descriptions, and archived state, plus the configured label list, match Backlog.md 1.52's `milestone list` and `config.yml` for a fixture; a task referencing a milestone by title resolves to the same milestone
 <!-- AC:END -->
 
 ## Definition of Done

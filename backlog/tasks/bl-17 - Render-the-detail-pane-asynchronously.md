@@ -4,7 +4,7 @@ title: Render the detail pane asynchronously
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:39'
 labels:
   - tui
   - perf
@@ -44,6 +44,7 @@ Synchronous Markdown rendering on navigation is a known cause of held-key lag (Â
 - [ ] #3 The Relations tab shows blocker and child status and updates after an external change
 - [ ] #4 Input is handled while a 1 MB body renders, and the capped view offers show more
 - [ ] #5 Golden views cover every tab at 120 and 80 columns
+- [ ] #6 The Overview tab shows a declared milestone's name next to its key, and an undeclared milestone as its raw value
 <!-- AC:END -->
 
 ## Definition of Done

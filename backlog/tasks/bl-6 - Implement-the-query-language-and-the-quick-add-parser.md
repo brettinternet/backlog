@@ -4,7 +4,7 @@ title: Implement the query language and the quick-add parser
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:54'
+updated_date: '2026-10-22 02:39'
 labels:
   - query
 milestone: m-0
@@ -48,6 +48,7 @@ Source pushdown waits for the first remote source (BL-35). Do not add the interf
 - [ ] #4 Quick-add parses every tui.md token, escape, and quoted string; the query and quick-add fuzz targets each run 60 s without failures
 - [ ] #5 docs/query.md says Frozen and matches the implementation
 - [ ] #6 Hook-only event terms (`changed:` including `changed:readiness`, `hook:`, `action:`, `outcome:`) parse, evaluate against an optional event context, and are rejected with a positioned error outside hook `if:`
+- [ ] #7 Milestone groups follow catalog order, with undeclared milestones after them in value order; completion offers declared, unarchived labels and milestones (with names) before values in use
 <!-- AC:END -->
 
 ## Definition of Done

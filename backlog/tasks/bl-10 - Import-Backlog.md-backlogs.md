@@ -4,7 +4,7 @@ title: Import Backlog.md backlogs
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:39'
 labels:
   - import
   - backlog-md
@@ -36,11 +36,12 @@ The owner's repositories use Backlog.md 1.52. Moving them, starting with this on
 
 `bl import backlog-md [PATH] [--to DIR] [--dry-run]` reads Backlog.md 1.52 files directly, never its CLI:
 
-- `tasks/`, `completed/`, `archive/tasks/`, and `drafts/`, with config from `backlog/config.yml` or `backlog.config.yml`.
+- `tasks/`, `completed/`, `archive/tasks/`, `drafts/`, and `archive/drafts/`, with config from `backlog/config.yml` or `backlog.config.yml`.
 - Fields: status names to config keys, `type`, assignee, labels, priority, milestone, `created_date` and `updated_date` to `created` and `updated` in UTC, `dependencies` to `blocked_by`, `parent_task_id` to `parent`, `ordinal` to `rank` (fractional keys that keep order), `references` and `documentation` to `refs`, and `modified_files` to `files`. Other keys are kept.
 - Sections: description, criteria and definition of done (HTML markers removed, checked state kept), plan, notes, final summary to Summary, and the comments block.
 - Keep IDs verbatim, upper-cased (`task-12` becomes `TASK-12`), rewriting references to match. Completed tasks become `done`, archived tasks go to `archive/`, and drafts get a `draft` status in the `backlog` category.
-- Write a matching `.config/backlog.yaml`: statuses, ready labels, and `defaults.dod` from `definition_of_done`.
+- Milestones: each file in `milestones/` and `archive/milestones/` becomes a `milestones` entry in config (id to `key`, title to `name`, the Description section to `description`, and `archived` for archived files). A task milestone that names a milestone by title is rewritten to its key. An unresolved milestone is kept as written and reported.
+- Write a matching `.config/backlog.yaml`: statuses, milestones, the `labels` list from `config.yml`, ready labels, and `defaults.dod` from `definition_of_done`.
 - The target directory must be empty or absent. Report decisions, docs, and anything else skipped.
 - Document the mapping in docs/import.md.
 <!-- SECTION:DESCRIPTION:END -->
@@ -51,6 +52,7 @@ The owner's repositories use Backlog.md 1.52. Moving them, starting with this on
 - [ ] #2 Fixtures cover dotted subtask IDs, zero-padded IDs, lowercase IDs, HTML section markers, comments, ordinals, and dependencies on archived tasks
 - [ ] #3 `--dry-run` writes nothing and prints the plan; a non-empty target exits 5
 - [ ] #4 docs/import.md documents the mapping and the skipped content
+- [ ] #5 Importing this repository's `backlog/` yields all five milestones with names and descriptions (m-0 to m-4) and all 33 configured labels in `.config/backlog.yaml`; a fixture covers an archived milestone, a task that names its milestone by title, and an unresolved milestone in the report
 <!-- AC:END -->
 
 ## Definition of Done
