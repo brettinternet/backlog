@@ -39,7 +39,9 @@ A leading `-` negates the term. Field names, `is:`/`has:` values, statuses, and 
 | `claimed` | `me`, `others`, or `none` (requires Worklease) |
 | `is` | `open` (backlog, todo, or active), `closed`, `ready`, `blocked`, `waiting`, `unknown`, `mine`, `claimed`, `archived`, `pending` (unsynced local edit) |
 | `has` | `parent`, `children`, `blockers`, `assignee`, `due`, `criteria`, `claim` |
-| `changed` | Field name. Only for hook `if:`; true when the mutation changed that field. |
+| `changed` | Field name, or `readiness`. Hook `if:` only. True when the event changed that field. |
+| `hook`, `action` | Name. Hook `if:` only. Matches the hook or action that produced a `hook.finished` or `action.finished` event. |
+| `outcome` | `ok`, `failed`, `timeout`, `refused`. Hook `if:` only, for `*.finished` events. |
 
 `is:ready` and related readiness values use design.md §6. With no `is:` term, a view or `bl ls` adds `is:open`. `is:archived` loads `archive/` on demand.
 

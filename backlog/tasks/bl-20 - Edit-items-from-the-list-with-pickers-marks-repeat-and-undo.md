@@ -4,7 +4,7 @@ title: 'Edit items from the list with pickers, marks, repeat, and undo'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 01:49'
 labels:
   - tui
 milestone: m-1
@@ -16,6 +16,7 @@ references:
   - docs/design.md
 modified_files:
   - internal/tui
+  - internal/model
 priority: high
 type: feature
 ordinal: 20000
@@ -44,7 +45,7 @@ Editing in Backlog.md means rewriting the document. In `bl`, every common edit i
 - [ ] #2 `.` repeats the last edit; `u` and `ctrl-r` restore native file bytes in an integration test
 - [ ] #3 Pending and failed glyphs render; a failed edit shows its reason and a conflict shows both versions
 - [ ] #4 Keys for unsupported capabilities do nothing except show the disabled reason
-- [ ] #5 `yb` emits OSC 52 with a branch name like `bl-12-debounce-detail`
+- [ ] #5 `yb` emits OSC 52 with the design.md §8 `{branch}` value, produced by the shared branch-name function that BL-30 placeholders reuse; table tests cover slugging, non-ASCII titles, and the 48-character word-boundary cut
 <!-- AC:END -->
 
 ## Definition of Done

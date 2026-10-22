@@ -4,7 +4,7 @@ title: Record events and stream them with bl events
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 01:50'
 labels:
   - events
   - agents
@@ -17,6 +17,7 @@ references:
 modified_files:
   - internal/hooks
   - internal/engine
+  - internal/cache
   - internal/cli
   - docs/events.md
 priority: medium
@@ -29,24 +30,26 @@ ordinal: 28000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Why
 
-Other tools coordinate around `bl` through an event stream instead of plugins (D18, §8).
+Other tools coordinate around `bl` through events, not plugins (D18, D27). Hooks need more than mutations: derived readiness changes and the outcomes of other automations (§8).
 
 ## What
 
-- A per-project JSONL log in XDG state, with ULID IDs and the §8 schema. Appends hold a lock, so lines from concurrent processes never interleave. Rotation by size.
-- Every successful `bl`-originated mutation appends exactly one event.
-- An external change seen by a sync worker appends a `sync` event, deduplicated by ref and version so several running TUIs emit it once.
-- `bl events [--follow] [--json] [--since ID] [QUERY]`.
-- docs/events.md documents the schema.
+- A per-project JSONL log in XDG state with ULID IDs and the §8 schema, including `cause` and `depth`. Appends hold a lock, so lines never interleave. Rotation by size.
+- Mutation events: exactly one per successful mutation from any origin.
+- Sync events: any `bl` process that loads a newer snapshot diffs it against the cache's previous state and proposes `item.*` events with origin `sync`.
+- `item.readiness`: after every mutation or sync diff, recompute readiness for the changed items and their transitive dependents, and propose an event for each change caused by item data. Claim changes never produce one.
+- Exactly once: each proposed event is appended under the log lock and skipped when the log already holds one with the same type, ref, and producing versions. The appending process owns the event's hooks (BL-30).
+- `bl events [--follow] [--json] [--since ID] [QUERY]`. `--follow` keeps a watcher running, so changes are emitted without a TUI open.
+- docs/events.md documents every type, the dedupe key, and the depth rules. `hook.finished` and `action.finished` are defined here and emitted by BL-30 and BL-31.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each mutation command appends one event whose `changes` match the edit
-- [ ] #2 Concurrent appends from 8 processes produce valid JSONL
-- [ ] #3 `--follow` delivers new events within 200 ms, and `--since` resumes without gaps or duplicates across rotation
-- [ ] #4 Two running TUIs that see the same external edit produce one `sync` event
-- [ ] #5 docs/events.md documents the schema
+- [ ] #1 Each mutation command appends exactly one event whose `changes` match the edit
+- [ ] #2 Marking a blocker done appends `item.readiness` events for exactly the dependents whose readiness changed, with from, to, and the reason; claim overlay changes append none
+- [ ] #3 With three processes (two TUIs and `bl events --follow`) observing the same external edit, the log gets one `item.updated` and one `item.readiness` event per affected item
+- [ ] #4 Concurrent appends from 8 processes produce valid JSONL; `--follow` delivers within 200 ms; `--since` resumes without gaps or duplicates across rotation
+- [ ] #5 docs/events.md documents every event type, the dedupe key, cause, and depth
 <!-- AC:END -->
 
 ## Definition of Done
@@ -66,4 +69,6 @@ Other tools coordinate around `bl` through an event stream instead of plugins (D
 2. Persist external-change deduplication by project/source/ref/version across processes. Implement since/follow across rotations with stable event IDs and an explicit streaming JSON contract distinct from one-shot command envelopes.
 3. Verify one event per mutation, eight-process valid appends, resume across rotation and duplicate external observations. Use injected time/observable conditions rather than sleeps; run task test and task race, record follow latency, and freeze the schema/stream format in docs/events.md.
 4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+
+Note (2026-10-22): this plan predates the D20/D21/D27 redesign of coordination, derived events, results, and chaining. Re-plan against the current description and acceptance criteria before starting.
 <!-- SECTION:PLAN:END -->

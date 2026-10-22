@@ -76,10 +76,11 @@ Non-goals:
 | D15 | **Edits are optimistic.** A change applies locally at once and shows as pending until the source confirms. Failures and conflicts stay visible. Every write first checks the item version (a content hash for files, the provider version or `updatedAt` for remote sources) and never silently overwrites. Session undo and redo apply inverse mutations. |
 | D16 | **Configuration layers** (§5): built-ins, then user config, then committed project config, then user per-project overrides, then environment, then flags. Committed config that would run a program or contact a network service is inert until the user runs `bl trust`. Trust is bound to a digest of those entries. |
 | D17 | **Credentials** never appear in committed config. They come from a user-configured credential-helper argv or an environment variable per account, are held only in memory, and are never logged or passed to hooks. |
-| D18 | **Extension seams:** external source adapters (JSON-RPC 2.0 over stdio), hooks, actions, the event log, and MCP. No in-process plugins, scripting runtime, or SDK until two external consumers need one. Worklease's Python-era SDK shipped before any adapter existed and had to be removed. |
+| D18 | **Extension seams:** external source adapters (JSON-RPC 2.0 over stdio), the coordination seam (D20), hooks, actions, the event log, and MCP. No in-process plugins, scripting runtime, or SDK until two external consumers need one. Worklease's Python-era SDK shipped before any adapter existed and had to be removed. |
 | D19 | **Agent interface.** Short verbs, numeric ID shorthand, and `--json` on every command, with one versioned envelope and stable exit codes (§7). Long text comes from stdin. MCP tools mirror the CLI operations. `bl instructions` prints guidance matched to the installed version. |
-| D20 | **Worklease integration** is optional and built in, using Worklease's stable `--json` CLI: claim overlay, claim and release, claim-gated Start, and `next --claim` (§9). `bl` never implements claims, and Worklease never depends on `bl`. Resource keys use Worklease's matching provider policy (`github`, `linear`) so claims contend with any other Worklease client on the same issue. Every other source uses `generic` with a stable source identity and item key: the project ID and item ID for native and Backlog.md items, and provider-stable IDs for remote items (never a key that changes when an issue moves). |
-| D21 | **Terminal and process safety.** Terminal control sequences are stripped from all displayed provider text. Hooks and actions receive context through environment variables and stdin JSON, never through a shell. Argv placeholders are limited to `{id}`, `{ref}`, `{source}`, `{url}`, and `{root}`. |
+| D20 | **Coordination.** `bl` knows about claims, not about Worklease. Claims are a typed engine input, not a hook: per-item claim state, plus acquire, release, and list with the outcomes `acquired`, `contended` (with holder), `uncertain`, and `unavailable`. Readiness, `next --claim`, and claim-gated Start branch on those outcomes, and exit-code hooks cannot express them. Worklease is the only implementation, through its stable `--json` CLI (§9). `bl` never implements claims, and Worklease never depends on `bl`. A public coordinator protocol on the BL-42 framing waits for a second claim system (D18). Workflow around claims, such as releasing on done, launching agents, or creating worktrees, uses hooks and actions, not built-in behavior. Resource keys use Worklease's matching provider policy (`github`, `linear`) so claims contend with any other Worklease client on the same issue. Every other source uses `generic` with a stable source identity and item key: the project ID and item ID for native and Backlog.md items, and provider-stable IDs for remote items (never a key that changes when an issue moves). |
+| D21 | **Terminal and process safety.** Terminal control sequences are stripped from all displayed provider text. Hooks and actions receive context through environment variables and stdin JSON, never through a shell. Argv and `cwd` placeholders are limited to `{id}`, `{ref}`, `{source}`, `{url}`, `{root}`, `{branch}`, `{resource}`, and `{result.KEY}` (§8). Every expanded value is checked: no control characters, no leading `-`, at most 1 KiB. A failed check refuses the run. |
+| D27 | **Automation model.** Hooks react to item changes, derived readiness changes, and the outcomes of other hooks and actions. Chains are explicit (`on: action.finished`), carry results as bounded JSON, and are capped by a causal depth of 3. The event log is the only dedupe point, so each event is emitted once across processes without a daemon (§8). |
 | D22 | **Local state.** The ID allocator and write lock live in the Git common directory. Events, UI state, and trust records live in XDG state. The cache lives in XDG cache and is disposable. Nothing `bl` keeps outside the repository is required for correctness. |
 | D23 | **Cache.** A disposable SQLite cache (`modernc.org/sqlite`, WAL) gives every source a warm start, provides FTS search, and holds remote sync cursors. Native sources validate cached rows by file stat and reparse only changed files. Refresh is single-flight per source across processes. |
 | D24 | **Backends**, in delivery order: native, Backlog.md (file adapter), Beads (`bd` 1.3.0 JSON CLI), GitHub Issues (with Projects v2 status), Linear, Jira Cloud, external. Port from Worklease v1.9.3 where it applies, but drop Worklease's receipt and recovery journal; D15 replaces it. |
@@ -291,48 +292,78 @@ bl instructions [TOPIC] | bl mcp
 
 ## 8. Extensions
 
-**Events.** Every successful `bl`-originated mutation appends one JSON line to the project event log in XDG state.
+`bl` stays naive about workflow. It reports what changed, runs what you configured, and records what happened. Claims are the one exception, because they are decision inputs (D20).
+
+**Events.** The project event log in XDG state holds one JSON line per event:
 
 ```json
 {"schemaVersion":1,"id":"01JB…","type":"item.updated","time":"2026-10-21T17:06:00Z",
  "project":"github.com/brettinternet/backlog","source":"tasks","ref":"tasks:BL-12",
  "changes":{"status":{"from":"todo","to":"in-progress"}},"item":{…summary after…},
- "actor":"@brett","origin":"tui"}
+ "actor":"@brett","origin":"tui","cause":null,"depth":0}
 ```
 
-| Field | Values |
+| Type | Emitted when |
 | --- | --- |
-| `type` | `item.created`, `item.updated`, `item.archived`, `claim.acquired`, `claim.released` |
-| `origin` | `tui`, `cli`, `mcp`, `hook`, `sync` |
+| `item.created`, `item.updated`, `item.archived` | A mutation succeeds, from any origin, or sync sees an external edit (origin `sync`) |
+| `item.readiness` | An item's readiness changes because of item data: its status, blockers, children, labels, or assignees. `changes.readiness` holds `from`, `to`, and the reason. Claims never trigger it, because Worklease's own events cover claims. |
+| `claim.acquired`, `claim.released` | A claim operation made through `bl` succeeds |
+| `hook.finished`, `action.finished` | An after hook or an action exits. The event holds the name, `outcome` (`ok`, `failed`, `timeout`, or `refused`), the exit code, the duration, and `result`. |
 
-`bl events --follow [--json] [QUERY]` tails the log for other tools. External edits detected by sync are emitted with origin `sync`.
+- **Origin:** `tui`, `cli`, `mcp`, `hook`, `action`, or `sync`.
+- **Cause and depth:** an event produced by a hook or action, directly or through a `bl` call it makes, names its `cause` event, with `depth` one higher. Hooks don't run for events deeper than 3. `BL_HOOK_DEPTH` carries the depth into `bl` subprocesses.
+- **Exactly once.** Any `bl` process that loads a newer snapshot diffs it against the cache's previous state and proposes the resulting events. Each event is appended under the log lock and skipped if the log already holds one with the same type, ref, and producing versions. Only the process that appends an event runs its hooks. No daemon is needed. Changes made while nothing runs are emitted by the next `bl` invocation, and `bl events --follow` keeps a watcher running.
+- `bl events [--follow] [--json] [--since ID] [QUERY]` reads and tails the log.
 
-**Hooks.**
+**Hooks** subscribe to event types. This example covers all three: `x` creates a worktree, a chained hook starts a claimed agent inside it, and readiness changes send notifications.
 
 ```yaml
+actions:
+  - name: work
+    key: x
+    when: "is:ready"
+    run: [wt, switch, --create, "{branch}", --base, main, --no-cd, --format=json]
 hooks:
-  - name: notify-done
-    on: item.updated
-    if: "changed:status category:done"     # query over the changed item
-    phase: after                             # before | after
-    run: [tell, notify, "Done: {id}"]
-    timeout: 10s
+  - name: agent
+    on: action.finished
+    if: "action:work outcome:ok"           # query over the item, plus event terms
+    phase: after                            # before | after
+    cwd: "{result.path}"                    # from wt's JSON stdout
+    run: [worklease, run, --detach, --name, "{id}", --ref, "{ref}", --resource, "{resource}", --, pi, -p, "Implement {id}"]
+    timeout: 30s
+  - name: notify-ready
+    on: item.readiness
+    if: "is:ready"
+    run: [tell, notify, "Ready: {id}"]
 ```
 
 | Phase | Behavior |
 | --- | --- |
-| `before` | Runs synchronously, with the proposed event on stdin. A non-zero exit vetoes the mutation and shows the first stderr line. A timeout also vetoes. |
-| `after` | Runs asynchronously with bounded concurrency. It never blocks or retries. The result is logged in XDG state, and failures show in the status line. |
+| `before` | Only for `item.*` mutation events. Runs synchronously with the proposed event on stdin. A non-zero exit or a timeout vetoes the mutation (exit 5) and shows the first stderr line. |
+| `after` | Runs without blocking the caller. After hooks on one event run concurrently, with a bound. Order dependent steps by chaining on `hook.finished`. The CLI hands after hooks to a detached `bl` runner, so commands return at once. Nothing retries automatically. |
 
-Hooks that call `bl` again carry `BL_HOOK_DEPTH`, and depth is capped at 3.
+`cwd` defaults to the directory the chain's originating command ran in. When sync started the chain, it defaults to the control root.
 
-**Actions** are named commands run on items from the TUI (`!` menu or a bound key), the CLI (`bl action NAME ID`), or MCP. Each declares `name`, `run`, an optional `key`, a `when` query, `confirm`, and `detach`. For example: launch an agent through `worklease run`, open a Herdr workspace, or create a branch.
+**Actions** are named commands run on one item from the TUI (`!` menu or a bound key), the CLI (`bl action NAME ID`), or MCP. Each declares `name`, `run`, optional `cwd` and `key`, a `when` query, `confirm`, and `detach`. A non-detached action suspends the TUI the way `$EDITOR` does. Every action ends in an `action.finished` event, so hooks can chain after it.
 
-**Hook and action environment.** Hooks and actions see `BL_ITEM_ID`, `BL_ITEM_REF`, `BL_SOURCE`, `BL_PROJECT_ID`, `BL_ROOT`, and `BL_EVENT` (hooks only). Item JSON arrives on stdin. The process starts in a minimal environment with credentials removed (D17, D21).
+**Results.** A hook or action may write one JSON object of at most 8 KiB to the path in `BL_RESULT` (the Worklease `WORKLEASE_RUN_RESULT` pattern). It becomes `result` in the finished event, and string fields expand as `{result.KEY}` in hooks triggered by that event. If a hook writes no result and its stdout is a single JSON object of at most 8 KiB, that object is the result, so JSON-printing tools such as `wt --format=json` chain without a wrapper.
+
+**Placeholders** (D21) expand inside argv elements and `cwd`:
+
+| Placeholder | Value |
+| --- | --- |
+| `{id}`, `{ref}`, `{source}`, `{url}`, `{root}` | Item ID, `source:ID`, source ID, provider URL, control root |
+| `{branch}` | Lowercase ID plus a title slug of ASCII letters, digits, and `-`, at most 48 characters, cut at a word boundary. "Debounce detail rendering" becomes `bl-12-debounce-detail-rendering`. `yb` copies the same value. |
+| `{resource}` | The item's claim resource key (§9). Unavailable without coordination. |
+| `{result.KEY}` | A top-level string in the triggering event's `result` |
+
+A hook or action whose placeholders cannot expand doesn't run. A hook records a `refused` outcome, and an action is offered as disabled with the reason.
+
+**Environment.** Hooks and actions get `BL_ITEM_ID`, `BL_ITEM_REF`, `BL_SOURCE`, `BL_PROJECT_ID`, `BL_ROOT`, `BL_BRANCH`, `BL_RESOURCE` (when available), `BL_EVENT_ID`, `BL_HOOK_DEPTH`, and `BL_RESULT`. The triggering event arrives on stdin as JSON. The process starts in a minimal environment with credentials removed (D17, D21).
 
 **External source adapters** speak a versioned JSON-RPC 2.0 stdio protocol: initialize and manifest, capabilities, paged list, read, apply with expected version, and cancellation, all with per-frame and per-response bounds. BL-42 freezes it. It derives from Worklease's external adapter protocol v1 without the receipt and recovery journal.
 
-## 9. Worklease integration
+## 9. Coordination and Worklease
 
 These features turn on when `coordination.worklease` is configured and `worklease` is on `PATH`. `bl` uses only Worklease's stable `--json` schema-v2 CLI.
 
@@ -340,9 +371,10 @@ These features turn on when `coordination.worklease` is configured and `workleas
 - **Process context:** `bl` runs `worklease` from the invoking working directory, not the control root, so Worklease's contextual handle (keyed by worktree root and session) matches the agent's own later `worklease heartbeat`, `release`, and `verify` calls. The session comes from `--session`, `BL_SESSION`, or `WORKLEASE_SESSION_ID`.
 - **Overlay.** `worklease --json list` polls while the TUI is visible and after each claim operation. Expiry rechecks are scheduled locally, because expiry emits no event. Columns show `mine`, `agent@host`, or expired. The `is:claimed` and `claimed:me` queries use the overlay.
 - **Claim and release.** `bl claim ID` acquires with no wait. On contention it exits 7 and names the holder.
-- **Start.** Claim first, then change status. These are separate outcomes: a failed status change keeps the claim and reports it.
+- **Start.** Claim first, then change status. These are separate outcomes: a failed status change keeps the claim and reports it. If the session already holds the item's claim, for example inside `worklease run --resource {resource}`, Start skips the acquire.
 - **`next --claim`.** Walks the §6 order from one snapshot and acquires each candidate with no wait. It skips contended items, holds at most one claim, stops on an uncertain acquire, and never loops (Worklease D28).
-- The caller owns heartbeat and release. A hook can release the claim when an item reaches `done`.
+- The caller owns heartbeat and release. Everything else is ordinary hooks and actions, shipped as documented examples rather than built-in behavior: release on `done`, launch an agent with `worklease run --resource {resource}`, or open a worktree for a claimed item.
+- Another claim system later implements the same coordination seam. Nothing in hooks, actions, or events names Worklease.
 
 ## 10. Backends
 

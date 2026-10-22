@@ -111,7 +111,7 @@ These apply to the marked items if any, otherwise to the current item. An edit t
 | `u`, `ctrl-r` | Undo, redo |
 | `n`, `N` | Quick-add; quick-add a child of the current item. In board layout, the new item takes the column's status. |
 | `!` | Actions menu (design.md §8). An action's own `key` binds directly. |
-| `y` + key | Yank. The second key picks what to copy: `y` ID, `t` title, `b` branch name (`bl-12-debounce-detail`), `u` URL, `m` Markdown link. |
+| `y` + key | Yank. The second key picks what to copy: `y` ID, `t` title, `b` branch name (`{branch}`, design.md §8), `u` URL, `m` Markdown link. |
 | `O` | Open the item's URL or provider page |
 
 **Selection**
