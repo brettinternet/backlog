@@ -4,13 +4,14 @@ title: Claim the next ready item with bl next --claim
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:14'
+updated_date: '2026-10-22 02:28'
 labels:
   - worklease
   - agents
 milestone: m-2
 dependencies:
   - BL-32
+  - BL-26
 references:
   - docs/design.md
 modified_files:
@@ -21,6 +22,8 @@ modified_files:
   - docs/cli.md
   - docs/mcp.md
   - internal/engine
+  - AGENTS.md
+  - .taskfiles/backlog.yaml
 priority: medium
 type: feature
 ordinal: 33000
@@ -33,9 +36,11 @@ ordinal: 33000
 
 The §9 `next --claim [--start]` walk: one snapshot, the §6 order, a no-wait acquire per candidate, skip contended items, hold at most one claim, stop on an uncertain acquire, never loop (Worklease D28). JSON reports every attempt.
 
+- **Run first.** Inside a verified run, return the run's item and never walk.
 - **Session first.** Refuse an unscoped session with `session-required` (exit 2) before calling Worklease. Then check the session's handle. A held or pending claim on an open item is returned with `resumed: true`, and a pending acquire is replayed exactly. A held claim on a closed item fails with `claim-held`.
 - **MCP parity.** MCP `next` takes `claim`, `start`, and a required `session`, and returns the same attempts and outcomes.
-- **Guidance.** The `bl instructions` workflow topic teaches the loop: one stable session for the whole loop, claim and start only with `bl next --claim --start` or MCP `next`, finish with `bl done`. Never treat a status change as a claim, and never derive keys with `worklease key`.
+- **Guidance.** The `bl instructions` workflow topic teaches the loop: one stable session for the whole loop, claim and start only with `bl next --claim --start` or MCP `next`, renew with `bl heartbeat`, finish with `bl done`. Never treat a status change as a claim, and never derive keys with `worklease key`.
+- **Dogfood.** Replace this repository's interim AGENTS.md claim protocol and the `task backlog:claim` target with this loop.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -49,6 +54,8 @@ The §9 `next --claim [--start]` walk: one snapshot, the §6 order, a no-wait ac
 - [ ] #7 A held open item returns resumed:true with no new acquire. A pending acquire replays the identical retained request and returns resumed:true only after confirmed ownership; still-uncertain replay stops with unknown-outcome and acquires no new candidate. Held closed items fail claim-held; missing items or unresolved session state never fall through to fresh selection.
 - [ ] #8 One session looping `next --claim --start`, then `done`, then `next --claim` claims a second item with no `claim-held`, so the release on done finished before `done` returned
 - [ ] #9 The `bl instructions` workflow topic teaches the claimed loop through both CLI and MCP, and the existing instructions test covers every command and flag it names
+- [ ] #10 Inside a verified run, `next --claim` returns the run's item with no acquire and no walk
+- [ ] #11 AGENTS.md teaches `bl next --claim --start`, `bl heartbeat`, and `bl done`, and the interim `task backlog:claim` target is removed
 <!-- AC:END -->
 
 ## Definition of Done
@@ -64,7 +71,7 @@ The §9 `next --claim [--start]` walk: one snapshot, the §6 order, a no-wait ac
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Consume BL-32's typed session inspection/resume contract; do not parse Worklease handle files or introduce another journal. Refuse missing session before any coordinator call. Inspect the same invoking checkout/authority/session that later claim/start/release use.
+1. Consume BL-32's typed session inspection/resume contract; do not parse Worklease handle files or introduce another journal. Refuse missing session before any coordinator call. Inspect through the same control-root caller context that later claim/start/release use. A verified run returns its own item before any walk.
 2. For verified held ownership of an open item, return that item with resumed:true rather than rerank it away. For pending acquire, invoke exact adapter replay first and return a successful resumed claim only after confirmation. If replay remains uncertain, stop with unknown-outcome and the recovery reference; never claim another item or report a pending grant as confirmed. Closed held items fail claim-held; missing/unresolvable items or unresolved ownership fail closed.
 3. Only an authoritatively usable empty session enters one ranked-snapshot, no-wait candidate walk. Skip confirmed contention only; unavailable/uncertain outcomes stop. Expose attempts, resumed state, and separate claim/status results consistently through CLI/MCP. --start uses the shared active-transition rule and verified request ownership context.
 4. Verify restart after uncertain acquire with a stateful fake, exact replay identity, same-session inspection races, held-open resume, closed refusal and no second pass. Interleave distinct CLI/MCP sessions in one checkout; run next/start/done/next to prove release completed. Run task test and task race, plus opt-in provider checks.

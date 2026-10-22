@@ -4,7 +4,7 @@ title: Move the owner's other repositories onto bl
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:14'
+updated_date: '2026-10-22 02:28'
 labels:
   - import
   - human
@@ -42,7 +42,7 @@ For each chosen Backlog.md repository (hum, worklease, tell, noon, and others):
 - Port the repository's backlog Taskfile targets and AGENTS.md workflow to `bl`.
 - Commit separately in that repository.
 
-Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-source-workflow`, `backlog-md`, `worklease`). In a `bl` project they must select, claim, and start through `bl next --claim --start` or MCP `next`. Today's skills treat setting In Progress as the claim and derive `backlog-md:` keys, which never contend with `bl`'s keys (D20). Mixed clients could then take the same task.
+Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-source-workflow`, `backlog-md`, `worklease`). In a `bl` project they must select, claim, and start through `bl next --claim --start` or MCP `next`, renew with `bl heartbeat`, and finish with `bl done`. Today's skills treat setting In Progress as the claim and derive `backlog-md:` keys, which never contend with `bl`'s keys (D20). Mixed clients could then take the same task.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

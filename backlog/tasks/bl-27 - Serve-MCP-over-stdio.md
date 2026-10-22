@@ -4,7 +4,7 @@ title: Serve MCP over stdio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:14'
+updated_date: '2026-10-22 02:28'
 labels:
   - mcp
   - agents
@@ -30,7 +30,7 @@ ordinal: 27000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## What
 
-`bl mcp` serves the §7 tools over stdio with `github.com/modelcontextprotocol/go-sdk`: `next`, `query`, `show`, `create`, `update`, `append`, and `criteria`. BL-31 adds `action`. BL-32 adds `claim`, `release`, and the required `session` on status-changing `update` calls. BL-33 adds `claim`, `start`, and `session` to `next`.
+`bl mcp` serves the §7 tools over stdio with `github.com/modelcontextprotocol/go-sdk`: `next`, `query`, `show`, `create`, `update`, `append`, and `criteria`. BL-31 adds `action`. BL-32 adds `claim`, `release`, `heartbeat`, and the caller context (`session`, optional `run`) on every claim-affecting call. BL-33 adds `claim`, `start`, and `session` to `next`.
 
 - Tools share types and validation with the CLI and map errors to the same reasons.
 - `bl instructions` is exposed as a resource.

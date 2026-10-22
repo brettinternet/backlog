@@ -4,7 +4,7 @@ title: 'Establish the CLI skeleton, JSON envelope, exit codes, and test isolatio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:13'
+updated_date: '2026-10-22 02:28'
 labels:
   - cli
   - tooling
@@ -65,7 +65,7 @@ Reuse patterns from Worklease v1.9.3 `internal/output`, `internal/reason`, and `
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Start from bootstrap commit 77dc4ee: internal/cli.Run, Envelope/Error, version/config show commands, terminal dispatch and internal/testkit.Isolate already exist. Read their tests and extend them rather than introducing a second runner or replacing the working root. Preserve main.buildVersion/main.buildCommit.
-2. Complete the remaining contract: -C DIR with invoking-directory handling, structured error details, and all design.md §7 reason/exit mappings (including later reasons session-required and claim-held). Extend argument-aware JSON error detection when adding value-taking flags; a flag value containing --json must not change output mode.
+2. Complete the remaining contract: -C DIR with invoking-directory handling, structured error details, and all design.md §7 reason/exit mappings (including later reasons session-required, claim-held and run-mismatch). Extend argument-aware JSON error detection when adding value-taking flags; a flag value containing --json must not change output mode.
 3. Preserve current terminal behavior: bare bl opens the bootstrap TUI on a terminal and prints help off-terminal; explicit tui requires terminals and rejects JSON. Do not restore the obsolete help-only behavior. Add the missing injectable clock and reusable capture helper only where exercised; reuse Isolate without t.Parallel.
 4. Verify existing version/config/TUI dispatch and new CLI contract through focused task cli:test PKG=./internal/cli, then task test, task cli:build and task smoke. Check every exit mapping, JSON details, -C and environment isolation; record bootstrap evidence separately from remaining acceptance.
 5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
