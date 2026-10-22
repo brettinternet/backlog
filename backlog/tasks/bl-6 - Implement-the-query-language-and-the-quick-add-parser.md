@@ -1,10 +1,11 @@
 ---
 id: BL-6
 title: Implement the query language and the quick-add parser
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:39'
+updated_date: '2026-10-22 03:35'
 labels:
   - query
 milestone: m-0
@@ -42,23 +43,23 @@ Source pushdown waits for the first remote source (BL-35). Do not add the interf
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Table tests cover every field and `is:` and `has:` value, negation, comma OR lists, ordered operators, relative dates under an injected clock, and quoted phrases with escapes
-- [ ] #2 Malformed queries return positioned errors with suggestions, including the docs/query.md example
-- [ ] #3 Sort and group tests cover every key, items in several label groups, workflow order, and the documented tie-breaks
-- [ ] #4 Quick-add parses every tui.md token, escape, and quoted string; the query and quick-add fuzz targets each run 60 s without failures
-- [ ] #5 docs/query.md says Frozen and matches the implementation
-- [ ] #6 Hook-only event terms (`changed:` including `changed:readiness`, `hook:`, `action:`, `outcome:`) parse, evaluate against an optional event context, and are rejected with a positioned error outside hook `if:`
-- [ ] #7 Milestone groups follow catalog order, with undeclared milestones after them in value order; completion offers declared, unarchived labels and milestones (with names) before values in use
+- [x] #1 Table tests cover every field and `is:` and `has:` value, negation, comma OR lists, ordered operators, relative dates under an injected clock, and quoted phrases with escapes
+- [x] #2 Malformed queries return positioned errors with suggestions, including the docs/query.md example
+- [x] #3 Sort and group tests cover every key, items in several label groups, workflow order, and the documented tie-breaks
+- [x] #4 Quick-add parses every tui.md token, escape, and quoted string; the query and quick-add fuzz targets each run 60 s without failures
+- [x] #5 docs/query.md says Frozen and matches the implementation
+- [x] #6 Hook-only event terms (`changed:` including `changed:readiness`, `hook:`, `action:`, `outcome:`) parse, evaluate against an optional event context, and are rejected with a positioned error outside hook `if:`
+- [x] #7 Milestone groups follow catalog order, with undeclared milestones after them in value order; completion offers declared, unarchived labels and milestones (with names) before values in use
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task ci passes on the final commit
-- [ ] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
-- [ ] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
-- [ ] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
-- [ ] #5 No test was deleted, skipped, or weakened
-- [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
+- [x] #1 task ci passes on the final commit
+- [x] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
+- [x] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
+- [x] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
+- [x] #5 No test was deleted, skipped, or weakened
+- [x] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -69,3 +70,27 @@ Source pushdown waits for the first remote source (BL-35). Do not add the interf
 3. Verify parsing, evaluation, sorting and quick-add with table tests, then run separate 60s fuzz sessions for both parsers. Freeze docs/query.md with exact text-match semantics so BL-11 can preserve equivalence through FTS; defer provider pushdown to BL-35.
 4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementation scope: internal/query and docs/query.md as planned. The pure query snapshot will accept derived readiness, claim/pending/archive overlays and next order as inputs, avoiding a query-to-engine dependency cycle. Parser validation is separate from snapshot value validation so CLI errors and TUI warnings can share diagnostics. No source pushdown interface.
+
+Implemented positioned AST parsing, separate snapshot validation, pure match/projection and completion, event-only hook mode, and shared quick-add parsing in internal/query. docs/query.md is Frozen and specifies literal substring text equivalence for later FTS. Focused query suite and task ci PASS. Both 60s fuzz runs PASS: FuzzQuery 4,973,791 executions; FuzzQuickAdd 7,426,589 executions. Independent acceptance verifier is running before commit/integration. Delivery remains commit, merge main, and Worktrunk cleanup; no push requested.
+
+AC#1: task cli:test PKG=./internal/query -- -count=1 — PASS; TestFields covers all fields, is/has predicates, AND/OR/negation, ordered priorities, relative dates under injected time, escaped quotes, and missing overlays.
+AC#2: task cli:test PKG=./internal/query -- -count=1 — PASS; TestErrors verifies positioned syntax/value errors and exact unknown field "lable" at 7; did you mean "label"? diagnostic.
+AC#3: task cli:test PKG=./internal/query -- -count=1 — PASS; TestSort and TestGroupsAndCompletion cover all sort/group keys, workflow ordering, label memberships, reversal, and real engine next/ID tie-breaks.
+AC#4: task cli:test PKG=./internal/query -- -count=1 — PASS TestQuickAdd; task cli:test PKG=./internal/query -- -run="^$" -fuzz="^FuzzQuery$" -fuzztime=60s -parallel=2 — PASS, 4,973,791 executions; same command with FuzzQuickAdd — PASS, 7,426,589 executions. Independent verifier reran both for 60s: PASS, 3,934,821 / 8,880,247 executions.
+AC#5: task cli:test PKG=./internal/query -- -count=1 and independent verifier read of docs/query.md against all implementation files — PASS; Frozen spec defines text equivalence, dates, sort/group, validation, completion, and quick-add behavior.
+AC#6: task cli:test PKG=./internal/query -- -count=1 — PASS TestEvents for changed/readiness, hook/action/outcome, missing and wrong event contexts, and positioned rejection outside hook mode.
+AC#7: task cli:test PKG=./internal/query -- -count=1 — PASS TestGroupsAndCompletion for milestone catalog order then undeclared values, declared labels first, unarchived named milestone completion, and display-name matching.
+Independent verifier 6d681e47-4c38-44fe-bbc9-a52b8c06adab returned PASS for AC1–AC7, no acceptance-blocking defects. Single verification pass; only concrete correction was reserved NONE validation, covered by the extended existing test. All affected LSP diagnostics clean. task check:staged and task ci PASS on implementation commit fe2316ecc65f038e7a892c6b925e46c9903e37c6. No existing tests were deleted, skipped, or weakened. Source diff is limited to internal/query and docs/query.md.
+Delivery: committed feat(query): add query language and quick-add parser (fe2316e), fast-forward merged into main. Verified session receipt and clean linked worktree; wt remove bl-6-query --foreground --format=json deleted the worktree and branch. Herdr workspace wHX disappeared; git worktree list reports primary only. No retained task checkout or workspace, no push. Remaining blocker: none. Next resumable step: none for BL-6; consumers can now use the pure query package.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented and froze the shared query language, projections/completion, hook-only event predicates, and quick-add parser. Focused tests, both 60s fuzz runs, independent AC1–AC7 verification, staged hooks and task ci pass. Implementation fe2316e merged to main; worktree, branch and workspace removed.
+<!-- SECTION:FINAL_SUMMARY:END -->
