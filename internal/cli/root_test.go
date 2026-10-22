@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettinternet/backlog/internal/cli"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func run(args ...string) (int, string, string) {
@@ -184,5 +187,55 @@ func TestConfigInvocation(t *testing.T) {
 		if code, out, stderr := run(args...); code != 0 || out == "" || stderr != "" {
 			t.Fatalf("help/version loaded broken config: %d %q %q", code, out, stderr)
 		}
+	}
+}
+
+func TestMCPUsesRunStreams(t *testing.T) {
+	home := testkit.Isolate(t)
+	root := filepath.Join(home, "repo")
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", "config"), []byte("[core]\n bare = false\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".config"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := "version: 1\nproject: {id: test}\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\nready: {statuses: [todo], satisfiedBy: [done]}\n"
+	if err := os.WriteFile(filepath.Join(root, ".config", "backlog.yaml"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	var diagnostics strings.Builder
+	done := make(chan int, 1)
+	go func() {
+		done <- cli.Run(ctx, []string{"bl", "-C", root, "mcp"}, cli.BuildInfo{}, serverConn, serverConn, &diagnostics)
+	}()
+	client := sdk.NewClient(&sdk.Implementation{Name: "run-stream-test", Version: "test"}, nil)
+	session, err := client.Connect(ctx, &sdk.IOTransport{Reader: clientConn, Writer: clientConn}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := session.ListTools(ctx, &sdk.ListToolsParams{})
+	if err != nil || len(listed.Tools) != 7 {
+		t.Fatalf("list tools: count=%d err=%v", len(listed.Tools), err)
+	}
+	called, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "next", Arguments: map[string]any{}})
+	if err != nil || called.IsError {
+		t.Fatalf("call next: %#v %v", called, err)
+	}
+	_ = session.Close()
+	_ = clientConn.Close()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("cli.Run exit=%d", code)
+		}
+	case <-ctx.Done():
+		t.Fatal("cli.Run did not stop after stream closed")
 	}
 }

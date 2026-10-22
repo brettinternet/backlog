@@ -35,23 +35,21 @@ func writeError(err error) *Error {
 	if errors.As(err, &e) {
 		return e
 	}
-	var refusal *source.Error
-	if errors.As(err, &refusal) {
-		reason := refusal.Reason
-		switch reason {
-		case "conflict", "not-found", "unavailable", "rejected":
-		default:
-			reason = "rejected"
-		}
-		return &Error{Reason: reason, Message: refusal.Message}
-	}
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
-		return &Error{Reason: "unavailable", Message: err.Error()}
-	}
-	return &Error{Reason: "rejected", Message: err.Error()}
+	return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 }
 func writeUsage(message string) error { return &Error{Reason: "usage", Message: message} }
+
+// WriteOptionNames reports the actual flags on CLI write commands for adapter parity checks.
+func WriteOptionNames() map[string][]string {
+	commands := writeCommands(new(string), strings.NewReader(""), io.Discard, io.Discard)
+	out := make(map[string][]string, len(commands))
+	for _, command := range commands {
+		for _, flag := range command.Flags {
+			out[command.Name] = append(out[command.Name], flag.Names()[0])
+		}
+	}
+	return out
+}
 
 func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urfave.Command {
 	flag := func() []urfave.Flag {
@@ -445,83 +443,23 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 // sourceID: an existing item keeps its stored ID, an unqualified ref is local,
 // and a missing numeric ID takes the source's prefix (dangling refs are allowed).
 func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
-	if ref.Source == sourceID {
-		ref.Source = ""
-	}
-	lookup := ref.Source
-	if lookup == "" {
-		lookup = sourceID
-	}
-	matches, err := engine.ReadDetail(ctx, cfg, lookup+":"+ref.ID)
+	resolved, err := engine.ResolveRef(ctx, cfg, sourceID, ref)
 	if e := duplicateFiles(err); e != nil {
 		return ref, e
 	}
 	if err != nil {
 		return ref, writeError(err)
 	}
-	if len(matches) == 1 {
-		ref.ID = matches[0].Ref.ID
-		return ref, nil
-	}
-	if _, err := strconv.ParseUint(ref.ID, 10, 64); err == nil {
-		for _, c := range cfg.Sources {
-			if c.ID == lookup {
-				ref.ID = c.Prefix + "-" + ref.ID
-			}
-		}
-	}
-	return ref, nil
-}
-
-func parseRef(value string) model.Ref {
-	if sourceID, id, ok := strings.Cut(value, ":"); ok {
-		return model.Ref{Source: sourceID, ID: id}
-	}
-	return model.Ref{ID: value}
-}
-
-func refText(ref model.Ref) string {
-	if ref.Source == "" {
-		return ref.ID
-	}
-	return ref.Source + ":" + ref.ID
+	return resolved, nil
 }
 
 // resolveChanges expands reference shorthand in set mutations for one item.
 func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, changes []model.Mutation) ([]model.Mutation, error) {
-	resolve := func(value string) (string, error) {
-		if value == "" {
-			return value, nil
-		}
-		ref, err := ResolveRef(ctx, cfg, sourceID, parseRef(value))
-		return refText(ref), err
+	resolved, err := engine.ResolveChanges(ctx, cfg, sourceID, changes)
+	if err != nil {
+		return nil, writeError(err)
 	}
-	out := make([]model.Mutation, len(changes))
-	for n, m := range changes {
-		switch m.Field {
-		case "parent", "duplicate_of", "blocked_by", "related":
-			switch v := m.Value.(type) {
-			case string:
-				resolved, err := resolve(v)
-				if err != nil {
-					return nil, err
-				}
-				m.Value = resolved
-			case []string:
-				values := make([]string, len(v))
-				for k, value := range v {
-					resolved, err := resolve(value)
-					if err != nil {
-						return nil, err
-					}
-					values[k] = resolved
-				}
-				m.Value = values
-			}
-		}
-		out[n] = m
-	}
-	return out, nil
+	return resolved, nil
 }
 
 func writeItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {

@@ -1,0 +1,458 @@
+// Package mcp exposes backlog operations over the Model Context Protocol.
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/instructions"
+	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
+	"github.com/brettinternet/backlog/internal/source"
+)
+
+const InstructionsURI = "bl://instructions"
+
+type Server struct {
+	server *mcp.Server
+	cfg    project.Config
+}
+
+func New(cfg project.Config) *Server {
+	s := &Server{cfg: cfg, server: mcp.NewServer(&mcp.Implementation{Name: "bl", Version: "dev"}, nil)}
+	mcp.AddTool(s.server, &mcp.Tool{Name: "next", Description: "Return ready backlog items in readiness order."}, s.next)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "query", Description: "Search backlog items using the bl query language."}, s.query)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "criteria", Description: "Change acceptance criteria on one backlog item."}, s.criteria)
+	s.server.AddResource(&mcp.Resource{URI: InstructionsURI, Name: "bl instructions", Description: "Version-matched bl agent instructions", MIMEType: "text/markdown"}, s.instructions)
+	return s
+}
+
+func (s *Server) Run(ctx context.Context, transport mcp.Transport) error {
+	return s.server.Run(ctx, transport)
+}
+func (s *Server) Stdio(ctx context.Context) error { return s.Run(ctx, &mcp.StdioTransport{}) }
+
+// Streams serves MCP over caller-owned streams, as used by cli.Run.
+func (s *Server) Streams(ctx context.Context, in io.Reader, out io.Writer) error {
+	return s.Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(in), Writer: nopWriteCloser{out}})
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+func (s *Server) instructions(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	if req.Params == nil || req.Params.URI != InstructionsURI {
+		return nil, mcp.ResourceNotFoundError(InstructionsURI)
+	}
+	text, _ := instructions.Read("overview")
+	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: InstructionsURI, MIMEType: "text/markdown", Text: text}}}, nil
+}
+
+type ItemResult struct {
+	Item model.Item `json:"item"`
+}
+type ItemsResult struct {
+	Items []model.Item `json:"items"`
+}
+type NextArgs struct {
+	Limit int `json:"limit,omitempty" jsonschema:"Maximum number of ready items (0 means all)."`
+}
+type QueryArgs struct {
+	Query string `json:"query" jsonschema:"bl query-language expression."`
+}
+type ShowArgs struct {
+	ID string `json:"id"`
+}
+type WriteArgs struct {
+	Version string `json:"version,omitempty" jsonschema:"Expected current item version; stale values are rejected without writing."`
+}
+type CreateArgs struct {
+	WriteArgs
+	Title       string   `json:"title"`
+	Status      string   `json:"status,omitempty" jsonschema:"Configured status key; may be draft."`
+	Type        string   `json:"type,omitempty"`
+	Priority    string   `json:"priority,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Criteria    []string `json:"criteria,omitempty"`
+	Assignees   []string `json:"assignees,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
+	Milestone   string   `json:"milestone,omitempty"`
+	Due         string   `json:"due,omitempty"`
+	Parent      string   `json:"parent,omitempty"`
+	BlockedBy   []string `json:"blocked_by,omitempty"`
+	Source      string   `json:"source,omitempty"`
+}
+type UpdateArgs struct {
+	WriteArgs
+	ID        string         `json:"id"`
+	Operation string         `json:"operation,omitempty" jsonschema:"archive, unarchive, or replace_section; start and done are status field updates."`
+	Fields    map[string]any `json:"fields,omitempty" jsonschema:"Field values matching bl set fields; suffix list fields with + or - for add/remove."`
+	Section   string         `json:"section,omitempty" jsonschema:"Editable section for replace_section: description, criteria, dod, plan, notes, or summary."`
+	Text      string         `json:"text,omitempty" jsonschema:"Replacement text for replace_section; empty clears the section."`
+}
+type AppendArgs struct {
+	WriteArgs
+	ID     string `json:"id"`
+	Kind   string `json:"kind" jsonschema:"note or comment"`
+	Text   string `json:"text"`
+	Author string `json:"author,omitempty"`
+}
+type CriteriaArgs struct {
+	WriteArgs
+	ID        string `json:"id"`
+	Operation string `json:"operation" jsonschema:"check, uncheck, add, or remove"`
+	Index     int    `json:"index,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Evidence  string `json:"evidence,omitempty"`
+}
+
+func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs) (*mcp.CallToolResult, any, error) {
+	if args.Limit < 0 {
+		return failed[any]("usage", "limit must be nonnegative")
+	}
+	snap, err := engine.LoadReads(ctx, s.cfg, false)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	byRef := make(map[model.Ref]model.Item, len(snap.Query.Items))
+	for _, i := range snap.Query.Items {
+		byRef[i.Ref] = i
+	}
+	items := []model.Item{}
+	for _, ranked := range snap.Ranking.Items {
+		if ranked.Readiness == engine.Ready {
+			if item, ok := byRef[ranked.Ref]; ok {
+				items = append(items, item)
+				if args.Limit > 0 && len(items) >= args.Limit {
+					break
+				}
+			}
+		}
+	}
+	return nil, ItemsResult{items}, nil
+}
+func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryArgs) (*mcp.CallToolResult, any, error) {
+	initial, err := query.Parse(args.Query, query.Options{})
+	if err != nil {
+		return failed[any]("usage", err.Error())
+	}
+	archived, hasIs := false, false
+	for _, term := range initial.Terms {
+		if term.Field == "is" {
+			hasIs = true
+			if !term.Negated {
+				for _, value := range term.Values {
+					if strings.EqualFold(value.Text, "archived") {
+						archived = true
+					}
+				}
+			}
+		}
+	}
+	text := args.Query
+	if !hasIs {
+		text += " is:open"
+	}
+	snap, err := engine.LoadReads(ctx, s.cfg, archived)
+	if err != nil {
+		return failed[any]("unavailable", err.Error())
+	}
+	parsed, err := snap.Parse(text)
+	if err != nil {
+		return failed[any]("usage", err.Error())
+	}
+	items := []model.Item{}
+	for _, i := range snap.Query.Items {
+		if parsed.Match(i, snap.Query, nil) {
+			items = append(items, i)
+		}
+	}
+	snap.Query.Sort(items, parsed.Sort)
+	return nil, ItemsResult{items}, nil
+}
+func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" {
+		return failed[any]("usage", "id is required")
+	}
+	items, err := engine.ReadDetail(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	if len(items) == 0 {
+		return failed[any]("not-found", "item not found: "+args.ID)
+	}
+	if len(items) > 1 {
+		return failed[any]("rejected", "ambiguous item ID: "+args.ID)
+	}
+	return nil, ItemResult{items[0]}, nil
+}
+func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
+	if args.Title == "" {
+		return failed[any]("usage", "title is required")
+	}
+	if args.Version != "" {
+		return failed[any]("conflict", "a new item has no existing version")
+	}
+	status := args.Status
+	if status == "" {
+		for _, v := range s.cfg.Statuses {
+			if v.Category == "todo" {
+				status = v.Key
+				break
+			}
+		}
+	}
+	if status == "" && len(s.cfg.Statuses) > 0 {
+		status = s.cfg.Statuses[0].Key
+	}
+	sourceID := args.Source
+	if sourceID == "" {
+		if len(s.cfg.Sources) != 1 {
+			return failed[any]("usage", "source is required with multiple or no sources")
+		}
+		sourceID = s.cfg.Sources[0].ID
+	}
+	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due}
+	if args.Parent != "" {
+		parent, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: args.Parent})
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+		item.Parent = &parent
+	}
+	for _, ref := range args.BlockedBy {
+		blocked, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: ref})
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+		item.BlockedBy = append(item.BlockedBy, blocked)
+	}
+	for _, c := range args.Criteria {
+		item.Criteria = append(item.Criteria, model.Criterion{Text: c})
+	}
+	if item.Type == "" {
+		item.Type = s.cfg.Defaults.Type
+	}
+	for _, c := range s.cfg.Defaults.DOD {
+		item.DoD = append(item.DoD, model.Criterion{Text: c})
+	}
+	if err := engine.ValidateItem(s.cfg, item); err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	created, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Create, Ref: item.Ref, Item: &item})
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	return nil, ItemResult{created}, nil
+}
+func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args UpdateArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" || (len(args.Fields) == 0 && args.Operation == "") {
+		return failed[any]("usage", "id and fields or operation are required")
+	}
+	item, err := readItem(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	version, err := expected(item, args.Version)
+	if err != nil {
+		return failed[any]("conflict", err.Error())
+	}
+	if args.Operation != "" {
+		if len(args.Fields) != 0 {
+			return failed[any]("usage", "fields and operation cannot be combined")
+		}
+		var op model.Operation
+		section := ""
+		switch args.Operation {
+		case "archive":
+			op = model.Archive
+		case "unarchive":
+			op = model.Unarchive
+		case "replace_section":
+			op = model.ReplaceSection
+			sections := map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}
+			var ok bool
+			section, ok = sections[args.Section]
+			if !ok {
+				return failed[any]("rejected", "section must be description, criteria, dod, plan, notes, or summary")
+			}
+		default:
+			return failed[any]("rejected", "operation must be archive, unarchive, or replace_section")
+		}
+		updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: op, Ref: item.Ref, ExpectedVersion: version, Section: section, Text: args.Text})
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+		return nil, ItemResult{updated}, nil
+	}
+	changes := make([]model.Mutation, 0, len(args.Fields))
+	for field, value := range args.Fields {
+		op := model.Set
+		if strings.HasSuffix(field, "+") {
+			op, field = model.Add, strings.TrimSuffix(field, "+")
+		} else if strings.HasSuffix(field, "-") {
+			op, field = model.Remove, strings.TrimSuffix(field, "-")
+		}
+		if field == "label" {
+			field = "labels"
+		}
+		if field == "assignee" {
+			field = "assignees"
+		}
+		if engine.ListField(field) {
+			values := []string{}
+			switch v := value.(type) {
+			case []any:
+				for _, raw := range v {
+					text, ok := raw.(string)
+					if !ok {
+						return failed[any]("rejected", "list field values must be strings")
+					}
+					values = append(values, text)
+				}
+			case []string:
+				values = v
+			case string:
+				if op == model.Set && v != "" {
+					values = strings.Split(v, ",")
+				} else if op != model.Set {
+					values = []string{v}
+				}
+			default:
+				return failed[any]("rejected", "list field values must be strings")
+			}
+			if op == model.Set {
+				value = values
+			} else {
+				for _, entry := range values {
+					changes = append(changes, model.Mutation{Op: op, Field: field, Value: entry})
+				}
+				continue
+			}
+		}
+		changes = append(changes, model.Mutation{Op: op, Field: field, Value: value})
+	}
+	changes, err = engine.ResolveChanges(ctx, s.cfg, item.Ref.Source, changes)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes})
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	return nil, ItemResult{updated}, nil
+}
+func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args AppendArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" || strings.TrimSpace(args.Text) == "" {
+		return failed[any]("usage", "id and nonempty text are required")
+	}
+	item, err := readItem(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	version, err := expected(item, args.Version)
+	if err != nil {
+		return failed[any]("conflict", err.Error())
+	}
+	m := model.Mutation{Op: model.AppendNote, Text: args.Text}
+	if args.Kind == "comment" {
+		author := args.Author
+		if author == "" {
+			author = s.cfg.Me.Default
+		}
+		if author == "" {
+			return failed[any]("rejected", "comment requires author or me.default")
+		}
+		m = model.Mutation{Op: model.AppendComment, Comment: model.Comment{Author: author, Body: args.Text, Time: time.Now()}}
+	} else if args.Kind != "note" {
+		return failed[any]("rejected", "kind must be note or comment")
+	}
+	updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: []model.Mutation{m}})
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	return nil, ItemResult{updated}, nil
+}
+func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args CriteriaArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" {
+		return failed[any]("usage", "id is required")
+	}
+	item, err := readItem(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	version, err := expected(item, args.Version)
+	if err != nil {
+		return failed[any]("conflict", err.Error())
+	}
+	ops := map[string]model.Operation{"check": model.CheckCriterion, "uncheck": model.UncheckCriterion, "add": model.AddCriterion, "remove": model.RemoveCriterion}
+	op, ok := ops[args.Operation]
+	if !ok {
+		return failed[any]("rejected", "operation must be check, uncheck, add, or remove")
+	}
+	m := model.Mutation{Op: op, Section: "Acceptance criteria", Index: args.Index, Text: args.Text}
+	if op == model.AddCriterion {
+		if strings.TrimSpace(args.Text) == "" || strings.ContainsAny(args.Text, "\r\n") {
+			return failed[any]("usage", "criterion must be nonempty and single-line")
+		}
+	} else if args.Index < 1 {
+		return failed[any]("usage", "criterion index must be positive")
+	}
+	if args.Evidence != "" {
+		if op != model.CheckCriterion || strings.TrimSpace(args.Evidence) == "" || strings.ContainsAny(args.Evidence, "\r\n") {
+			return failed[any]("usage", "evidence requires check and single-line text")
+		}
+		m.Evidence = &args.Evidence
+	}
+	updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: []model.Mutation{m}})
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	return nil, ItemResult{updated}, nil
+}
+
+func readItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
+	matches, err := engine.ReadDetail(ctx, cfg, id)
+	if err != nil {
+		return model.Item{}, err
+	}
+	if len(matches) == 0 {
+		return model.Item{}, source.Refuse("not-found", "item not found: "+id)
+	}
+	if len(matches) > 1 {
+		return model.Item{}, source.Refuse("rejected", "ambiguous item ID: "+id)
+	}
+	return matches[0], nil
+}
+func expected(item model.Item, version string) (string, error) {
+	if version != "" && version != item.Version {
+		return "", fmt.Errorf("expected version does not match current content")
+	}
+	return item.Version, nil
+}
+func ErrorReason(err error) string { return engine.ErrorReason(err) }
+func reason(err error) string      { return engine.ErrorReason(err) }
+func failed[T any](reason, message string) (*mcp.CallToolResult, T, error) {
+	b, _ := json.Marshal(map[string]string{"reason": reason, "message": message})
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, *new(T), nil
+}
+
+// ServeStdio starts the stdio server. Diagnostics must be written to stderr by callers.
+func ServeStdio(ctx context.Context, cfg project.Config) error { return New(cfg).Stdio(ctx) }
+
+func ServeStreams(ctx context.Context, cfg project.Config, in io.Reader, out io.Writer) error {
+	return New(cfg).Streams(ctx, in, out)
+}
