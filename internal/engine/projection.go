@@ -13,11 +13,12 @@ import (
 
 // Row is prepared off the UI loop. Rendering only needs viewport-sized work.
 type Row struct {
-	Ref                    model.Ref
-	Version, Title, Status string
-	Priority               model.Priority
-	Pending                bool
-	Error                  string
+	Ref                                       model.Ref
+	Version, Title, Status                    string
+	Priority                                  model.Priority
+	Pending                                   bool
+	Error                                     string
+	OpenBlockers, ChildrenDone, ChildrenTotal int
 }
 type RowGroup struct {
 	Value string
@@ -153,7 +154,23 @@ func (p *Projector) run() {
 						group := RowGroup{Value: g.Value, Rows: make([]Row, 0, len(g.Items))}
 						for _, i := range g.Items {
 							r := req.snapshot.records[i.Ref]
-							group.Rows = append(group.Rows, Row{Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status, Priority: i.Priority, Pending: r.edit.Pending, Error: r.edit.Error})
+							row := Row{Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status, Priority: i.Priority, Pending: r.edit.Pending, Error: r.edit.Error}
+							closed := func(ref model.Ref) bool {
+								r := req.snapshot.records[ref]
+								return r != nil && (r.item.Category == model.Done || r.item.Category == model.Canceled)
+							}
+							for _, ref := range i.BlockedBy {
+								if !closed(ref) {
+									row.OpenBlockers++
+								}
+							}
+							row.ChildrenTotal = len(i.Children)
+							for _, ref := range i.Children {
+								if closed(ref) {
+									row.ChildrenDone++
+								}
+							}
+							group.Rows = append(group.Rows, row)
 						}
 						result.Groups = append(result.Groups, group)
 					}

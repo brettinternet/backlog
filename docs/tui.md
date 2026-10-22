@@ -2,22 +2,45 @@
 
 **Status:** Draft UX spec. BL-16 through BL-25 implement and refine it. Every key is remappable through user config `keys:`, and this file is the source for the default keymap and help text.
 
-## Bootstrap shell
+## Implemented list shell
 
-The current shell uses Bubble Tea v2, Lip Gloss v2, and the Bubbles v2 help
-component. Bare `bl` opens it only when stdin and stdout are terminals;
-`bl tui` explicitly requires a terminal. It paints an honest empty state,
-resizes to the viewport, toggles help with `?`, closes help with `esc`, and
-quits with `q` or `ctrl-c`. It has no timers, task reads/writes, or source I/O.
-`NO_COLOR` disables styling, and `--high-contrast` (or user
-`ui.highContrast`) uses bold and underline without color.
+Bare `bl` opens the list when stdin and stdout are terminals; `bl tui`
+explicitly requires both. The frame paints a loading state before native
+sources load, then consumes immutable engine projections. Source badges show
+syncing, synced, stale, or error. Rows show ID, priority, raw status, open
+blockers, child progress, title and pending/failed glyphs. Below 80 columns,
+only ID, title and edit glyphs remain. The footer reports the active query and
+pending/failed counts in that projection, including folded rows.
 
-This is a starting point, not the BL-14 performance spike or the BL-16 list
-implementation. The layouts, navigation, and editing below remain planned.
+Next, Active, Mine and All are built-in list tabs, grouped by status. `j`/`k`
+and arrows move by display row (including group headers); counts, `gg`, `G`,
+`NG`, half/full pages, `[`/`]` group jumps and `za` folding work. `gt`/`gT`
+cycle tabs. A digit waits 350 ms to distinguish `1`–`4` view shortcuts from
+count-prefixed motions; `5`–`9` are reserved until more views exist. `R`
+requests a background refresh. `?` toggles help, `esc` cancels help/prefixes,
+and `q`/`ctrl-c` quit. `NO_COLOR` disables styling; `--high-contrast` uses
+bold and underline, never faint text. All external text is sanitized and
+widths use terminal cells.
+
+Detail, editing, custom/saved views, board/tree, key remapping, palette,
+searchable help, mouse and which-key popups below remain planned. They are
+not advertised as available in the shell. Claim columns await BL-32.
+
+Capture a real render without opening a user's pane:
+
+```sh
+task cli:build
+scripts/tui-snapshot --width 80 --height 24 -- bin/bl -C /path/to/native-project tui
+scripts/tui-snapshot --width 160 --height 48 --keys g t g t g t -- bin/bl -C /path/to/native-project tui
+```
+
+The helper owns a private tmux server, waits for a settled render, writes pane
+text to stdout, and shuts down only its own server, including on failure.
 
 ## Engine foundation
 
-The shell is not wired to task data yet (BL-16). `internal/engine.OpenStore`
+The shell uses `OpenProjectStore` to reuse configured native sources.
+`internal/engine.OpenStore`
 provides the background engine: `Current` reads an immutable snapshot in O(1),
 `Subscribe` delivers only the latest snapshot, and `Mutate`, `Undo`, `Redo`, and
 `Refresh` enqueue bounded requests without source I/O on the caller. Full

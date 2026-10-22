@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	urfave "github.com/urfave/cli/v3"
 
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/brettinternet/backlog/internal/tui"
@@ -77,11 +78,29 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err != nil {
 			return err
 		}
+		session, cancel := context.WithCancel(ctx)
+		defer cancel()
+		store, err := engine.OpenProjectStore(session, cfg)
+		if err != nil {
+			return &Error{Reason: "unavailable", Message: err.Error()}
+		}
+		defer store.Close()
+		projector := engine.NewProjector(session, cfg)
+		defer projector.Close()
+		snapshots, unsubscribe := store.Subscribe()
+		defer unsubscribe()
+		sources := make([]string, 0, len(cfg.Sources))
+		for _, s := range cfg.Sources {
+			sources = append(sources, s.ID)
+		}
 		model := tui.New(tui.Options{
+			Context: session, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID,
 			HighContrast: cfg.UI.HighContrast,
 			NoColor:      os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb",
 		})
-		_, err = tea.NewProgram(model, tea.WithContext(ctx), tea.WithInput(in), tea.WithOutput(out)).Run()
+		model.Bind(snapshots)
+		_, err = tea.NewProgram(model, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
+		cancel()
 		if ctx.Err() != nil || errors.Is(err, tea.ErrInterrupted) {
 			return nil
 		}
@@ -126,7 +145,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		},
 		Commands: []*urfave.Command{
 			{Name: "version", Usage: "Print build information", Action: version},
-			{Name: "tui", Usage: "Open the empty TUI shell (requires a terminal)", Action: openTUI},
+			{Name: "tui", Usage: "Browse the backlog (requires a terminal)", Action: openTUI},
 			{Name: "config", Usage: "Inspect layered project settings",
 				Action: func(_ context.Context, _ *urfave.Command) error {
 					return &Error{Reason: "usage", Message: "use bl config show"}

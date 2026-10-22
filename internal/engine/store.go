@@ -55,6 +55,21 @@ type storeState struct {
 	serial      uint64
 }
 
+// OpenProjectStore constructs the configured sources without loading items.
+func OpenProjectStore(ctx context.Context, cfg project.Config) (*Store, error) {
+	registry := source.Registry{}
+	for _, configured := range cfg.Sources {
+		backend, err := readSource(cfg, configured)
+		if err != nil {
+			return nil, err
+		}
+		if err := registry.Register(backend); err != nil {
+			return nil, err
+		}
+	}
+	return OpenStore(ctx, cfg, registry), nil
+}
+
 func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry) *Store {
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}

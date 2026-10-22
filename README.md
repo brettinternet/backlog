@@ -21,7 +21,7 @@
 - **Many backends.** Native files first, then Backlog.md, Beads, GitHub Issues, Linear, Jira Cloud, and external adapters.
 - **Composable.** Hooks, actions, and an event stream connect it to [Worklease](https://github.com/brettinternet/worklease) claims and to any other tool.
 
-## Try the bootstrap
+## Try the list shell
 
 ```sh
 mise install
@@ -30,12 +30,14 @@ task cli:build
 bin/bl --help
 bin/bl --json version
 bin/bl config show
-bin/bl                     # empty TUI shell; ? help, q quit
+bin/bl                     # native list; j/k move, gt next view, ? help, q quit
 task ci
 ```
 
-The tooling, CLI entry point, project discovery, layered settings, and Bubble Tea v2 shell work.
-Task storage, queries, and edits are still planned—not implemented.
+Native task storage, CLI queries/edits, caching and the live Bubble Tea v2 list work.
+The list has Next/Active/Mine/All tabs, counts, page/group navigation and folds;
+source loading and projection stay off the input loop. Detail, TUI editing,
+board/tree and saved views remain planned. See [TUI](docs/tui.md) for shipped keys.
 Bare `bl` prints help when stdin or stdout is not a terminal. `bl tui` requires both.
 
 User settings live at `$XDG_CONFIG_HOME/backlog/config.yaml` (default
@@ -65,7 +67,7 @@ while loading configuration. Trust grants and diagnostics remain BL-29 work.
 `details`. Usage errors exit 2; see [the exit-code contract](docs/design.md#7-agent-interface)
 for all stable reasons and codes.
 
-The product sketch and capabilities above describe the target, not this bootstrap.
+The product sketch above describes the target; only the features noted here are implemented.
 
 ## Docs
 
