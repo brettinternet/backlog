@@ -415,8 +415,12 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			continue
 		}
 		if !exists || r.Identity != identity {
-			if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
-				return Snapshot{}, err
+			// path is UNINDEXED in FTS5. A new record has no search row to remove;
+			// scanning all preceding rows for every insert makes cold loads O(N²).
+			if exists {
+				if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
+					return Snapshot{}, err
+				}
 			}
 			if _, err = tx.ExecContext(ctx, `INSERT INTO search(path,text) VALUES(?,?)`, path, strings.ToLower(query.SearchText(item))); err != nil {
 				return Snapshot{}, err

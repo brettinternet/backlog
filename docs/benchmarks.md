@@ -1,4 +1,4 @@
-# CLI benchmarks
+# Benchmarks
 
 ## Reference host and reproduction
 
@@ -183,3 +183,112 @@ file-change visibility and idle-soak budgets are not claimed by this CLI
 harness; BL-14 and BL-25 cover those interfaces when implemented. CLI RSS is
 measured here; TUI RSS still needs its own measurement. BL-12 establishes the
 measurement and records misses rather than declaring the runtime budgets met.
+
+## Production TUI qualification (BL-25)
+
+The opt-in `TestProductionMeasurements` and `TestProductionSoak` harnesses use
+BL-12 seed-1 native files, the production project store, directory watcher,
+projector and TUI `Model`, and BL-14's real PTY/emulator at 120×40 and 120 FPS.
+They do not measure the spike's synthetic `List`. A measurement-only header
+replaces one screen row to expose completed projections and cursor positions;
+it does not add a row, change the input path, or render details synchronously.
+The child applies the production 300 MiB soft Go memory target unless the caller
+sets `GOMEMLIMIT`. HOME and XDG paths are isolated from user data.
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$' -v -count=1 -timeout=90m
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestShellMeasurement$' -v -count=1
+BL_TUI_PERF_SOAK=1h task cli:test PKG=./internal/tui -- -run '^TestProductionSoak$' -v -count=1 -timeout=75m
+```
+
+First-paint samples include test-child process launch, configuration and store
+construction. Cold samples use a fresh application cache, not a purged OS page
+cache; warm samples reuse a populated cache. Both initial shell and completed
+list latencies are reported, so a fast loading screen cannot conceal slow data
+availability. Startup has 20 samples per condition at 10k (the budgeted size).
+Navigation has 100
+PTY samples; in-process Update+View uses the existing shell fixture with
+2,000 samples over 50,001 prepared rows (three groups), without file I/O.
+Filter samples measure one final query keystroke through a completed projection
+and PTY frame, not editor echo; there are 20 samples at each size. The external
+change samples measure atomic rename through visible title replacement (20 at
+10k), conservatively including notification delivery. Held navigation sends
+200 `j` inputs on a 25 ms ticker and measures release to the final cursor frame.
+All timings are report-only, never default CI thresholds.
+
+The one-hour idle interval starts after native data and a projection have
+arrived, followed by a 10-second warmup. CPU is process user+system time;
+goroutines and live heap are sampled after GC at both endpoints. Diagnostics
+go to an out-of-band file, not the terminal. A real key and observed PTY cursor
+change after the interval prove continued input/output responsiveness. RSS is
+per-child process high-water RSS, including load, projection and interaction,
+not the parent fixture generator's memory. Darwin bytes and Linux KiB are
+converted to MiB. Cold cache population and other host activity can affect
+results; record these conditions rather than treating a synthetic core result
+as full-application acceptance.
+
+### Reference results
+
+2026-10-22, D26 host: Apple M5 Max, 64 GiB RAM, Darwin 27.0.0 arm64,
+Go 1.27.3, default `GOMAXPROCS=18`, runtime baseline `18b2ca5` plus this
+harness and the cold-cache fix below. Other repository work and the idle-soak
+child ran on the same host; these are observed reference-host results, not
+isolated-host claims. The final full measurement passed in 93.149 s. The
+startup and interaction portions can also be reproduced separately:
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/10000/startup$' -v -count=1 -timeout=45m
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/(10000|50000)/interaction$' -v -count=1 -timeout=30m
+```
+
+| TUI operation | Reference result | Budget / observation |
+| --- | --- | --- |
+| Warm first paint, 10k | Initial shell p95 26.84 ms; completed list p95 193.17 ms | ≤ 100 ms: meaningful list misses; [BL-54](../backlog/BL-54.md) |
+| Cold first paint, 10k | Initial shell p95 25.47 ms; completed list p95 2,239.06 ms | ≤ 400 ms: shell paints before load, meaningful list misses; [BL-54](../backlog/BL-54.md) |
+| Navigation Update+View, 50k | p95 0.109 ms, n=2,000 | ≤ 4 ms: passes |
+| Navigation key-to-PTY, 50k | p95 34.92 ms, n=100 | ≤ 16 ms: misses; [BL-55](../backlog/BL-55.md) |
+| Navigation key-to-PTY, 10k | p95 8.99 ms, n=100 | Baseline; §11's PTY budget applies at 50k |
+| Held `j`, 10k, 40 Hz for 5 s | 200 keys in 5.001 s; final selection observed 7.77 ms after release | One 120 FPS frame = 8.33 ms: passes |
+| Filter single keystroke-to-PTY, 10k / 50k | p95 9.28 / 158.09 ms, n=20 each | ≤ 30 / 80 ms: 10k passes, 50k misses; [BL-56](../backlog/BL-56.md) |
+| External atomic rename-to-visible, 10k | p95 258.27 ms, n=20 | ≤ 150 ms: conservative end-to-end miss; [BL-57](../backlog/BL-57.md) |
+| Peak TUI RSS, 10k / 50k | 295.56 / 688.19 MiB | ≤ 150 / 400 MiB: both miss; [BL-58](../backlog/BL-58.md) |
+| One-hour idle, 10k | 69.760774 CPU s over 3,600.006 wall s; goroutines 21 → 21; post-GC heap 74,544,840 → 74,545,920 B; post-soak PTY input 7.87 ms | Heap (+1,080 B), goroutines and input are stable; CPU 1.94% of one core passes the owner-approved ≤ 2% limit (D26); no host normalization |
+
+The owner approved the five linked measurement follow-ups above. BL-25 qualifies
+the measurements and fixes the quadratic cold-cache work; it does not claim
+that the remaining startup, PTY, filter, update or RSS budgets pass.
+
+The held-key run explicitly changes from the short default Next view to all
+10,000 items before sending keys: hitting the end of a 188-row ready view would
+not measure input backlog. Every key is received through Bubble Tea's real PTY
+input parser, and the final observed cursor is 200, not a timer-only assertion.
+Cold cache population is included in completed-list time. A loading screen is
+not reported as proof of usable backlog availability. The complete-list warm
+miss and directory-change miss also cannot be inferred from the much faster
+in-process viewport-only benchmark.
+
+### Cold-cache correction
+
+The original 10k cold completed-list p95 was 62,859.37 ms; the 50k initial
+population was still running after 15 minutes. FTS5 stores `path UNINDEXED`,
+but cache refresh deleted by path even for each **new** record before inserting
+it. Each pointless deletion scanned all preceding search rows, making cold
+population quadratic. New records now insert directly; changed existing records
+still delete their previous search text in the same transaction. Cache version,
+stat validation, query parity and atomic commit semantics are unchanged.
+Existing native cache regression tests pass without modifications.
+
+The final 10k cold completed-list p95 is 2,239.06 ms (20 samples). Initial cold
+population plus first list at 50k completed in 12.98 s (one observation, not a
+p95 or a separate startup-budget pass). Warm list availability and the other
+misses above remain real; this correction does not declare them solved.
+
+The one-hour soak ran on the pre-correction binary. Its warm unchanged-cache
+path is unaffected by skipping deletes for new cache entries. The 10k native
+watcher's specified two-second in-place-edit stat sweep accounts for recurring
+background work. The owner clarified “about 0%” as ≤ 2% of one core at 10k,
+retaining that two-second sweep; D26 and §11 record this decision. The numeric
+CPU result is not relabeled as zero or hidden behind host-wide normalization.
+A discarded Darwin bulk-metadata prototype reduced a short observation to about
+1% of one core but did not justify adding unsafe platform ABI parsing; the
+existing watcher remains unchanged.
