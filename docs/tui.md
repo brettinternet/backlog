@@ -328,7 +328,8 @@ The editor runs via Bubble Tea's terminal-suspending process command. Before
 writing, it checks the version open when editing started. A conflict offers `y`
 keep yours (retry against a freshly checked version), `t` keep theirs, or `r`
 reopen with both versions in conflict markers. Invalid native frontmatter after
-`E` offers `r` reopen or `d` discard. No conflict choice writes unchecked.
+`E`, or a buffer that still has `<<<<<<< yours`/`>>>>>>> theirs` marker lines,
+offers `r` reopen or `d` discard; markers are never written to an item. No conflict choice writes unchecked.
 
 ## State
 

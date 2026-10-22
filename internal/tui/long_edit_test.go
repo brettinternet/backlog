@@ -122,6 +122,20 @@ func TestEditorConflictChoicesAndInvalidFrontmatter(t *testing.T) {
 				if prepared.state.version != current.Version {
 					t.Fatal("reopen is not bound to the current version")
 				}
+				// Quitting with the markers unresolved must neither write them nor
+				// delete the only copy of "yours".
+				m.longEdit = prepared.state
+				_, cmd := m.editorFinished(editFinishedMsg{})
+				m = cmd().(editSavedMsg).applyTo(m)
+				if m.longEdit.choice != "invalid" {
+					t.Fatal("unresolved conflict markers were accepted")
+				}
+				if _, err := os.Stat(buffer); err != nil {
+					t.Fatalf("buffer with yours was removed: %v", err)
+				}
+				if data, _ := os.ReadFile(path); strings.Contains(string(data), "<<<<<<<") {
+					t.Fatal("conflict markers written to the item")
+				}
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {

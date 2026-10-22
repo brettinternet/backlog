@@ -181,6 +181,11 @@ func (m Model) editorFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return editSavedMsg{err: err}
 		}
+		// After "reopen with both" the buffer must be resolved before any write;
+		// otherwise markers would land in the item or quitting would drop yours.
+		if hasConflictMarkers(yours) {
+			return editSavedMsg{err: fmt.Errorf("unresolved conflict markers"), invalid: true}
+		}
 		if bytes.Equal(yours, state.original) {
 			return editSavedMsg{}
 		}
@@ -215,6 +220,15 @@ func (m Model) editorFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
 			return editSavedMsg{err: ctx.Err()}
 		}
 	}
+}
+func hasConflictMarkers(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "<<<<<<< yours" || line == ">>>>>>> theirs" {
+			return true
+		}
+	}
+	return false
 }
 func longMutation(state longEditState, yours []byte, author string) model.Mutation {
 	mutation := model.Mutation{Ref: state.ref, ExpectedVersion: state.version}
@@ -364,7 +378,7 @@ func (m *Model) updateLongEdit(key string) tea.Cmd {
 func (m Model) longEditView() tea.View {
 	message := "Item changed while editing · y keep yours · t keep theirs · r reopen with both · esc keep theirs"
 	if m.longEdit.choice == "invalid" {
-		message = "Invalid frontmatter: " + textutil.Line(m.notice) + " · r reopen · d discard"
+		message = "Invalid edit: " + textutil.Line(m.notice) + " · r reopen · d discard"
 	}
 	lines := []string{"backlog · " + textutil.Line(m.opts.Project), message}
 	for len(lines) < m.height {
