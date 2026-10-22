@@ -1,0 +1,112 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
+	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/native"
+)
+
+// ReadSnapshot is the read-only composition used by command adapters.
+type ReadSnapshot struct {
+	Query   query.Snapshot
+	Ranking Result
+}
+
+func LoadReads(ctx context.Context, cfg project.Config) (ReadSnapshot, error) {
+	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
+	if cfg.Me.Default != "" {
+		s.Query.Me = []string{cfg.Me.Default}
+	}
+	for _, c := range cfg.Sources {
+		backend, err := readSource(cfg, c)
+		if err != nil {
+			return s, err
+		}
+		delta, err := backend.Load(ctx, source.Cursor{})
+		if err != nil {
+			return s, err
+		}
+		if delta.Coverage != source.Complete {
+			return s, fmt.Errorf("source %s has incomplete coverage: %v", c.ID, delta.Findings)
+		}
+		s.Query.Items = append(s.Query.Items, delta.Items...)
+	}
+	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me})
+	for _, e := range s.Ranking.Items {
+		s.Query.Next = append(s.Query.Next, e.Ref)
+		s.Query.States[e.Ref] = query.State{Readiness: string(e.Readiness)}
+	}
+	return s, nil
+}
+
+func readSource(cfg project.Config, c project.SourceConfig) (*native.Source, error) {
+	if c.Type != "native" {
+		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)
+	}
+	statuses := map[string]model.StatusCategory{}
+	for _, v := range cfg.Statuses {
+		statuses[v.Key] = model.StatusCategory(v.Category)
+	}
+	path := c.Path
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(cfg.Discovery.ControlRoot, path)
+	}
+	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses})
+}
+
+// ReadDetail resolves shorthand without parsing or ranking the entire backlog.
+// It returns every match instead of guessing and includes explicitly named archives.
+func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.Item, error) {
+	sourceID, id, qualified := strings.Cut(value, ":")
+	if !qualified {
+		id = value
+	}
+	numeric := id != ""
+	for _, c := range id {
+		numeric = numeric && c >= '0' && c <= '9'
+	}
+	matches := []model.Item{}
+	for _, c := range cfg.Sources {
+		if qualified && sourceID != c.ID {
+			continue
+		}
+		backend, err := readSource(cfg, c)
+		if err != nil {
+			return nil, err
+		}
+		requested := id
+		if numeric {
+			requested = c.Prefix + "-" + id
+		}
+		item, err := backend.Read(ctx, requested)
+		if err != nil {
+			var refusal *source.Error
+			if errors.As(err, &refusal) && (refusal.Reason == "not-found" || refusal.Reason == "invalid-id") {
+				continue
+			}
+			return nil, err
+		}
+		matches = append(matches, item)
+	}
+	return matches, nil
+}
+
+func (s ReadSnapshot) Parse(text string) (query.Query, error) {
+	q, err := query.Parse(text, query.Options{})
+	if err != nil {
+		return q, err
+	}
+	if errs := q.Validate(s.Query); len(errs) > 0 {
+		return q, errs[0]
+	}
+	return q, nil
+}

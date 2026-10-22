@@ -4,8 +4,8 @@ package model
 import "time"
 
 type Ref struct {
-	Source string
-	ID     string
+	Source string `json:"source"`
+	ID     string `json:"id"`
 }
 type StatusCategory string
 

@@ -1,0 +1,41 @@
+{
+  "groups": [
+    {
+      "items": [
+        {
+          "category": "todo",
+          "id": "BL-012",
+          "priority": "high",
+          "source": "tasks",
+          "status": "todo",
+          "title": "Ready",
+          "version": "8640e6d4db6ac379496716c5e180e4e171cc400ce5641547eaa5bf102ce0947c"
+        },
+        {
+          "category": "todo",
+          "id": "BL-13",
+          "priority": "",
+          "source": "tasks",
+          "status": "todo",
+          "title": "Blocked",
+          "version": "2175772dd183aee4b661a8a1c0666ff8b3d6fd39d1e97b85c6dad4e0e8b0268d"
+        }
+      ],
+      "value": "todo"
+    },
+    {
+      "items": [
+        {
+          "category": "done",
+          "id": "BL-14",
+          "priority": "",
+          "source": "tasks",
+          "status": "done",
+          "title": "Finished",
+          "version": "3e488b439047e3144077fbe75b7ea911acf70f9a1e8b047e4a67ff1a3286b3ac"
+        }
+      ],
+      "value": "done"
+    }
+  ]
+}

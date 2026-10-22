@@ -1,0 +1,75 @@
+{
+  "explanations": [
+    {
+      "included": true,
+      "priority": "high",
+      "readiness": "ready",
+      "reasons": [
+        {
+          "code": "candidate"
+        }
+      ],
+      "ref": {
+        "id": "BL-012",
+        "source": "tasks"
+      },
+      "unblockImpact": 1,
+      "unblocks": [
+        {
+          "id": "BL-13",
+          "source": "tasks"
+        }
+      ]
+    },
+    {
+      "included": false,
+      "priority": "",
+      "readiness": "blocked",
+      "reasons": [
+        {
+          "code": "blocker",
+          "refs": [
+            {
+              "id": "BL-012",
+              "source": "tasks"
+            }
+          ]
+        }
+      ],
+      "ref": {
+        "id": "BL-13",
+        "source": "tasks"
+      },
+      "unblockImpact": 0
+    },
+    {
+      "included": false,
+      "priority": "",
+      "readiness": "ineligible",
+      "reasons": [
+        {
+          "code": "status",
+          "values": [
+            "done"
+          ]
+        }
+      ],
+      "ref": {
+        "id": "BL-14",
+        "source": "tasks"
+      },
+      "unblockImpact": 0
+    }
+  ],
+  "items": [
+    {
+      "category": "todo",
+      "id": "BL-012",
+      "priority": "high",
+      "source": "tasks",
+      "status": "todo",
+      "title": "Ready",
+      "version": "8640e6d4db6ac379496716c5e180e4e171cc400ce5641547eaa5bf102ce0947c"
+    }
+  ]
+}

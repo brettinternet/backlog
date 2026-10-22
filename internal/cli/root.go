@@ -18,6 +18,7 @@ import (
 	urfave "github.com/urfave/cli/v3"
 
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/brettinternet/backlog/internal/tui"
 )
 
@@ -88,7 +89,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	}
 	root := &urfave.Command{
 		Name: "bl", Usage: "A terminal backlog for people and coding agents",
-		Description: "Bootstrap build: configuration and an empty TUI shell. Task operations are not implemented yet.\nWithout a command, open the TUI on a terminal; otherwise print help.",
+		Description: "Read items with ls, show, and next.\nWithout a command, open the TUI on a terminal; otherwise print help.",
 		Reader:      in, Writer: out, ErrWriter: errOut,
 		ExitErrHandler: func(context.Context, *urfave.Command, error) {},
 		Flags: []urfave.Flag{
@@ -134,6 +135,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			},
 		},
 	}
+	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	_ = root.Walk(func(cmd *urfave.Command) error {
 		cmd.OnUsageError = func(_ context.Context, selected *urfave.Command, err error, _ bool) error {
 			command = commandName(selected)
@@ -143,7 +145,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if action != nil {
 			cmd.Action = func(ctx context.Context, selected *urfave.Command) error {
 				command = commandName(selected)
-				if selected.Args().Present() {
+				if selected.Args().Present() && selected.Name != "ls" && selected.Name != "show" && selected.Name != "next" {
 					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
 				}
 				return action(ctx, selected)
@@ -162,7 +164,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				return 1
 			}
 		} else {
-			fmt.Fprintf(errOut, "bl: %s\n", failure.Message)
+			fmt.Fprintf(errOut, "bl: %s\n", textutil.Line(failure.Message))
 			if failure.Reason == "usage" {
 				fmt.Fprintln(errOut, "Run bl --help for usage.")
 			}
@@ -211,7 +213,7 @@ func jsonRequested(args []string) bool {
 			break
 		}
 		name, raw, hasValue := strings.Cut(arg, "=")
-		if (name == "-C" || name == "--C") && !hasValue {
+		if (name == "-C" || name == "--C" || name == "--section" || name == "--view" || name == "--sort" || name == "--group" || name == "-n" || name == "--n") && !hasValue {
 			i++
 			continue
 		}

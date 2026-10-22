@@ -1,0 +1,47 @@
+{
+  "item": {
+    "category": "todo",
+    "id": "BL-012",
+    "priority": "high",
+    "source": "tasks",
+    "status": "todo",
+    "title": "Ready",
+    "version": "8640e6d4db6ac379496716c5e180e4e171cc400ce5641547eaa5bf102ce0947c"
+  },
+  "metadata": {
+    "assignees": null,
+    "blockedBy": [],
+    "blocks": [],
+    "children": [],
+    "created": "2026-10-21T00:00:00Z",
+    "due": "",
+    "duplicateOf": "",
+    "fields": {
+      "created": "2026-10-21T00:00:00Z",
+      "id": "BL-012",
+      "priority": "high",
+      "status": "todo",
+      "title": "Ready",
+      "updated": "2026-10-21T00:00:00Z"
+    },
+    "files": null,
+    "labels": null,
+    "milestone": "",
+    "parent": "",
+    "rank": "",
+    "refs": null,
+    "related": [],
+    "type": "",
+    "updated": "2026-10-21T00:00:00Z",
+    "url": ""
+  },
+  "sections": {
+    "comments": "",
+    "criteria": "- [ ] Works",
+    "description": "Body.",
+    "dod": "",
+    "notes": "",
+    "plan": "",
+    "summary": ""
+  }
+}
