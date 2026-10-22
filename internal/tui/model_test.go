@@ -214,6 +214,27 @@ func TestShellStalePreparation(t *testing.T) {
 	}
 }
 
+// Catches a watcher or R refresh unfolding groups or moving the cursor onto a
+// different item when rows above it change.
+func TestShellLiveProjectionKeepsFoldsAndSelection(t *testing.T) {
+	t.Parallel()
+	m := send(shellFixture(3), "]", "z", "a")
+	next, _ := m.Update(m.prepare()())
+	m = send(next.(Model), "]", "j", "j")
+	want := m.data.rows[m.selected].row.Ref
+	groups := slices.Clone(m.groups)
+	groups[0].Rows = groups[0].Rows[1:]
+	next, _ = m.Update(projectionMsg(engine.Projection{Request: m.request, Groups: groups}))
+	next, _ = next.(Model).Update(next.(Model).prepare()())
+	m = next.(Model)
+	if len(m.data.rows) != 8 {
+		t.Fatalf("rows %d: fold lost on refresh", len(m.data.rows))
+	}
+	if got := m.data.rows[m.selected].row.Ref; got != want {
+		t.Fatalf("selection moved to %v, want %v", got, want)
+	}
+}
+
 func BenchmarkShellNavigation50k(b *testing.B) {
 	m := shellFixture(16667)
 	b.ResetTimer()

@@ -15,7 +15,8 @@ pending/failed counts in that projection, including folded rows.
 Next, Active, Mine and All are built-in list tabs, grouped by status. `j`/`k`
 and arrows move by display row (including group headers); counts, `gg`, `G`,
 `NG`, half/full pages, `[`/`]` group jumps and `za` folding work. `gt`/`gT`
-cycle tabs. A digit waits 350 ms to distinguish `1`–`4` view shortcuts from
+cycle tabs. Live refreshes keep folds and keep the cursor on the same item or
+group header; switching tabs starts at the top unfolded. A digit waits 350 ms to distinguish `1`–`4` view shortcuts from
 count-prefixed motions; `5`–`9` are reserved until more views exist. `R`
 requests a background refresh. `?` toggles help. `NO_COLOR` disables styling;
 `--high-contrast` uses bold and underline, never faint text. All external text

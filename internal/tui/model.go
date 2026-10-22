@@ -33,6 +33,7 @@ type Options struct {
 type screenRow struct {
 	row    engine.Row
 	group  int
+	value  string // group value; folds and selection survive live projections
 	header string
 }
 type prepared struct {
@@ -48,12 +49,15 @@ type projectionMsg engine.Projection
 type foldedMsg struct {
 	serial uint64
 	data   prepared
+	// selected is the anchor's new index, or -1. It applies only while the
+	// cursor still sits at from, so moves made during preparation win.
+	selected, from int
 }
 type viewDue uint64
 
 // Immutable fold requests avoid copying a backlog-sized map on Update.
 type foldState struct {
-	group    int
+	group    string
 	previous *foldState
 }
 
@@ -240,24 +244,38 @@ func (m *Model) submitDetail() {
 // Flattening and folding are commands: even a single giant group cannot put
 // backlog-sized work on Update. Each result is fenced by the model's serial.
 func (m Model) prepare() tea.Cmd {
-	groups, folded, serial := m.groups, m.folded, m.serial
+	groups, folded, serial, from := m.groups, m.folded, m.serial, m.selected
+	var anchor screenRow
+	if m.loading || from >= len(m.data.rows) {
+		from = -1 // a new view starts at the top
+	} else {
+		anchor = m.data.rows[from]
+	}
 	return func() tea.Msg {
-		states := map[int]bool{}
+		states := map[string]bool{}
 		for f := folded; f != nil; f = f.previous {
 			states[f.group] = !states[f.group]
 		}
-		return foldedMsg{serial, prepareRows(groups, states)}
+		data := prepareRows(groups, states)
+		selected := -1
+		for i, r := range data.rows {
+			if r.value == anchor.value && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "") {
+				selected = i
+				break
+			}
+		}
+		return foldedMsg{serial, data, selected, from}
 	}
 }
-func prepareRows(groups []engine.RowGroup, folded map[int]bool) prepared {
+func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
 	p := prepared{}
 	for g, group := range groups {
 		p.starts = append(p.starts, len(p.rows))
 		glyph := "▾"
-		if folded[g] {
+		if folded[group.Value] {
 			glyph = "▸"
 		}
-		p.rows = append(p.rows, screenRow{group: g, header: fmt.Sprintf("%s %s (%d)", glyph, textutil.Line(group.Value), len(group.Rows))})
+		p.rows = append(p.rows, screenRow{group: g, value: group.Value, header: fmt.Sprintf("%s %s (%d)", glyph, textutil.Line(group.Value), len(group.Rows))})
 		for _, row := range group.Rows {
 			if row.Pending {
 				p.pending++
@@ -265,8 +283,8 @@ func prepareRows(groups []engine.RowGroup, folded map[int]bool) prepared {
 			if row.Error != "" {
 				p.failed++
 			}
-			if !folded[g] {
-				p.rows = append(p.rows, screenRow{row: row, group: g})
+			if !folded[group.Value] {
+				p.rows = append(p.rows, screenRow{row: row, group: g, value: group.Value})
 			}
 		}
 	}
@@ -286,6 +304,7 @@ func (m *Model) switchView(n int) {
 	m.selected = 0
 	m.top = 0
 	m.loading = true
+	m.folded = nil
 	m.project()
 }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -312,7 +331,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.failure = ""
 		m.groups = msg.Groups
 		m.serial++
-		m.folded = nil
 		return m, tea.Batch(m.prepare(), m.waitProjection())
 	case foldedMsg:
 		if msg.serial != m.serial {
@@ -320,6 +338,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.data = msg.data
 		m.loading = false
+		if msg.selected >= 0 && m.selected == msg.from {
+			m.selected = msg.selected
+		}
 		m.selected = max(0, min(m.selected, len(m.data.rows)-1))
 		if m.detailOpen && identityForSelected(m) != m.detailIdentity {
 			return m, m.scheduleDetail()
@@ -468,10 +489,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switchView((m.view + len(viewNames) - 1) % len(viewNames))
 		case prefix == "z" && s == "a":
 			if len(m.data.rows) > 0 {
-				g := m.data.rows[m.selected].group
-				m.folded = &foldState{group: g, previous: m.folded}
+				r := m.data.rows[m.selected]
+				m.folded = &foldState{group: r.value, previous: m.folded}
 				m.serial++
-				m.selected = m.data.starts[g]
+				m.selected = m.data.starts[r.group]
 				return m, m.prepare()
 			}
 		case s == "g" || s == "z":

@@ -5,9 +5,10 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 13:34'
+updated_date: '2026-10-22 13:41'
 labels:
   - tui
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-14
@@ -89,6 +90,8 @@ AC#4: task cli:test PKG=./internal/tui -- -run TestShellRendering -count=1 passe
 AC#5: task cli:test PKG=./internal/tui -- -run TestShellRendering -count=1 passed: 79-column golden hides secondary columns, 80/160 show them, every row has the expected terminal-cell width with sanitized CJK/emoji titles.
 
 Delivery: implementation aaa87fc merged into main as d2bd4b5, preserving concurrent BL-15 fixes. task check:staged passed before the implementation commit; task ci passed on aaa87fc and again on integrated d2bd4b5 (security, static checks, all tests, race detector, smoke). Independent verifier aba2be7a and targeted evidence recheck ecb56693 returned overall PASS for all five criteria; no concrete source defects. Identical no-key 160x48 capture reproduced byte-for-byte. No tests deleted/skipped/weakened; added model/golden/live-refresh regressions only. Worktrunk receipt matched this session and checkout; merged checkout and local branch removed, associated Herdr workspace wJF closed by post-remove hook. Temporary /tmp/bl-16-evidence.WKuf19 retained as render evidence, no owned checkout/workspace retained. No push or PR. No blocker or remaining BL-16 work.
+
+Review: live projections (watcher, R, other sessions' edits) reset folds and kept selection by index, so the cursor jumped to a different item. Fixed in 0b5710a: folds keyed by group value persist within a view; selection re-anchors to the same item/header off-loop. Regression TestShellLiveProjectionKeepsFoldsAndSelection; task ci passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
