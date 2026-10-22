@@ -2,6 +2,7 @@ package query
 
 import (
 	"cmp"
+	"context"
 	"slices"
 	"strings"
 
@@ -11,19 +12,39 @@ import (
 // Project filters, sorts, and groups a snapshot without mutating it. Call it on
 // a projection worker, never on a UI update loop. Validate before calling.
 func (q Query) Project(s Snapshot, event *Event) []Group {
+	groups, _ := q.ProjectContext(context.Background(), s, event)
+	return groups
+}
+
+// ProjectContext cooperatively cancels filtering, sorting and grouping. A
+// canceled projection never returns partially prepared rows.
+func (q Query) ProjectContext(ctx context.Context, s Snapshot, event *Event) ([]Group, error) {
 	items := make([]model.Item, 0, len(s.Items))
-	for _, i := range s.Items {
+	for n, i := range s.Items {
+		if n%256 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if q.Match(i, s, event) {
 			items = append(items, i)
 		}
 	}
-	s.Sort(items, q.Sort)
-	return s.Group(items, q.Group)
+	s.sortContext(ctx, items, q.Sort)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	groups := s.groupContext(ctx, items, q.Group)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return groups, nil
 }
 
 // Sort orders the supplied slice in place. The engine-provided next order is
 // always the final tie-break before natural ID and source identity.
 func (s Snapshot) Sort(items []model.Item, keys []SortKey) {
+	s.sortContext(context.Background(), items, keys)
+}
+func (s Snapshot) sortContext(ctx context.Context, items []model.Item, keys []SortKey) {
 	next := make(map[model.Ref]int, len(s.Next))
 	for n, r := range s.Next {
 		next[r] = n
@@ -43,6 +64,9 @@ func (s Snapshot) Sort(items []model.Item, keys []SortKey) {
 		return 0
 	}
 	slices.SortFunc(items, func(a, b model.Item) int {
+		if ctx.Err() != nil {
+			return 0
+		}
 		for _, key := range keys {
 			c := 0
 			switch key.Field {
@@ -102,11 +126,17 @@ type Group struct {
 // Group preserves input order within each group. An empty group value denotes
 // an unset field (not the literal value "none"). Empty groups are not emitted.
 func (s Snapshot) Group(items []model.Item, key string) []Group {
+	return s.groupContext(context.Background(), items, key)
+}
+func (s Snapshot) groupContext(ctx context.Context, items []model.Item, key string) []Group {
 	if key == "" || key == "none" {
 		return []Group{{Items: slices.Clone(items)}}
 	}
 	groups := map[string][]model.Item{}
-	for _, i := range items {
+	for n, i := range items {
+		if n%256 == 0 && ctx.Err() != nil {
+			return nil
+		}
 		var values []string
 		switch key {
 		case "status":

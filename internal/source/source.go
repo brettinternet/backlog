@@ -44,7 +44,17 @@ type Source interface {
 	Apply(context.Context, model.Mutation) (model.Item, error)
 }
 
-// Watch is optional and will be implemented by backends that support signals.
+// Prepared holds an optimistic result and a version-bound inverse. Native
+// sources derive it from the lossless document, not a reserialized Item.
+type Prepared struct {
+	Item    model.Item
+	Inverse model.Mutation
+}
+type Preparer interface {
+	Prepare(context.Context, model.Mutation) (Prepared, error)
+}
+
+// Watch is optional and implemented by backends that support signals.
 type Watcher interface {
 	Watch(context.Context, func()) error
 }
