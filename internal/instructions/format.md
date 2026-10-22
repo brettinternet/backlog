@@ -17,6 +17,10 @@ bl new "Example !h #cli :feature" --ac "Observable result" --json
 bl check --json
 ```
 
+Create work nobody should pick up yet with `bl new TITLE --status draft --json`
+when the project configures a draft status. Drafts are open but never ready, so
+next never returns them.
+
 Writes are minimal-diff and atomic under a shared lock. Never overwrite a
 conflict without rereading. Conflict markers fail parsing. Use
 `bl check --fix --json` only for supported repairs: filename mismatch when the

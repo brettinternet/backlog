@@ -110,10 +110,11 @@ task bench -- -bench 'BenchmarkCLI/(10000|50000)/(ls|next|show|write)$'
 ```
 
 The run passed in 1,236.889 s with 20 measured subprocess samples per operation.
-All four CLI rows below use this final rerun; the in-process load rows retain
-the original full-run measurements. CLI peak RSS meets both §11 budgets.
-The 10k warm `ls`/`next` latency budgets remain met. Single-field writes miss
-50 ms at both sizes in this run; BL-50 remains responsible for that budget.
+The `ls`, `next` and `show` rows below use this final rerun; the in-process load
+rows retain the original full-run measurements. CLI peak RSS meets both §11
+budgets. The 10k warm `ls`/`next` latency budgets remain met. This run predates
+integration of BL-50: writes measured 95.06/380.1 ms and 31.05/42.30 MiB at
+10k/50k. The write row below retains BL-50's passing measurements.
 
 The cache now encodes bounded batches of 128 items rather than one whole-source
 gob payload, avoiding simultaneous full-size encoded and decoded snapshots.
@@ -131,6 +132,28 @@ live data requires it. An explicit standard `GOMEMLIMIT` setting takes
 precedence, including `GOMEMLIMIT=off`; the measurements above use the shipped
 default, not benchmark-only environment tuning. Timing remains report-only.
 
+BL-50 focused rerun on 2026-10-22 on the same D26 reference host and toolchain:
+
+```sh
+task bench -- -bench 'BenchmarkCLI/(10000|50000)/write$'
+```
+
+The run passed in 13.361 s, with 20 measured production subprocess samples per
+size: 10k write p95 29.05 ms and peak RSS 23.52 MiB; 50k p95 42.02 ms and peak
+RSS 26.75 MiB. Both single-field write budgets pass. A same-host pre-change
+rerun measured 84.86 ms at 10k and 319.8 ms at 50k: atomic replacement had
+invalidated the BL-49 filename index on every write, rebuilding all SQL rows.
+
+Directory stat changes now trigger a filename digest comparison. Unchanged
+names retain the SQL index; membership or enumeration-order changes rebuild it.
+Matching paths are always checked for regular-file type, and item contents are
+still read directly and version-checked under the repository write lock before
+the atomic/fsynced replacement. Directory scans do not sort filenames or stat
+every item. Disposable SQLite WAL transactions use NORMAL synchronization;
+source-file fsync and conflict checks are unchanged. Losing a recent cache
+transaction after power loss only causes validation or rebuilding on the next
+read. The write row below uses this focused rerun; hooks and Git remain disabled.
+
 | Operation | 10k p95 (ms) | 50k p95 (ms) | 10k peak CLI RSS (MiB) | 50k peak CLI RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: |
 | Cold native load | 244.0 | 1,103 | — | — |
@@ -138,7 +161,7 @@ default, not benchmark-only environment tuning. Timing remains report-only.
 | `bl ls` | 132.6 | 815.0 | 116.6 | 383.8 |
 | `bl next` | 107.7 | 736.4 | 113.1 | 340.8 |
 | `bl show BL-1` | 12.29 | 15.15 | 22.48 | 22.84 |
-| Single-field write | 95.06 | 380.1 | 31.05 | 42.30 |
+| Single-field write | 29.05 | 42.02 | 23.52 | 26.75 |
 
 ### Every applicable CLI budget in design §11
 
@@ -146,7 +169,7 @@ default, not benchmark-only environment tuning. Timing remains report-only.
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms p95 | 10k 12.29 ms; 50k 15.15 ms | Both pass on the D26 reference host |
 | Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 132.6 ms; `next` 107.7 ms | Both pass ([BL-47](../backlog/BL-47.md)) |
-| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 95.06 ms; 50k 380.1 ms | Both miss: [BL-50](../backlog/BL-50.md) |
+| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 29.05 ms; 50k 42.02 ms | Both pass ([BL-50](../backlog/BL-50.md)) |
 | Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 116.6 MiB (10k `ls`) and 383.8 MiB (50k `ls`) | Both pass ([BL-48](../backlog/BL-48.md)) |
 
 Cold/warm native load and 50k `ls`/`next` timings are baselines without separate

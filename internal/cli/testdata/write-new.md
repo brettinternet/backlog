@@ -16,7 +16,7 @@ Body from stdin.
 
 ## Acceptance criteria
 
-- [ ] New criterion
+- [ ] New criterion, with a comma
 
 ## Definition of done
 

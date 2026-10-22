@@ -9,6 +9,9 @@ sources:
       path: backlog
       prefix: BL
 statuses:
+    - key: draft
+      name: Draft
+      category: backlog
     - key: todo
       name: To Do
       category: todo

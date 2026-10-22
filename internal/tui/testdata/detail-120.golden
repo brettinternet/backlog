@@ -1,5 +1,5 @@
 == Overview ==
-backlog · fixture · [Next]  Active  Mine  All                                                                           
+backlog · fixture · [Next]  Active  Mine  All  Board                                                                    
                                                                                                                         
   ID           Title                                      │BL-1 · Item 1 · todo · high                                  
 > BL-1         Item 1                                     │[Overview] · tab/shift-tab to switch                         
@@ -24,7 +24,7 @@ backlog · fixture · [Next]  Active  Mine  All
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                                                        
 == Description ==
-backlog · fixture · [Next]  Active  Mine  All                                                                           
+backlog · fixture · [Next]  Active  Mine  All  Board                                                                    
                                                                                                                         
   ID           Title                                      │BL-1 · Item 1 · todo · high                                  
 > BL-1         Item 1                                     │[Description] · tab/shift-tab to switch                      
@@ -49,7 +49,7 @@ backlog · fixture · [Next]  Active  Mine  All
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                                                        
 == Criteria ==
-backlog · fixture · [Next]  Active  Mine  All                                                                           
+backlog · fixture · [Next]  Active  Mine  All  Board                                                                    
                                                                                                                         
   ID           Title                                      │BL-1 · Item 1 · todo · high                                  
 > BL-1         Item 1                                     │[Criteria] · tab/shift-tab to switch                         
@@ -74,7 +74,7 @@ backlog · fixture · [Next]  Active  Mine  All
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                                                        
 == Plan/Notes ==
-backlog · fixture · [Next]  Active  Mine  All                                                                           
+backlog · fixture · [Next]  Active  Mine  All  Board                                                                    
                                                                                                                         
   ID           Title                                      │BL-1 · Item 1 · todo · high                                  
 > BL-1         Item 1                                     │[Plan/Notes] · tab/shift-tab to switch                       
@@ -99,7 +99,7 @@ backlog · fixture · [Next]  Active  Mine  All
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                                                        
 == Comments ==
-backlog · fixture · [Next]  Active  Mine  All                                                                           
+backlog · fixture · [Next]  Active  Mine  All  Board                                                                    
                                                                                                                         
   ID           Title                                      │BL-1 · Item 1 · todo · high                                  
 > BL-1         Item 1                                     │[Comments] · tab/shift-tab to switch                         
@@ -124,7 +124,7 @@ backlog · fixture · [Next]  Active  Mine  All
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                                                        
 == Relations ==
-backlog · fixture · [Next]  Active  Mine  All                                                                           
+backlog · fixture · [Next]  Active  Mine  All  Board                                                                    
                                                                                                                         
   ID           Title                                      │BL-1 · Item 1 · todo · high                                  
 > BL-1         Item 1                                     │[Relations] · tab/shift-tab to switch                        

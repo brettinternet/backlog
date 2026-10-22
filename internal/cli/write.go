@@ -126,7 +126,8 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		return nil
 	}
 	commands := []*urfave.Command{}
-	commands = append(commands, &urfave.Command{Name: "new", Usage: "Create an item using quick-add tokens", Flags: append(flag(), &urfave.StringFlag{Name: "body"}, &urfave.StringSliceFlag{Name: "ac"}, &urfave.StringFlag{Name: "source"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	// Criteria are prose, so a comma must not split one --ac into several.
+	commands = append(commands, &urfave.Command{Name: "new", Usage: "Create an item using quick-add tokens", DisableSliceFlagSeparator: true, Flags: append(flag(), &urfave.StringFlag{Name: "body"}, &urfave.StringSliceFlag{Name: "ac"}, &urfave.StringFlag{Name: "source"}, &urfave.StringFlag{Name: "status", Usage: "Create in configured status KEY, such as draft"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if !cmd.Args().Present() {
 			return writeUsage("new requires a title")
 		}
@@ -154,10 +155,10 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if err != nil {
 			return err
 		}
+		item.Status = cmd.String("status")
 		for _, s := range cfg.Statuses {
-			if s.Category == "todo" {
+			if item.Status == "" && s.Category == "todo" {
 				item.Status = s.Key
-				break
 			}
 		}
 		if item.Status == "" && len(cfg.Statuses) > 0 {

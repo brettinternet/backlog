@@ -48,10 +48,12 @@ type Options struct {
 }
 
 type screenRow struct {
-	row    engine.Row
-	group  int
-	value  string // group value; folds and selection survive live projections
-	header string
+	row                        engine.Row
+	group                      int
+	value                      string // group value; folds and selection survive live projections
+	header                     string
+	depth, parent              int
+	branch, collapsed, context bool
 }
 type prepared struct {
 	rows            []screenRow
@@ -134,10 +136,11 @@ type Model struct {
 	archiveConfirm           bool
 	capture                  captureState
 	longEdit                 longEditState
+	board                    boardState
 }
 
-var viewNames = []string{"Next", "Active", "Mine", "All"}
-var viewQueries = []string{"is:ready sort:next group:status", "category:active group:status", "assignee:me group:status", "is:open group:status"}
+var viewNames = []string{"Next", "Active", "Mine", "All", "Board"}
+var viewQueries = []string{"is:ready sort:next group:status", "category:active group:status", "assignee:me group:status", "is:open group:status", "is:open group:status"}
 
 func New(opts Options) Model {
 	if opts.Context == nil {
@@ -292,6 +295,14 @@ func (m *Model) submitDetail() {
 func (m Model) prepare() tea.Cmd {
 	groups, folded, serial, from := m.groups, m.folded, m.serial, m.selected
 	foldAll, ungrouped := m.foldAll, m.ungrouped
+	board, statusGroup := m.isBoard(), m.boardStatusGroup()
+	tree, snapshot := m.isTree(), m.snapshot
+	var statuses []string
+	if board {
+		for _, s := range m.opts.Statuses {
+			statuses = append(statuses, s.Key)
+		}
+	}
 	var anchor screenRow
 	if m.loading || from >= len(m.data.rows) {
 		from = -1 // a new view starts at the top
@@ -314,10 +325,20 @@ func (m Model) prepare() tea.Cmd {
 		for f := folded; f != nil; f = f.previous {
 			states[f.group] = !states[f.group]
 		}
-		data := prepareGroupedRows(groups, states, !ungrouped)
+		if board {
+			groups = boardGroups(groups, statuses, statusGroup)
+			states = nil // board columns never fold
+		}
+		data := prepareGroupedRows(groups, states, board || !ungrouped)
+		if tree {
+			data = prepareTree(groups, snapshot, folded, foldAll)
+		}
 		selected := -1
 		for i, r := range data.rows {
-			matches := r.value == anchor.value && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
+			matches := (board || tree || r.value == anchor.value) && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
+			if board && anchor.header != "" {
+				matches = r.value == anchor.value && r.header != ""
+			}
 			if restore != nil {
 				matches = (restore.Header && r.header != "" && r.value == restore.Group) || (!restore.Header && r.header == "" && r.row.Ref == restore.Ref)
 			}
@@ -384,6 +405,7 @@ func (m *Model) switchView(n int) {
 	m.foldAll = m.views[n].foldAll
 	m.selected = 0
 	m.top = 0
+	m.board = boardState{}
 	m.loading = true
 	m.folded = m.views[n].folded
 	m.project()
@@ -460,6 +482,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = msg.selected
 		}
 		m.selected = max(0, min(m.selected, len(m.data.rows)-1))
+		m.keepBoardVisible()
 		if m.detailOpen && identityForSelected(m) != m.detailIdentity {
 			return m, m.scheduleDetail()
 		}
@@ -750,6 +773,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if s == "ctrl+a" {
 				return m, m.markAll()
 			}
+			if m.isTree() && (s == "h" || s == "l" || s == "left" || s == "right") {
+				m.count = 0
+				m.inputSerial++
+				cmd := m.navigateTree(s)
+				page := max(1, m.height-5)
+				if m.selected < m.top {
+					m.top = m.selected
+				}
+				if m.selected >= m.top+page {
+					m.top = m.selected - page + 1
+				}
+				return m, cmd
+			}
+			if m.isBoard() && (s == "h" || s == "l" || s == "left" || s == "right") {
+				previous := m.selected
+				m.navigateBoard(s, max(1, m.count), m.count > 0, "")
+				m.count = 0
+				m.inputSerial++
+				if m.detailOpen && m.selected != previous {
+					return m, m.scheduleDetail()
+				}
+				return m, nil
+			}
 			if cmd, handled := m.updateEditKey(s); handled {
 				return m, cmd
 			}
@@ -768,6 +814,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prefix := m.prefix
 		m.prefix = ""
 		page := max(1, m.height-5)
+		if m.isBoard() && m.navigateBoard(s, n, hadCount, prefix) {
+			if m.detailOpen && m.selected != previousSelection {
+				return m, m.scheduleDetail()
+			}
+			return m, nil
+		}
 		switch {
 		case prefix == "g" && s == "g":
 			m.selected = 0
@@ -825,6 +877,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.scheduleDetail()
 		}
 	}
+	m.keepBoardVisible()
 	page := max(1, m.height-5)
 	if m.selected < m.top {
 		m.top = m.selected
@@ -888,14 +941,20 @@ func (m Model) View() tea.View {
 	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
 		columns = "  " + strings.Join(custom, "  ")
 	}
+	if m.isBoard() {
+		columns = m.boardLine(-1)
+	}
 	if m.detailOpen && m.width >= 120 {
 		detailWidth := m.detailWidth()
 		lines = append(lines, cell(columns, listWidth)+"│"+cell(m.detailHeader(), detailWidth))
 		page := max(0, m.height-5)
 		for i := 0; i < page; i++ {
-			left := m.listLine(m.top+i, wide)
+			left := m.treeContext(m.top+i, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), listWidth))
+			if m.isBoard() {
+				left = m.boardLine(i)
+			}
 			right := m.detailPaneLine(i)
-			lines = append(lines, m.highlightListCell(m.top+i, left, listWidth)+"│"+cell(right, detailWidth))
+			lines = append(lines, left+"│"+cell(right, detailWidth))
 		}
 	} else if m.detailOpen {
 		lines = append(lines, cell(m.detailHeader(), m.width), cell(m.detailTabs(), m.width))
@@ -905,7 +964,11 @@ func (m Model) View() tea.View {
 	} else {
 		lines = append(lines, cell(columns, m.width))
 		for i := 0; i < max(0, m.height-5); i++ {
-			lines = append(lines, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), m.width))
+			line := m.treeContext(m.top+i, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), m.width))
+			if m.isBoard() {
+				line = m.boardLine(i)
+			}
+			lines = append(lines, line)
 		}
 	}
 	lines = append(lines, strings.Repeat("─", m.width))
@@ -932,7 +995,7 @@ func (m Model) View() tea.View {
 	if m.notice != "" {
 		footer = "warning: " + m.notice + " · " + footer
 	}
-	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" {
+	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" && layout != "board" && layout != "tree" {
 		footer = layout + " unavailable; list · " + footer
 	}
 	if m.capture.open {
@@ -1018,6 +1081,9 @@ func (m Model) listLine(index int, wide bool) string {
 		return ""
 	}
 	r := m.data.rows[index]
+	if m.isTree() {
+		r.row.Title = m.treeTitle(r)
+	}
 	marker := "  "
 	if r.header != "" {
 		if index == m.selected {

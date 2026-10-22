@@ -75,7 +75,7 @@ func viewOptions(cfg project.Config) Options {
 func TestViewsRestoreSession(t *testing.T) {
 	cfg := viewConfig(t)
 	m := viewRows(New(viewOptions(cfg)), "BL-1", "BL-2", "BL-3")
-	if !strings.Contains(m.View().Content, "[Next]  Active  Mine  All  Shared  Personal") {
+	if !strings.Contains(m.View().Content, "[Next]  Active  Mine  All  Board  Shared  Personal") {
 		t.Fatal(m.View().Content)
 	}
 	m = send(m, "j", "j") // BL-2
@@ -87,7 +87,7 @@ func TestViewsRestoreSession(t *testing.T) {
 	if row, ok := m.selectedRow(); !ok || row.Ref.ID != "BL-2" {
 		t.Fatalf("selection did not follow ref: %+v", row)
 	}
-	m.switchView(4)
+	m.switchView(5)
 	m = viewRows(m, "BL-1", "BL-2", "BL-3")
 	m = send(m, "j", "j", "j")
 	// The query is the single source of sort/group, as in the editor and menus.
@@ -108,7 +108,7 @@ func TestViewsRestoreSession(t *testing.T) {
 	// It must not consume the restart selection anchor.
 	again := viewRows(New(opts))
 	again = viewRows(again, "BL-3", "BL-2", "BL-1")
-	if again.view != 4 || again.query != m.query || !strings.Contains(again.query, "sort:updated") || !strings.Contains(again.query, "group:priority") || again.detailTab != tabDescription || again.splitWidth != 65 || !again.detailOpen || again.views[4].Config.Layout != "tree" || strings.Join(again.views[4].Config.Columns, ",") != "id,title" {
+	if again.view != 5 || again.query != m.query || !strings.Contains(again.query, "sort:updated") || !strings.Contains(again.query, "group:priority") || again.detailTab != tabDescription || again.splitWidth != 65 || !again.detailOpen || again.views[5].Config.Layout != "tree" || strings.Join(again.views[5].Config.Columns, ",") != "id,title" {
 		t.Fatalf("incomplete restore: %+v", restored)
 	}
 	if row, ok := again.selectedRow(); !ok || row.Ref.ID != "BL-3" {
@@ -119,7 +119,7 @@ func TestViewsRestoreSession(t *testing.T) {
 	edited := viewOptions(cfg)
 	edited.Session = restored
 	edited.Views[0].Query = "is:open label:new"
-	if got := New(edited).views[4].Config.Query; got != "is:open label:new" {
+	if got := New(edited).views[5].Config.Query; got != "is:open label:new" {
 		t.Fatalf("stale session shadowed config: %q", got)
 	}
 	again.switchView(1)
@@ -128,7 +128,7 @@ func TestViewsRestoreSession(t *testing.T) {
 		t.Fatalf("other view lost selection: %+v", row)
 	}
 	// Deleted selection and removed tabs must safely fall back rather than panic.
-	again.switchView(4)
+	again.switchView(5)
 	again = viewRows(again, "BL-2")
 	if again.selected < 0 || again.selected >= len(again.data.rows) {
 		t.Fatal("missing item has no fallback")

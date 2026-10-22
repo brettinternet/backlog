@@ -225,6 +225,18 @@ func TestIndexedReadPreservesAliasesAndDuplicates(t *testing.T) {
 	}
 
 	activeDuplicate := filepath.Join(root, "backlog", "BL-7.md")
+	if err := os.Symlink(filepath.Join(root, "backlog", "BL-007.md"), activeDuplicate); err != nil {
+		t.Fatal(err)
+	}
+	item, err = s.Read(context.Background(), "BL-7")
+	if err != nil || item.Ref.ID != "BL-007" {
+		t.Fatalf("symlink alias must not count as an item: %#v %v", item, err)
+	}
+	if err := os.Remove(activeDuplicate); err != nil {
+		t.Fatal(err)
+	}
+	// The filename digest is unchanged when a symlink becomes a regular file;
+	// matching paths must still be type-checked before deciding uniqueness.
 	write(t, activeDuplicate, fixture(t, "BL-7"))
 	_, err = s.Read(context.Background(), "BL-007")
 	reason(t, err, "duplicate-id")

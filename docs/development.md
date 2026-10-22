@@ -50,7 +50,9 @@ stable session per loop, heartbeat at least every 7 minutes, and release after
 
 The wrapper builds an archived snapshot of committed primary `main`, not dirty
 primary files or the invoking worktree, into
-`<git-common-dir>/backlog-cli/<commit>/bl` under a cross-process build lock.
+`<git-common-dir>/backlog-cli/<key>/bl` under a cross-process build lock. The
+key hashes the committed tree without `backlog/`, so task-state commits reuse the
+build, and a new build removes older ones.
 Primary must be on `main`. Changing CLI code requires merging it before the
 shared backlog can use it. `task backlog:test` checks this build boundary.
 Acceptance checks use `ac ID check N --evidence 'COMMAND: RESULT'`; use the

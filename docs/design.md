@@ -87,6 +87,7 @@ Non-goals:
 | D25 | **Worklease becomes claims-only.** Worklease TASK-156 removes its work queue. Its provider probe evidence stays referenced at tag `v1.9.3` (§10). |
 | D26 | **Budgets.** The §11 budgets are acceptance criteria, measured on the reference host (Apple M5 Max, 64 GiB; updated with owner approval in BL-12) with the deterministic fixture generator. CI tracks relative regressions only and never asserts absolute latency. |
 | D28 | **Evidence and merges.** Evidence for a criterion is written under that criterion, never in Notes by number, so it can't point at the wrong one after a renumber. A file with conflict markers fails to parse with `merge-conflict`. `bl check --fix` resolves the two conflicts that every edit and comment produce, `updated` and appended comments, and leaves anything else for you. `bl` doesn't install a Git merge driver, because a driver needs per-clone Git config and runs without the project's lock. |
+| D29 | **Drafts.** A draft is an item in a `backlog`-category status, so it is open but never ready. `bl init` and `bl import backlog-md` configure a `draft` status, and `bl new --status draft` creates one without a moment in which it is ready to claim. Native IDs never change on promotion, so the importer numbers Backlog.md drafts in the source prefix, as `backlog draft promote` would. A Backlog.md source keeps its folders: changing a status to or from draft moves the file between `drafts/` and `tasks/` and allocates an ID there, as `draft promote` and `task demote` do, and also rewrites references, which Backlog.md 1.52 leaves dangling. |
 
 ## 4. Architecture
 
@@ -204,6 +205,7 @@ sources:
   - {id: tasks, type: native, path: backlog, prefix: BL}
   # - {id: eng, type: linear, team: ENG}            # network source: requires `bl trust`
 statuses:
+  - {key: draft, name: Draft, category: backlog}
   - {key: todo, name: To Do, category: todo}
   - {key: in-progress, name: In Progress, category: active}
   - {key: done, name: Done, category: done}
@@ -292,7 +294,7 @@ bl                                   open the TUI
 bl ls [QUERY] [--view V]             list items
 bl show ID [--section S]             show one item
 bl next [QUERY] [-n N] [--explain] [--claim [--start] --session S]
-bl new TITLE [TOKENS] [--body -] [--ac TEXT]...   quick-add tokens: tui.md
+bl new TITLE [TOKENS] [--status S] [--body -] [--ac TEXT]...   quick-add tokens: tui.md
 bl set ID... FIELD=V FIELD+=V FIELD-=V
                                      e.g. status=active priority=high label+=bug blocked_by+=BL-7
 bl start ID | bl done ID             workflow transitions
@@ -326,7 +328,7 @@ bl instructions [TOPIC] | bl mcp
   | 7 | Contention (claimed elsewhere) | `contention` |
 
   Exit codes and reasons are a public contract with tests. Error `details` is always an object (empty when there is no additional metadata). `-C` failures include `flag` and `path`; unexpected arguments include `argument`. Help remains plain text, even with `--json`.
-- **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `claim`, `release`, and `heartbeat`. They share types, validation, and claim rules with the CLI. Write tools take an optional `version` with the same meaning as `--if-version`. `criteria` takes an optional `evidence` for a single check. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
+- **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `claim`, `release`, and `heartbeat`. They share types, validation, and claim rules with the CLI. Write tools take an optional `version` with the same meaning as `--if-version`. `criteria` takes an optional `evidence` for a single check, and `create` an optional `status`, like `bl new --status`. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
 
 ## 8. Extensions
 

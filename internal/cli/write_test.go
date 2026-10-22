@@ -79,7 +79,7 @@ func TestWriteGolden(t *testing.T) {
 		file   string
 		editor string
 	}{
-		{"new", []string{"new", "New item !h #fresh @agent :feature <12 ^99", "--body", "-", "--ac", "New criterion"}, "Body from stdin.\n", "items/BL-13.md", ""},
+		{"new", []string{"new", "New item !h #fresh @agent :feature <12 ^99", "--body", "-", "--ac", "New criterion, with a comma"}, "Body from stdin.\n", "items/BL-13.md", ""},
 		{"set", []string{"set", "12", "title=Changed", "priority=high", "label+=new", "label-=bug", "related+=12"}, "", "", ""},
 		{"start", []string{"start", "12"}, "", "", ""},
 		{"done", []string{"done", "12"}, "", "", ""},
@@ -190,6 +190,15 @@ func TestWriteValidationAndBatch(t *testing.T) {
 		if code != 2 || get(t, path) != current {
 			t.Fatalf("multi version %s: %d %s", name, code, out)
 		}
+	}
+	// A draft must be created in its status, never briefly ready for an agent to claim.
+	code, out, _ = writeRun(root, "", "new", "Parked", "--status", "missing")
+	if _, err := os.Stat(filepath.Join(root, "items/BL-13.md")); code != 5 || !strings.Contains(out, "allowed values") || !os.IsNotExist(err) {
+		t.Fatalf("unknown status: %d %s %v", code, out, err)
+	}
+	code, out, _ = writeRun(root, "", "new", "Parked", "--status", "doing")
+	if code != 0 || !strings.Contains(out, `"status":"doing"`) {
+		t.Fatalf("new --status: %d %s", code, out)
 	}
 }
 

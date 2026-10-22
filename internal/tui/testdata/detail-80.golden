@@ -1,5 +1,5 @@
 == Overview ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
 BL-1 · Item 1 · todo · high                                                     
 [Overview]  Description  Criteria  Plan/Notes  Comments  Relations              
@@ -24,7 +24,7 @@ BL-1 · Item 1 · todo · high
 ────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                
 == Description ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
 BL-1 · Item 1 · todo · high                                                     
 Overview  [Description]  Criteria  Plan/Notes  Comments  Relations              
@@ -49,7 +49,7 @@ Overview  [Description]  Criteria  Plan/Notes  Comments  Relations
 ────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                
 == Criteria ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
 BL-1 · Item 1 · todo · high                                                     
 Overview  Description  [Criteria]  Plan/Notes  Comments  Relations              
@@ -74,7 +74,7 @@ Overview  Description  [Criteria]  Plan/Notes  Comments  Relations
 ────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                
 == Plan/Notes ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
 BL-1 · Item 1 · todo · high                                                     
 Overview  Description  Criteria  [Plan/Notes]  Comments  Relations              
@@ -99,7 +99,7 @@ Overview  Description  Criteria  [Plan/Notes]  Comments  Relations
 ────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                
 == Comments ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
 BL-1 · Item 1 · todo · high                                                     
 Overview  Description  Criteria  Plan/Notes  [Comments]  Relations              
@@ -124,7 +124,7 @@ Overview  Description  Criteria  Plan/Notes  [Comments]  Relations
 ────────────────────────────────────────────────────────────────────────────────
 tab next · shift-tab previous · j/k scroll · h list · esc/q back                
 == Relations ==
-backlog · fixture · [Next]  Active  Mine  All                                   
+backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
 BL-1 · Item 1 · todo · high                                                     
 Overview  Description  Criteria  Plan/Notes  Comments  [Relations]              
