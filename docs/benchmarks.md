@@ -114,7 +114,7 @@ The `ls`, `next` and `show` rows below use this final rerun; the in-process load
 rows retain the original full-run measurements. CLI peak RSS meets both §11
 budgets. The 10k warm `ls`/`next` latency budgets remain met. This run predates
 integration of BL-50: writes measured 95.06/380.1 ms and 31.05/42.30 MiB at
-10k/50k. The write row below retains BL-50's passing measurements.
+10k/50k. The write row below uses the integrated rerun recorded below.
 
 The cache now encodes bounded batches of 128 items rather than one whole-source
 gob payload, avoiding simultaneous full-size encoded and decoded snapshots.
@@ -152,7 +152,12 @@ the atomic/fsynced replacement. Directory scans do not sort filenames or stat
 every item. Disposable SQLite WAL transactions use NORMAL synchronization;
 source-file fsync and conflict checks are unchanged. Losing a recent cache
 transaction after power loss only causes validation or rebuilding on the next
-read. The write row below uses this focused rerun; hooks and Git remain disabled.
+read. Hooks and Git remain disabled.
+
+After integrating BL-50 and the rest of `main` into BL-48 (`ffe5b81`), the same
+focused write command passed in 13.747 s: 10k p95 26.10 ms / 23.56 MiB and
+50k p95 38.66 ms / 26.84 MiB. The write row below uses this integrated rerun;
+all correctness, race, security and smoke checks also pass on the merged code.
 
 | Operation | 10k p95 (ms) | 50k p95 (ms) | 10k peak CLI RSS (MiB) | 50k peak CLI RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: |
@@ -161,7 +166,7 @@ read. The write row below uses this focused rerun; hooks and Git remain disabled
 | `bl ls` | 132.6 | 815.0 | 116.6 | 383.8 |
 | `bl next` | 107.7 | 736.4 | 113.1 | 340.8 |
 | `bl show BL-1` | 12.29 | 15.15 | 22.48 | 22.84 |
-| Single-field write | 29.05 | 42.02 | 23.52 | 26.75 |
+| Single-field write | 26.10 | 38.66 | 23.56 | 26.84 |
 
 ### Every applicable CLI budget in design §11
 
@@ -169,7 +174,7 @@ read. The write row below uses this focused rerun; hooks and Git remain disabled
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms p95 | 10k 12.29 ms; 50k 15.15 ms | Both pass on the D26 reference host |
 | Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 132.6 ms; `next` 107.7 ms | Both pass ([BL-47](../backlog/BL-47.md)) |
-| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 29.05 ms; 50k 42.02 ms | Both pass ([BL-50](../backlog/BL-50.md)) |
+| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 26.10 ms; 50k 38.66 ms | Both pass ([BL-50](../backlog/BL-50.md)) |
 | Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 116.6 MiB (10k `ls`) and 383.8 MiB (50k `ls`) | Both pass ([BL-48](../backlog/BL-48.md)) |
 
 Cold/warm native load and 50k `ls`/`next` timings are baselines without separate
