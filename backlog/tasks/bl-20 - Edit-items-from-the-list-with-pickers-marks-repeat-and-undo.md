@@ -5,9 +5,10 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 15:07'
+updated_date: '2026-10-22 15:29'
 labels:
   - tui
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-17
@@ -91,6 +92,8 @@ AC#6: task cli:test PKG="./internal/tui ./internal/model ./internal/engine" -- -
 Delivery: implementation commit 3c26f053300e57888285ec0fa9ed194cd31e5b75 rebased onto current main and fast-forward merged locally. task check:staged and task ci passed on that final implementation commit (security, vet, Staticcheck, full tests, race, smoke); LSP diagnostics clean for edited TUI/engine files. A fixture URL was constructed with net/url to avoid a secret-scanner false positive without removing its credential-rejection assertion. Real tmux capture script /var/folders/jp/1mwx72h172955139pth4h8800000gn/T/bl20-evidence.SblwIajqBG/capture.py passed and saved list/status-picker/marked captures. docs/tui.md documents shipped behavior. No push or PR.
 
 Cleanup: session-owned creation receipt matched branch/path/session; Worktrunk listing verified merged clean checkout. Inspected exact Herdr workspace wJQ and its sole idle zsh pane wJQ:p1, then wt remove feat/bl-20-list-edits --foreground --format=json removed checkout and branch. Subsequent workspace list confirms wJQ disappeared; git worktree list contains only primary. No task worktree/workspace retained. No blocker or remaining item-scoped work.
+
+Review (ae1eb0c): an edit sent before the list showed the session's own previous edit (e.g. fast > >) was recorded as a sticky conflict (! on the item) by the new preflight-conflict snapshot; the engine now tracks versions its own edits superseded and returns busy without state (TestStaleOwnEditIsBusyNotConflict). yank had a value receiver, dropping its Copied/no-value notices; ym copied [title]() without a URL; dd prompt claimed one item while archiving all marks. task ci passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
