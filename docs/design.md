@@ -186,7 +186,9 @@ for each privileged entry. Credentials are retained in memory but omitted from
 output. Loading never writes, executes programs, or contacts providers. Project
 privileged entries remain untrusted; trust grants and doctor remain BL-29 work.
 Workspace declarations and the optional user `defaultWorkspace` name are loaded;
-opening a multi-project workspace remains BL-43 work.
+opening a multi-project workspace remains BL-43 work. The TUI builds a separate
+additive saved-view catalog (built-ins, project, user, user per-project) without
+changing list replacement in effective settings; see [tui.md](tui.md#views-and-layouts).
 
 **Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Show them read-only and suggest `bl import` or an explicit source. Outside any repository, open the user's default workspace, if configured.
 

@@ -18,8 +18,10 @@ Next, Active, Mine and All are built-in list tabs, grouped by status. `j`/`k`
 and arrows move by display row (including group headers); counts, `gg`, `G`,
 `NG`, half/full pages, `[`/`]` group jumps and `za` folding work. `gt`/`gT`
 cycle tabs. Live refreshes keep folds and keep the cursor on the same item or
-group header; switching tabs starts at the top unfolded. A digit waits 350 ms to distinguish `1`–`4` view shortcuts from
-count-prefixed motions; `5`–`9` are reserved until more views exist. `R`
+group header. Each tab retains its query, folds and stable-item selection;
+reordered rows keep the same item, and a missing item falls back to the first row.
+A digit waits 350 ms to distinguish `1`–`9` view shortcuts from count-prefixed
+motions; unavailable numbers do nothing. `gt`/`gT` reach every saved tab. `R`
 requests a background refresh. `?` toggles help. `NO_COLOR` disables styling;
 `--high-contrast` uses bold and underline, never faint text. All external text
 is sanitized and widths use terminal cells.
@@ -53,7 +55,7 @@ picker with completion; enter chooses and applies. `fr` shows ready items and
 while retaining sort and group. Sort reversal toggles every explicit sort key.
 `zA` groups assignees, leaving `za` for folds; `zM`/`zR` fold/unfold all.
 
-Editing, custom/saved views, board/tree, key remapping, palette, searchable
+Editing, board/tree, key remapping, palette, searchable
 help and mouse below remain planned. They are not advertised
 as available in the shell. Claim columns await BL-32.
 
@@ -138,7 +140,28 @@ At 120 columns or more, the detail pane opens beside the list. Below that, it re
 
 ## Views and layouts
 
-The default views are Next (`is:ready`, sort `next`), Active (`category:active`), Mine, All open, and Board. A view is a query plus sort, group, layout, and columns. Project and user config add saved views, and `ctrl-s` saves the current one.
+The built-in tabs are Next (`is:ready`, sort `next`), Active (`category:active`),
+Mine (`assignee:me`), and All open. They precede project `views`, user `views`,
+and user `projects.<project-id>.views`, each in declaration order. Same-named
+views in different layers remain separate tabs; names within a layer must be
+unique. This additive tab catalog does not change D16's list-replacement rule
+for effective configuration. Board is added when its layout ships.
+
+A view has `name`, `query`, optional `sort`, `group`, `layout`, and `columns`.
+Explicit sort/group fields override query directives. Columns may be `id`,
+`priority`, `status`, `blockers`, `children`, and `title`, in display order;
+without columns the standard list is used. Below 80 columns, ID/title remain.
+Unavailable layouts (including board/tree for now) retain their setting but
+render a list with a footer notice.
+
+`ctrl-s` opens a name prompt, initially using the current name. `ctrl-u` clears
+the name; type a replacement and press enter. The default destination is user
+config; tab toggles to project config. Esc cancels. Saving replaces the
+same-named entry only in the chosen destination or appends a new entry. Only
+the changed entry is rewritten (the views value for a flow-style sequence);
+unrelated config stays byte-identical. Writes reread under a file lock and
+use temp/fsync/rename. The saved tab appears immediately in catalog order and
+survives restart. Config I/O runs in a command, not the update loop.
 
 | Layout | Navigation | Edits |
 | --- | --- | --- |
@@ -257,7 +280,19 @@ Pickers are fuzzy, keyboard-first, and preselect current values. The full create
 
 ## State
 
-UI state is kept per project in XDG state: last view, query, sort, group, layout, selection, detail tab, and split width. Quitting and reopening restores it exactly.
+UI state is kept per project identity in `$XDG_STATE_HOME/backlog/ui/<sha256>.json`
+(default `~/.local/state/backlog/ui/`): last view, each tab's query (including
+sort/group), layout, columns and selection, plus detail tab/open state and split
+width. `ctrl-left`/`ctrl-right` resize the split in five-cell steps; a narrow
+terminal clamps the rendered split without discarding the saved width.
+
+Startup reads state before running Bubble Tea; after quitting, the final model
+is saved atomically outside the update loop. Invalid, unsupported-version or
+oversized state is ignored with a visible footer warning. Missing views fall
+back to Next; missing selections fall back to the first row. State is disposable
+and never recreates deleted config views. Session query/layout overrides take
+precedence over a tab's config until the session state is removed. Folds are
+retained while switching tabs but are not persisted across restarts.
 
 ## Rendering and safety
 

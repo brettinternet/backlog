@@ -224,6 +224,10 @@
           },
           "layout": {
             "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {"enum": ["id", "priority", "status", "blockers", "children", "title"]}
           }
         },
         "required": [

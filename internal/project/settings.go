@@ -62,11 +62,12 @@ type DefaultsConfig struct {
 	DOD  []string `yaml:"dod,omitempty" json:"dod,omitempty"`
 }
 type ViewConfig struct {
-	Name   string `yaml:"name" json:"name"`
-	Query  string `yaml:"query,omitempty" json:"query,omitempty"`
-	Sort   string `yaml:"sort,omitempty" json:"sort,omitempty"`
-	Group  string `yaml:"group,omitempty" json:"group,omitempty"`
-	Layout string `yaml:"layout,omitempty" json:"layout,omitempty"`
+	Columns []string `yaml:"columns,omitempty" json:"columns,omitempty"`
+	Name    string   `yaml:"name" json:"name"`
+	Query   string   `yaml:"query,omitempty" json:"query,omitempty"`
+	Sort    string   `yaml:"sort,omitempty" json:"sort,omitempty"`
+	Group   string   `yaml:"group,omitempty" json:"group,omitempty"`
+	Layout  string   `yaml:"layout,omitempty" json:"layout,omitempty"`
 }
 type CoordinationConfig struct {
 	Worklease *struct{} `yaml:"worklease,omitempty" json:"worklease,omitempty"`
