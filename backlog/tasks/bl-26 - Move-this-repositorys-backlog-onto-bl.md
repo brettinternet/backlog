@@ -4,7 +4,7 @@ title: Move this repository's backlog onto bl
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:28'
+updated_date: '2026-10-22 02:55'
 labels:
   - tooling
   - import
@@ -43,8 +43,8 @@ Dogfooding starts as soon as the agent CLI works. After this task, every later t
 
 - Rehearse a lossless import in isolation, then coordinate a single authoritative provider cutover in the primary checkout with no concurrent task writers. Prepare code/config changes in a Worktrunk worktree; refresh task state immediately before cutover and retain a recoverable old-format copy until validation and a native task loop pass. See the Implementation Plan for the primary-checkout handoff and loop restart.
 - `.config/backlog.yaml`: statuses, `ready.excludeLabels` (`blocked`, `deferred`, `escalated`, `human`), `defaults.dod` from the old `definition_of_done`, and `coordination.worklease`.
-- `task backlog:cli -- ARGS` builds `bl` from the primary checkout (the last merged `main`) into the Git common directory and runs it, so agents in worktrees never manage the backlog with an unmerged build. `task backlog:next` becomes `bl next`. Execution claims with `task backlog:claim -- acquire` before `bl start`, never with a status-only claim. BL-33 replaces this with `bl next --claim --start`.
-- Rewrite the Backlog section of AGENTS.md for the `bl` loop and `bl instructions`. Remove Backlog.md from mise.toml and docs.
+- `task backlog:cli -- ARGS` builds `bl` from the primary checkout (the last merged `main`) into the Git common directory and runs it, so agents in worktrees never manage the backlog with an unmerged build. `task backlog:next` becomes `bl next`, and `scripts/backlog-claim-next` reads the ready order from `bl next --json` instead of Backlog.md. Execution claims with `task backlog:claim -- acquire` before `bl start`, never with a status-only claim. BL-33 replaces this with `bl next --claim --start`.
+- Rewrite the Backlog section of AGENTS.md for the `bl` loop and `bl instructions`. Evidence moves from `AC#N:` lines in Notes to `bl ac ID check N --evidence TEXT` (D28), in AGENTS.md and `defaults.dod`. Remove Backlog.md from mise.toml and docs.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -54,6 +54,7 @@ Dogfooding starts as soon as the agent CLI works. After this task, every later t
 - [ ] #3 AGENTS.md, docs, Taskfiles, and mise.toml no longer depend on Backlog.md, and `task ci` passes
 - [ ] #4 One independently ready real task goes through `bl next`, `task backlog:claim -- acquire` with its own stable session distinct from BL-26, `bl start`, note, ac check, `bl done`, and `task backlog:claim -- release`, and the recorded transcript shows the claim before the status change
 - [ ] #5 Before cutover resumes any agents, AGENTS.md and the repository's launchers route native work through the interim claim protocol; two distinct-session clients against a migrated fixture claim different items, and inherited skill or launcher paths that set status as a claim or derive `backlog-md:` keys are explicitly disabled
+- [ ] #6 After cutover, two distinct sessions running `task backlog:claim-next` claim different native items, and AGENTS.md and `defaults.dod` require `--evidence` instead of `AC#N:` lines
 <!-- AC:END -->
 
 ## Definition of Done

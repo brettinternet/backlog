@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:46'
+updated_date: '2026-10-22 02:55'
 labels:
   - cli
   - agents
@@ -37,7 +37,7 @@ Agents must edit the backlog with short commands instead of rewriting documents 
 ## What
 
 - An engine mutation pipeline with no TUI concerns: validate against config and capabilities, apply with the expected version, return the new item. BL-15 adds optimism and undo on top of it, and BL-30 adds hooks.
-- Commands from §7: `new` (quick-add tokens, `--body -`, `--ac`, `defaults` from config), `set` (`=`, `+=`, `-=` on one or more IDs), `start` and `done` (the workflow config), `note` and `comment` (text or stdin), `ac` (check, uncheck, add, rm), `edit` (`$EDITOR` on a section or the whole file, version-checked on save), and `archive` and `unarchive`.
+- Commands from §7: `new` (quick-add tokens, `--body -`, `--ac`, `defaults` from config), `set` (`=`, `+=`, `-=` on one or more IDs), `start` and `done` (the workflow config), `note` and `comment` (text or stdin), `ac` (check, uncheck, add, rm, and `check N --evidence TEXT`, which writes the criterion's evidence line per docs/format.md), `edit` (`$EDITOR` on a section or the whole file, version-checked on save), and `archive` and `unarchive`.
 - With several IDs, report an outcome per ID and exit non-zero if any failed.
 - `--if-version V` on every single-item write (§7): a changed item fails with `conflict` (exit 4) and nothing is written. Every write's JSON returns the new `version`. A write naming several IDs refuses the flag with `usage` (exit 2).
 - Document every command in docs/cli.md and mark the names frozen in design.md §7.
@@ -51,6 +51,7 @@ Agents must edit the backlog with short commands instead of rewriting documents 
 - [ ] #4 `new --body -`, `note ID -`, and `comment ID -` read stdin
 - [ ] #5 docs/cli.md documents every write command, and design.md §7 marks the names frozen
 - [ ] #6 After a criterion is removed, `bl ac ID check N --if-version V` with the version read before the removal exits 4 with reason `conflict` and changes no bytes; with the current version it checks the intended criterion; each write's JSON returns the new `version`, and a multi-ID write with `--if-version` exits 2
+- [ ] #7 `bl ac ID check N --evidence TEXT` writes one `Evidence:` line under criterion N and replaces an existing one, unchecking removes it, more than one N exits 2, a golden case shows the evidence moving with its criterion when an earlier criterion is removed, and `bl show --json` reports evidence per criterion
 <!-- AC:END -->
 
 ## Definition of Done

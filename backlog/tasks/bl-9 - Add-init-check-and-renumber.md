@@ -4,7 +4,7 @@ title: 'Add init, check, and renumber'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:55'
 labels:
   - cli
   - format
@@ -36,6 +36,7 @@ New projects need one-command setup. CI and agents need a validator. Concurrent 
 
 - `bl init [--prefix P] [--path DIR]` writes `.config/backlog.yaml` and the item directory. It refuses to overwrite an existing config (exit 5).
 - `bl check [--json] [--fix]` implements the docs/format.md validation table, plus status values from config. Duplicate IDs across active and archived items are detected.
+- The codec rejects a file with conflict markers as `merge-conflict` (D28), checked before YAML parsing, so no command or TUI edit writes to a half-merged item. `--fix` resolves only `updated`-only and comment-only hunks.
 - `bl renumber FROM TO` renames the file and rewrites every reference (`blocked_by`, `parent`, `related`, `duplicate_of`, and `source:ID` forms) in active and archived items. It refuses when TO exists.
 <!-- SECTION:DESCRIPTION:END -->
 
@@ -45,6 +46,7 @@ New projects need one-command setup. CI and agents need a validator. Concurrent 
 - [ ] #2 Fixture files trigger every docs/format.md finding code with path and line; exit is 5 with errors and 0 otherwise; `--json` lists the findings
 - [ ] #3 `bl check --fix` applies only the fixes docs/format.md allows
 - [ ] #4 `bl renumber` rewrites every reference form in active and archived items and refuses an existing target
+- [ ] #5 Conflict markers in frontmatter or body report `merge-conflict`, not `invalid-frontmatter`, and every write to that file is refused; `--fix` resolves an `updated`-only hunk and a comment-only hunk in both `merge` and `diff3` marker styles and leaves any other hunk, and its error, in place
 <!-- AC:END -->
 
 ## Definition of Done
