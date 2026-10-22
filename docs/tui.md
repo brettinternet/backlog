@@ -57,7 +57,9 @@ while retaining sort and group. Sort reversal toggles every explicit sort key.
 
 Item-field editing is implemented from the list, with version-checked engine
 mutations, fuzzy pickers, marks, repeat, undo/redo, criterion toggles, archive
-confirmation, and failure detail. Picker catalogs and fuzzy filtering run in
+confirmation, and failure detail. `n`/`N` quick-add, full create/edit forms,
+section/full-file editor sessions, comments, and notes are available. Board column
+status defaults are accepted by the capture form; BL-22 connects the board layout. Picker catalogs and fuzzy filtering run in
 Bubble Tea commands; source I/O and backlog-sized work stay off `Update` (D14).
 Board/tree layouts, key remapping, the command palette, and mouse remain planned.
 Claim columns await BL-32.
@@ -303,7 +305,27 @@ Everything else becomes the title. Escape a token with `\` (`\#1`), or put liter
 
 Pickers are fuzzy, keyboard-first, and preselect current values. The full create and edit form covers every capability-supported field, plus description and criteria editing.
 
-`$EDITOR` editing suspends the TUI, edits a temporary file for the chosen section (or the item file itself for `E` on native sources), and reapplies the result as a mutation. Before writing, it checks the version that was open when editing started. A conflict offers to keep yours, keep theirs, or reopen with both. Invalid frontmatter after `E` offers to reopen or discard.
+The quick-add prompt previews parsed tokens as chips; `tab` opens the complete
+form. In the form, tab/shift-tab or up/down move between fields, enter saves,
+and esc cancels. List values are comma-separated; description, plan, notes,
+and summary accept `\\n` for line breaks. Criteria and definition of done use
+JSON arrays of `{ "text": "...", "checked": false }` entries, with optional
+`evidence`. Invalid values remain in the form with an inline error. `N` defaults
+the parent to the selected item. Sources without create capability disable capture;
+when multiple create-capable sources are configured, `n` offers a source picker
+before quick-add; `N` uses the selected parent's source. Numeric parent and
+blocker references resolve like `bl new`, including imported padded IDs and
+the configured prefix for missing IDs. The optional column status default is
+used when supplied by a board layout.
+
+`e` opens the description in `$EDITOR`; native `E` edits a temporary copy of the
+actual item file bytes (including unknown fields), while other sources use the
+full form. `c` edits a new comment and `i` edits a note; these append on save.
+The editor runs via Bubble Tea's terminal-suspending process command. Before
+writing, it checks the version open when editing started. A conflict offers `y`
+keep yours (retry against a freshly checked version), `t` keep theirs, or `r`
+reopen with both versions in conflict markers. Invalid native frontmatter after
+`E` offers `r` reopen or `d` discard. No conflict choice writes unchecked.
 
 ## State
 

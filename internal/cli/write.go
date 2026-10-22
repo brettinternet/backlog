@@ -171,14 +171,14 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			sourceID = cfg.Sources[0].ID
 		}
 		if item.Parent != nil {
-			parent, err := resolveRef(ctx, cfg, sourceID, *item.Parent)
+			parent, err := ResolveRef(ctx, cfg, sourceID, *item.Parent)
 			if err != nil {
 				return err
 			}
 			item.Parent = &parent
 		}
 		for n, ref := range item.BlockedBy {
-			if item.BlockedBy[n], err = resolveRef(ctx, cfg, sourceID, ref); err != nil {
+			if item.BlockedBy[n], err = ResolveRef(ctx, cfg, sourceID, ref); err != nil {
 				return err
 			}
 		}
@@ -440,10 +440,10 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 	return commands
 }
 
-// resolveRef expands ID shorthand in a reference written to an item of
+// ResolveRef expands ID shorthand in a reference written to an item of
 // sourceID: an existing item keeps its stored ID, an unqualified ref is local,
 // and a missing numeric ID takes the source's prefix (dangling refs are allowed).
-func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
+func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
 	if ref.Source == sourceID {
 		ref.Source = ""
 	}
@@ -492,7 +492,7 @@ func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, ch
 		if value == "" {
 			return value, nil
 		}
-		ref, err := resolveRef(ctx, cfg, sourceID, parseRef(value))
+		ref, err := ResolveRef(ctx, cfg, sourceID, parseRef(value))
 		return refText(ref), err
 	}
 	out := make([]model.Mutation, len(changes))

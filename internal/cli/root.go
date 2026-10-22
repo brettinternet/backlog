@@ -95,7 +95,26 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			sources = append(sources, s.ID)
 		}
 		restored, warning := tui.LoadSession(cfg)
+		createSource := ""
+		if len(cfg.Sources) == 1 {
+			createSource = cfg.Sources[0].ID
+		}
 		app := tui.New(tui.Options{
+			CreateSource: createSource, DefaultType: cfg.Defaults.Type, DefaultDoD: cfg.Defaults.DOD,
+			ValidateItem: func(item model.Item) error { return engine.ValidateItem(cfg, item) },
+			ResolveRef: func(ctx context.Context, source string, ref model.Ref) (model.Ref, error) {
+				return ResolveRef(ctx, cfg, source, ref)
+			},
+			NativeBytes: func(_ context.Context, item model.Item) ([]byte, error) { return readNativeBytes(cfg, item) },
+			NativeSource: func(id string) bool {
+				for _, s := range cfg.Sources {
+					if s.ID == id {
+						return s.Type == "native"
+					}
+				}
+				return false
+			},
+			EditorDir: directory, CommentAuthor: cfg.Me.Default,
 			Views: cfg.SavedViews, Session: restored, Warning: warning,
 			SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
 				path, scope := cfg.Paths.ConfigFile, "user"

@@ -20,24 +20,31 @@ import (
 )
 
 type Options struct {
-	HighContrast, NoColor bool
-	Project               string
-	Store                 *engine.Store
-	Projector             *engine.Projector
-	Context               context.Context
-	Sources               []string
-	Statuses              []project.StatusConfig
-	Workflow              project.WorkflowConfig
-	Labels                []string
-	Milestones            []project.Milestone
-	Me                    string
-	OpenURL               func(context.Context, string) error
-	Read                  func(context.Context, model.Ref) (model.Item, error)
-	Render                func(string, int) (string, error)
-	Views                 []project.SavedView
-	Session               *Session
-	Warning               string
-	SaveView              func(project.ViewConfig, bool) (project.SavedView, error)
+	HighContrast, NoColor                   bool
+	Project                                 string
+	Store                                   *engine.Store
+	Projector                               *engine.Projector
+	Context                                 context.Context
+	Sources                                 []string
+	Statuses                                []project.StatusConfig
+	Workflow                                project.WorkflowConfig
+	Labels                                  []string
+	Milestones                              []project.Milestone
+	Me                                      string
+	CreateSource, CreateStatus, DefaultType string
+	DefaultDoD                              []string
+	ValidateItem                            func(model.Item) error
+	ResolveRef                              func(context.Context, string, model.Ref) (model.Ref, error)
+	NativeBytes                             func(context.Context, model.Item) ([]byte, error)
+	NativeSource                            func(string) bool
+	EditorDir, CommentAuthor                string
+	OpenURL                                 func(context.Context, string) error
+	Read                                    func(context.Context, model.Ref) (model.Item, error)
+	Render                                  func(string, int) (string, error)
+	Views                                   []project.SavedView
+	Session                                 *Session
+	Warning                                 string
+	SaveView                                func(project.ViewConfig, bool) (project.SavedView, error)
 }
 
 type screenRow struct {
@@ -125,6 +132,8 @@ type Model struct {
 	visualAnchor             int
 	lastEdit                 *editAction
 	archiveConfirm           bool
+	capture                  captureState
+	longEdit                 longEditState
 }
 
 var viewNames = []string{"Next", "Active", "Mine", "All"}
@@ -496,6 +505,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.picker.cursor = msg.cursor
 		}
 		return m, nil
+	case editPreparedMsg:
+		return m.editorPrepared(msg)
+	case editFinishedMsg:
+		return m.editorFinished(msg)
+	case editSavedMsg:
+		return m.editorSaved(msg)
 	case editResultMsg:
 		m.editResult(msg)
 		return m, nil
@@ -506,6 +521,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		s := msg.String()
 		if s == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.longEdit.choice != "" {
+			return m, m.updateLongEdit(s)
+		}
+		if m.capture.open {
+			return m, m.updateCapture(s)
 		}
 		if m.picker.open {
 			return m, m.updatePickerKey(s)
@@ -913,6 +934,12 @@ func (m Model) View() tea.View {
 	}
 	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" {
 		footer = layout + " unavailable; list · " + footer
+	}
+	if m.capture.open {
+		return m.captureFormView()
+	}
+	if m.longEdit.choice != "" {
+		return m.longEditView()
 	}
 	if m.picker.open || m.archiveConfirm {
 		return m.editView()

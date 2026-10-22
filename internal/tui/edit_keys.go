@@ -58,6 +58,26 @@ func (m *Model) updateEditKey(key string) (tea.Cmd, bool) {
 		return m.beginPicker(pickerParent), true
 	case "t":
 		return m.beginPicker(pickerTitle), true
+	case "n", "N":
+		m.beginCapture(key == "N")
+		return nil, true
+	case "E":
+		row, ok := m.selectedRow()
+		if !ok {
+			m.notice = "Select an item before editing."
+			return nil, true
+		}
+		if m.opts.Store == nil || m.opts.NativeBytes == nil || m.opts.NativeSource == nil || !m.opts.NativeSource(row.Ref.Source) || !m.opts.Store.Capabilities(row.Ref.Source).Allows(model.Restore) {
+			m.beginFullEdit()
+			return nil, true
+		}
+		return m.beginLongEdit(""), true
+	case "e":
+		return m.beginLongEdit("Description"), true
+	case "c":
+		return m.beginTextAppend(model.AppendComment), true
+	case "i":
+		return m.beginTextAppend(model.AppendNote), true
 	case "S":
 		return m.workflowTransition(m.opts.Workflow.Start, "active"), true
 	case "D":
