@@ -24,8 +24,8 @@ exit 2 and list the valid topics. With `--json`, `data` contains `topic`,
 The workflow documents the available next/start/note/ac/done loop with JSON
 and version guards. This foundation release does not claim work: next is
 read-only and start changes status only. Use the project's external
-coordination policy before starting concurrent work. BL-32 adds coordination
-guidance; BL-33 adds the stable-session claimed CLI/MCP loop.
+coordination policy before starting concurrent work. The embedded text names
+no repository task IDs; BL-32 and BL-33 replace this guidance when claims ship.
 
 ## Native read cache
 

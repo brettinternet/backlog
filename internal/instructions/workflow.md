@@ -3,9 +3,8 @@
 Use this foundation workflow only after satisfying the project's coordination
 policy. There is no built-in claim operation yet: next is read-only and start
 only changes status. This is not a safe concurrent-agent loop by itself.
-Coordination/resource/transition guidance arrives with BL-32; the claimed,
-stable-session CLI/MCP loop arrives with BL-33. Do not invent resource keys or
-treat a status transition as a claim.
+A later release adds claims and a claimed, stable-session loop; until then,
+do not invent resource keys or treat a status transition as a claim.
 
 Pick a ready item and read its full intent, criteria, history, and file scope:
 

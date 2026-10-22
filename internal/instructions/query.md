@@ -7,7 +7,7 @@ spaces inside the query.
 ```sh
 bl ls 'is:open priority:>=high' --sort priority,id --group status -n 20 --json
 bl next 'label:cli' --explain --json
-bl ls -- -label:wontfix
+bl ls -- -priority:low
 ```
 
 Use status, category, priority, assignee, label, type, milestone, source,
