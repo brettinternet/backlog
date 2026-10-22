@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -168,7 +170,7 @@ func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryAr
 	}
 	snap, err := engine.LoadReads(ctx, s.cfg, archived)
 	if err != nil {
-		return failed[any]("unavailable", err.Error())
+		return failed[any](reason(err), err.Error())
 	}
 	parsed, err := snap.Parse(text)
 	if err != nil {
@@ -241,6 +243,9 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 		item.BlockedBy = append(item.BlockedBy, blocked)
 	}
 	for _, c := range args.Criteria {
+		if strings.TrimSpace(c) == "" || strings.ContainsAny(c, "\r\n") {
+			return failed[any]("usage", "criteria must be nonempty and single-line")
+		}
 		item.Criteria = append(item.Criteria, model.Criterion{Text: c})
 	}
 	if item.Type == "" {
@@ -299,7 +304,10 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 		return nil, ItemResult{updated}, nil
 	}
 	changes := make([]model.Mutation, 0, len(args.Fields))
-	for field, value := range args.Fields {
+	// JSON objects are unordered; sorted keys make a batch deterministic and put
+	// a field's set before its + and - changes.
+	for _, field := range slices.Sorted(maps.Keys(args.Fields)) {
+		value := args.Fields[field]
 		op := model.Set
 		if strings.HasSuffix(field, "+") {
 			op, field = model.Add, strings.TrimSuffix(field, "+")

@@ -131,6 +131,8 @@ func TestFoundationToolsAndWriteGuards(t *testing.T) {
 	if childResult.Item.Parent == nil || childResult.Item.Parent.ID != ready.Item.Ref.ID || len(childResult.Item.BlockedBy) != 1 || childResult.Item.BlockedBy[0].ID != ready.Item.Ref.ID || childResult.Item.Milestone != "m1" || childResult.Item.Due != "2030-01-02" || childResult.Item.Priority != "high" || len(childResult.Item.Labels) != 1 || childResult.Item.Labels[0] != "agent" {
 		t.Fatalf("create quick-add fields: %#v", childResult.Item)
 	}
+	// A newline would split one criterion into Markdown the parser reads back differently.
+	assertErr(call("create", map[string]any{"title": "Bad criterion", "criteria": []string{"one\n- [ ] two"}}), "usage")
 	path := filepath.Join(root, "items", ready.Item.Ref.ID+".md")
 	before, err := os.ReadFile(path)
 	if err != nil {
