@@ -2,8 +2,10 @@
 """Run the shared backlog with a build of committed primary main, never a worktree build."""
 
 import fcntl
+import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,9 +21,13 @@ def main():
     if git("symbolic-ref", "--quiet", "--short", "HEAD") != "main":
         sys.exit("backlog-cli: primary checkout must be on main")
     revision = git("rev-parse", "HEAD")
+    # Key by the committed tree without backlog/, so the frequent task-state
+    # commits reuse the existing build instead of rebuilding and piling up binaries.
+    tree = [line for line in git("ls-tree", revision).splitlines() if line.split("\t", 1)[1] != "backlog"]
+    key = hashlib.sha256("\n".join(tree).encode()).hexdigest()
     cache = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "backlog-cli"
     cache.mkdir(exist_ok=True)
-    binary = cache / revision / "bl"
+    binary = cache / key / "bl"
     with (cache / "build.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not binary.is_file():
@@ -35,6 +41,10 @@ def main():
                     cwd=directory, env={**os.environ, "CGO_ENABLED": "0"}, check=True,
                 )
                 os.replace(str(binary) + ".tmp", binary)
+            # Only the current build is needed; a running old binary keeps its inode.
+            for stale in cache.iterdir():
+                if stale.is_dir() and stale.name != key:
+                    shutil.rmtree(stale, ignore_errors=True)
     os.execv(binary, [str(binary), *sys.argv[1:]])
 
 

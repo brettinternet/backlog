@@ -33,10 +33,20 @@ class PrimaryBuildTest(unittest.TestCase):
             run("git", "-c", "core.hooksPath=/dev/null", "commit", "-m", "initial")
             source.write_text("not valid Go; must not be built\n")
             self.assertEqual(run(sys.executable, str(WRAPPER)).stdout.strip(), "committed")
+            builds = root / ".git/backlog-cli"
+            first = {path.name for path in builds.iterdir() if path.is_dir()}
+            # A task-state commit must reuse the build rather than add another binary.
+            (root / "backlog").mkdir()
+            (root / "backlog/BL-1.md").write_text("task\n")
+            run("git", "add", "backlog")
+            run("git", "-c", "core.hooksPath=/dev/null", "commit", "-m", "task")
+            self.assertEqual(run(sys.executable, str(WRAPPER)).stdout.strip(), "committed")
+            self.assertEqual({path.name for path in builds.iterdir() if path.is_dir()}, first)
             source.write_text('package main\nimport "fmt"\nfunc main() { fmt.Println("updated") }\n')
             run("git", "add", ".")
             run("git", "-c", "core.hooksPath=/dev/null", "commit", "-m", "update")
             self.assertEqual(run(sys.executable, str(WRAPPER)).stdout.strip(), "updated")
+            self.assertEqual(len([path for path in builds.iterdir() if path.is_dir()]), 1)
             run("git", "checkout", "--detach")
             self.assertNotEqual(run(sys.executable, str(WRAPPER), check=False).returncode, 0)
 
