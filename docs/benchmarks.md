@@ -355,6 +355,47 @@ substantially. D26's 150/400 MiB TUI budgets are unchanged and unmet. BL-58 must
 reduce retained/load memory while preserving these navigation measurements;
 reimposing the fixed target without that reduction recreates GC thrashing.
 
+#### Post-memory qualification (BL-55)
+
+The initial passing held-key samples above did not close BL-55: later runs
+measured 10.63 ms under overlapping measurement load and 9.68 ms after a quiet
+gate, both exceeding the unchanged 8.333 ms limit. Those observations preceded
+BL-58's retained-memory and interactive-GC changes; they remain historical
+failures, not passing evidence.
+
+On 2026-10-22, runtime revision `de39c9e` (including BL-58's `24d5a31` merge),
+the same D26 host, toolchain, fixture and renderer settings were requalified with
+both `GOGC` and `GOMEMLIMIT` unset:
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/10000/interaction$' -v -count=1 -timeout=30m
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/10000/interaction$' -v -count=5 -timeout=30m
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/(10000|50000)/interaction$|^TestShellMeasurement$' -v -count=1 -timeout=30m
+```
+
+| Boundary | Current result | Unchanged budget |
+| --- | --- | --- |
+| 50k navigation key-to-PTY, n=100 | p95 9.850 ms | ≤ 16 ms |
+| 50,001 prepared rows, Update+View, n=2,000 | p95 0.0765 ms | ≤ 4 ms |
+| 10k held `j`, 40 Hz for 5 s, fresh children | 6.039, 6.195, 6.358, 4.738, 6.204, 6.635, 6.189 ms after release | ≤ 8.333 ms each |
+| Peak child RSS, interaction qualification | 132.19 / 373.52 MiB at 10k / 50k | ≤ 150 / 400 MiB |
+
+Every held-key sample delivered all 200 keys and observed the final cursor;
+none was discarded. The original 31.69 ms navigation baseline and its command
+remain above. The production runtime no longer uses the original standard
+100% heap growth: BL-58 ships 20% growth after reducing retained memory, while
+preserving explicit runtime overrides. These measurements qualify that combined
+implementation, not the earlier high-memory revision. No renderer fork,
+measurement-only tuning, test change or budget relaxation was needed.
+
+Independent verification ran the combined command once and the 10k interaction
+command with `-count=3`, explicitly unsetting both runtime variables. It measured
+50k PTY p95 9.848 ms, Update+View p95 0.0742 ms, and held-release samples
+7.557, 4.845, 7.784 and 6.180 ms: every criterion passed, including the strict
+8.333 ms release bound. `task ci` passed, and navigation-path inspection confirmed
+viewport-only rendering and no backlog-sized work or I/O on Update. These are
+reference-host measurements, not guarantees under arbitrary concurrent load.
+
 ### Filter latency (BL-56)
 
 2026-10-22, D26 host: Apple M5 Max, 64 GiB, Darwin 27.0.0 arm64,
