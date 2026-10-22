@@ -4,7 +4,7 @@ title: Move the owner's other repositories onto bl
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:28'
+updated_date: '2026-10-22 04:49'
 labels:
   - import
   - human
@@ -36,7 +36,7 @@ This edits other repositories. The owner chooses the order and approves each mig
 
 ## What
 
-For each chosen Backlog.md repository (hum, worklease, tell, noon, and others):
+For each chosen Backlog.md repository (only repositories explicitly approved by the owner):
 
 - Run `bl import backlog-md`.
 - Port the repository's backlog Taskfile targets and AGENTS.md workflow to `bl`.
@@ -72,3 +72,9 @@ Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-sour
 4. Verify two distinct-session loops and one real complete native task loop per migrated repository, including done/release and recovery guidance; verify the same skills still dispatch correctly for an unmigrated Backlog.md fixture. Record evidence and separate commits in each authorized repository and the skills' owning repository, with any deviation from this task's local file scope explained. Do not push without explicit permission.
 5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner clarification: Hum is a reference Go project whose code/conventions may be copied, not an assumed migration target or project dependency. Removed its nomination from this task; no Hum changes are authorized.
+<!-- SECTION:NOTES:END -->
