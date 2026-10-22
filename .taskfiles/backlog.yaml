@@ -18,6 +18,11 @@ tasks:
       BACKLOG_CWD: "{{.CONTROL_ROOT}}"
     cmd: mise exec -- backlog {{.CLI_ARGS}}
 
+  claim:
+    desc: "Run Worklease from the primary checkout so a claim resolves from every worktree: task backlog:claim -- release -s SESSION"
+    dir: "{{.CONTROL_ROOT}}"
+    cmd: mise exec -- worklease {{.CLI_ARGS}}
+
   next:
     desc: Show the first ready To Do task that needs no owner action
     dir: "{{.CONTROL_ROOT}}"
