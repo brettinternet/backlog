@@ -117,13 +117,26 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 	if completed.Status != "done" {
 		t.Fatalf("completed partition did not map to done: %s", completed.Status)
 	}
-	draft := readItem("backlog/DRAFT-001.md").Item()
-	if draft.Status != "draft" {
-		t.Fatalf("draft status was not assigned: %s", draft.Status)
+	// Drafts are numbered after the highest task (archived TASK-20), in draft ID
+	// order, and a dependency on a draft follows its new ID.
+	draft := readItem("backlog/TASK-21.md").Item()
+	if draft.Ref.ID != "TASK-21" || draft.Status != "draft" {
+		t.Fatalf("draft did not get the next native ID and draft status: %+v", draft)
 	}
-	archivedDraft := readItem("backlog/archive/DRAFT-002.md").Item()
-	if archivedDraft.Status != "draft" {
-		t.Fatalf("archived draft status was not assigned: %s", archivedDraft.Status)
+	archivedDraft := readItem("backlog/archive/TASK-22.md").Item()
+	if archivedDraft.Ref.ID != "TASK-22" || archivedDraft.Status != "draft" {
+		t.Fatalf("archived draft did not get the next native ID and draft status: %+v", archivedDraft)
+	}
+	if dependent := readItem("backlog/TASK-10.md").Item(); len(dependent.BlockedBy) != 1 || dependent.BlockedBy[0].ID != "TASK-21" {
+		t.Fatalf("dependency on a draft was not rewritten: %+v", dependent.BlockedBy)
+	}
+	if settings.Statuses[0].Key != "draft" || settings.Statuses[0].Category != "backlog" {
+		t.Fatalf("draft status is not configured first: %+v", settings.Statuses)
+	}
+	for _, file := range preview.Files {
+		if file.SourcePath == "drafts/draft-001.md" && file.ID != "TASK-21" {
+			t.Fatalf("draft report does not show its native ID: %+v", file)
+		}
 	}
 	first := readItem("backlog/archive/TASK-20.md").Item().Rank
 	second := readItem("backlog/TASK-12.md").Item().Rank
@@ -268,7 +281,7 @@ A retained comment.
 Summary text.
 <!-- SECTION:FINAL_SUMMARY:END -->
 `)
-	writeFixtureFile(t, root, "tasks/task-10.md", basicTask("task-10", "To Do", "ordinal: 100\nmilestone: Unknown Release\n"))
+	writeFixtureFile(t, root, "tasks/task-10.md", basicTask("task-10", "To Do", "ordinal: 100\nmilestone: Unknown Release\ndependencies: [draft-1]\n"))
 	writeFixtureFile(t, root, "completed/task-12.md", basicTask("task-12", "To Do", "ordinal: 50\n"))
 	writeFixtureFile(t, root, "archive/tasks/task-20.md", basicTask("task-20", "Done", "ordinal: 1\n"))
 	writeFixtureFile(t, root, "drafts/draft-001.md", basicTask("draft-001", "Draft", ""))

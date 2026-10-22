@@ -45,6 +45,9 @@ func TestImportDryRunAndDestinationRefusal(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("check: %d %s %s", code, out, stderr)
 	}
+	if config := get(t, filepath.Join(target, ".config", "backlog.yaml")); !strings.Contains(config, "key: draft") {
+		t.Fatalf("a source without drafts lost the draft status:\n%s", config)
+	}
 	before := get(t, filepath.Join(target, "backlog", "TASK-01.2.md"))
 	code, out, stderr = writeRun(root, "", "import", "backlog-md", "backlog", "--to", "imported")
 	if code != 5 || stderr != "" || !strings.Contains(out, `"reason":"rejected"`) {

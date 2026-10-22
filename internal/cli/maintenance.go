@@ -171,6 +171,7 @@ func initialize(directory, prefix, sourcePath string) (initResult, error) {
 		Project: project.ProjectConfig{ID: id, Name: filepath.Base(root)},
 		Sources: []project.SourceConfig{{ID: "tasks", Type: "native", Path: storedPath, Prefix: prefix}},
 		Statuses: []project.StatusConfig{
+			{Key: "draft", Name: "Draft", Category: string(model.Backlog)},
 			{Key: "todo", Name: "To Do", Category: string(model.Todo)},
 			{Key: "in-progress", Name: "In Progress", Category: string(model.Active)},
 			{Key: "done", Name: "Done", Category: string(model.Done)},

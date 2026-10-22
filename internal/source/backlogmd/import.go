@@ -103,6 +103,7 @@ type taskInput struct {
 	milestone       string
 	mappedStatus    string
 	refMap          map[string]string
+	nativeID        string
 }
 
 type milestoneInput struct {
@@ -152,8 +153,9 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		OutputPaths: []string{}, Files: []FileReport{}, Configuration: []FieldMapping{},
 		Decisions: []string{
 			"Task IDs are upper-cased while retaining zero padding and dotted suffixes; references use the same IDs.",
+			"Drafts outside the native prefix are numbered after its highest ID, in draft ID order, as backlog draft promote would; references follow the new IDs.",
 			"Source ordinals are sorted and converted to spaced lexical rank keys, preserving their order and leaving insertion gaps.",
-			"Completed-partition items use the done status; draft-partition items use a draft status in the backlog category.",
+			"Completed-partition items use the done status; draft-partition items use the draft status, which is always configured in the backlog category.",
 			"Legacy timestamps without a timezone are interpreted as UTC and emitted as RFC 3339 UTC timestamps.",
 			"Unknown task frontmatter fields are retained as native fields; unknown body sections are retained under Description.",
 		},
@@ -200,15 +202,15 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		}
 		milestones = append(milestones, milestone)
 	}
-	idMap, err := makeIDMap(tasks)
+	prefix, err := nativePrefix(source, tasks)
+	if err != nil {
+		return report, err
+	}
+	idMap, err := makeIDMap(tasks, prefix)
 	if err != nil {
 		return report, err
 	}
 	milestoneConfig, milestoneByKey, milestoneByTitle, err := makeMilestones(milestones, &report)
-	if err != nil {
-		return report, err
-	}
-	prefix, err := nativePrefix(source, tasks)
 	if err != nil {
 		return report, err
 	}
@@ -772,9 +774,14 @@ func readMilestone(candidate sourceCandidate) (milestoneInput, error) {
 	return milestoneInput{doc: doc, sourcePath: candidate.relative, id: id, name: name, description: description, archived: candidate.archived}, nil
 }
 
-func makeIDMap(tasks []taskInput) (map[string]string, error) {
+// makeIDMap maps each canonical source ID to its native ID. Drafts outside the
+// native prefix get the next IDs after its highest one, as Backlog.md's draft
+// promote would, because a native ID never changes when a draft is promoted.
+func makeIDMap(tasks []taskInput, prefix string) (map[string]string, error) {
 	result := make(map[string]string, len(tasks))
 	seen := make(map[string]string, len(tasks))
+	highest := new(big.Int)
+	drafts := []string{}
 	for _, task := range tasks {
 		upper := strings.ToUpper(task.id)
 		if !validBacklogID(upper) {
@@ -786,8 +793,42 @@ func makeIDMap(tasks []taskInput) (map[string]string, error) {
 		}
 		seen[canonical] = task.sourcePath
 		result[canonical] = upper
+		taskPrefix, number, _ := strings.Cut(canonical, "-")
+		if taskPrefix != prefix {
+			if task.draft {
+				drafts = append(drafts, canonical)
+			}
+			continue
+		}
+		first, _, _ := strings.Cut(number, ".")
+		if n, _ := new(big.Int).SetString(first, 10); n.Cmp(highest) > 0 {
+			highest = n
+		}
+	}
+	sort.Slice(drafts, func(i, j int) bool { return idLess(drafts[i], drafts[j]) })
+	for _, draft := range drafts {
+		highest = new(big.Int).Add(highest, big.NewInt(1))
+		result[draft] = prefix + "-" + highest.String()
 	}
 	return result, nil
+}
+
+// idLess orders valid canonical IDs by prefix, then numerically by component.
+func idLess(a, b string) bool {
+	aPrefix, aNumber, _ := strings.Cut(a, "-")
+	bPrefix, bNumber, _ := strings.Cut(b, "-")
+	if aPrefix != bPrefix {
+		return aPrefix < bPrefix
+	}
+	aParts, bParts := strings.Split(aNumber, "."), strings.Split(bNumber, ".")
+	for i := 0; i < len(aParts) && i < len(bParts); i++ {
+		x, _ := new(big.Int).SetString(aParts[i], 10)
+		y, _ := new(big.Int).SetString(bParts[i], 10)
+		if c := x.Cmp(y); c != 0 {
+			return c < 0
+		}
+	}
+	return len(aParts) < len(bParts)
 }
 
 func validBacklogID(id string) bool {
@@ -878,9 +919,7 @@ func nativePrefix(source sourceConfig, tasks []taskInput) (string, error) {
 			}
 		}
 	}
-	if prefix == "" && len(tasks) > 0 {
-		prefix, _, _ = strings.Cut(tasks[0].id, "-")
-	}
+	// Drafts never set the prefix: they get native IDs in it (makeIDMap).
 	if prefix == "" {
 		prefix = "TASK"
 	}
@@ -923,6 +962,8 @@ func makeStatuses(source sourceConfig, tasks []taskInput) ([]project.StatusConfi
 		byKey[key] = len(statuses) - 1
 		lookup[identity] = key
 	}
+	// Every Backlog.md source has drafts/, so the draft status always exists.
+	add("Draft")
 	for _, status := range source.statuses {
 		add(status)
 	}
@@ -1047,7 +1088,8 @@ func statusCategory(value string) model.StatusCategory {
 }
 
 func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestoneByTitle map[string]string, statusLookup map[string]string, report *Report) error {
-	id := strings.ToUpper(task.id)
+	id := idMap[canonicalID(task.id)]
+	task.nativeID = id
 	statusKey, ok := statusLookup[statusIdentity(task.status)]
 	if !ok {
 		statusKey = statusKeyForTask(task.status)
@@ -1435,13 +1477,13 @@ func taskFileReport(task taskInput) FileReport {
 	if task.archived {
 		kind = "archived-" + kind
 	}
-	return FileReport{SourcePath: task.sourcePath, OutputPath: task.outputPath, Kind: kind, ID: strings.ToUpper(task.id), Mappings: mappings}
+	return FileReport{SourcePath: task.sourcePath, OutputPath: task.outputPath, Kind: kind, ID: task.nativeID, Mappings: mappings}
 }
 
 func mapReportedField(key string, original any, task taskInput) (string, any) {
 	switch key {
 	case "id":
-		return "id", strings.ToUpper(task.id)
+		return "id", task.nativeID
 	case "title":
 		return "title", task.title
 	case "status":

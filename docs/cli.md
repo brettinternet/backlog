@@ -176,7 +176,7 @@ they are atomic per item, not across items. If any ID fails, the envelope has
 exit code. Multiple IDs with `--if-version` exit 2 before writing any item.
 Text output reports each outcome too.
 
-### `bl new TITLE [TOKENS] [--body TEXT|-] [--ac TEXT]... [--source SOURCE]`
+### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--source SOURCE]`
 
 Creates an item using the [quick-add tokens](query.md#shared-quick-add-parser) (priority
 `!h`, assignee `@me`, label `#bug`, parent `^BL-1`, blocker `<BL-2`,
@@ -185,10 +185,12 @@ milestone `~m-1`, and type `:feature`). Quote tokens against shell expansion.
 shorthand like `show` and are stored as the target's ID (`<1` stores `BL-1`,
 or `BL-001` when that file exists); references to another source stay
 qualified. A missing target is stored as written and reported by `bl check`. `--body -` reads stdin verbatim.
-Repeat `--ac` for single-line criteria. Config `defaults.type` applies unless a
+Repeat `--ac` for single-line criteria; commas stay inside one criterion. Config `defaults.type` applies unless a
 type token is supplied, and `defaults.dod` supplies unchecked DoD entries.
-Status is the first configured todo-category status, or the first configured
-status if none is todo. `--source` is required unless exactly one source exists.
+`--status` takes a configured status key, so `--status draft` creates a draft that
+is never ready (design.md D29); an unknown key exits 5 with the allowed values and
+writes nothing. Without it, status is the first configured todo-category status,
+or the first configured status if none is todo. `--source` is required unless exactly one source exists.
 The source allocates a fresh shared ID; creation with a nonempty
 `--if-version` fails with conflict because no prior item exists.
 
@@ -260,8 +262,8 @@ next ranking exclude them. The bytes and content version are unchanged.
 Initialize a repository with `.config/backlog.yaml` and a native item directory.
 The defaults are prefix `BL` and path `backlog`; `--path` is stored in the
 project config and created relative to the control root unless it is absolute.
-The generated config includes `todo`, `in-progress`, and `done` statuses and
-workflow defaults. `project.id` is written only when derived from a shared
+The generated config includes `draft`, `todo`, `in-progress`, and `done`
+statuses and workflow defaults. `project.id` is written only when derived from a shared
 `origin` remote; a host-local path is left to the runtime default
 (design.md §5). Run inside a Git repository. An existing project config is
 never overwritten; this refusal exits 5 and creates no files.
