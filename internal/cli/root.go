@@ -18,6 +18,7 @@ import (
 	urfave "github.com/urfave/cli/v3"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
@@ -188,6 +189,13 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		},
 		Commands: []*urfave.Command{
 			{Name: "version", Usage: "Print build information", Action: version},
+			{Name: "mcp", Usage: "Serve MCP tools over stdio", Action: func(ctx context.Context, cmd *urfave.Command) error {
+				cfg, err := loadConfig(cmd, directory)
+				if err != nil {
+					return err
+				}
+				return mcp.ServeStreams(ctx, cfg, in, out)
+			}},
 			{Name: "tui", Usage: "Browse the backlog (requires a terminal)", Action: openTUI},
 			{Name: "config", Usage: "Inspect layered project settings",
 				Action: func(_ context.Context, _ *urfave.Command) error {

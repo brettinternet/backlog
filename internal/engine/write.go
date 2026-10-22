@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/format"
@@ -14,8 +17,104 @@ import (
 
 const WriteFields = "title status type priority assignees labels milestone parent blocked_by related duplicate_of rank due refs files"
 
+// ResolveRef expands an item reference using the same shorthand rules as CLI writes.
+func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
+	if ref.Source == sourceID {
+		ref.Source = ""
+	}
+	lookup := ref.Source
+	if lookup == "" {
+		lookup = sourceID
+	}
+	matches, err := ReadDetail(ctx, cfg, lookup+":"+ref.ID)
+	if err != nil {
+		return ref, err
+	}
+	if len(matches) == 1 {
+		ref.ID = matches[0].Ref.ID
+		return ref, nil
+	}
+	if _, err := strconv.ParseUint(ref.ID, 10, 64); err == nil {
+		for _, c := range cfg.Sources {
+			if c.ID == lookup {
+				ref.ID = c.Prefix + "-" + ref.ID
+			}
+		}
+	}
+	return ref, nil
+}
+
 func ListField(field string) bool {
 	return slices.Contains(strings.Fields("assignees labels blocked_by related refs files"), field)
+}
+
+// ResolveChanges expands reference shorthand in mutations before applying them.
+func ResolveChanges(ctx context.Context, cfg project.Config, sourceID string, changes []model.Mutation) ([]model.Mutation, error) {
+	resolve := func(value string) (string, error) {
+		if value == "" {
+			return value, nil
+		}
+		ref := model.Ref{ID: value}
+		if source, id, ok := strings.Cut(value, ":"); ok {
+			ref = model.Ref{Source: source, ID: id}
+		}
+		resolved, err := ResolveRef(ctx, cfg, sourceID, ref)
+		if resolved.Source != "" {
+			return resolved.Source + ":" + resolved.ID, err
+		}
+		return resolved.ID, err
+	}
+	out := make([]model.Mutation, len(changes))
+	for n, m := range changes {
+		switch m.Field {
+		case "parent", "duplicate_of", "blocked_by", "related":
+			switch value := m.Value.(type) {
+			case string:
+				resolved, err := resolve(value)
+				if err != nil {
+					return nil, err
+				}
+				m.Value = resolved
+			case []string:
+				values := make([]string, len(value))
+				for k, raw := range value {
+					resolved, err := resolve(raw)
+					if err != nil {
+						return nil, err
+					}
+					values[k] = resolved
+				}
+				m.Value = values
+			}
+		}
+		out[n] = m
+	}
+	return out, nil
+}
+
+// ErrorReason classifies engine/source failures for machine-facing adapters.
+func ErrorReason(err error) string {
+	var refusal *source.Error
+	if errors.As(err, &refusal) {
+		switch refusal.Reason {
+		case "conflict", "not-found", "unavailable", "rejected":
+			return refusal.Reason
+		}
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return "unavailable"
+	}
+	return "rejected"
+}
+
+// ErrorMessage preserves source refusal text without its machine reason prefix.
+func ErrorMessage(err error) string {
+	var refusal *source.Error
+	if errors.As(err, &refusal) {
+		return refusal.Message
+	}
+	return err.Error()
 }
 
 // ApplyWrite is synchronous and UI-independent. Every operation is validated
