@@ -464,3 +464,25 @@ func TestDisplayedVersionConflictRetainsBothVersions(t *testing.T) {
 		t.Fatal("preflight conflict reached the source")
 	}
 }
+
+// A second key press before the list shows the user's own first edit must not
+// be recorded as a sticky conflict on the item; only foreign changes conflict.
+func TestStaleOwnEditIsBusyNotConflict(t *testing.T) {
+	t.Parallel()
+	backend := fakeSource(t, "tasks")
+	store := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
+	defer store.Close()
+	ref := model.Ref{Source: "tasks", ID: "BL-1"}
+	initial := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	old, _, _ := initial.Get(ref)
+	if err := awaitResult(t, store.Mutate(change(old, "First"))); err != nil {
+		t.Fatal(err)
+	}
+	err := awaitResult(t, store.Mutate(change(old, "Second")))
+	if err == nil || !strings.Contains(err.Error(), "busy") {
+		t.Fatalf("stale own write result: %v", err)
+	}
+	if item, edit, _ := store.Current().Get(ref); item.Title != "First" || edit.Error != "" {
+		t.Fatalf("own stale edit left state: item=%q edit=%+v", item.Title, edit)
+	}
+}

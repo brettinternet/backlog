@@ -54,6 +54,9 @@ type storeState struct {
 	undo, redo  []historyEntry
 	historyBusy bool
 	serial      uint64
+	// superseded holds versions this session's own edits replaced. A caller
+	// expecting one is only behind its own edit, not in conflict with anyone.
+	superseded map[model.Ref]string
 }
 
 // OpenProjectStore constructs the configured sources without loading items.
@@ -75,7 +78,7 @@ func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, capabilities: make(map[string]model.Capabilities, len(registry)), events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}
 	initial := &Snapshot{records: map[model.Ref]*record{}, sources: map[string]SourceState{}}
-	st := &storeState{store: s, snapshot: initial, workers: map[string]*sourceWorker{}, pending: map[model.Ref]bool{}}
+	st := &storeState{store: s, snapshot: initial, workers: map[string]*sourceWorker{}, pending: map[model.Ref]bool{}, superseded: map[model.Ref]string{}}
 	for id, backend := range registry {
 		caps := backend.Info().Capabilities
 		s.capabilities[id] = make(model.Capabilities, len(caps))
@@ -238,6 +241,10 @@ func (st *storeState) begin(job *editJob) {
 		before := st.snapshot.records[m.Ref]
 		if before == nil {
 			reject(source.Refuse("not-found", "item is not loaded"))
+			return
+		}
+		if m.ExpectedVersion != "" && m.ExpectedVersion != before.item.Version && m.ExpectedVersion == st.superseded[m.Ref] {
+			reject(source.Refuse("busy", "display is behind your previous edit; retry"))
 			return
 		}
 		if m.ExpectedVersion == "" || m.ExpectedVersion != before.item.Version {
@@ -418,6 +425,7 @@ func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err e
 			entry := historyEntry{mutation: inverse}
 			if job.before != nil {
 				entry.targetVersion = job.before.item.Version
+				st.superseded[item.Ref] = job.before.item.Version
 			}
 			var targetVersion string
 			switch job.history {

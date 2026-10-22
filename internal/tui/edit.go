@@ -1078,7 +1078,7 @@ func osc52(value string) tea.Cmd {
 	return tea.Raw(sequence)
 }
 
-func (m Model) yank(key string) tea.Cmd {
+func (m *Model) yank(key string) tea.Cmd {
 	row, ok := m.selectedRow()
 	if !ok {
 		return nil
@@ -1094,7 +1094,9 @@ func (m Model) yank(key string) tea.Cmd {
 	case "u":
 		value = row.URL
 	case "m":
-		value = fmt.Sprintf("[%s](%s)", row.Title, row.URL)
+		if row.URL != "" {
+			value = fmt.Sprintf("[%s](%s)", row.Title, row.URL)
+		}
 	default:
 		m.notice = "Unknown yank target."
 		return nil
