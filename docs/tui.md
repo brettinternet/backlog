@@ -40,7 +40,9 @@ of creation archives the new item; redo unarchives it. Archived session items
 remain available for undo but are excluded by normal projections.
 
 Native sources watch directory entries only: two descriptors on macOS
-(kqueue plus directory), one on Linux (inotify), independent of item count.
+(kqueue plus directory), two on Linux (inotify plus a cancellation eventfd),
+independent of item count. Watches block without timeouts, so idle costs no
+wakeups beyond the sweep.
 Atomic edits, creates, deletes and renames signal immediately. A two-second
 stat sweep catches in-place edits on macOS, which do not signal the directory;
 the 150 ms filesystem-event budget applies to directory-signaled changes.

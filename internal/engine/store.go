@@ -244,7 +244,9 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 						continue
 					}
 					old := n.records[i.Ref]
-					if old == nil || old.item.Version != i.Version {
+					// Loads list active items only, so a session-archived record seen here
+					// was unarchived externally; a version check alone would keep it hidden.
+					if old == nil || old.item.Version != i.Version || old.archived {
 						edit := EditState{}
 						if old != nil {
 							edit = old.edit

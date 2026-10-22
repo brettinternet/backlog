@@ -382,7 +382,7 @@ func TestQueuedEditsArePendingBeforeSourceIO(t *testing.T) {
 }
 func TestCreateArchiveUndoAndShutdown(t *testing.T) {
 	t.Parallel()
-	s, _, _ := nativeStore(t)
+	s, nativeBackend, _ := nativeStore(t)
 	requireSuccess(t, s.Mutate(model.Mutation{Ref: model.Ref{Source: "tasks"}, Op: model.Create, Item: &model.Item{Title: "New", Status: "todo"}}))
 	requireSuccess(t, s.Undo())
 	requireSuccess(t, s.Redo())
@@ -393,6 +393,27 @@ func TestCreateArchiveUndoAndShutdown(t *testing.T) {
 	}
 	requireSuccess(t, s.Mutate(model.Mutation{Ref: ref, ExpectedVersion: i.Version, Op: model.Archive}))
 	requireSuccess(t, s.Undo())
+	// An external unarchive keeps the version, so the reload must still clear the
+	// session's archived mark or the item stays hidden from every projection.
+	i, _, _ = s.Current().Get(ref)
+	requireSuccess(t, s.Mutate(model.Mutation{Ref: ref, ExpectedVersion: i.Version, Op: model.Archive}))
+	i, _, _ = s.Current().Get(ref)
+	if _, err := nativeBackend.Apply(context.Background(), model.Mutation{Ref: ref, ExpectedVersion: i.Version, Op: model.Unarchive}); err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	p := engine.NewProjector(context.Background(), storeConfig())
+	defer p.Close()
+	deadline := time.After(5 * time.Second)
+	for visible := false; !visible; {
+		p.Request(s.Current(), "id:BL-2")
+		select {
+		case result := <-p.Results():
+			visible = len(result.Groups) == 1 && len(result.Groups[0].Rows) == 1
+		case <-deadline:
+			t.Fatal("externally unarchived item stays hidden")
+		}
+	}
 	backend := fakeSource(t, "blocked")
 	backend.gate = make(chan struct{})
 	blocked := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"blocked": backend})
