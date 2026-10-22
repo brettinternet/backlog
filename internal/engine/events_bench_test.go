@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/project"
@@ -21,10 +22,27 @@ func BenchmarkEventRead(b *testing.B) {
 	if _, err := engine.LoadReads(context.Background(), cfg, false); err != nil {
 		b.Fatal(err)
 	}
-	b.ResetTimer()
-	for range b.N {
-		if _, err := engine.LoadReads(context.Background(), cfg, false); err != nil {
-			b.Fatal(err)
+	for _, events := range []bool{false, true} {
+		name := "native-only"
+		if events {
+			name = "events"
 		}
+		b.Run(name, func(b *testing.B) {
+			options := cfg
+			if !events {
+				options.Paths.StateDir = ""
+			}
+			samples := make([]time.Duration, 0, b.N)
+			b.ResetTimer()
+			for range b.N {
+				start := time.Now()
+				if _, err := engine.LoadReads(context.Background(), options, false); err != nil {
+					b.Fatal(err)
+				}
+				samples = append(samples, time.Since(start))
+			}
+			b.StopTimer()
+			reportP95(b, samples)
+		})
 	}
 }
