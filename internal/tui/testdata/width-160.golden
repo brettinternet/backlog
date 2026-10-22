@@ -1,0 +1,24 @@
+backlog · fixture · [Next]  Active  Mine  All                                                                                                                   
+tasks ✓ synced                                                                                                                                                  
+  ID           P  Status         ⊘   ▣       Title                                                                                                              
+> ▾ To Do (3)                                                                                                                                                   
+  BL-1         ▲  To Do          1   2/3     safe 修正 🚀                                                                                                       
+  BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                                                                                                
+  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                                                                                                
+  ▾ Active (3)                                                                                                                                                  
+  BL-4         ▲  Active         1   2/3     修正 🚀 selection                                                                                                  
+  BL-5         ▲  Active         1   2/3     ● 修正 🚀 selection                                                                                                
+  BL-6         ▲  Active         1   2/3     ! 修正 🚀 selection                                                                                                
+  ▾ Done (3)                                                                                                                                                    
+  BL-7         ▲  Done           1   2/3     修正 🚀 selection                                                                                                  
+  BL-8         ▲  Done           1   2/3     ● 修正 🚀 selection                                                                                                
+  BL-9         ▲  Done           1   2/3     ! 修正 🚀 selection                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit                                                                                        
