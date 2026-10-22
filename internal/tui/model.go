@@ -14,6 +14,7 @@ import (
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -62,36 +63,42 @@ type foldState struct {
 }
 
 type Model struct {
-	width, height       int
-	opts                Options
-	title               lipgloss.Style
-	showHelp            bool
-	selected, top, view int
-	count               int
-	prefix              string
-	serial              uint64
-	inputSerial         uint64
-	groups              []engine.RowGroup
-	folded              *foldState
-	data                prepared
-	loading             bool
-	badges, failure     string
-	snapshots           <-chan *engine.Snapshot
-	snapshot            *engine.Snapshot
-	request             uint64
-	detailOpen          bool
-	detailFocus         bool
-	detailTab           detailTab
-	detailExpanded      bool
-	detailPending       bool
-	detailLoading       bool
-	detailTruncated     bool
-	detailLines         []string
-	detailError         string
-	detailScroll        int
-	detailGeneration    uint64
-	detailIdentity      detailIdentity
-	detailWorker        *detailWorker
+	width, height            int
+	opts                     Options
+	title                    lipgloss.Style
+	showHelp                 bool
+	query                    string
+	editor                   queryEditor
+	queryError, queryWarning string
+	highlights               []string
+	foldAll                  bool
+	ungrouped                bool
+	selected, top, view      int
+	count                    int
+	prefix                   string
+	serial                   uint64
+	inputSerial              uint64
+	groups                   []engine.RowGroup
+	folded                   *foldState
+	data                     prepared
+	loading                  bool
+	badges, failure          string
+	snapshots                <-chan *engine.Snapshot
+	snapshot                 *engine.Snapshot
+	request                  uint64
+	detailOpen               bool
+	detailFocus              bool
+	detailTab                detailTab
+	detailExpanded           bool
+	detailPending            bool
+	detailLoading            bool
+	detailTruncated          bool
+	detailLines              []string
+	detailError              string
+	detailScroll             int
+	detailGeneration         uint64
+	detailIdentity           detailIdentity
+	detailWorker             *detailWorker
 }
 
 var viewNames = []string{"Next", "Active", "Mine", "All"}
@@ -113,7 +120,7 @@ func New(opts Options) Model {
 			style = style.Foreground(lipgloss.Color("6"))
 		}
 	}
-	model := Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil}
+	model := Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil, query: viewQueries[0]}
 	if opts.Read != nil {
 		theme := "color"
 		if opts.NoColor {
@@ -245,6 +252,7 @@ func (m *Model) submitDetail() {
 // backlog-sized work on Update. Each result is fenced by the model's serial.
 func (m Model) prepare() tea.Cmd {
 	groups, folded, serial, from := m.groups, m.folded, m.serial, m.selected
+	foldAll, ungrouped := m.foldAll, m.ungrouped
 	var anchor screenRow
 	if m.loading || from >= len(m.data.rows) {
 		from = -1 // a new view starts at the top
@@ -253,10 +261,15 @@ func (m Model) prepare() tea.Cmd {
 	}
 	return func() tea.Msg {
 		states := map[string]bool{}
+		if foldAll {
+			for _, g := range groups {
+				states[g.Value] = true
+			}
+		}
 		for f := folded; f != nil; f = f.previous {
 			states[f.group] = !states[f.group]
 		}
-		data := prepareRows(groups, states)
+		data := prepareGroupedRows(groups, states, !ungrouped)
 		selected := -1
 		for i, r := range data.rows {
 			if r.value == anchor.value && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "") {
@@ -268,6 +281,9 @@ func (m Model) prepare() tea.Cmd {
 	}
 }
 func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
+	return prepareGroupedRows(groups, folded, true)
+}
+func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, grouped bool) prepared {
 	p := prepared{}
 	for g, group := range groups {
 		p.starts = append(p.starts, len(p.rows))
@@ -275,7 +291,9 @@ func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
 		if folded[group.Value] {
 			glyph = "▸"
 		}
-		p.rows = append(p.rows, screenRow{group: g, value: group.Value, header: fmt.Sprintf("%s %s (%d)", glyph, textutil.Line(group.Value), len(group.Rows))})
+		if grouped {
+			p.rows = append(p.rows, screenRow{group: g, value: group.Value, header: fmt.Sprintf("%s %s (%d)", glyph, textutil.Line(group.Value), len(group.Rows))})
+		}
 		for _, row := range group.Rows {
 			if row.Pending {
 				p.pending++
@@ -283,7 +301,7 @@ func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
 			if row.Error != "" {
 				p.failed++
 			}
-			if !folded[group.Value] {
+			if !grouped || !folded[group.Value] {
 				p.rows = append(p.rows, screenRow{row: row, group: g, value: group.Value})
 			}
 		}
@@ -292,7 +310,12 @@ func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
 }
 func (m *Model) project() {
 	if m.snapshot != nil && m.opts.Projector != nil {
-		m.request = m.opts.Projector.Request(m.snapshot, viewQueries[m.view])
+		if m.editor.open {
+			field, prefix, _, _ := m.editor.completion()
+			m.request = m.opts.Projector.RequestEditor(m.snapshot, m.editor.text, field, prefix)
+		} else {
+			m.request = m.opts.Projector.Request(m.snapshot, m.query)
+		}
 	}
 }
 func (m *Model) switchView(n int) {
@@ -301,6 +324,12 @@ func (m *Model) switchView(n int) {
 	}
 	m.serial++
 	m.view = n
+	m.query = viewQueries[n]
+	m.editor = queryEditor{}
+	m.queryError = ""
+	m.queryWarning = ""
+	m.highlights = nil
+	m.foldAll = false
 	m.selected = 0
 	m.top = 0
 	m.loading = true
@@ -323,13 +352,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Request != m.request {
 			return m, m.waitProjection()
 		}
+		if m.editor.open {
+			m.editor.candidates = msg.Completions
+			m.editor.candidate = 0
+			m.editor.ready = m.request
+		}
 		if msg.Error != nil {
-			m.failure = textutil.Line(msg.Error.Error())
+			m.queryError = textutil.Line(msg.Error.Error())
 			m.loading = false
 			return m, m.waitProjection()
 		}
+		m.queryError = ""
+		m.queryWarning = ""
+		if msg.Warning != nil {
+			m.queryWarning = textutil.Line(msg.Warning.Error())
+		}
+		text := m.query
+		if m.editor.open {
+			text = m.editor.text
+		}
+		parsed, _ := query.Parse(text, query.Options{})
+		m.highlights = nil
+		for _, term := range parsed.Terms {
+			if term.Field == "" && !term.Negated {
+				for _, value := range term.Values {
+					m.highlights = append(m.highlights, value.Text)
+				}
+			}
+		}
 		m.failure = ""
 		m.groups = msg.Groups
+		m.ungrouped = msg.Ungrouped
 		m.serial++
 		return m, tea.Batch(m.prepare(), m.waitProjection())
 	case foldedMsg:
@@ -376,6 +429,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		s := msg.String()
 		if s == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.editor.open {
+			return m.updateQuery(msg)
+		}
+		if (m.prefix == "f" || m.prefix == "o" || m.prefix == "z") && s != "esc" {
+			prefix := m.prefix
+			m.prefix = ""
+			m.count = 0
+			m.inputSerial++
+			_, cmd := m.queryMenu(prefix, s)
+			return m, cmd
+		}
+		if !m.detailFocus {
+			switch s {
+			case "/":
+				m.editQuery(m.query, false)
+				return m, nil
+			case "f", "o", "z":
+				m.prefix = s
+				m.count = 0
+				m.inputSerial++
+				return m, nil
+			case "F":
+				m.query = clearQuery(m.query)
+				m.queryError = ""
+				m.queryWarning = ""
+				m.serial++
+				m.project()
+				return m, nil
+			}
 		}
 		if s == "?" {
 			m.showHelp = !m.showHelp
@@ -487,15 +570,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switchView((m.view + 1) % len(viewNames))
 		case prefix == "g" && s == "T":
 			m.switchView((m.view + len(viewNames) - 1) % len(viewNames))
-		case prefix == "z" && s == "a":
-			if len(m.data.rows) > 0 {
-				r := m.data.rows[m.selected]
-				m.folded = &foldState{group: r.value, previous: m.folded}
-				m.serial++
-				m.selected = m.data.starts[r.group]
-				return m, m.prepare()
-			}
-		case s == "g" || s == "z":
+		case s == "g":
 			m.prefix = s
 			m.count = n
 			if !hadCount {
@@ -608,7 +683,7 @@ func (m Model) View() tea.View {
 		for i := 0; i < page; i++ {
 			left := m.listLine(m.top+i, wide)
 			right := m.detailPaneLine(i)
-			lines = append(lines, cell(left, listWidth)+"│"+cell(right, detailWidth))
+			lines = append(lines, m.highlightListCell(m.top+i, left, listWidth)+"│"+cell(right, detailWidth))
 		}
 	} else if m.detailOpen {
 		lines = append(lines, cell(m.detailHeader(), m.width), cell(m.detailTabs(), m.width))
@@ -618,11 +693,11 @@ func (m Model) View() tea.View {
 	} else {
 		lines = append(lines, cell(columns, m.width))
 		for i := 0; i < max(0, m.height-5); i++ {
-			lines = append(lines, cell(m.listLine(m.top+i, wide), m.width))
+			lines = append(lines, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), m.width))
 		}
 	}
 	lines = append(lines, strings.Repeat("─", m.width))
-	footer := fmt.Sprintf("%s · %d pending · %d failed · ? help · q quit", viewQueries[m.view], m.data.pending, m.data.failed)
+	footer := fmt.Sprintf("%s · %d pending · %d failed · ? help · q quit", m.queryText(), m.data.pending, m.data.failed)
 	if m.detailOpen {
 		footer = "tab next · shift-tab previous · j/k scroll · h list · esc/q back"
 		if !m.detailFocus {
@@ -636,6 +711,14 @@ func (m Model) View() tea.View {
 			}
 		}
 	}
+	if m.editor.open {
+		footer = "/ " + m.editor.text[:m.editor.cursor] + "▏" + m.editor.text[m.editor.cursor:]
+	}
+	if m.queryError != "" {
+		footer = "! " + m.queryError + " · " + footer
+	} else if m.queryWarning != "" {
+		footer = "warning: " + m.queryWarning + " · " + footer
+	}
 	if m.count > 0 {
 		footer += " · " + strconv.Itoa(m.count) + m.prefix
 	}
@@ -648,6 +731,9 @@ func (m Model) View() tea.View {
 	return v
 }
 func (m Model) listLine(index int, wide bool) string {
+	if line, ok := m.queryOverlay(index - m.top); ok {
+		return line
+	}
 	if m.showHelp {
 		hints := []string{
 			"j/k ↓/↑ · count + move · gg/G/NG",

@@ -1,0 +1,24 @@
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+  ID           P  Status         ⊘   ▣       Title                              
+> BL-1         ▲  todo           ─   ─       Task 1 修正                        
+  BL-10        ▲  todo           ─   ─       Task 10 修正                       
+  BL-11        ▲  todo           ─   ─       Task 11 修正                       
+  BL-12        ▲  todo           ─   ─       Task 12 修正                       
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+tab complete · ↑/↓ choose · enter apply · esc restore                           
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+! unknown field "lable" at 7; did you mean "label"? · / Task 1 lable:tui▏       

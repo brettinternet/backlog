@@ -45,12 +45,17 @@ type Projection struct {
 	Request, Generation uint64
 	Groups              []RowGroup
 	Error               error
+	Warning             error
+	Completions         []query.Candidate
+	Ungrouped           bool
 }
 type projectionRequest struct {
-	id       uint64
-	snapshot *Snapshot
-	text     string
-	ctx      context.Context
+	id            uint64
+	snapshot      *Snapshot
+	text          string
+	ctx           context.Context
+	complete      bool
+	field, prefix string
 }
 
 // Projector runs one latest-wins worker, never a goroutine per keystroke.
@@ -73,6 +78,14 @@ func NewProjector(ctx context.Context, cfg project.Config) *Projector {
 	return p
 }
 func (p *Projector) Request(snapshot *Snapshot, text string) uint64 {
+	return p.request(snapshot, text, false, "", "")
+}
+
+// RequestEditor uses the same bounded latest-wins worker for completion and projection.
+func (p *Projector) RequestEditor(snapshot *Snapshot, text, field, prefix string) uint64 {
+	return p.request(snapshot, text, true, field, prefix)
+}
+func (p *Projector) request(snapshot *Snapshot, text string, complete bool, field, prefix string) uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.active != nil {
@@ -85,7 +98,7 @@ func (p *Projector) Request(snapshot *Snapshot, text string) uint64 {
 	case <-p.results:
 	default:
 	}
-	latest(p.requests, projectionRequest{p.serial, snapshot, text, ctx})
+	latest(p.requests, projectionRequest{id: p.serial, snapshot: snapshot, text: text, ctx: ctx, complete: complete, field: field, prefix: prefix})
 	return p.serial
 }
 func (p *Projector) Results() <-chan Projection { return p.results }
@@ -250,6 +263,9 @@ func (p *Projector) run() {
 				cached = req.snapshot
 			}
 			base.Now = time.Now()
+			if req.complete {
+				result.Completions = base.Complete(req.field, req.prefix, query.Options{})
+			}
 			q, err := query.Parse(req.text, query.Options{})
 			if err == nil {
 				hasIs, includeArchive := false, false
@@ -273,10 +289,11 @@ func (p *Projector) run() {
 			}
 			if err == nil {
 				if errs := q.Validate(base); len(errs) > 0 {
-					err = errs[0]
+					result.Warning = errs[0]
 				}
 			}
 			if err == nil {
+				result.Ungrouped = q.Group == "" || q.Group == "none"
 				var groups []query.Group
 				groups, err = q.ProjectContext(req.ctx, base, nil)
 				if err == nil {

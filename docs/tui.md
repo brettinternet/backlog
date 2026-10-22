@@ -37,8 +37,22 @@ shows declared milestone names beside their keys and preserves undeclared values
 Relations and readiness summaries come from the live
 projection, so linked-item status changes appear without rereading the detail.
 
+`/` edits the current query live. Left/right, home/end, backspace/delete and
+ctrl-u edit the line; tab inserts completion, up/down choose a candidate, enter
+applies and esc restores the query from before editing. Syntax errors include
+zero-based byte positions and retain the last valid rows; unknown snapshot
+values show a warning. Completion uses the loaded snapshot and configured values
+on the bounded projection worker. Free-text ID/title matches are bold/underlined
+(unless NO_COLOR is set).
+
+`f`, `o`, and `z` open which-key menus; esc cancels. Field filters open a value
+picker with completion; enter chooses and applies. `fr` shows ready items and
+`fd` includes both open and closed items (not archives). `F`/`fc` clear predicates
+while retaining sort and group. Sort reversal toggles every explicit sort key.
+`zA` groups assignees, leaving `za` for folds; `zM`/`zR` fold/unfold all.
+
 Editing, custom/saved views, board/tree, key remapping, palette, searchable
-help, mouse and which-key popups below remain planned. They are not advertised
+help and mouse below remain planned. They are not advertised
 as available in the shell. Claim columns await BL-32.
 
 Capture a real render without opening a user's pane:
@@ -172,7 +186,7 @@ Markdown renders asynchronously and is cached. While the selection moves, the he
 | `f` + key | Quick filter. The second key picks the filter: `s` status, `p` priority, `a` assignee, `l` label, `t` type, `m` milestone, `r` ready only, `d` show done, `c` clear. |
 | `F` | Clear the filter |
 | `o` + key | Sort. The second key picks the sort: `n` next, `p` priority, `r` rank, `u` updated, `c` created, `d` due, `i` ID, `o` reverse. |
-| `z` + key | Group and fold. The second key picks the group: `s` status, `c` category, `p` priority, `a` assignee, `l` label, `m` milestone, `t` type, `P` parent, `n` none. `za` toggles a fold, `zM`/`zR` fold or unfold all. |
+| `z` + key | Group and fold. The second key picks the group: `s` status, `c` category, `p` priority, `A` assignee, `l` label, `m` milestone, `t` type, `P` parent, `n` none. `za` toggles a fold, `zM`/`zR` fold or unfold all. |
 | `ctrl-s` | Save the current query, sort, group, and layout as a view |
 
 **Item edits**
