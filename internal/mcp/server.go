@@ -252,7 +252,7 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	if err := engine.ValidateItem(s.cfg, item); err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	created, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Create, Ref: item.Ref, Item: &item})
+	created, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Create, Ref: item.Ref, Item: &item})
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
@@ -292,7 +292,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 		default:
 			return failed[any]("rejected", "operation must be archive, unarchive, or replace_section")
 		}
-		updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: op, Ref: item.Ref, ExpectedVersion: version, Section: section, Text: args.Text})
+		updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: op, Ref: item.Ref, ExpectedVersion: version, Section: section, Text: args.Text})
 		if err != nil {
 			return failed[any](reason(err), err.Error())
 		}
@@ -349,13 +349,14 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes})
+	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes})
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
 	return nil, ItemResult{updated}, nil
 }
 func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args AppendArgs) (*mcp.CallToolResult, any, error) {
+	ctx = engine.WithEventOrigin(ctx, "mcp")
 	if args.ID == "" || strings.TrimSpace(args.Text) == "" {
 		return failed[any]("usage", "id and nonempty text are required")
 	}
@@ -387,6 +388,7 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 	return nil, ItemResult{updated}, nil
 }
 func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args CriteriaArgs) (*mcp.CallToolResult, any, error) {
+	ctx = engine.WithEventOrigin(ctx, "mcp")
 	if args.ID == "" {
 		return failed[any]("usage", "id is required")
 	}

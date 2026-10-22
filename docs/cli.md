@@ -212,7 +212,13 @@ IDs and timestamps are not writable fields.
 
 Set status to `workflow.start` or `workflow.done`, respectively. Missing workflow
 configuration is rejected, not guessed. Each takes exactly one ID.
-Coordination, hooks, events, and Git auto-commit are not yet implemented.
+`bl events [--follow] [--json] [--since ID] [QUERY]` reads the project event
+log. Finite JSON uses `data.events`; follow mode emits one envelope with
+`data.event` per line. The cursor is exclusive across rotation; an unknown cursor
+is an error. Follow mode watches sources without a TUI. See [events.md](events.md)
+for event types, filters, dedupe, retention, and causal depth.
+
+Coordination, hook/action execution, and Git auto-commit are not yet implemented.
 
 ### `bl note ID TEXT|-` and `bl comment ID TEXT|- [--author AUTHOR]`
 

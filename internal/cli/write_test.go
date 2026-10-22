@@ -12,6 +12,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/cli"
 	"github.com/brettinternet/backlog/internal/format"
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
 
@@ -109,7 +110,26 @@ func TestWriteGolden(t *testing.T) {
 			if tc.name == "unarchive" {
 				writeOK(t, root, "", "archive", "12")
 			}
+			beforeEvents := readEvents(t, root)
 			writeOK(t, root, tc.stdin, tc.args...)
+			events := readEvents(t, root)[len(beforeEvents):]
+			var mutations []hooks.Event
+			for _, event := range events {
+				if event.Type != "item.readiness" {
+					mutations = append(mutations, event)
+				}
+			}
+			if len(mutations) != 1 {
+				t.Fatalf("expected one mutation event: %+v", events)
+			}
+			event := mutations[0]
+			if event.Origin != "cli" || event.Depth != 0 || event.Cause != nil {
+				t.Fatalf("wrong event context: %+v", event)
+			}
+			field := map[string]string{"new": "title", "set": "title", "start": "status", "done": "status", "note": "notes", "comment": "comments", "ac-check": "criteria", "ac-replace": "criteria", "ac-uncheck": "criteria", "ac-add": "criteria", "ac-rm": "criteria", "edit": "title", "edit-section": "plan", "edit-criteria": "criteria", "archive": "archived", "unarchive": "archived"}[tc.name]
+			if _, ok := event.Changes[field]; !ok {
+				t.Fatalf("event changes omit %s: %+v", field, event)
+			}
 			path := tc.file
 			if path == "" {
 				path = "items/BL-012.md"

@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schema = 3
+const schema = 4
 
 // build identifies the executable that wrote cached rows. Parsed items are
 // opaque gob values, so a parser or model change in a new binary must discard
@@ -53,6 +53,9 @@ type Record struct {
 type Snapshot struct {
 	Records    []Record
 	Generation string
+	// Revision changes only when source content changes; Generation also fences
+	// search closures after an unchanged refresh.
+	Revision string
 }
 
 type Store struct{ Path string }
@@ -263,24 +266,25 @@ func (s Store) open(ctx context.Context) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version != 0 && version != 2 && version != schema {
+	if version != 0 && version != 2 && version != 3 && version != schema {
 		return fail(fmt.Errorf("cache schema %d, expected %d", version, schema))
 	}
 	if version == 0 {
 		_, err = db.ExecContext(ctx, `CREATE TABLE items(path TEXT PRIMARY KEY, identity TEXT NOT NULL, data BLOB NOT NULL);
 CREATE VIRTUAL TABLE search USING fts5(path UNINDEXED, text, tokenize='trigram case_sensitive 1');
-CREATE TABLE metadata(generation TEXT NOT NULL, build TEXT NOT NULL);
-INSERT INTO metadata VALUES ('','');
+CREATE TABLE metadata(generation TEXT NOT NULL, build TEXT NOT NULL, revision TEXT NOT NULL);
+INSERT INTO metadata VALUES ('','','');
 CREATE TABLE id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
 CREATE TABLE id_items(id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(id,path));
-PRAGMA user_version=3;`)
+PRAGMA user_version=4;`)
 		if err != nil {
 			return fail(err)
 		}
-	} else if version == 2 {
+	} else if version == 2 || version == 3 {
 		_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS id_items(id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(id,path));
-PRAGMA user_version=3;`)
+ALTER TABLE metadata ADD COLUMN revision TEXT NOT NULL DEFAULT '';
+PRAGMA user_version=4;`)
 		if err != nil {
 			return fail(err)
 		}
@@ -345,8 +349,8 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		return Snapshot{}, err
 	}
 	defer tx.Rollback()
-	var written string
-	if err = tx.QueryRowContext(ctx, `SELECT build FROM metadata`).Scan(&written); err != nil {
+	var written, revision string
+	if err = tx.QueryRowContext(ctx, `SELECT build,revision FROM metadata`).Scan(&written, &revision); err != nil {
 		return Snapshot{}, err
 	}
 	changed := written != build
@@ -383,7 +387,7 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		old[r.Path] = r
 	}
 	records = make([]*cachedRecord, 0, len(old))
-	snapshot := Snapshot{Generation: rand.Text(), Records: make([]Record, 0, len(files))}
+	snapshot := Snapshot{Generation: rand.Text(), Revision: revision, Records: make([]Record, 0, len(files))}
 	for _, path := range files {
 		if err = ctx.Err(); err != nil {
 			return Snapshot{}, err
@@ -455,7 +459,10 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			}
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE metadata SET generation=?,build=?`, snapshot.Generation, build); err != nil {
+	if changed || snapshot.Revision == "" {
+		snapshot.Revision = rand.Text()
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE metadata SET generation=?,build=?,revision=?`, snapshot.Generation, build, snapshot.Revision); err != nil {
 		return Snapshot{}, err
 	}
 	return snapshot, tx.Commit()

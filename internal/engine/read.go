@@ -33,7 +33,7 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 		s.Query.Me = []string{cfg.Me.Default}
 	}
 	archivedRefs := map[model.Ref]bool{}
-	load := func(backend *native.Source, id string, cursor source.Cursor) (source.Delta, error) {
+	load := func(backend source.Source, id string, cursor source.Cursor) (source.Delta, error) {
 		delta, err := backend.Load(ctx, cursor)
 		if err == nil && delta.Coverage != source.Complete {
 			err = fmt.Errorf("source %s has incomplete coverage: %v", id, delta.Findings)
@@ -93,7 +93,18 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 	return s, nil
 }
 
-func readSource(cfg project.Config, c project.SourceConfig) (*native.Source, error) {
+func readSource(cfg project.Config, c project.SourceConfig) (source.Source, error) {
+	backend, err := rawSource(cfg, c)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Paths.StateDir == "" || cfg.Paths.CacheDir == "" {
+		return backend, nil
+	}
+	return &eventSource{Source: backend, cfg: cfg}, nil
+}
+
+func rawSource(cfg project.Config, c project.SourceConfig) (*native.Source, error) {
 	if c.Type != "native" {
 		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)
 	}

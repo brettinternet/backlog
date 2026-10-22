@@ -188,7 +188,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		result.Findings = append(result.Findings, source.Finding{Code: "cache-unavailable", Severity: "warning", Message: err.Error()})
 		return result, e
 	}
-	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}, Items: make([]model.Item, 0, len(snapshot.Records))}
+	result := source.Delta{Archived: map[model.Ref]bool{}, Coverage: source.Complete, Cursor: source.Cursor{Value: snapshot.Revision, IncludeArchive: cursor.IncludeArchive}, Items: make([]model.Item, 0, len(snapshot.Records))}
 	byPath := map[string]model.Ref{}
 	for _, record := range snapshot.Records {
 		e := record.Err
@@ -205,6 +205,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		item := *record.Item
 		item.Category = s.options.Statuses[item.Status]
 		result.Items = append(result.Items, item)
+		result.Archived[item.Ref] = filepath.Dir(record.Path) != s.options.Path
 		byPath[record.Path] = item.Ref
 	}
 	for _, warning := range warnings {
@@ -240,7 +241,7 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	s.loadMu.Lock()
 	defer s.loadMu.Unlock()
 	nextLoaded := map[string]loadedItem{}
-	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
+	result := source.Delta{Archived: map[model.Ref]bool{}, Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
 	paths, err := s.paths(cursor.IncludeArchive)
 	if err != nil {
 		result.Coverage = source.Unknown
@@ -275,6 +276,7 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 					result.Coverage = source.Partial
 				} else {
 					result.Items = append(result.Items, item)
+					result.Archived[item.Ref] = filepath.Dir(path) != s.options.Path
 					nextLoaded[path] = loadedItem{stat, item}
 				}
 				mu.Unlock()
@@ -353,18 +355,24 @@ func (s *Source) locate(ctx context.Context, id string) (string, error) {
 	return find(paths)
 }
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
+	item, _, err := s.ReadState(ctx, id)
+	return item, err
+}
+
+// ReadState includes location without loading or parsing unrelated items.
+func (s *Source) ReadState(ctx context.Context, id string) (model.Item, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return model.Item{}, err
+		return model.Item{}, false, err
 	}
 	path, err := s.locate(ctx, id)
 	if err != nil {
-		return model.Item{}, err
+		return model.Item{}, false, err
 	}
 	doc, err := s.document(path)
 	if err != nil {
-		return model.Item{}, err
+		return model.Item{}, false, err
 	}
-	return s.item(doc), nil
+	return s.item(doc), filepath.Dir(path) != s.options.Path, nil
 }
 
 // allocate persists the reservation before publishing an item. Failed creates

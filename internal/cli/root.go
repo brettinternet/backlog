@@ -80,7 +80,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err != nil {
 			return err
 		}
-		session, cancel := context.WithCancel(ctx)
+		session, cancel := context.WithCancel(engine.WithEventOrigin(ctx, "tui"))
 		defer cancel()
 		store, err := engine.OpenProjectStore(session, cfg)
 		if err != nil {
@@ -205,6 +205,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			},
 		},
 	}
+	root.Commands = append(root.Commands, eventsCommand(&directory, out))
 	root.Commands = append(root.Commands, instructionsCommand(out))
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
@@ -230,7 +231,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				if selected.Args().Present() && !acceptsArguments(selected.Name) {
 					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
 				}
-				return action(ctx, selected)
+				return action(engine.WithEventOrigin(ctx, "cli"), selected)
 			}
 		}
 		return nil
@@ -280,7 +281,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
+	case "events", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
 		return true
 	}
 	return false
