@@ -3,8 +3,8 @@
 `bl mcp` serves the Model Context Protocol over stdio. Configure the client to
 launch the `bl` binary from the project directory; stdout is reserved for MCP
 frames. Project and user configuration are resolved once when the process starts.
-Caller-specific claim context is intentionally not supported by this foundation
-server; claim tools and request-scoped session/run arguments arrive in later work.
+Caller ownership is request-scoped: the server never reads session, handle, or run
+selectors from its environment or retains them from a previous call.
 
 ## Tools
 
@@ -16,7 +16,8 @@ not write. Errors are tool results with `isError: true` and JSON text containing
 - `next` accepts `limit` (zero or omitted means all) and returns ready items in
   readiness order.
 - `query` accepts `query`, using the same expression language as `bl ls`.
-- `show` accepts `id` and returns the complete item, including its version.
+- `show` accepts `id` and returns the complete item, including its version, plus
+  `resource` when coordination is enabled.
 - `create` accepts `title`, optional configured `status`, `type`, `priority`,
   `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`,
   `blocked_by`, and `source`. Reference values use the same numeric shorthand as
@@ -26,12 +27,25 @@ not write. Errors are tool results with `isError: true` and JSON text containing
   use suffixes `+` and `-` to add/remove values. Use `operation: replace_section`
   with an editable `section` (`description`, `criteria`, `dod`, `plan`, `notes`,
   or `summary`) and replacement `text` to edit content. `start` and `done` are
-  status field updates, matching the configured CLI workflow statuses.
+  status field updates, matching the configured CLI workflow statuses. When
+  coordination is on, a status update requires `session` and accepts optional
+  `run`; ownership is validated before writing. Results report separate `transition`
+  claim/status outcomes, including a retained acquisition or failed release.
 - `append` accepts `id`, `version`, `kind` (`note` or `comment`), `text`, and
   optional `author` for comments (otherwise `me.default` is used).
 - `criteria` accepts `id`, `version`, and `operation` (`check`, `uncheck`,
   `add`, or `remove`), with `index` for check/uncheck/remove and `text` for add;
   `evidence` may accompany check.
+
+- `claim` and `release` accept `id`, required `session`, and optional `run`.
+- `heartbeat` accepts required `session` and optional `run`, returning `expiresAt`.
+
+A run is verified through the coordinator for the exact caller and resource.
+Run-managed claims are never acquired, renewed, or released. A missing session
+returns `session-required`; mismatched run evidence returns `run-mismatch` before
+any write or release. A caller-managed session cannot borrow the server's run.
+Read-only `next` does not claim. The [provider-evidence requirements](cli.md#provider-evidence-and-recovery)
+also apply to MCP; unresolved/redacted evidence never authorizes side effects.
 
 The `bl://instructions` resource publishes `bl instructions` overview guidance.
 

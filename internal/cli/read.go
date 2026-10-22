@@ -43,6 +43,7 @@ type listData struct {
 	Groups []readGroup `json:"groups"`
 }
 type showData struct {
+	Resource string            `json:"resource,omitempty"`
 	Item     readItem          `json:"item"`
 	Metadata map[string]any    `json:"metadata"`
 	Sections map[string]string `json:"sections"`
@@ -210,7 +211,15 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				sections = map[string]string{section: sections[section]}
 			}
 			if cmd.Bool("json") {
-				return success(out, "show", showData{Item: itemData(i), Metadata: itemMetadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD})
+				resource := ""
+				if c, _ := engine.Coordination(ctx); c != nil {
+					var e error
+					resource, e = c.Resource(i)
+					if e != nil {
+						return writeError(e)
+					}
+				}
+				return success(out, "show", showData{Resource: resource, Item: itemData(i), Metadata: itemMetadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD})
 			}
 			if section != "" {
 				return writeLine(out, sections[section])

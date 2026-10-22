@@ -610,6 +610,9 @@ func graphReadiness(cfg project.Config, graph map[model.Ref]graphRecord) map[mod
 }
 func makeEvent(ctx context.Context, cfg project.Config, item model.Item, kind, origin string, versions []string) hooks.Event {
 	e := hooks.Event{Project: cfg.Project.ID, Source: item.Ref.Source, Ref: refString(item.Ref), Item: eventItemData(item), Type: kind, Origin: origin, Actor: cfg.Me.Default, Versions: versions}
+	if c, _ := Coordination(ctx); c != nil {
+		e.Resource, _ = c.Resource(item)
+	}
 	if origin != "sync" {
 		if c, ok := ctx.Value(eventContextKey{}).(eventContext); ok {
 			e.Cause = c.Cause

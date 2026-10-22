@@ -8,9 +8,9 @@ Inspect work with `bl ls --json`, `bl show ID --json`, and
 use source-qualified IDs otherwise. Read the full item before starting.
 Pass the last returned item version to writes that depend on that read.
 
-This release supports native files and Backlog.md import. It does not yet
-provide claims, MCP, hooks, or remote adapters. Status changes do not claim work.
-Follow the project's coordination policy; do not run competing agents without
-an external claim protocol.
+This release supports native files, Backlog.md import, MCP, and optional
+coordination. With coordination configured, status transitions use claim gates;
+next remains read-only. Follow the project's coordination policy. Unknown or
+unverifiable ownership refuses side effects; do not bypass this with a new session.
 
 Read the workflow, query, format, and json topics as needed.

@@ -744,6 +744,23 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 			return editResultMsg{message: "No editable items are selected."}
 		}
 		snapshot := store.Current()
+		if coordinator, _ := engine.Coordination(m.opts.Context); coordinator != nil && len(refs) > 1 {
+			for _, ref := range refs {
+				item, _, ok := snapshot.Get(ref)
+				if !ok {
+					continue
+				}
+				mutation, ok := action.mutation(item)
+				if !ok {
+					continue
+				}
+				cfg := project.Config{Settings: project.Settings{Statuses: m.opts.Statuses}}
+				_, category, changes := engine.StatusTarget(cfg, mutation)
+				if changes && category == model.Active {
+					return editResultMsg{message: "Coordination refuses multi-item activation."}
+				}
+			}
+		}
 		type result struct {
 			ref    model.Ref
 			result <-chan error

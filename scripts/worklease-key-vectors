@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Regenerate portable key vectors using pinned Worklease v1.9.3."""
+import json
+import pathlib
+import subprocess
+
+version = json.loads(subprocess.check_output(["worklease", "--json", "version"]))
+if version.get("version") != "1.9.3":
+    raise SystemExit("requires Worklease 1.9.3")
+inputs = [
+    ("generic", "github.com/brettinternet/backlog", "BL-32"),
+    ("generic", "Søurce 😀 <>& /", "零-\"\\"),
+    ("github", "GitHub.COM/Acme/App.git", "42"),
+    ("github", "example.com/owner/a b", "#42/~"),
+    ("linear", "acme", "3f0a-uuid"),
+    ("linear", "é😀", "ENG-431"),
+]
+vectors = []
+for provider, source, item in inputs:
+    response = json.loads(subprocess.check_output([
+        "worklease", "--json", "key", "--provider", provider,
+        "--source", source, "--item", item,
+    ]))
+    vectors.append(dict(provider=provider, source=source, item=item, resource=response["resource"]))
+path = pathlib.Path(__file__).resolve().parents[1] / "internal/worklease/testdata/keys.json"
+path.write_text(json.dumps(vectors, indent=2, ensure_ascii=False) + "\n")

@@ -3,7 +3,7 @@
 `ls`, `show`, and the read-only `next` interface are frozen. All accept global
 `-C DIR` and `--json` (`-j`) before or after the command. Help is plain text.
 JSON uses the [schema-version-1 envelope](design.md#7-agent-interface).
-The write commands below are also frozen. Coordination and remote adapters remain separate backlog work.
+The write commands below are also frozen. Coordination is optional; remote adapters remain separate backlog work.
 
 ```sh
 bl ls 'is:open priority:>=high' --sort priority,id --group status -n 20
@@ -74,10 +74,9 @@ With no topic, print the topic list and overview. Topics are `overview`,
 exit 2 and list the valid topics. With `--json`, `data` contains `topic`,
 `topics`, and `markdown`; no topic selects overview.
 
-The workflow documents the available next/start/note/ac/done loop with JSON
-and version guards. This foundation release does not claim work: next is
-read-only and start changes status only. Use the project's external
-coordination policy before starting concurrent work. The embedded text names
+The workflow documents next/start/note/ac/done with JSON, version guards, and
+explicit coordination sessions. `next` remains read-only; claimed selection is
+BL-33 work. See the provider-evidence requirements below. The embedded text names
 no repository task IDs; BL-32 and BL-33 replace this guidance when claims ship.
 
 ## Native read cache
@@ -365,7 +364,8 @@ wide characters. Bodies retain newlines and tabs. Text output strips CSI,
 OSC, DCS and other terminal escape sequences and unsafe control characters;
 table cells also flatten tabs and newlines. JSON preserves original strings.
 
-No read command executes hooks, provider programs, or network operations.
+Read commands do not execute hooks. With coordination enabled, list/next load one
+bulk Worklease claim overlay; show derives its resource in-process.
 Unsupported configured source types or incomplete native loads exit 6
 (`unavailable`), never silently yielding a partial ranking. Auto-detected
 Backlog.md/Beads backlogs are not read as native files; configure a native source
@@ -374,3 +374,72 @@ or import them when import support ships. These commands do not claim or write.
 Golden `data` examples are in `internal/cli/testdata/{ls,show,next}.json`.
 Regenerate deliberately with `task cli:test PKG=./internal/cli -- -update` and
 review the diff; ordinary test runs compare without rewriting them.
+
+## Coordination
+
+Enable with `coordination: {worklease: {}}`. Every Worklease child runs from the
+control root, including when invoked from a linked worktree. Authority selection
+(`WORKLEASE_HOME`, `WORKLEASE_PROFILE`) passes through; inherited
+`WORKLEASE_SESSION_ID`, `WORKLEASE_HANDLE`, and `WORKLEASE_RUN_ID` never do.
+CLI/TUI ownership comes from global `--session`, then `BL_SESSION`, then
+`WORKLEASE_SESSION_ID`; `WORKLEASE_RUN_ID` requests run verification. Use a stable,
+nonempty session per loop. MCP instead requires explicit context per call.
+
+```sh
+bl claim 12 --session loop-a --json
+bl heartbeat --session loop-a --json
+bl release 12 --session loop-a --json
+```
+
+`claim` has no wait. Contention exits 7 and names the holder. An occupied session
+holding a different item exits 4 (`claim-held`), not contention. Missing session
+exits 2. `release` changes only the caller's exact single-resource claim; an
+absent or unrelated claim reports `not-held`. `heartbeat` reports `expiresAt`.
+A verified live run reports `run-managed` without acquiring, renewing, or
+releasing anything. Invalid run evidence exits 4 (`run-mismatch`).
+
+Representative contention and release envelopes (opaque identities abbreviated):
+
+```json
+{"schemaVersion":1,"ok":false,"command":"claim","data":{"outcome":"contended","reason":"contention","message":"resource claimed (holder agent@host)","claim":{"claimId":"holder","resources":["RESOURCE"],"session":"other","agent":"agent@host","expiresAt":"2030-01-01T00:00:00Z"}},"error":{"reason":"contention","message":"resource claimed (holder agent@host)","details":{}}}
+{"schemaVersion":1,"ok":true,"command":"release","data":{"outcome":"released","resource":"RESOURCE","claim":{"claimId":"claim","resources":["RESOURCE"],"session":"loop-a","agent":"agent@host","expiresAt":"2030-01-01T00:00:00Z"}}}
+{"schemaVersion":1,"ok":true,"command":"heartbeat","data":{"outcome":"renewed","expiresAt":"2030-01-01T00:00:00Z"}}
+```
+
+`show --json` adds `data.resource`, derived using the same policy as acquire.
+Native/Backlog.md identities use the project ID and stored item ID, never a
+worktree path. GitHub and Linear policies match Worklease's portable keys.
+Regenerate pinned vectors with `mise exec -- python3 scripts/worklease-key-vectors`.
+
+Status changes share an engine gate across start/done, set, TUI, editor restores,
+and MCP update. Entering active claims first. Contention writes nothing; a failed
+write keeps the acquisition. Entering done/canceled writes first, then releases
+only a matching caller-managed claim. Unresolved context refuses the status write.
+A release failure leaves the status written. JSON write outcomes add
+`transition: {status: "not-written"|"failed"|"written", claim: {...}}`, including
+on errors. Inspect both outcomes before retrying. Multi-item activation is refused.
+
+### Provider evidence and recovery
+
+Coordination requires schema-v2 public resource identities from Worklease's
+lifecycle, handle, run, and list commands, plus conditional release using
+`release --if-claim-id ID`. The guard binds release to the verified claim rather
+than a mutable session handle.
+
+The repository's pinned Worklease 1.9.3 does not provide these guarantees.
+Local verification uses Worklease commit `b24b246` (including the public-resource
+fix `1cdaaab`); neither fix is published yet. Keep repository coordination
+unconfigured until a release containing both fixes is available and pinned.
+
+Unknown, malformed, or redacted evidence fails closed: a redacted acquisition is `uncertain`/exit 6 and keeps the claim;
+inspection is unresolved; an unusable bulk list makes readiness unknown. Do not
+retry with a new session or synthesize a new resource. Inspect/recover the same
+Worklease session explicitly.
+
+Pending acquisition recovery remains in Worklease. The internal coordinator uses
+an opaque adapter reference and rechecks identity before bare-handle exact replay;
+it never reconstructs credentials, TTL, agent, work key, wait, or deadlines.
+Version 1.9.3 supports this form remotely. Local pending options are not publicly
+inspectable, so local exact recovery may require the original Worklease command.
+Corrupt, foreign, stale, changed, or unverifiable handles never authorize a fresh
+acquire. Offline handle inspection alone never proves live ownership.

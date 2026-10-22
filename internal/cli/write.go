@@ -22,9 +22,10 @@ import (
 )
 
 type writeOutcome struct {
-	ID    string    `json:"id"`
-	Item  *readItem `json:"item,omitempty"`
-	Error *Error    `json:"error,omitempty"`
+	ID         string                   `json:"id"`
+	Item       *readItem                `json:"item,omitempty"`
+	Error      *Error                   `json:"error,omitempty"`
+	Transition *engine.TransitionResult `json:"transition,omitempty"`
 }
 type writeData struct {
 	Outcomes []writeOutcome `json:"outcomes"`
@@ -69,9 +70,17 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if cmd.IsSet("if-version") && (len(ids) != 1 || cmd.String("if-version") == "") {
 			return writeUsage("--if-version requires exactly one ID and a nonempty version")
 		}
+		if cfg.Coordination.Worklease != nil && len(ids) > 1 {
+			_, category, changes := engine.StatusTarget(cfg, model.Mutation{Op: model.Batch, Changes: changes})
+			if changes && category == model.Active {
+				return writeUsage("coordination refuses multi-item activation")
+			}
+		}
 		data := writeData{Outcomes: []writeOutcome{}}
 		var first *Error
 		for _, id := range ids {
+			var transition engine.TransitionResult
+			ctx := engine.WithTransitionResult(ctx, &transition)
 			item, err := writeItem(ctx, cfg, id)
 			changes := changes
 			if err == nil {
@@ -91,6 +100,13 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				item, err = engine.ApplyWrite(ctx, cfg, m)
 			}
 			outcome := writeOutcome{ID: id}
+			if transition.Status != "" {
+				outcome.Transition = &transition
+			}
+			if transition.Status == "written" {
+				summary := itemData(item)
+				outcome.Item = &summary
+			}
 			if err != nil {
 				outcome.Error = writeError(err)
 				if first == nil {

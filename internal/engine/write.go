@@ -97,7 +97,7 @@ func ErrorReason(err error) string {
 	var refusal *source.Error
 	if errors.As(err, &refusal) {
 		switch refusal.Reason {
-		case "conflict", "not-found", "unavailable", "rejected":
+		case "conflict", "not-found", "unavailable", "rejected", "contention", "claim-held", "run-mismatch", "session-required", "usage":
 			return refusal.Reason
 		}
 	}
@@ -138,7 +138,7 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	if err := validateWrite(cfg, backend.Info().Capabilities, m); err != nil {
 		return model.Item{}, err
 	}
-	return backend.Apply(ctx, m)
+	return coordinatedWrite(ctx, cfg, m, func() (model.Item, error) { return backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return backend.Apply(ctx, m) })
 }
 
 func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation) error {

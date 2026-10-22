@@ -1,10 +1,23 @@
 # Agent workflow
 
-Use this foundation workflow only after satisfying the project's coordination
-policy. There is no built-in claim operation yet: next is read-only and start
-only changes status. This is not a safe concurrent-agent loop by itself.
-A later release adds claims and a claimed, stable-session loop; until then,
-do not invent resource keys or treat a status transition as a claim.
+Follow the project's coordination policy. Next remains read-only. When
+coordination is configured, start claims before writing and done writes then
+releases the caller's matching claim. Use one stable explicit session via
+BL_SESSION, or the global --session flag. Never invent resource keys: use show's
+resource. If ownership is uncertain, retain the same session and recover with Worklease
+rather than attempting a fresh acquire.
+
+```sh
+bl claim ID --session loop-a --json
+bl heartbeat --session loop-a --json
+bl release ID --session loop-a --json
+```
+
+A verified run-managed claim is never acquired, renewed, or released by bl.
+MCP calls require session and optional run explicitly; server environment is not
+caller ownership. Inspect both transition.status and transition.claim after a
+status change, even on errors: a failed write retains acquisition, and a failed
+release leaves the status written.
 
 Pick a ready item and read its full intent, criteria, history, and file scope:
 
@@ -53,5 +66,5 @@ bl show ID --json
 
 A successful done response uses the same outcomes shape, with command "done",
 status set to workflow.done, category "done" for the default configuration,
-and a new version. Follow the external coordination policy to release any claim.
+and a new version. Follow the project coordination policy for any external claim.
 Start and done require configured workflow.start and workflow.done statuses.

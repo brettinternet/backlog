@@ -28,9 +28,12 @@ Exit codes and reasons:
 - 4: conflict (stale version or occupied target).
 - 5: rejected or invalid-config.
 - 6: unavailable (unsupported source or incomplete load).
-- 7: contention (reserved for coordination).
+- 7: contention (claimed by another holder).
 
 Session-required (2), claim-held/run-mismatch (4), and contention (7) are
-coordination reasons; this foundation release has no claim operations.
+coordination reasons. Claim/release/heartbeat return separate claim outcomes;
+status writes include transition.status and transition.claim. Show includes
+resource when coordination is enabled. Redacted provider membership is unknown,
+never permission to write or acquire again.
 Treat item versions as opaque strings and pass them verbatim to
 --if-version whenever a write depends on previously read content.

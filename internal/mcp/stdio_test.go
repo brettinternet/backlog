@@ -50,7 +50,7 @@ func TestStdioSubprocessInitializeListCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 7 {
+	if len(listed.Tools) != 10 {
 		t.Fatalf("got %d tools", len(listed.Tools))
 	}
 	called, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "next", Arguments: map[string]any{}})

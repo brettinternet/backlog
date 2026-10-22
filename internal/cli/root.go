@@ -24,6 +24,7 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/brettinternet/backlog/internal/tui"
+	"github.com/brettinternet/backlog/internal/worklease"
 )
 
 type BuildInfo struct {
@@ -189,6 +190,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		Reader:      in, Writer: out, ErrWriter: errOut,
 		ExitErrHandler: func(context.Context, *urfave.Command, error) {},
 		Flags: []urfave.Flag{
+			&urfave.StringFlag{Name: "session", Usage: "Coordination session (BL_SESSION or WORKLEASE_SESSION_ID)"},
 			&urfave.StringFlag{Name: "C", Value: ".", Usage: "Resolve the invocation from directory DIR"},
 			&urfave.BoolFlag{Name: "json", Aliases: []string{"j"}, Usage: "Print a versioned JSON envelope"},
 			&urfave.BoolFlag{Name: "version", Aliases: []string{"v"}, Usage: "Print version and commit"},
@@ -238,6 +240,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			},
 		},
 	}
+	root.Commands = append(root.Commands, claimCommands(&directory, out)...)
 	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
 	root.Commands = append(root.Commands, eventsCommand(&directory, out))
 	root.Commands = append(root.Commands, instructionsCommand(out))
@@ -264,6 +267,18 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				command = commandName(selected)
 				if selected.Args().Present() && !acceptsArguments(selected.Name) {
 					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
+				}
+				if selected.Name != "mcp" && selected.Name != "version" && selected.Name != "instructions" {
+					if cfg, err := loadConfig(selected, directory); err == nil && cfg.Coordination.Worklease != nil {
+						caller := model.CallerContext{Session: selected.String("session"), Run: os.Getenv("WORKLEASE_RUN_ID")}
+						if caller.Session == "" {
+							caller.Session = os.Getenv("BL_SESSION")
+						}
+						if caller.Session == "" {
+							caller.Session = os.Getenv("WORKLEASE_SESSION_ID")
+						}
+						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, worklease.New(cfg), caller), cfg)
+					}
 				}
 				return action(engine.WithEventOrigin(ctx, "cli"), selected)
 			}
@@ -315,7 +330,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "events", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
+	case "claim", "release", "events", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
 		return true
 	}
 	return false

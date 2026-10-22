@@ -70,7 +70,13 @@ and backlog-sized work stay off `Update` (D14).
 Tree layouts support parent navigation, folds, ancestor context and descendant
 progress. Go-to, the command palette, searchable help, key remapping and mouse
 are implemented.
-Claim columns await BL-32.
+With coordination enabled, the wide list adds Claim (`mine`, holder agent/host,
+or `expired`), also available as a saved-view `claim` column. `C` claims or releases
+the selected item; `S` uses the same active-transition gate as the CLI. Claim queries
+use one bulk overlay, polled every five seconds and after operations; expiry is
+scheduled locally and reprojects without polling. No Worklease calls or backlog-sized
+claim work run in Update/View or per row. An unavailable/redacted overlay is unknown,
+not known-free; see docs/cli.md for provider-evidence and recovery requirements.
 
 Capture a real render without opening a user's pane:
 
@@ -377,7 +383,9 @@ Milestones show configured names, omit archived entries, then show undeclared
 milestone keys in use. Typing an undeclared milestone key sets it as free text;
 no picker edits project configuration. Status order is the configured status
 order. `S`/`D` use workflow start/done, falling back to the first active/done
-status; `S` does not acquire a claim yet (BL-32). Unsupported source
+status. With coordination enabled, active transitions acquire first; closed
+transitions write then release only matching caller-managed claims. Multi-item
+activation is refused. Unsupported source
 operations do not open a picker or write; the footer shows the unavailable
 capability.
 

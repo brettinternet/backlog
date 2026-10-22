@@ -37,6 +37,7 @@ type Event struct {
 	Project       string            `json:"project"`
 	Source        string            `json:"source"`
 	Ref           string            `json:"ref"`
+	Resource      string            `json:"resource,omitempty"`
 	Changes       map[string]Change `json:"changes,omitempty"`
 	Item          any               `json:"item,omitempty"`
 	Actor         string            `json:"actor,omitempty"`

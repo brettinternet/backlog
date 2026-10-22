@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"slices"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 // Row is prepared off the UI loop. Rendering only needs viewport-sized work.
 type Row struct {
+	Claim                                     string
 	Ref                                       model.Ref
 	Version, Title, Status, Type, Milestone   string
 	Due, URL                                  string
@@ -43,6 +45,7 @@ type RowGroup struct {
 	Rows  []Row
 }
 type Projection struct {
+	NextClaimExpiry     time.Time
 	Request, Generation uint64
 	Groups              []RowGroup
 	Error               error
@@ -52,6 +55,7 @@ type Projection struct {
 }
 type projectionRequest struct {
 	id            uint64
+	refreshClaims bool
 	snapshot      *Snapshot
 	text          string
 	ctx           context.Context
@@ -61,6 +65,7 @@ type projectionRequest struct {
 
 // Projector runs one latest-wins worker, never a goroutine per keystroke.
 type Projector struct {
+	now      func() time.Time
 	ctx      context.Context
 	cancel   context.CancelFunc
 	cfg      project.Config
@@ -73,20 +78,28 @@ type Projector struct {
 }
 
 func NewProjector(ctx context.Context, cfg project.Config) *Projector {
+	return NewProjectorWithClock(ctx, cfg, time.Now)
+}
+func NewProjectorWithClock(ctx context.Context, cfg project.Config, now func() time.Time) *Projector {
 	ctx, cancel := context.WithCancel(ctx)
-	p := &Projector{ctx: ctx, cancel: cancel, cfg: cfg, requests: make(chan projectionRequest, 1), results: make(chan Projection, 1), done: make(chan struct{})}
+	p := &Projector{now: now, ctx: ctx, cancel: cancel, cfg: cfg, requests: make(chan projectionRequest, 1), results: make(chan Projection, 1), done: make(chan struct{})}
 	go p.run()
 	return p
 }
 func (p *Projector) Request(snapshot *Snapshot, text string) uint64 {
-	return p.request(snapshot, text, false, "", "")
+	return p.request(snapshot, text, false, "", "", false)
 }
 
 // RequestEditor uses the same bounded latest-wins worker for completion and projection.
 func (p *Projector) RequestEditor(snapshot *Snapshot, text, field, prefix string) uint64 {
-	return p.request(snapshot, text, true, field, prefix)
+	return p.request(snapshot, text, true, field, prefix, false)
 }
-func (p *Projector) request(snapshot *Snapshot, text string, complete bool, field, prefix string) uint64 {
+
+// RefreshClaims requests one bulk provider refresh on the projection worker.
+func (p *Projector) RefreshClaims(snapshot *Snapshot, text string) uint64 {
+	return p.request(snapshot, text, false, "", "", true)
+}
+func (p *Projector) request(snapshot *Snapshot, text string, complete bool, field, prefix string, refreshClaims bool) uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.active != nil {
@@ -99,7 +112,7 @@ func (p *Projector) request(snapshot *Snapshot, text string, complete bool, fiel
 	case <-p.results:
 	default:
 	}
-	latest(p.requests, projectionRequest{id: p.serial, snapshot: snapshot, text: text, ctx: ctx, complete: complete, field: field, prefix: prefix})
+	latest(p.requests, projectionRequest{id: p.serial, snapshot: snapshot, text: text, ctx: ctx, complete: complete, field: field, prefix: prefix, refreshClaims: refreshClaims})
 	return p.serial
 }
 func (p *Projector) Results() <-chan Projection { return p.results }
@@ -214,6 +227,11 @@ func readinessReason(e Explanation) string {
 func (p *Projector) run() {
 	defer close(p.done)
 	var cached *Snapshot
+	var claims []model.ClaimInfo
+	var claimsLoaded bool
+	var claimExpiry time.Time
+	var claimLabels map[model.Ref]string
+	var claimErr error
 	var base query.Snapshot
 	var explanations map[model.Ref]Explanation
 	var blockingBy, childrenBy map[model.Ref][]model.Ref
@@ -223,11 +241,24 @@ func (p *Projector) run() {
 			return
 		case req := <-p.requests:
 			result := Projection{Request: req.id, Generation: req.snapshot.Generation}
-			if cached != req.snapshot {
+			coordinator, caller := Coordination(req.ctx)
+			coordination := p.cfg.Coordination.Worklease != nil
+			now := p.now()
+			refresh := coordination && (!claimsLoaded || req.refreshClaims)
+			if refresh {
+				claimsLoaded = true
+				if coordinator == nil {
+					claimErr = fmt.Errorf("coordination unavailable")
+				} else {
+					claims, claimErr = coordinator.List(req.ctx)
+				}
+			}
+			expired := !claimExpiry.IsZero() && !claimExpiry.After(now)
+			if cached != req.snapshot || refresh || expired {
 				// A canceled rebuild must not leave the old cache key pointing at a
 				// partially replaced base when the user switches back to that snapshot.
 				cached = nil
-				base = query.Snapshot{Settings: p.cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}
+				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, States: map[model.Ref]query.State{}}
 				if p.cfg.Me.Default != "" {
 					base.Me = []string{p.cfg.Me.Default}
 				}
@@ -247,7 +278,27 @@ func (p *Projector) run() {
 						archivedRefs[ref] = true
 					}
 				}
-				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs})
+				base.Coordination = coordination
+				claimStates := map[model.Ref]Claim{}
+				claimLabels = map[model.Ref]string{}
+				claimExpiry = time.Time{}
+				if coordination && claimErr == nil && coordinator != nil {
+					claimStates, claimLabels = OverlayStates(coordinator, caller, base.Items, claims, now)
+					for _, claim := range claims {
+						if claim.ExpiresAt.After(now) && (claimExpiry.IsZero() || claim.ExpiresAt.Before(claimExpiry)) {
+							claimExpiry = claim.ExpiresAt
+						}
+					}
+				}
+				for ref, claim := range claimStates {
+					state := base.States[ref]
+					state.Claim = string(claim)
+					if claim == ClaimMine {
+						state.Claim = "me"
+					}
+					base.States[ref] = state
+				}
+				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Coordination: coordination, Claims: claimStates})
 				if req.ctx.Err() != nil {
 					continue
 				}
@@ -266,7 +317,11 @@ func (p *Projector) run() {
 				}
 				cached = req.snapshot
 			}
-			base.Now = time.Now()
+			base.Now = now
+			result.NextClaimExpiry = claimExpiry
+			if claimErr != nil {
+				result.Warning = claimErr
+			}
 			if req.complete {
 				result.Completions = base.Complete(req.field, req.prefix, query.Options{})
 			}
@@ -316,7 +371,7 @@ func (p *Projector) run() {
 								remoteVersion = r.edit.Remote.Version
 							}
 							row := Row{
-								Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
+								Claim: claimLabels[i.Ref], Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
 								Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
 								Category: i.Category, Priority: i.Priority,
 								Assignees: i.Assignees, Labels: i.Labels, Pending: r.edit.Pending,

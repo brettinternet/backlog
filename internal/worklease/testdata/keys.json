@@ -1,0 +1,38 @@
+[
+  {
+    "provider": "generic",
+    "source": "github.com/brettinternet/backlog",
+    "item": "BL-32",
+    "resource": "coordination:generic:aebeb8f81eefb542e875ebbd9d5b16df76bf17c0d77366c61161716a5b4e5024"
+  },
+  {
+    "provider": "generic",
+    "source": "Søurce 😀 <>& /",
+    "item": "零-\"\\",
+    "resource": "coordination:generic:ddd8d850e84dc0bcdee216814e08b5f70c487cd77d0e73e0d26a0283b9ad9c7b"
+  },
+  {
+    "provider": "github",
+    "source": "GitHub.COM/Acme/App.git",
+    "item": "42",
+    "resource": "github:github.com%2Facme%2Fapp#42"
+  },
+  {
+    "provider": "github",
+    "source": "example.com/owner/a b",
+    "item": "#42/~",
+    "resource": "github:example.com%2Fowner%2Fa%20b#%2342%2F~"
+  },
+  {
+    "provider": "linear",
+    "source": "acme",
+    "item": "3f0a-uuid",
+    "resource": "coordination:linear:3a85dcf86ec0408773562631a92bfcb5663bb12c7b51d46d8841595479f2a3ca"
+  },
+  {
+    "provider": "linear",
+    "source": "é😀",
+    "item": "ENG-431",
+    "resource": "coordination:linear:021d287320fb6a8003f4ff96ddda90bab67ae97de07f29abde6a5262b5732e6e"
+  }
+]

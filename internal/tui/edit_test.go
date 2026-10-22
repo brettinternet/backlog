@@ -245,7 +245,11 @@ var allEditCapabilities = model.Capabilities{
 
 func editFixture(t *testing.T, items []model.Item, caps model.Capabilities, opts Options) (Model, *editFakeSource) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	base := opts.Context
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, 5*time.Second)
 	t.Cleanup(cancel)
 	backend := newEditFakeSource(items, caps)
 	statuses := []project.StatusConfig{
@@ -254,6 +258,9 @@ func editFixture(t *testing.T, items []model.Item, caps model.Capabilities, opts
 		{Key: "done", Name: "Done", Category: "done"},
 	}
 	cfg := project.Config{Settings: project.Settings{Statuses: statuses, Workflow: project.WorkflowConfig{Start: "active", Done: "done"}, Ready: project.ReadyConfig{Statuses: []string{"todo"}, SatisfiedBy: []string{"done"}}}}
+	if c, _ := engine.Coordination(ctx); c != nil {
+		cfg.Coordination.Worklease = &struct{}{}
+	}
 	store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
 	t.Cleanup(store.Close)
 	waitEdit(t, func() bool { return store.Current().Len() == len(items) })

@@ -87,6 +87,8 @@ type foldState struct {
 }
 
 type Model struct {
+	claimExpiry              time.Time
+	claimTimerAt             time.Time
 	width, height            int
 	opts                     Options
 	title                    lipgloss.Style
@@ -195,6 +197,7 @@ func New(opts Options) Model {
 func (m *Model) Bind(ch <-chan *engine.Snapshot) { m.snapshots = ch }
 func (m Model) Init() tea.Cmd {
 	var commands []tea.Cmd
+	commands = append(commands, m.claimPoll())
 	if m.opts.Store != nil {
 		commands = append(commands, m.waitSnapshot(), m.waitProjection())
 	}
@@ -454,6 +457,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.detailOpen && m.detailWidth() != oldDetailWidth {
 			return m, m.scheduleDetail()
 		}
+	case claimsPoll:
+		m.refreshClaims()
+		return m, m.claimPoll()
+	case claimsExpiry:
+		if time.Time(msg).Equal(m.claimTimerAt) {
+			m.claimTimerAt = time.Time{}
+		}
+		if time.Time(msg).Equal(m.claimExpiry) {
+			m.project()
+		}
+		return m, nil
+	case claimOperationMsg:
+		m.notice = textutil.Line(msg.message)
+		m.refreshClaims()
+		return m, nil
 	case snapshotMsg:
 		m.snapshot, m.badges, m.syncing = msg.snapshot, msg.badges, msg.syncing
 		m.project()
@@ -463,6 +481,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitProjection()
 		}
 		m.applied = msg.Request
+		m.claimExpiry = msg.NextClaimExpiry
 		if m.editor.open {
 			m.editor.candidates = msg.Completions
 			m.editor.candidate = 0
@@ -495,7 +514,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.groups = msg.Groups
 		m.ungrouped = msg.Ungrouped
 		m.serial++
-		return m, tea.Batch(m.prepare(), m.waitProjection())
+		expiry := m.expiryCommand()
+		return m, tea.Batch(m.prepare(), m.waitProjection(), expiry)
 	case viewSaved:
 		m.saved(msg)
 		return m, nil
@@ -569,6 +589,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.editorSaved(msg)
 	case editResultMsg:
 		m.editResult(msg)
+		m.refreshClaims()
 		return m, nil
 	case openResultMsg:
 		m.notice = msg.err
@@ -1008,6 +1029,9 @@ func (m Model) View() tea.View {
 	columns := "  ID           Title"
 	if wide {
 		columns = "  ID           P  Status         ⊘   ▣       Title"
+		if c, _ := engine.Coordination(m.opts.Context); c != nil {
+			columns = "  ID           P  Status         ⊘   ▣       Claim             Title"
+		}
 	}
 	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
 		columns = "  " + strings.Join(custom, "  ")
@@ -1184,6 +1208,8 @@ func (m Model) listLine(index int, wide bool) string {
 				values = append(values, strconv.Itoa(r.row.OpenBlockers))
 			case "children":
 				values = append(values, fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal))
+			case "claim":
+				values = append(values, cell(r.row.Claim, 16))
 			case "title":
 				values = append(values, state+textutil.Line(r.row.Title))
 			}
@@ -1201,6 +1227,9 @@ func (m Model) listLine(index int, wide bool) string {
 			children = fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal)
 		}
 		line += cell(blockers, 3) + " " + cell(children, 7) + " "
+		if c, _ := engine.Coordination(m.opts.Context); c != nil {
+			line += cell(textutil.Line(r.row.Claim), 16) + " "
+		}
 	}
 	return line + state + textutil.Line(r.row.Title)
 }

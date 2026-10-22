@@ -484,7 +484,7 @@ func validateSettings(node *yaml.Node) error {
 			if columns := field(entry, "columns"); columns != nil {
 				for _, column := range columns.Content {
 					switch column.Value {
-					case "id", "priority", "status", "blockers", "children", "title":
+					case "id", "priority", "status", "blockers", "children", "title", "claim":
 					default:
 						return fail(column, "views.columns", "unknown column")
 					}

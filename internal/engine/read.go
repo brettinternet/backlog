@@ -85,10 +85,24 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 			s.Query.Items = append(s.Query.Items, delta.Items...)
 		}
 	}
-	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs})
+	coordination := cfg.Coordination.Worklease != nil
+	claims := map[model.Ref]Claim{}
+	if coordination {
+		var err error
+		claims, _, err = ClaimStates(ctx, s.Query.Items, s.Query.Now)
+		if err != nil {
+			s.Warnings = append(s.Warnings, err.Error())
+		}
+	}
+	s.Query.Coordination = coordination
+	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Coordination: coordination, Claims: claims})
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)
-		s.Query.States[e.Ref] = query.State{Readiness: string(e.Readiness), Archived: archivedRefs[e.Ref]}
+		claim := string(claims[e.Ref])
+		if claims[e.Ref] == ClaimMine {
+			claim = "me"
+		}
+		s.Query.States[e.Ref] = query.State{Readiness: string(e.Readiness), Archived: archivedRefs[e.Ref], Claim: claim}
 	}
 	return s, nil
 }

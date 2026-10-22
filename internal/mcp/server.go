@@ -19,17 +19,25 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/worklease"
 )
 
 const InstructionsURI = "bl://instructions"
 
 type Server struct {
-	server *mcp.Server
-	cfg    project.Config
+	server      *mcp.Server
+	cfg         project.Config
+	coordinator model.Coordinator
 }
 
 func New(cfg project.Config) *Server {
 	s := &Server{cfg: cfg, server: mcp.NewServer(&mcp.Implementation{Name: "bl", Version: "dev"}, nil)}
+	if cfg.Coordination.Worklease != nil {
+		s.coordinator = worklease.New(cfg)
+	}
+	mcp.AddTool(s.server, &mcp.Tool{Name: "claim", Description: "Claim an item with explicit caller ownership."}, s.claim)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "release", Description: "Release the caller matching claim."}, s.release)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "heartbeat", Description: "Renew a caller-managed claim."}, s.heartbeat)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "next", Description: "Return ready backlog items in readiness order."}, s.next)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "query", Description: "Search backlog items using the bl query language."}, s.query)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
@@ -64,7 +72,9 @@ func (s *Server) instructions(_ context.Context, req *mcp.ReadResourceRequest) (
 }
 
 type ItemResult struct {
-	Item model.Item `json:"item"`
+	Item       model.Item               `json:"item"`
+	Transition *engine.TransitionResult `json:"transition,omitempty"`
+	Resource   string                   `json:"resource,omitempty"`
 }
 type ItemsResult struct {
 	Items []model.Item `json:"items"`
@@ -79,6 +89,8 @@ type ShowArgs struct {
 	ID string `json:"id"`
 }
 type WriteArgs struct {
+	Session string `json:"session,omitempty"`
+	Run     string `json:"run,omitempty"`
 	Version string `json:"version,omitempty" jsonschema:"Expected current item version; stale values are rejected without writing."`
 }
 type CreateArgs struct {
@@ -125,6 +137,7 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 	if args.Limit < 0 {
 		return failed[any]("usage", "limit must be nonnegative")
 	}
+	ctx = engine.WithCoordination(ctx, s.coordinator, model.CallerContext{})
 	snap, err := engine.LoadReads(ctx, s.cfg, false)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
@@ -168,6 +181,7 @@ func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryAr
 	if !hasIs {
 		text += " is:open"
 	}
+	ctx = engine.WithCoordination(ctx, s.coordinator, model.CallerContext{})
 	snap, err := engine.LoadReads(ctx, s.cfg, archived)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
@@ -199,7 +213,14 @@ func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs
 	if len(items) > 1 {
 		return failed[any]("rejected", "ambiguous item ID: "+args.ID)
 	}
-	return nil, ItemResult{items[0]}, nil
+	resource := ""
+	if s.coordinator != nil {
+		resource, err = s.coordinator.Resource(items[0])
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+	}
+	return nil, ItemResult{Item: items[0], Resource: resource}, nil
 }
 func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
 	if args.Title == "" {
@@ -261,9 +282,12 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	return nil, ItemResult{created}, nil
+	return nil, ItemResult{Item: created}, nil
 }
 func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args UpdateArgs) (*mcp.CallToolResult, any, error) {
+	ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, s.coordinator, model.CallerContext{Session: args.Session, Run: args.Run}), s.cfg)
+	var transition engine.TransitionResult
+	ctx = engine.WithTransitionResult(ctx, &transition)
 	if args.ID == "" || (len(args.Fields) == 0 && args.Operation == "") {
 		return failed[any]("usage", "id and fields or operation are required")
 	}
@@ -301,7 +325,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 		if err != nil {
 			return failed[any](reason(err), err.Error())
 		}
-		return nil, ItemResult{updated}, nil
+		return nil, ItemResult{Item: updated}, nil
 	}
 	changes := make([]model.Mutation, 0, len(args.Fields))
 	// JSON objects are unordered; sorted keys make a batch deterministic and put
@@ -359,9 +383,13 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	}
 	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes})
 	if err != nil {
-		return failed[any](reason(err), err.Error())
+		return failedTransition(err, updated, transition)
 	}
-	return nil, ItemResult{updated}, nil
+	result := ItemResult{Item: updated}
+	if transition.Status != "" {
+		result.Transition = &transition
+	}
+	return nil, result, nil
 }
 func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args AppendArgs) (*mcp.CallToolResult, any, error) {
 	ctx = engine.WithEventOrigin(ctx, "mcp")
@@ -393,7 +421,7 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	return nil, ItemResult{updated}, nil
+	return nil, ItemResult{Item: updated}, nil
 }
 func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args CriteriaArgs) (*mcp.CallToolResult, any, error) {
 	ctx = engine.WithEventOrigin(ctx, "mcp")
@@ -431,7 +459,7 @@ func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args Crit
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	return nil, ItemResult{updated}, nil
+	return nil, ItemResult{Item: updated}, nil
 }
 
 func readItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {

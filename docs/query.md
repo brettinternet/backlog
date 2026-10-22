@@ -80,3 +80,7 @@ The TUI completes field names first (including `field.NAME:` for raw keys in use
 `internal/query.QuickAdd` implements [tui.md quick-add](tui.md#quick-add) without defaults, ID allocation, or I/O. Quotes and escapes use the same decoding as query values. A token whose first character is quoted or escaped becomes literal title text; quotes inside a metadata token allow spaces in its value (`#"two words"`). Title words are joined with single spaces. A nonempty title is required.
 
 Priority prefixes are case-insensitive and must uniquely identify urgent/high/medium/low. `@me` resolves to the caller-supplied handle and errors if none was supplied. Other handles retain `@`. List tokens accumulate without duplicates; repeated scalar tokens use the last value. Parent and blocker tokens accept `source:ID`. Empty metadata values, invalid priorities, unfinished quotes, and unfinished escapes produce positioned errors. The caller validates source-specific field values and reference identities.
+
+Claim predicates consume the bulk coordination overlay. Expired claims are known
+free, evaluated under the projection's clock without a provider call. Failed or
+redacted overlay responses remain unknown; they never make `claimed:none` true.

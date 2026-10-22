@@ -78,6 +78,8 @@ func (m *Model) updateEditKey(key string) (tea.Cmd, bool) {
 		return m.beginTextAppend(model.AppendComment), true
 	case "i":
 		return m.beginTextAppend(model.AppendNote), true
+	case "C":
+		return m.claimCommand(), true
 	case "S":
 		return m.workflowTransition(m.opts.Workflow.Start, "active"), true
 	case "D":

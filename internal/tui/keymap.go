@@ -66,7 +66,7 @@ func defaultKeymap() []action {
 		{id: "criterion", label: "Toggle criterion (Criteria tab)", canonical: "x", bindings: []string{"x"}},
 		{id: "start", label: "Start item", canonical: "S", bindings: []string{"S"}},
 		{id: "done", label: "Finish item", canonical: "D", bindings: []string{"D"}},
-		{id: "claim", label: "Claim / release", bindings: []string{"C"}, unavailable: "coordination support awaits BL-32"},
+		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
 		{id: "archive", label: "Archive (confirm)", canonical: "d d", bindings: []string{"d d"}},
 		{id: "repeat", label: "Repeat last edit", canonical: ".", bindings: []string{"."}},
 		{id: "undo", label: "Undo", canonical: "u", bindings: []string{"u"}},

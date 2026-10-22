@@ -384,7 +384,12 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 		job.preview = cloneItem(prepared.Item)
 		job.inverse = cloneMutation(prepared.Inverse)
 	}
-	item, err := w.backend.Apply(s.ctx, m)
+	var transition TransitionResult
+	ctx := WithTransitionResult(s.ctx, &transition)
+	item, err := coordinatedWrite(ctx, s.cfg, m, func() (model.Item, error) { return w.backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return w.backend.Apply(ctx, m) })
+	if err != nil && transition.Claim != nil {
+		err = source.Refuse(ErrorReason(err), fmt.Sprintf("status %s; claim %s: %s", transition.Status, transition.Claim.Outcome, ErrorMessage(err)))
+	}
 	s.finishEdit(w, job, item, err)
 }
 func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err error) {
@@ -410,7 +415,9 @@ func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err e
 				state.Local = &local
 				state.Remote = remote
 			}
-			if job.before != nil {
+			if item.Version != "" {
+				n.records[ref] = &record{item: cloneItem(item), edit: state, archived: job.before != nil && job.before.archived}
+			} else if job.before != nil {
 				prior := job.before.item
 				if remote != nil {
 					prior = *remote
