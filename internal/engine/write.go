@@ -138,6 +138,11 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	if err := validateWrite(cfg, backend.Info().Capabilities, m); err != nil {
 		return model.Item{}, err
 	}
+	var err error
+	ctx, err = runBeforeMutation(ctx, cfg, m, backend)
+	if err != nil {
+		return model.Item{}, err
+	}
 	return coordinatedWrite(ctx, cfg, m, func() (model.Item, error) { return backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return backend.Apply(ctx, m) })
 }
 

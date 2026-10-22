@@ -449,6 +449,7 @@ func validateSettings(node *yaml.Node) error {
 	}
 	for _, group := range []string{"hooks", "actions", "views", "workspaces"} {
 		if list := field(node, group); list != nil {
+			seenNames := map[string]bool{}
 			for i, entry := range list.Content {
 				required := []string{"name"}
 				switch group {
@@ -464,8 +465,34 @@ func validateSettings(node *yaml.Node) error {
 						return fail(entry, fmt.Sprintf("%s[%d].%s", group, i, key), "required")
 					}
 				}
-				if phase := field(entry, "phase"); phase != nil && phase.Value != "before" && phase.Value != "after" {
-					return fail(phase, "hooks.phase", "must be before or after")
+				if group == "hooks" {
+					name := field(entry, "name")
+					if strings.TrimSpace(name.Value) == "" {
+						return fail(name, fmt.Sprintf("hooks[%d].name", i), "must not be empty")
+					}
+					if seenNames[name.Value] {
+						return fail(name, "hooks.name", "duplicate "+name.Value)
+					}
+					seenNames[name.Value] = true
+					on := field(entry, "on")
+					if strings.TrimSpace(on.Value) == "" {
+						return fail(on, fmt.Sprintf("hooks[%d].on", i), "must not be empty")
+					}
+					run := field(entry, "run")
+					if len(run.Content) == 0 || strings.TrimSpace(run.Content[0].Value) == "" {
+						return fail(run, fmt.Sprintf("hooks[%d].run", i), "requires an executable")
+					}
+				}
+				if phase := field(entry, "phase"); phase != nil {
+					if phase.Value != "before" && phase.Value != "after" {
+						return fail(phase, "hooks.phase", "must be before or after")
+					}
+					if phase.Value == "before" {
+						on := field(entry, "on").Value
+						if on != "item.created" && on != "item.updated" && on != "item.archived" {
+							return fail(phase, "hooks.phase", "before hooks require an item mutation event")
+						}
+					}
 				}
 			}
 		}

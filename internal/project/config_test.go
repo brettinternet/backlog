@@ -56,6 +56,8 @@ func TestRejectInvalidConfig(t *testing.T) {
 		"ui:\n  highContast: true\n",
 		"ui: {}\n---\nui: {highContrast: true}\n",
 		"ui: [",
+		"hooks: [{name: before, on: item.readiness, phase: before, run: [noop]}]\n",
+		"hooks: [{name: before, on: hook.finished, phase: before, run: [noop]}]\n",
 	} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()

@@ -336,6 +336,23 @@ func (tx *Transaction) Append(e Event) (bool, error) {
 	tx.appended = append(tx.appended, e)
 	return true, nil
 }
+
+// Event reads one complete event by ID from the durable log.
+func (l Log) Event(ctx context.Context, id string) (Event, error) {
+	var event Event
+	err := l.Update(ctx, func(tx *Transaction) error {
+		if err := tx.ensureIndex(); err != nil {
+			return err
+		}
+		var data []byte
+		if err := tx.db.QueryRowContext(ctx, `SELECT data FROM events WHERE id=?`, id).Scan(&data); err != nil {
+			return fmt.Errorf("unknown event %q: %w", id, err)
+		}
+		return json.Unmarshal(data, &event)
+	})
+	return event, err
+}
+
 func (l Log) Read(ctx context.Context, since string) ([]Event, error) {
 	var result []Event
 	err := l.Update(ctx, func(tx *Transaction) error {
