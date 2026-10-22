@@ -1,4 +1,4 @@
-// Package worklease implements coordination using the stable Worklease v1.9.3 CLI.
+// Package worklease implements coordination using the Worklease v1.10.1 CLI.
 package worklease
 
 import (

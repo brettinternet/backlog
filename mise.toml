@@ -11,4 +11,4 @@ worktrunk = "0.80.0"
 staticcheck = "0.8.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 # Claims for parallel agents and the D20 integration.
-"github:brettinternet/worklease" = "1.9.3"
+"github:brettinternet/worklease" = "1.10.1"

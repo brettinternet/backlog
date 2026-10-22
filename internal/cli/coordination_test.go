@@ -103,7 +103,7 @@ esac
 // project; linked metadata is enough to exercise bl's no-git control-root lookup.
 func TestProviderClaimRoundTripAcrossWorktree(t *testing.T) {
 	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
-		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.9.3")
+		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.10.1")
 	}
 	providerBinary := os.Getenv("BL_PROVIDER_WORKLEASE")
 	root := writeFixture(t)
@@ -303,7 +303,7 @@ func selectProviderBinary(t *testing.T, binary string) {
 // and heartbeat must leave its lease to the live Worklease supervisor.
 func TestProviderRunManagedWorker(t *testing.T) {
 	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
-		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.9.3")
+		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.10.1")
 	}
 	providerBinary := os.Getenv("BL_PROVIDER_WORKLEASE")
 	root := writeFixture(t)
@@ -372,7 +372,7 @@ func assertProviderBuild(t *testing.T) {
 		SchemaVersion int
 	}
 	if err = json.Unmarshal(output, &version); err != nil || version.SchemaVersion != 2 || !worklease.CompatibleVersion(version.Version) {
-		t.Fatalf("requires Worklease >=1.9.3 with schema-v2: %s %v", output, err)
+		t.Fatalf("requires Worklease >=1.10.1 with schema-v2: %s %v", output, err)
 	}
 	t.Logf("provider build: %s", output)
 }

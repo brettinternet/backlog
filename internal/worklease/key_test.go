@@ -39,7 +39,7 @@ func readVectors(t *testing.T) []keyVector {
 }
 func TestProviderKeyVectors(t *testing.T) {
 	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
-		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.9.3")
+		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.10.1")
 	}
 	providerBinary := os.Getenv("BL_PROVIDER_WORKLEASE")
 	testkit.Isolate(t)
@@ -59,7 +59,7 @@ func TestProviderKeyVectors(t *testing.T) {
 		SchemaVersion int
 	}
 	if err = json.Unmarshal(output, &version); err != nil || version.SchemaVersion != 2 || !CompatibleVersion(version.Version) {
-		t.Fatalf("requires Worklease >=1.9.3 with schema-v2: %s %v", output, err)
+		t.Fatalf("requires Worklease >=1.10.1 with schema-v2: %s %v", output, err)
 	}
 	t.Logf("provider build (vectors pinned to 1.9.3): %s", output)
 	for _, v := range readVectors(t) {

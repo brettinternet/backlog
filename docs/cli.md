@@ -426,10 +426,11 @@ lifecycle, handle, run, and list commands, plus conditional release using
 `release --if-claim-id ID`. The guard binds release to the verified claim rather
 than a mutable session handle.
 
-The repository's pinned Worklease 1.9.3 does not provide these guarantees.
-Local verification uses Worklease commit `b24b246` (including the public-resource
-fix `1cdaaab`); neither fix is published yet. Keep repository coordination
-unconfigured until a release containing both fixes is available and pinned.
+Worklease 1.10.1 is the minimum supported coordination release and is pinned
+by this repository. It includes exact public resource identities and guarded
+release. Worklease 1.9.3 remains the historical key-policy baseline, not a
+supported lifecycle provider. Repository coordination remains optional; the
+interim development claim protocol continues until BL-33.
 
 Unknown, malformed, or redacted evidence fails closed: a redacted acquisition is `uncertain`/exit 6 and keeps the claim;
 inspection is unresolved; an unusable bulk list makes readiness unknown. Do not

@@ -65,15 +65,16 @@ func change(i model.Item, title string) model.Mutation {
 // This fake owns real codec bytes; only source latency/failure is controlled.
 // It catches optimistic state being published too late or rollback losing data.
 type controlledSource struct {
-	mu       sync.Mutex
-	doc      *format.Document
-	id       string
-	gate     <-chan struct{}
-	loadGate <-chan struct{}
-	failure  error
-	coverage source.Coverage
-	empty    bool
-	calls    atomic.Int32
+	mu           sync.Mutex
+	doc          *format.Document
+	id           string
+	gate         <-chan struct{}
+	applyStarted chan struct{}
+	loadGate     <-chan struct{}
+	failure      error
+	coverage     source.Coverage
+	empty        bool
+	calls        atomic.Int32
 }
 
 func fakeSource(t *testing.T, id string) *controlledSource {
@@ -131,6 +132,9 @@ func (s *controlledSource) Prepare(_ context.Context, m model.Mutation) (source.
 }
 func (s *controlledSource) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	s.calls.Add(1)
+	if s.applyStarted != nil {
+		close(s.applyStarted)
+	}
 	if s.gate != nil {
 		select {
 		case <-s.gate:
@@ -157,6 +161,7 @@ func TestOptimisticFailureAndConflict(t *testing.T) {
 			backend := fakeSource(t, "tasks")
 			gate := make(chan struct{})
 			backend.gate = gate
+			backend.applyStarted = make(chan struct{})
 			s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
 			defer s.Close()
 			initial := awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Len() == 1 })
@@ -176,6 +181,14 @@ func TestOptimisticFailureAndConflict(t *testing.T) {
 			}
 			if err := awaitResult(t, s.Mutate(change(before, "Overlap"))); err == nil {
 				t.Fatal("overlap accepted")
+			}
+			// Pending publication precedes Prepare. Change the source only once
+			// Apply is waiting, so this exercises a write-time conflict rather
+			// than accidentally racing preparation.
+			select {
+			case <-backend.applyStarted:
+			case <-time.After(10 * time.Second):
+				t.Fatal("source apply deadline")
 			}
 			backend.mu.Lock()
 			switch mode {

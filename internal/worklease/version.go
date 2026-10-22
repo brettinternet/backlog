@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// CompatibleVersion keeps the v1.9.3 minimum independently of executable lookup.
+// CompatibleVersion requires the public-resource and conditional-release fixes.
 // Exact policy compatibility is checked by the pinned key vectors.
 func CompatibleVersion(version string) bool {
 	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
@@ -20,7 +20,7 @@ func CompatibleVersion(version string) bool {
 		}
 		numbers[i] = n
 	}
-	minimum := [3]int{1, 9, 3}
+	minimum := [3]int{1, 10, 1}
 	for i, n := range numbers {
 		if n != minimum[i] {
 			return n > minimum[i]
