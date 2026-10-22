@@ -24,23 +24,50 @@ type ReadSnapshot struct {
 	ctx       context.Context
 }
 
-func LoadReads(ctx context.Context, cfg project.Config) (ReadSnapshot, error) {
+// LoadReads loads active items. With archived set, it also loads archive/ on
+// demand (query.md is:archived); those items are marked archived and never ready.
+func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnapshot, error) {
 	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
 	s.ctx = ctx
 	if cfg.Me.Default != "" {
 		s.Query.Me = []string{cfg.Me.Default}
+	}
+	archivedRefs := map[model.Ref]bool{}
+	load := func(backend *native.Source, id string, cursor source.Cursor) (source.Delta, error) {
+		delta, err := backend.Load(ctx, cursor)
+		if err == nil && delta.Coverage != source.Complete {
+			err = fmt.Errorf("source %s has incomplete coverage: %v", id, delta.Findings)
+		}
+		return delta, err
 	}
 	for _, c := range cfg.Sources {
 		backend, err := readSource(cfg, c)
 		if err != nil {
 			return s, err
 		}
-		delta, err := backend.Load(ctx, source.Cursor{})
+		delta, err := load(backend, c.ID, source.Cursor{})
 		if err != nil {
 			return s, err
 		}
-		if delta.Coverage != source.Complete {
-			return s, fmt.Errorf("source %s has incomplete coverage: %v", c.ID, delta.Findings)
+		if archived {
+			items := delta.Items
+			seen := map[model.Ref]bool{}
+			for _, i := range items {
+				seen[i.Ref] = true
+			}
+			// The second load's search index also covers archived items.
+			if delta, err = load(backend, c.ID, source.Cursor{IncludeArchive: true}); err != nil {
+				return s, err
+			}
+			// A duplicate ID across active and archive is a check finding; keep the first.
+			for _, i := range delta.Items {
+				if !seen[i.Ref] {
+					seen[i.Ref] = true
+					archivedRefs[i.Ref] = true
+					items = append(items, i)
+				}
+			}
+			delta.Items = items
 		}
 		for _, finding := range delta.Findings {
 			if finding.Severity == "warning" {
@@ -54,10 +81,10 @@ func LoadReads(ctx context.Context, cfg project.Config) (ReadSnapshot, error) {
 		}
 		s.Query.Items = append(s.Query.Items, delta.Items...)
 	}
-	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me})
+	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs})
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)
-		s.Query.States[e.Ref] = query.State{Readiness: string(e.Readiness)}
+		s.Query.States[e.Ref] = query.State{Readiness: string(e.Readiness), Archived: archivedRefs[e.Ref]}
 	}
 	return s, nil
 }

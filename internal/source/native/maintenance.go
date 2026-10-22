@@ -481,8 +481,8 @@ func Renumber(ctx context.Context, sources []*Source, selector, to string) (Renu
 	if len(sources) == 0 {
 		return RenumberResult{}, source.Refuse("invalid-source", "no native sources configured")
 	}
-	if !selectorID.MatchString(to) {
-		return RenumberResult{}, source.Refuse("invalid-id", "TO must be an uppercase native ID")
+	if !selectorID.MatchString(to) && !numericID(to) {
+		return RenumberResult{}, source.Refuse("invalid-id", "TO must be an uppercase native ID or a number")
 	}
 	locks, err := lockSources(ctx, sources)
 	if err != nil {
@@ -503,6 +503,9 @@ func Renumber(ctx context.Context, sources []*Source, selector, to string) (Renu
 	}
 	from := selected.file.item.Ref.ID
 	selectedSource := selected.file.source
+	if numericID(to) {
+		to = selectedSource.options.Prefix + "-" + to
+	}
 	if canonical(from) == canonical(to) {
 		return RenumberResult{}, source.Refuse("invalid-id", "FROM and TO resolve to the same ID")
 	}
@@ -576,14 +579,18 @@ func selectItem(sources []*Source, files []checkedFile, selector string) (select
 			}
 		}
 	} else {
-		if !selectorID.MatchString(value) {
-			return selectedItem{}, source.Refuse("invalid-id", "FROM must be an ID or a source-relative item path")
+		if !selectorID.MatchString(value) && !numericID(value) {
+			return selectedItem{}, source.Refuse("invalid-id", "FROM must be an ID, a number, or a source-relative item path")
 		}
 		for _, f := range files {
 			if chosenSource != nil && f.source != chosenSource {
 				continue
 			}
-			if canonical(f.item.Ref.ID) == canonical(value) {
+			want := value
+			if numericID(value) {
+				want = f.source.options.Prefix + "-" + value
+			}
+			if canonical(f.item.Ref.ID) == canonical(want) {
 				matches = append(matches, f)
 			}
 		}
@@ -601,6 +608,19 @@ func selectItem(sources []*Source, files []checkedFile, selector string) (select
 		return selectedItem{}, source.Refuse("ambiguous-id", "FROM matches multiple items; use one of: "+strings.Join(candidates, ", "))
 	}
 	return selectedItem{file: matches[0]}, nil
+}
+
+// numericID reports D19 numeric shorthand, expanded with a source's prefix.
+func numericID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, c := range value {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func refString(ref model.Ref) string {

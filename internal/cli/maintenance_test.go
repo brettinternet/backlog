@@ -63,6 +63,10 @@ func TestInitCreatesValidProjectAndRefusesOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Without a shared remote, the committed config must not pin this checkout's path.
+	if strings.Contains(string(before), "id: /") {
+		t.Fatalf("init wrote a host-local project id:\n%s", before)
+	}
 	if info, err := os.Stat(filepath.Join(root, "backlog")); err != nil || !info.IsDir() {
 		t.Fatalf("backlog directory missing: %v", err)
 	}

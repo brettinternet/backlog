@@ -123,7 +123,7 @@ func TestReadJSONGolden(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"ls", []string{"ls", "--sort", "id", "--group", "status"}},
+		{"ls", []string{"ls", "is:open,closed", "--sort", "id", "--group", "status"}},
 		{"show", []string{"show", "12"}},
 		{"next", []string{"next", "--explain"}},
 	} {
@@ -193,6 +193,21 @@ func TestReadProjectionAndExplain(t *testing.T) {
 		code, out, stderr := run(append([]string{"-C", root, "--json"}, args...)...)
 		if code != 0 || stderr != "" || !strings.Contains(out, `"id":"BL-012"`) || strings.Contains(out, `"id":"BL-13"`) {
 			t.Fatalf("projection %v: %d %s %s", args, code, out, stderr)
+		}
+	}
+	// ls defaults to is:open and loads archive/ only for is:archived (query.md).
+	if err := os.MkdirAll(filepath.Join(root, "items", "archive"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "items", "archive", "BL-15.md"), []byte("---\nid: BL-15\ntitle: Archived\nstatus: todo\ncreated: 2026-10-21T00:00:00Z\nupdated: 2026-10-21T00:00:00Z\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for args, want := range map[string]string{"ls": "BL-012 BL-13", "ls is:archived": "BL-15", "ls is:closed": "BL-14"} {
+		code, out, stderr := run(append([]string{"-C", root, "--json"}, strings.Fields(args)...)...)
+		for _, id := range strings.Fields("BL-012 BL-13 BL-14 BL-15") {
+			if code != 0 || stderr != "" || strings.Contains(out, `"id":"`+id+`"`) != strings.Contains(want, id) {
+				t.Fatalf("%s: %d %s %s", args, code, out, stderr)
+			}
 		}
 	}
 	code, out, _ := run("-C", root, "next", "--explain", "--json")

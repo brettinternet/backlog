@@ -14,6 +14,7 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
+	"github.com/brettinternet/backlog/internal/textutil"
 	urfave "github.com/urfave/cli/v3"
 	"go.yaml.in/yaml/v3"
 )
@@ -88,7 +89,8 @@ func maintenanceCommands(directory *string, out, errOut io.Writer) []*urfave.Com
 				return success(out, "check", result)
 			}
 			for _, finding := range result.Findings {
-				if _, err := fmt.Fprintf(out, "%s:%d: %s: %s: %s\n", finding.Path, finding.Line, finding.Severity, finding.Code, finding.Message); err != nil {
+				// Messages can quote item content such as an unknown status.
+				if _, err := fmt.Fprintln(out, textutil.Line(fmt.Sprintf("%s:%d: %s: %s: %s", finding.Path, finding.Line, finding.Severity, finding.Code, finding.Message))); err != nil {
 					return err
 				}
 			}
@@ -147,9 +149,14 @@ func initialize(directory, prefix, sourcePath string) (initResult, error) {
 	if _, err := os.Lstat(configPath); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return initResult{}, &Error{Reason: "rejected", Message: "refusing to overwrite existing project config: " + configPath}
 	}
-	id, _, err := project.Identity(discovery)
+	id, hostLocal, err := project.Identity(discovery)
 	if err != nil {
 		return initResult{}, &Error{Reason: "invalid-config", Message: err.Error()}
+	}
+	// A host-local path is not a shared identity; leave it to the runtime default
+	// so the committed config does not pin one machine's checkout path.
+	if hostLocal {
+		id = ""
 	}
 	storedPath := filepath.Clean(sourcePath)
 	if !filepath.IsAbs(storedPath) {

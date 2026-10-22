@@ -39,9 +39,12 @@ See [import.md](import.md) for field mappings and skipped content.
 
 ## `bl ls [QUERY] [--view V] [--sort S] [--group G] [-n N]`
 
-Lists native items, excluding archives. It includes closed items unless the
-query excludes them. Query terms use [query.md](query.md); multiple positional
-arguments are joined with spaces. `--view` selects an exact saved-view name.
+Lists native items. With no `is:` term in QUERY or the view, `is:open` is
+added, so closed items need `is:closed` (or another `is:` term). Archives are
+loaded only for a positive `is:archived` term; archived items are never ready.
+Query terms use [query.md](query.md); multiple positional
+arguments are joined with spaces. Put `--` before a negated first term
+(`bl ls -- -label:wontfix`). `--view` selects an exact saved-view name.
 The view query is ANDed with QUERY; view sort/group override query directives,
 and explicit flags override the view. Otherwise query directives apply.
 With no explicit sort, engine next ranking breaks ties. Sorting precedes the
@@ -65,7 +68,8 @@ Shows one item's metadata and body. Numeric `12` and `012` expand using each
 configured native source's prefix. `BL-12` also matches `BL-012`. Lookups search
 configured sources, or only the named source with `source:ID`; ambiguity is
 never silently resolved. Exit 2 (`usage`) lists source-qualified matches in
-both the message and `error.details.matches`. A missing ID exits 3
+both the message and `error.details.matches`. An ID stored by both an active
+and an archived file also exits 2; select one with `bl renumber`'s path form. A missing ID exits 3
 (`not-found`). Explicit lookups can find archived items. Detail reads parse only
 the matched files, not every item, and do not compute readiness/ranking.
 
@@ -161,7 +165,10 @@ Text output reports each outcome too.
 Creates an item using the [quick-add tokens](query.md#shared-quick-add-parser) (priority
 `!h`, assignee `@me`, label `#bug`, parent `^BL-1`, blocker `<BL-2`,
 milestone `~m-1`, and type `:feature`). Quote tokens against shell expansion.
-`@me` resolves from `me.default`. `--body -` reads stdin verbatim.
+`@me` resolves from `me.default`. Parent and blocker references accept ID
+shorthand like `show` and are stored as the target's ID (`<1` stores `BL-1`,
+or `BL-001` when that file exists); references to another source stay
+qualified. A missing target is stored as written and reported by `bl check`. `--body -` reads stdin verbatim.
 Repeat `--ac` for single-line criteria. Config `defaults.type` applies unless a
 type token is supplied, and `defaults.dod` supplies unchecked DoD entries.
 Status is the first configured todo-category status, or the first configured
@@ -176,7 +183,9 @@ Writable fields: `title status type priority assignees labels milestone parent
 blocked_by related duplicate_of rank due refs files`. `label` and `assignee`
 are aliases for the plural fields. List `=` takes comma-separated values;
 an empty value clears an optional field. `+=` and `-=` add/remove one list
-entry and are idempotent. Scalar fields accept only `=`.
+entry and are idempotent. Scalar fields accept only `=`. `parent`,
+`blocked_by`, `related`, and `duplicate_of` values expand ID shorthand the
+same way as `new` references.
 Unknown fields, statuses, or priorities exit 5 (`rejected`) with allowed values.
 Types, labels, and milestones are free text; catalogs provide suggestions only.
 IDs and timestamps are not writable fields.
@@ -236,7 +245,9 @@ Initialize a repository with `.config/backlog.yaml` and a native item directory.
 The defaults are prefix `BL` and path `backlog`; `--path` is stored in the
 project config and created relative to the control root unless it is absolute.
 The generated config includes `todo`, `in-progress`, and `done` statuses and
-workflow defaults. Run inside a Git repository. An existing project config is
+workflow defaults. `project.id` is written only when derived from a shared
+`origin` remote; a host-local path is left to the runtime default
+(design.md §5). Run inside a Git repository. An existing project config is
 never overwritten; this refusal exits 5 and creates no files.
 
 ### `bl check [--json] [--fix]`
@@ -260,7 +271,8 @@ still produce exit 5.
 Rename an item and update `parent`, `blocked_by`, `related`, `duplicate_of`, and
 source-qualified references in every active and archived native item. The
 operation preflights every affected file and refuses an existing target ID or
-path. `FROM` may be an ID, `SOURCE:ID`, or a source-relative file path selector.
+path. `FROM` may be an ID, a number, `SOURCE:ID`, or a source-relative file path
+selector. A numeric `TO` takes the selected source's prefix (`bl renumber 1 7`).
 For example, when active and archived items share `BL-9`, choose one explicitly
 with `tasks:archive/BL-9.md` (or `tasks:BL-9.md` for the active file). An ID that
 matches multiple items is refused with candidate paths rather than guessed.

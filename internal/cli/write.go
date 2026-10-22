@@ -75,6 +75,10 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		var first *Error
 		for _, id := range ids {
 			item, err := writeItem(ctx, cfg, id)
+			changes := changes
+			if err == nil {
+				changes, err = resolveChanges(ctx, cfg, item.Ref.Source, changes)
+			}
 			if err == nil {
 				version := item.Version
 				if cmd.IsSet("if-version") {
@@ -165,6 +169,18 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				return writeUsage("new requires --source with multiple or no sources")
 			}
 			sourceID = cfg.Sources[0].ID
+		}
+		if item.Parent != nil {
+			parent, err := resolveRef(ctx, cfg, sourceID, *item.Parent)
+			if err != nil {
+				return err
+			}
+			item.Parent = &parent
+		}
+		for n, ref := range item.BlockedBy {
+			if item.BlockedBy[n], err = resolveRef(ctx, cfg, sourceID, ref); err != nil {
+				return err
+			}
 		}
 		item, err = engine.ApplyWrite(ctx, cfg, model.Mutation{Op: model.Create, Ref: model.Ref{Source: sourceID}, Item: &item, ExpectedVersion: cmd.String("if-version")})
 		if err != nil {
@@ -424,8 +440,94 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 	return commands
 }
 
+// resolveRef expands ID shorthand in a reference written to an item of
+// sourceID: an existing item keeps its stored ID, an unqualified ref is local,
+// and a missing numeric ID takes the source's prefix (dangling refs are allowed).
+func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
+	if ref.Source == sourceID {
+		ref.Source = ""
+	}
+	lookup := ref.Source
+	if lookup == "" {
+		lookup = sourceID
+	}
+	matches, err := engine.ReadDetail(ctx, cfg, lookup+":"+ref.ID)
+	if e := duplicateFiles(err); e != nil {
+		return ref, e
+	}
+	if err != nil {
+		return ref, writeError(err)
+	}
+	if len(matches) == 1 {
+		ref.ID = matches[0].Ref.ID
+		return ref, nil
+	}
+	if _, err := strconv.ParseUint(ref.ID, 10, 64); err == nil {
+		for _, c := range cfg.Sources {
+			if c.ID == lookup {
+				ref.ID = c.Prefix + "-" + ref.ID
+			}
+		}
+	}
+	return ref, nil
+}
+
+func parseRef(value string) model.Ref {
+	if sourceID, id, ok := strings.Cut(value, ":"); ok {
+		return model.Ref{Source: sourceID, ID: id}
+	}
+	return model.Ref{ID: value}
+}
+
+func refText(ref model.Ref) string {
+	if ref.Source == "" {
+		return ref.ID
+	}
+	return ref.Source + ":" + ref.ID
+}
+
+// resolveChanges expands reference shorthand in set mutations for one item.
+func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, changes []model.Mutation) ([]model.Mutation, error) {
+	resolve := func(value string) (string, error) {
+		if value == "" {
+			return value, nil
+		}
+		ref, err := resolveRef(ctx, cfg, sourceID, parseRef(value))
+		return refText(ref), err
+	}
+	out := make([]model.Mutation, len(changes))
+	for n, m := range changes {
+		switch m.Field {
+		case "parent", "duplicate_of", "blocked_by", "related":
+			switch v := m.Value.(type) {
+			case string:
+				resolved, err := resolve(v)
+				if err != nil {
+					return nil, err
+				}
+				m.Value = resolved
+			case []string:
+				values := make([]string, len(v))
+				for k, value := range v {
+					resolved, err := resolve(value)
+					if err != nil {
+						return nil, err
+					}
+					values[k] = resolved
+				}
+				m.Value = values
+			}
+		}
+		out[n] = m
+	}
+	return out, nil
+}
+
 func writeItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
 	matches, err := engine.ReadDetail(ctx, cfg, id)
+	if e := duplicateFiles(err); e != nil {
+		return model.Item{}, e
+	}
 	if err != nil {
 		return model.Item{}, writeError(err)
 	}

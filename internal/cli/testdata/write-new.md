@@ -6,6 +6,8 @@ type: feature
 priority: high
 assignees: ['@agent']
 labels: [fresh]
+parent: BL-99
+blocked_by: [BL-012]
 created: <TIME>
 updated: <TIME>
 ---

@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
@@ -14,6 +16,8 @@ import (
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -55,14 +59,10 @@ type nextData struct {
 }
 
 func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
-	load := func(ctx context.Context, cmd *urfave.Command) (project.Config, engine.ReadSnapshot, error) {
-		cfg, err := loadConfig(cmd, *directory)
+	load := func(ctx context.Context, cfg project.Config, archived bool) (engine.ReadSnapshot, error) {
+		snapshot, err := engine.LoadReads(ctx, cfg, archived)
 		if err != nil {
-			return cfg, engine.ReadSnapshot{}, err
-		}
-		snapshot, err := engine.LoadReads(ctx, cfg)
-		if err != nil {
-			return cfg, snapshot, &Error{Reason: "unavailable", Message: err.Error()}
+			return snapshot, &Error{Reason: "unavailable", Message: err.Error()}
 		}
 		for _, warning := range append(cfg.Discovery.Warnings, snapshot.Warnings...) {
 			fmt.Fprintf(errOut, "bl: warning: %s\n", textutil.Line(warning))
@@ -70,7 +70,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 		for _, detected := range cfg.Discovery.Detected {
 			fmt.Fprintf(errOut, "bl: detected %s (read-only); use bl import or an explicit source\n", textutil.Line(detected.Type))
 		}
-		return cfg, snapshot, nil
+		return snapshot, nil
 	}
 	limitFlag := func(n int) urfave.Flag {
 		return &urfave.IntFlag{Name: "n", Value: n, Usage: "Maximum items (0 means all)"}
@@ -82,7 +82,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
 			}
-			cfg, s, err := load(ctx, cmd)
+			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
 				return err
 			}
@@ -111,6 +111,28 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			if cmd.IsSet("group") {
 				text += " group:" + cmd.String("group")
+			}
+			// query.md: with no is: term, ls adds is:open; is:archived loads archive/.
+			parsed, err := query.Parse(text, query.Options{})
+			if err != nil {
+				return &Error{Reason: "usage", Message: err.Error()}
+			}
+			hasIs, archived := false, false
+			for _, t := range parsed.Terms {
+				if t.Field != "is" {
+					continue
+				}
+				hasIs = true
+				for _, v := range t.Values {
+					archived = archived || !t.Negated && strings.EqualFold(v.Text, "archived")
+				}
+			}
+			if !hasIs {
+				text += " is:open"
+			}
+			s, err := load(ctx, cfg, archived)
+			if err != nil {
+				return err
 			}
 			q, err := s.Parse(text)
 			if err != nil {
@@ -162,6 +184,9 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				return err
 			}
 			matches, err := engine.ReadDetail(ctx, cfg, cmd.Args().First())
+			if e := duplicateFiles(err); e != nil {
+				return e
+			}
 			if err != nil {
 				return &Error{Reason: "unavailable", Message: err.Error()}
 			}
@@ -191,7 +216,11 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			metadata := itemMetadata(i)
 			for _, name := range strings.Fields("type rank assignees labels milestone due parent children blockedBy blocks related duplicateOf refs files created updated url") {
-				if err := writeLine(out, fmt.Sprintf("%s: %v", name, metadata[name])); err != nil {
+				value := metadata[name]
+				if t, ok := value.(time.Time); ok {
+					value = t.Format(time.RFC3339)
+				}
+				if err := writeLine(out, fmt.Sprintf("%s: %v", name, value)); err != nil {
 					return err
 				}
 			}
@@ -208,7 +237,11 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
 			}
-			_, s, err := load(ctx, cmd)
+			cfg, err := loadConfig(cmd, *directory)
+			if err != nil {
+				return err
+			}
+			s, err := load(ctx, cfg, false)
 			if err != nil {
 				return err
 			}
@@ -280,6 +313,16 @@ func itemMetadata(i model.Item) map[string]any {
 		return out
 	}
 	return map[string]any{"type": i.Type, "rank": i.Rank, "assignees": i.Assignees, "labels": i.Labels, "milestone": i.Milestone, "due": i.Due, "parent": ref(i.Parent), "children": refs(i.Children), "blockedBy": refs(i.BlockedBy), "blocks": refs(i.Blocks), "related": refs(i.Related), "duplicateOf": ref(i.DuplicateOf), "refs": i.Refs, "files": i.Files, "created": i.Created, "updated": i.Updated, "url": i.URL, "fields": i.Fields}
+}
+
+// duplicateFiles reports an ID stored by two files (active and archived) as
+// ambiguous rather than unavailable; bl renumber accepts a path selector.
+func duplicateFiles(err error) *Error {
+	var refusal *source.Error
+	if !errors.As(err, &refusal) || refusal.Reason != "duplicate-id" {
+		return nil
+	}
+	return &Error{Reason: "usage", Message: "ambiguous ID " + refusal.Message + ": active and archived files share it; resolve with bl renumber"}
 }
 
 func validSection(s string) bool {
