@@ -111,7 +111,8 @@ func normalizedRef(ref, owner model.Ref) model.Ref {
 	return ref
 }
 
-func reverseRelations(ctx context.Context, snapshot *Snapshot) (map[model.Ref][]model.Ref, map[model.Ref][]model.Ref, bool) {
+// ReverseRelations indexes inbound relations for off-loop row preparation.
+func ReverseRelations(ctx context.Context, snapshot *Snapshot) (map[model.Ref][]model.Ref, map[model.Ref][]model.Ref, bool) {
 	blockingBy, childrenBy := map[model.Ref][]model.Ref{}, map[model.Ref][]model.Ref{}
 	index := 0
 	for _, record := range snapshot.records {
@@ -132,7 +133,8 @@ func reverseRelations(ctx context.Context, snapshot *Snapshot) (map[model.Ref][]
 	return blockingBy, childrenBy, true
 }
 
-func relationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy map[model.Ref][]model.Ref) []Relation {
+// RelationRows prepares canonical detail relations using a shared reverse index.
+func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy map[model.Ref][]model.Ref) []Relation {
 	if len(item.BlockedBy) == 0 && len(item.Blocks) == 0 && len(item.Children) == 0 && item.Parent == nil && len(blockingBy[item.Ref]) == 0 && len(childrenBy[item.Ref]) == 0 {
 		return nil
 	}
@@ -164,7 +166,8 @@ func relationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy ma
 	return rows
 }
 
-func relationVersion(relations []Relation) string {
+// RelationVersion fingerprints the prepared relations for detail-cache invalidation.
+func RelationVersion(relations []Relation) string {
 	if len(relations) == 0 {
 		return ""
 	}
@@ -249,7 +252,7 @@ func (p *Projector) run() {
 					continue
 				}
 				var ok bool
-				blockingBy, childrenBy, ok = reverseRelations(req.ctx, req.snapshot)
+				blockingBy, childrenBy, ok = ReverseRelations(req.ctx, req.snapshot)
 				if !ok {
 					continue
 				}
@@ -304,7 +307,7 @@ func (p *Projector) run() {
 							r := req.snapshot.records[i.Ref]
 							explanation := explanations[i.Ref]
 							reason := readinessReason(explanation)
-							relations := relationRows(i, req.snapshot, blockingBy, childrenBy)
+							relations := RelationRows(i, req.snapshot, blockingBy, childrenBy)
 							localVersion, remoteVersion := "", ""
 							if r.edit.Local != nil {
 								localVersion = r.edit.Local.Version
@@ -321,7 +324,7 @@ func (p *Projector) run() {
 								ErrorRemoteVersion: remoteVersion, Readiness: explanation.Readiness,
 								ReadinessReason:  reason,
 								ReadinessVersion: string(explanation.Readiness) + "\x00" + reason,
-								Relations:        relations, RelationVersion: relationVersion(relations),
+								Relations:        relations, RelationVersion: RelationVersion(relations),
 							}
 							closed := func(ref model.Ref) bool {
 								r := req.snapshot.records[ref]

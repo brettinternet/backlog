@@ -63,7 +63,8 @@ tab and saved board layouts support column navigation, horizontal scrolling,
 and column-status quick-add defaults, including empty columns. Picker catalogs,
 board preparation, and fuzzy filtering run in Bubble Tea commands; source I/O
 and backlog-sized work stay off `Update` (D14).
-Tree layout, key remapping, the command palette, and mouse remain planned.
+Tree layouts support parent navigation, folds, ancestor context and descendant
+progress. Key remapping, the command palette, and mouse remain planned.
 Claim columns await BL-32.
 
 Capture a real render without opening a user's pane:
@@ -162,8 +163,7 @@ A view has `name`, `query`, optional `sort`, `group`, `layout`, and `columns`.
 Explicit sort/group fields override query directives. Columns may be `id`,
 `priority`, `status`, `blockers`, `children`, and `title`, in display order;
 without columns the standard list is used. Below 80 columns, ID/title remain.
-Unavailable layouts (tree for now) retain their setting but render a list with
-a footer notice.
+Set `layout: tree` on a saved view to show the hierarchy instead of query groups.
 
 `ctrl-s` opens a name prompt, initially using the current name. `ctrl-u` clears
 the name; type a replacement and press enter. The default destination is user
@@ -195,6 +195,24 @@ query. Quick-add uses the focused status column, even when empty; other group
 keys retain the normal create default. Boards ignore list folds. Preparation
 runs off-loop; navigation is constant-time and rendering visits visible cards
 only, independent of backlog size.
+
+Trees follow parent fields (source-less references use the item's source).
+Explicit child relations fill absent parents. Siblings retain query order;
+nonmatching ancestors use stable reference order. Filtering retains the ancestor
+chain of each match, with a `·` context marker and faint text (underline in
+high-contrast mode). Context ancestors remain selectable and editable.
+`h`/left collapses an expanded branch, otherwise selects its parent;
+`l`/right expands a collapsed branch, otherwise selects its first visible child.
+Leaves ignore `l`; roots with no expanded children ignore `h`. In trees `l`
+navigates rather than opening the label picker. `za` toggles the selected branch;
+`zM`/`zR` collapse/expand all. Folds survive refreshes by stable item reference.
+`▣ a/b` counts closed (done or canceled) descendants out of all unique descendants,
+including filtered-out children, not just direct children or visible rows.
+Missing parents become roots; malformed cycles are cut into a deterministic
+forest so each item appears at most once (use `bl check` to diagnose the data).
+Indentation is capped by viewport width for very deep trees. Hierarchy building,
+ancestor closure, progress and flattening run off-loop; navigation uses prepared
+parent indices and rendering visits only the viewport.
 
 The detail pane has these tabs:
 
