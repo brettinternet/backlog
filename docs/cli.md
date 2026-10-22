@@ -1,9 +1,9 @@
-# Read commands
+# CLI commands
 
 `ls`, `show`, and the read-only `next` interface are frozen. All accept global
 `-C DIR` and `--json` (`-j`) before or after the command. Help is plain text.
 JSON uses the [schema-version-1 envelope](design.md#7-agent-interface).
-Writes, coordination, and remote adapters are separate backlog work.
+The write commands below are also frozen. Coordination and remote adapters remain separate backlog work.
 
 ```sh
 bl ls 'is:open priority:>=high' --sort priority,id --group status -n 20
@@ -74,9 +74,12 @@ refs, and files may be null. `fields` is the source's raw frontmatter object,
 including unknown fields. Timestamps use RFC 3339. Native reads currently expose
 stored edges; inverse edges are not synthesized for a detail-only read.
 With `--section`, `sections` contains only that key.
+JSON also includes `criteria` and `dod` arrays when nonempty. Each entry has
+`text`, `checked`, and optional `evidence`; evidence is not duplicated in `text`.
+The Markdown `sections.criteria` and `sections.dod` include evidence lines.
 
 **Version contract:** `item.version` is the native codec's content hash, unchanged
-from the source. Pass it verbatim to `--if-version` when write commands ship.
+from the source. Pass it verbatim to `--if-version` on writes.
 It is not a timestamp or a hash of the JSON rendering.
 
 ## `bl next [QUERY] [-n N] [--explain]`
@@ -105,6 +108,101 @@ Explanations preserve the [engine's reason codes](readiness.md) and optional
 `included` means selected in `items`; a ready item excluded by QUERY or the
 limit has an additional `query` or `limit` reason. These do not change its
 readiness. On an empty snapshot, `explanations` is omitted.
+
+## Write commands
+
+All writes accept `--json` and `--if-version V`. Use the version returned by
+`show` when an operation depends on prior content, especially criterion numbers.
+A stale version exits 4 (`conflict`) without changing bytes. Even without the
+flag, the engine binds each write to its initial read and checks it under the
+source's write lock. Writes validate config and source capabilities before
+atomic persistence. Unchanged lines, unknown fields, comments, and quoting are
+preserved. Native archives move without rewriting bytes or changing version.
+
+`new` and `edit` return the summary item directly as `data`, including `version`.
+Other writes return `data.outcomes`, one result per input ID in input order:
+
+```json
+{"outcomes":[{"id":"12","item":{"source":"tasks","id":"BL-012","title":"Ready","status":"todo","category":"todo","priority":"high","version":"new-hash"}},{"id":"999","error":{"reason":"not-found","message":"item not found: 999","details":{}}}]}
+```
+
+Each successful outcome carries the new item version. Batches attempt every ID;
+they are atomic per item, not across items. If any ID fails, the envelope has
+`ok: false`, retains `data.outcomes`, and uses the first failed ID's error and
+exit code. Multiple IDs with `--if-version` exit 2 before writing any item.
+Text output reports each outcome too.
+
+### `bl new TITLE [TOKENS] [--body TEXT|-] [--ac TEXT]... [--source SOURCE]`
+
+Creates an item using the [quick-add tokens](query.md#shared-quick-add-parser) (priority
+`!h`, assignee `@me`, label `#bug`, parent `^BL-1`, blocker `<BL-2`,
+milestone `~m-1`, and type `:feature`). Quote tokens against shell expansion.
+`@me` resolves from `me.default`. `--body -` reads stdin verbatim.
+Repeat `--ac` for single-line criteria. Config `defaults.type` applies unless a
+type token is supplied, and `defaults.dod` supplies unchecked DoD entries.
+Status is the first configured todo-category status, or the first configured
+status if none is todo. `--source` is required unless exactly one source exists.
+The source allocates a fresh shared ID; creation with a nonempty
+`--if-version` fails with conflict because no prior item exists.
+
+### `bl set ID... FIELD=V FIELD+=V FIELD-=V`
+
+IDs precede assignments. All assignments for one item succeed or fail together.
+Writable fields: `title status type priority assignees labels milestone parent
+blocked_by related duplicate_of rank due refs files`. `label` and `assignee`
+are aliases for the plural fields. List `=` takes comma-separated values;
+an empty value clears an optional field. `+=` and `-=` add/remove one list
+entry and are idempotent. Scalar fields accept only `=`.
+Unknown fields, statuses, or priorities exit 5 (`rejected`) with allowed values.
+Types, labels, and milestones are free text; catalogs provide suggestions only.
+IDs and timestamps are not writable fields.
+
+### `bl start ID` and `bl done ID`
+
+Set status to `workflow.start` or `workflow.done`, respectively. Missing workflow
+configuration is rejected, not guessed. Each takes exactly one ID.
+Coordination, hooks, events, and Git auto-commit are not yet implemented.
+
+### `bl note ID TEXT|-` and `bl comment ID TEXT|- [--author AUTHOR]`
+
+Append a paragraph to Notes or a timestamped comment. A lone `-` reads stdin.
+Empty text is a usage error. Comment author defaults to `me.default`; without
+that setting, supply `--author`. Comments are append-only through these commands.
+
+### `bl ac ID (check|uncheck) N...`
+
+Check or uncheck one or more one-based acceptance-criterion indices atomically.
+Use `bl ac ID add TEXT` to append one single-line criterion and
+`bl ac ID rm N` to remove one criterion with its continuation lines.
+
+`bl ac ID check N --evidence TEXT` takes exactly one N and nonempty single-line
+evidence. It writes one indented `Evidence:` line under that criterion,
+replacing existing evidence lines. Checking without the flag preserves evidence;
+unchecking removes it. Removing an earlier criterion renumbers later criteria
+without moving their evidence away from them. `show --json` exposes evidence
+per criterion. Always pass `--if-version` when acting on indices read earlier.
+
+### `bl edit ID [--section S]`
+
+Launches `$EDITOR` (default `vi`) with a private temporary native-file buffer.
+Editor arguments are supported through the shell. Without `--section`, edit
+the complete native document. Editable sections are `description`, `criteria`,
+`dod`, `plan`, `notes`, and `summary`; comments remain append-only through
+section commands. Section buffers include unstructured Markdown, not just
+parsed entries. The editor runs in the invocation directory; its output goes to
+stderr so JSON stdout stays machine-readable.
+
+The initial version is captured before launching the editor. A concurrent save
+exits 4, leaving the concurrent file intact and retaining the edited buffer.
+Invalid frontmatter or values exit 5 without changing the original.
+Errors name the recovery file in the message and `error.details.editedPath`.
+Successful changed saves return the new version; unchanged buffers are not written.
+
+### `bl archive ID...` and `bl unarchive ID...`
+
+Move native items into or out of the source's `archive/` directory. Occupied
+targets are conflicts. Explicit ID reads still find archived items; lists and
+next ranking exclude them. The bytes and content version are unchanged.
 
 ## Output and source safety
 

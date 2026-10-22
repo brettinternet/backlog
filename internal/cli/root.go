@@ -136,6 +136,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		},
 	}
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
+	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
 	_ = root.Walk(func(cmd *urfave.Command) error {
 		cmd.OnUsageError = func(_ context.Context, selected *urfave.Command, err error, _ bool) error {
 			command = commandName(selected)
@@ -145,7 +146,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if action != nil {
 			cmd.Action = func(ctx context.Context, selected *urfave.Command) error {
 				command = commandName(selected)
-				if selected.Args().Present() && selected.Name != "ls" && selected.Name != "show" && selected.Name != "next" {
+				if selected.Args().Present() && !acceptsArguments(selected.Name) {
 					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
 				}
 				return action(ctx, selected)
@@ -159,7 +160,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			failure = &Error{Reason: "internal", Message: err.Error()}
 		}
 		if jsonRequested(args) {
-			if err := json.NewEncoder(out).Encode(Envelope{SchemaVersion: 1, Command: command, Error: failure}); err != nil {
+			if err := json.NewEncoder(out).Encode(Envelope{SchemaVersion: 1, Command: command, Data: failure.Data, Error: failure}); err != nil {
 				fmt.Fprintf(errOut, "bl: write JSON: %v\n", err)
 				return 1
 			}
@@ -196,6 +197,14 @@ func terminal(stream any) bool {
 	return ok && term.IsTerminal(file.Fd())
 }
 
+func acceptsArguments(name string) bool {
+	switch name {
+	case "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive":
+		return true
+	}
+	return false
+}
+
 func commandName(cmd *urfave.Command) string {
 	return strings.TrimPrefix(cmd.FullName(), "bl ")
 }
@@ -213,7 +222,7 @@ func jsonRequested(args []string) bool {
 			break
 		}
 		name, raw, hasValue := strings.Cut(arg, "=")
-		if (name == "-C" || name == "--C" || name == "--section" || name == "--view" || name == "--sort" || name == "--group" || name == "-n" || name == "--n") && !hasValue {
+		if (name == "-C" || name == "--C" || name == "--section" || name == "--view" || name == "--sort" || name == "--group" || name == "-n" || name == "--n" || name == "--if-version" || name == "--body" || name == "--ac" || name == "--source" || name == "--author" || name == "--evidence") && !hasValue {
 			i++
 			continue
 		}

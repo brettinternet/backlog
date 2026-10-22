@@ -29,8 +29,9 @@ type field struct {
 type section struct{ heading, start, end int }
 type entry struct {
 	span
-	text    string
-	checked bool
+	text     string
+	checked  bool
+	evidence string
 }
 
 // Document owns a copy of the input. Bytes and Item return detached views.
@@ -271,6 +272,10 @@ func parseRef(s string) model.Ref {
 	}
 	return model.Ref{Source: source, ID: id}
 }
+
+// SectionText returns the full editable Markdown, including unstructured lines.
+func (d *Document) SectionText(name string) string { return d.content(sectionName(name)) }
+
 func (d *Document) content(name string) string {
 	s, ok := d.sections[name]
 	if !ok {
@@ -306,10 +311,16 @@ func (d *Document) entries(name string) []entry {
 			end++
 		}
 		text := m[2]
+		evidence := ""
 		for j := i + 1; j < end; j++ {
-			text += "\n" + clean(d.lines[j])
+			line := clean(d.lines[j])
+			if value, ok := strings.CutPrefix(strings.TrimSpace(line), "Evidence:"); ok {
+				evidence = strings.TrimSpace(value)
+			} else {
+				text += "\n" + line
+			}
 		}
-		result = append(result, entry{span{i, end}, text, m[1] != " "})
+		result = append(result, entry{span{i, end}, text, m[1] != " ", evidence})
 		i = end - 1
 	}
 	return result
@@ -352,10 +363,10 @@ func (d *Document) Item() model.Item {
 		}
 	}
 	for _, e := range d.entries("Acceptance criteria") {
-		item.Criteria = append(item.Criteria, model.Criterion{Text: e.text, Checked: e.checked})
+		item.Criteria = append(item.Criteria, model.Criterion{Text: e.text, Checked: e.checked, Evidence: e.evidence})
 	}
 	for _, e := range d.entries("Definition of done") {
-		item.DoD = append(item.DoD, model.Criterion{Text: e.text, Checked: e.checked})
+		item.DoD = append(item.DoD, model.Criterion{Text: e.text, Checked: e.checked, Evidence: e.evidence})
 	}
 	if s, ok := d.sections["Comments"]; ok {
 		fence := fenceState{}

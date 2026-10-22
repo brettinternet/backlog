@@ -18,6 +18,7 @@ type Error struct {
 	Reason  string         `json:"reason"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details"`
+	Data    any            `json:"-"` // per-ID outcomes on a failed batch
 }
 
 func (e *Error) Error() string { return e.Message }

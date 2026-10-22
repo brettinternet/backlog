@@ -1,4 +1,10 @@
 {
+  "criteria": [
+    {
+      "checked": false,
+      "text": "Works"
+    }
+  ],
   "item": {
     "category": "todo",
     "id": "BL-012",

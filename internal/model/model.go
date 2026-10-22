@@ -40,8 +40,9 @@ type Edge struct {
 	Target Ref
 }
 type Criterion struct {
-	Text    string
-	Checked bool
+	Text     string `json:"text"`
+	Checked  bool   `json:"checked"`
+	Evidence string `json:"evidence,omitempty"`
 }
 type Comment struct {
 	Time         time.Time
@@ -77,6 +78,7 @@ func (c Capabilities) Allows(op Operation) bool { return c[op] }
 type Operation string
 
 const (
+	Batch            Operation = "batch"
 	Create           Operation = "create"
 	Archive          Operation = "archive"
 	Unarchive        Operation = "unarchive"
@@ -104,6 +106,8 @@ type Mutation struct {
 	Value           any
 	Section, Text   string
 	Index           int
+	Evidence        *string    // nil preserves evidence on check; uncheck always removes it
+	Changes         []Mutation // atomic same-item Batch
 	Comment         Comment
 	Original        []byte // only for a version-bound Restore returned by the codec
 	Item            *Item  // template for Create; the source allocates its ID

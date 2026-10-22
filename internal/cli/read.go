@@ -42,6 +42,8 @@ type showData struct {
 	Item     readItem          `json:"item"`
 	Metadata map[string]any    `json:"metadata"`
 	Sections map[string]string `json:"sections"`
+	Criteria []model.Criterion `json:"criteria,omitempty"`
+	DoD      []model.Criterion `json:"dod,omitempty"`
 }
 type nextExplanation struct {
 	engine.Explanation
@@ -179,7 +181,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				sections = map[string]string{section: sections[section]}
 			}
 			if cmd.Bool("json") {
-				return success(out, "show", showData{itemData(i), itemMetadata(i), sections})
+				return success(out, "show", showData{Item: itemData(i), Metadata: itemMetadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD})
 			}
 			if section != "" {
 				return writeLine(out, sections[section])
@@ -296,7 +298,11 @@ func itemSections(i model.Item) map[string]string {
 			if c.Checked {
 				mark = "x"
 			}
-			lines = append(lines, "- ["+mark+"] "+c.Text)
+			line := "- [" + mark + "] " + c.Text
+			if c.Evidence != "" {
+				line += "\n  Evidence: " + c.Evidence
+			}
+			lines = append(lines, line)
 		}
 		return strings.Join(lines, "\n")
 	}

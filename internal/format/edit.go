@@ -196,6 +196,19 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 	var data []byte
 	var err error
 	switch m.Op {
+	case model.Batch:
+		next := d
+		for _, change := range m.Changes {
+			if change.Op == model.Batch || change.Op == model.Create || change.Op == model.Archive || change.Op == model.Unarchive {
+				return fail(fmt.Errorf("unsupported mutation in batch: %s", change.Op))
+			}
+			change.ExpectedVersion = next.Version()
+			next, _, err = next.Apply(change, now)
+			if err != nil {
+				return fail(err)
+			}
+		}
+		data = next.Bytes()
 	case model.Set, model.Unset:
 		data, err = d.fieldEdit(m.Field, m.Value, m.Op == model.Unset)
 	case model.Add, model.Remove:
@@ -281,7 +294,23 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 			if m.Op == model.UncheckCriterion {
 				mark = " "
 			}
-			data = d.splice(e.start, e.start+1, line[:3]+mark+line[4:])
+			text := line[:3] + mark + line[4:]
+			for j := e.start + 1; j < e.end; j++ {
+				if strings.HasPrefix(strings.TrimSpace(d.lines[j]), "Evidence:") && (m.Op == model.UncheckCriterion || m.Evidence != nil) {
+					continue
+				}
+				text += d.lines[j]
+			}
+			if m.Op == model.CheckCriterion && m.Evidence != nil {
+				if strings.ContainsAny(*m.Evidence, "\r\n") || strings.TrimSpace(*m.Evidence) == "" {
+					return fail(fmt.Errorf("invalid-value: evidence must be nonempty and single-line"))
+				}
+				if !strings.HasSuffix(text, "\n") {
+					text += d.nl
+				}
+				text += "  Evidence: " + *m.Evidence + d.nl
+			}
+			data = d.splice(e.start, e.end, text)
 		}
 	case model.Restore:
 		if m.ExpectedVersion == "" {
@@ -398,7 +427,11 @@ func Serialize(item model.Item) ([]byte, error) {
 			if c.Checked {
 				mark = "x"
 			}
-			lines = append(lines, "- ["+mark+"] "+c.Text)
+			line := "- [" + mark + "] " + c.Text
+			if c.Evidence != "" {
+				line += "\n  Evidence: " + c.Evidence
+			}
+			lines = append(lines, line)
 		}
 		sections[name] = strings.Join(lines, "\n")
 	}
