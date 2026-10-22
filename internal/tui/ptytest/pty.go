@@ -95,8 +95,12 @@ func (s *Session) WaitFor(text string, timeout time.Duration) error {
 }
 
 // KeyToOutput measures from write to an observed output marker, not to Update.
+// The marker must not already be visible, or the measurement would be zero.
 func (s *Session) KeyToOutput(key, marker string, timeout time.Duration) (time.Duration, error) {
 	s.Reset()
+	if s.contains(marker) {
+		return 0, fmt.Errorf("marker %q is already on screen", marker)
+	}
 	start := time.Now()
 	if err := s.Write(key); err != nil {
 		return 0, err

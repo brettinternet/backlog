@@ -37,6 +37,7 @@ func (m List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = max(1, msg.Width), max(1, msg.Height)
 	case tea.KeyPressMsg:
+		previous := m.Selected
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -45,6 +46,9 @@ func (m List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "k", "up":
 			m.Selected = max(0, m.Selected-1)
 		default:
+			return m, nil
+		}
+		if m.Selected == previous {
 			return m, nil
 		}
 		// A single outstanding settle timer coalesces held navigation. The
