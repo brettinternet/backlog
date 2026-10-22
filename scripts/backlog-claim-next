@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Claim the first ready To Do task that no other session holds.
+
+Interim stand-in for `bl next --claim` until BL-33. It walks the ready order
+once, skips tasks another session holds, and stops on any other outcome, so a
+session never holds more than one claim.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+SOURCE = "github.com/brettinternet/backlog"
+UNAVAILABLE = {"blocked", "deferred", "escalated", "human"}
+# A handle or run inherited from the caller must not redirect this claim.
+CLEARED = ("WORKLEASE_SESSION_ID", "WORKLEASE_HANDLE", "WORKLEASE_RUN_ID")
+
+
+def main() -> int:
+    if len(sys.argv) != 2 or not sys.argv[1].strip():
+        print("usage: backlog-claim-next SESSION", file=sys.stderr)
+        return 2
+    session = sys.argv[1]
+    env = {key: value for key, value in os.environ.items() if key not in CLEARED}
+
+    listing = subprocess.run(
+        ["backlog", "task", "list", "--ready", "--status", "To Do", "--json"],
+        capture_output=True, text=True, check=True,
+    )
+    tasks = [
+        task for task in json.loads(listing.stdout)["tasks"]
+        if not {label.casefold() for label in task["labels"]} & UNAVAILABLE
+    ]
+
+    for task in tasks:
+        result = subprocess.run(
+            ["worklease", "--json", "acquire", "--provider", "generic", "--source", SOURCE,
+             "--item", task["id"], "--session", session],
+            capture_output=True, text=True, env=env,
+        )
+        try:
+            envelope = json.loads(result.stdout)
+        except ValueError:
+            print(f"Stopped at {task['id']}: unreadable Worklease output; inspect the session before retrying.", file=sys.stderr)
+            return 1
+        if envelope.get("ok"):
+            print(f"{task['id']} - {task['title']}")
+            return 0
+        error = envelope.get("error", {})
+        details = error.get("details", {})
+        if error.get("reason") == "already-claimed" and details.get("commitState") == "not-committed":
+            holder = details.get("holder", {}).get("agentId", "another session")
+            print(f"Skipped {task['id']}: claimed by {holder}", file=sys.stderr)
+            continue
+        if error.get("reason") == "handle-in-use":
+            print(f"Session {session} already holds a claim. Finish or release it first; "
+                  f"`task backlog:claim -- handle inspect -s {session}` shows it.", file=sys.stderr)
+            return result.returncode or 1
+        print(f"Stopped at {task['id']}: {error.get('reason')}: {error.get('message')}", file=sys.stderr)
+        return result.returncode or 1
+
+    print("No unclaimed ready To Do tasks.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

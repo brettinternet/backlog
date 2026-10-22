@@ -23,6 +23,11 @@ tasks:
     dir: "{{.CONTROL_ROOT}}"
     cmd: mise exec -- worklease {{.CLI_ARGS}}
 
+  claim-next:
+    desc: "Claim the first ready To Do task no other session holds: task backlog:claim-next -- SESSION"
+    dir: "{{.CONTROL_ROOT}}"
+    cmd: mise exec -- python3 scripts/backlog-claim-next {{.CLI_ARGS}}
+
   next:
     desc: Show the first ready To Do task that needs no owner action
     dir: "{{.CONTROL_ROOT}}"

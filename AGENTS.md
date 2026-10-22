@@ -20,17 +20,16 @@
 
 - `backlog/` (Backlog.md) is this repository's task queue until BL-26 migrates it to `bl`'s native format. Read and change tasks only through the `backlog` CLI. Never edit task Markdown directly.
 - Backlog state lives in the primary checkout. From a linked worktree, run `task backlog:cli -- <args>`, for example `task backlog:cli -- task view BL-12 --plain`, instead of calling `backlog` directly.
-- Pick work with `task backlog:next`. It skips tasks labelled `blocked`, `deferred`, `escalated`, or `human`.
-- When other agents may be working, claim the task before changing its status. Use one stable session for your whole loop:
+- Pick and claim work in one step, before changing any status. Use one stable session for your whole loop:
 
   ```sh
-  task backlog:claim -- acquire --provider generic --source github.com/brettinternet/backlog --item BL-12 -s SESSION
+  task backlog:claim-next -- SESSION
   ```
 
-  On contention, pick another task. Renew long work with `task backlog:claim -- heartbeat -s SESSION` at least every 7 minutes, and release with `task backlog:claim -- release -s SESSION` when you finish. The target runs Worklease from the primary checkout. A plain `worklease` call from a linked worktree can't see the claim, because Worklease keys claims by checkout. `bl` uses the same key (D20). This interim protocol lasts until BL-33 ships `bl next --claim --start`.
+  It walks the ready To Do tasks in order, skips tasks labelled `blocked`, `deferred`, `escalated`, or `human`, skips tasks another session holds, and claims the first free one. If your session already holds a claim, it stops and tells you so. `task backlog:next` only shows the first ready task, without claiming. To claim a specific task instead, run `task backlog:claim -- acquire --provider generic --source github.com/brettinternet/backlog --item BL-12 -s SESSION`. Renew long work with `task backlog:claim -- heartbeat -s SESSION` at least every 7 minutes, and release with `task backlog:claim -- release -s SESSION` when you finish. The target runs Worklease from the primary checkout. A plain `worklease` call from a linked worktree can't see the claim, because Worklease keys claims by checkout. `bl` uses the same key (D20). This interim protocol lasts until BL-33 ships `bl next --claim --start`.
 - Read the guides before acting: `backlog instructions task-execution`, then `backlog instructions task-finalization`. Keep status, assignee, plan, notes, and acceptance checks in the task.
 - When you finish, record one `AC#N:` evidence line per criterion in Implementation Notes. Each line names the command you ran and its result.
-- Commit backlog changes separately in the primary checkout with `docs(backlog): …`, staging only `backlog/`.
+- Commit backlog changes separately in the primary checkout with `docs(backlog): …`. Other sessions change `backlog/` at the same time, so commit only your own task files, by path: `git add FILES` then `git commit -m MESSAGE -- FILES`. A commit limited to paths leaves out whatever another session has staged.
 - A task labelled `human` needs the owner: credentials, publishing, pushing, or other repositories. Don't start one without explicit instruction.
 - Never skip, delete, or weaken a test to make the gate pass. Stop and escalate instead.
 
