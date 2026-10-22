@@ -167,15 +167,26 @@ Undo applies the stored inverse mutation through the same pipeline.
 
 ## 5. Projects, configuration, and trust
 
-**Bootstrap boundary.** `internal/project` currently resolves XDG user config,
-state, and cache paths without creating them and loads only `ui.highContrast`
-from the optional user file. Precedence is built-in `false`, user file,
-`BL_HIGH_CONTRAST`, then `--high-contrast` (including explicit `false`).
-The file is strict, single-document YAML, limited to 1 MiB; unknown fields are
-rejected. Its current schema is [schemas/user-config.json](schemas/user-config.json).
-`bl config show` prints these settings and paths, not the full project config.
-Discovery, project layers, per-project overrides, provenance, and trust below
-remain BL-3/BL-29 work. No committed configuration is loaded or executed yet.
+**Implementation boundary.** `internal/project` resolves XDG paths, discovers
+Git metadata without spawning Git, resolves the shared control root and project
+identity, and loads all D16 file layers with per-value provenance. Mappings merge
+by key; lists replace (including empty lists), and omitted booleans differ from
+explicit `false`. `BL_HIGH_CONTRAST` and `--high-contrast` are the current environment
+and flag overrides. `root: primary` is the default; `root: checkout` in the invoking
+or primary project config opts out of sharing. Only the selected checkout supplies
+project facts. Origin identity ignores transport, credentials, ports, and `.git`;
+without an origin it is the absolute control-root path, marked host-local.
+
+Files are strict single-document YAML, limited to 1 MiB; unknown keys, duplicate
+keys and milestone keys, and YAML aliases/anchors are rejected with file, line,
+and key diagnostics. Editor schemas are [schemas/user-config.json](schemas/user-config.json)
+and [schemas/project-config.json](schemas/project-config.json). `bl config show --json`
+prints effective non-secret settings, discovery, provenance, and a trust marker
+for each privileged entry. Credentials are retained in memory but omitted from
+output. Loading never writes, executes programs, or contacts providers. Project
+privileged entries remain untrusted; trust grants and doctor remain BL-29 work.
+Workspace declarations and the optional user `defaultWorkspace` name are loaded;
+opening a multi-project workspace remains BL-43 work.
 
 **Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Show them read-only and suggest `bl import` or an explicit source. Outside any repository, open the user's default workspace, if configured.
 

@@ -42,7 +42,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		return err
 	}
 	showConfig := func(_ context.Context, cmd *urfave.Command) error {
-		cfg, err := loadConfig(cmd)
+		cfg, err := loadConfig(cmd, directory)
 		if err != nil {
 			return err
 		}
@@ -52,9 +52,18 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				Directory string `json:"directory"`
 			}{cfg, directory})
 		}
-		_, err = fmt.Fprintf(out, "Directory: %s\nUser config: %s\nState: %s\nCache: %s\nui.highContrast: %t\n",
-			directory, cfg.Paths.ConfigFile, cfg.Paths.StateDir, cfg.Paths.CacheDir, cfg.UI.HighContrast)
-		return err
+		_, err = fmt.Fprintf(out, "Directory: %s\nControl root: %s\nProject: %s (host-local: %t)\nUser config: %s\nState: %s\nCache: %s\nui.highContrast: %t (%s)\n",
+			directory, cfg.Discovery.ControlRoot, cfg.Project.ID, cfg.HostLocal, cfg.Paths.ConfigFile, cfg.Paths.StateDir, cfg.Paths.CacheDir, cfg.UI.HighContrast, cfg.Provenance["ui.highContrast"].Layer)
+		if err != nil {
+			return err
+		}
+		for _, warning := range cfg.Discovery.Warnings {
+			fmt.Fprintf(errOut, "bl: warning: %s\n", warning)
+		}
+		for _, source := range cfg.Discovery.Detected {
+			fmt.Fprintf(out, "Detected %s: %s (read-only; use bl import or an explicit source)\n", source.Type, source.Path)
+		}
+		return nil
 	}
 	openTUI := func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Bool("json") {
@@ -63,7 +72,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if !terminal(in) || !terminal(out) {
 			return &Error{Reason: "unavailable", Message: "the TUI requires terminal stdin and stdout; use bl --help"}
 		}
-		cfg, err := loadConfig(cmd)
+		cfg, err := loadConfig(cmd, directory)
 		if err != nil {
 			return err
 		}
@@ -117,11 +126,11 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		Commands: []*urfave.Command{
 			{Name: "version", Usage: "Print build information", Action: version},
 			{Name: "tui", Usage: "Open the empty TUI shell (requires a terminal)", Action: openTUI},
-			{Name: "config", Usage: "Inspect bootstrap user settings (no project layers yet)",
+			{Name: "config", Usage: "Inspect layered project settings",
 				Action: func(_ context.Context, _ *urfave.Command) error {
 					return &Error{Reason: "usage", Message: "use bl config show"}
 				},
-				Commands: []*urfave.Command{{Name: "show", Usage: "Show user settings and XDG paths without creating files", Action: showConfig}},
+				Commands: []*urfave.Command{{Name: "show", Usage: "Show effective settings, provenance, discovery, and XDG paths without creating files", Action: showConfig}},
 			},
 		},
 	}
@@ -163,7 +172,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	return 0
 }
 
-func loadConfig(cmd *urfave.Command) (project.Config, error) {
+func loadConfig(cmd *urfave.Command, directory string) (project.Config, error) {
 	paths, err := project.UserPaths()
 	if err != nil {
 		return project.Config{}, &Error{Reason: "invalid-config", Message: err.Error()}
@@ -172,14 +181,8 @@ func loadConfig(cmd *urfave.Command) (project.Config, error) {
 	if cmd.IsSet("high-contrast") {
 		value := cmd.Bool("high-contrast")
 		contrast = &value
-	} else if raw := os.Getenv("BL_HIGH_CONTRAST"); raw != "" {
-		value, err := strconv.ParseBool(raw)
-		if err != nil {
-			return project.Config{}, &Error{Reason: "invalid-config", Message: "BL_HIGH_CONTRAST must be a boolean (true or false)"}
-		}
-		contrast = &value
 	}
-	cfg, err := project.Load(paths, contrast)
+	cfg, err := project.Resolve(paths, directory, contrast)
 	if err != nil {
 		return project.Config{}, &Error{Reason: "invalid-config", Message: err.Error()}
 	}

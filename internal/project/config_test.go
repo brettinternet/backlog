@@ -71,6 +71,129 @@ func TestRejectInvalidConfig(t *testing.T) {
 	}
 }
 
+// Each removal must expose the next D16 layer, not confuse false with absent.
+func TestLayerPrecedence(t *testing.T) {
+	testkit.Isolate(t)
+	root := repo(t)
+	git(t, root, "remote", "add", "origin", "git@github.com:acme/app.git")
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectFile := filepath.Join(root, ".config", "backlog.yaml")
+	userBase := "ui: {highContrast: true}\n"
+	put(t, paths.ConfigFile, userBase+"projects:\n  github.com/acme/app:\n    ui: {highContrast: true}\n")
+	put(t, projectFile, "ui: {highContrast: false}\n")
+	t.Setenv("BL_HIGH_CONTRAST", "false")
+	flag := true
+	check := func(flag *bool, want bool, layer, file string) {
+		t.Helper()
+		cfg, err := project.Resolve(paths, root, flag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := cfg.Provenance["ui.highContrast"]
+		if cfg.UI.HighContrast != want || p.Layer != layer || p.File != file || p.Line < 1 {
+			t.Fatalf("got %t %+v; want %t %s %s", cfg.UI.HighContrast, p, want, layer, file)
+		}
+	}
+	check(&flag, true, "flag", "")
+	check(nil, false, "environment", "")
+	t.Setenv("BL_HIGH_CONTRAST", "")
+	check(nil, true, "user-project", paths.ConfigFile)
+	put(t, paths.ConfigFile, userBase)
+	check(nil, false, "project", projectFile)
+	put(t, projectFile, "{}\n")
+	check(nil, true, "user", paths.ConfigFile)
+	put(t, paths.ConfigFile, "{}\n")
+	check(nil, false, "built-in", "")
+}
+
+// Config inspection must never grant trust to committed programs, discard
+// milestone descriptions, or expose a credential-helper argv in JSON.
+func TestCatalogsAndTrustBoundary(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
+	put(t, paths.ConfigFile, "accounts: {github: [{credential: [helper, private-token]}]}\n")
+	put(t, filepath.Join(root, ".config", "backlog.yaml"), `version: 1
+milestones: [{key: m-1, name: First, description: Work, archived: true}]
+labels: [bug, feature]
+sources: [{id: tasks, type: native, path: backlog}, {id: eng, type: linear, team: ENG}]
+hooks: [{name: notify, on: item.updated, run: [must-not-run]}]
+actions: [{name: work, run: [must-not-run]}]
+`)
+	cfg, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Milestones) != 1 || cfg.Milestones[0].Description != "Work" || !cfg.Milestones[0].Archived || len(cfg.Labels) != 2 {
+		t.Fatalf("catalogs lost: %+v", cfg.Settings)
+	}
+	if len(cfg.Privileged) != 3 {
+		t.Fatalf("missing boundaries: %+v", cfg.Privileged)
+	}
+	for _, p := range cfg.Privileged {
+		if p.Trusted || p.Origin.Layer != "project" {
+			t.Fatalf("trusted committed declaration: %+v", p)
+		}
+	}
+	put(t, paths.ConfigFile, "sources: [{id: private, type: external, run: [helper]}]\nhooks: [{name: user, on: item.updated, run: [helper]}]\n")
+	put(t, filepath.Join(root, ".config", "backlog.yaml"), "{}\n")
+	cfg, err = project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range cfg.Privileged {
+		if !p.Trusted || p.Origin.Layer != "user" {
+			t.Fatalf("user declaration not trusted: %+v", p)
+		}
+	}
+}
+
+func TestConfigLocationsAndMilestoneDuplicates(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		input, key string
+		line       string
+	}{
+		{"ui:\n  highContast: true\n", "ui.highContast", "line 2"},
+		{"ui:\n  highContrast: yes\n", "ui.highContrast", "line 2"},
+		{"milestones:\n  - {key: one, name: A}\n  - {key: one, name: B}\n", "milestones.key", "line 3"},
+		{"root: elsewhere\n", "root", "line 1"},
+		{"project: {credential: [secret]}\n", "project.credential", "line 1"},
+	} {
+		t.Run(tc.key+tc.line, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			put(t, path, tc.input)
+			_, err := project.Load(project.Paths{ConfigFile: path}, nil)
+			if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.line) || !strings.Contains(err.Error(), tc.key) {
+				t.Fatalf("diagnostic: %v", err)
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), "large.yaml")
+	put(t, path, strings.Repeat(" ", (1<<20)+1))
+	if _, err := project.Load(project.Paths{ConfigFile: path}, nil); err == nil {
+		t.Fatal("oversized file accepted")
+	}
+}
+
+func FuzzConfig(f *testing.F) {
+	for _, seed := range []string{"ui: {highContrast: true}", "ui: [", "a: &a [*a]", "milestones: [{key: x, name: X}]"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		if len(input) > 1<<20 {
+			return
+		}
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		put(t, path, input)
+		_, _ = project.Load(project.Paths{ConfigFile: path}, nil)
+	})
+}
+
 func TestXDGDefaultsAndRelativePaths(t *testing.T) {
 	home := testkit.Isolate(t)
 	for _, name := range []string{"XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
