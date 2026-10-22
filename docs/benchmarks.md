@@ -378,8 +378,22 @@ Selective projections collect matching indices before allocating item storage,
 and zero/one-result sorts no longer build a full-backlog ranking map. All work
 remains off the UI update loop. Query correctness, canceled completions, rapid
 50k editor requests and stale projection/preparation fencing pass with `-race`.
-These results qualify only filter latency: navigation, external-update and RSS
-misses reported by that pre-BL-55 harness remain separate work, not passing budgets.
+The pre-BL-55 result was not stable under independent verification: a rerun
+measured 95.97 ms at 50k, so that configuration alone did not qualify the budget.
+
+After integration with BL-55's production interactive memory policy, an
+independent verifier ran the same command on `0942417`, without runtime tuning:
+
+| Final integrated production measurement, 20 samples, p95 | Result | Budget |
+| --- | ---: | ---: |
+| 10k filter | 8.631 ms | ≤ 30 ms: passes |
+| 50k filter | 16.578 ms | ≤ 80 ms: passes |
+
+The integrated run completed in 50.192 s. Correctness, cancellation, rapid-input
+and stale-result tests pass with the race detector; `task ci` passes on the
+integration commit. This qualifies filter latency, not all §11 budgets. The same
+run measured peak child RSS of 308.19/963.48 MiB at 10k/50k and external-update
+p95 of 721.51 ms at 10k; those budgets remain unmet and separately tracked.
 
 ### Cold-cache correction
 
