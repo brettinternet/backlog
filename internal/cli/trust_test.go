@@ -115,7 +115,7 @@ func TestTrustCanaryProcess(t *testing.T) {
 func fakeWorklease(t *testing.T) {
 	t.Helper()
 	directory := t.TempDir()
-	script := "#!/bin/sh\nprintf '%s\\n' '{\"ok\":true,\"schemaVersion\":2,\"version\":\"1.9.3\"}'\n"
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"ok\":true,\"schemaVersion\":2,\"version\":\"1.10.1\"}'\n"
 	if err := os.WriteFile(filepath.Join(directory, "worklease"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}

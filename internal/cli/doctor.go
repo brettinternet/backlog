@@ -11,12 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/worklease"
 	urfave "github.com/urfave/cli/v3"
 )
 
@@ -222,7 +222,7 @@ func cacheCheck(ctx context.Context, cfg project.Config) doctorCheck {
 }
 
 func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
-	c := doctorCheck{"worklease", "pass", "Worklease supports schema v2 and is at least 1.9.3", "No action needed"}
+	c := doctorCheck{"worklease", "pass", "Worklease supports schema v2 and is at least 1.10.1", "No action needed"}
 	path, err := exec.LookPath("worklease")
 	if err != nil {
 		c.Status = "warn"
@@ -230,7 +230,7 @@ func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
 			c.Status = "fail"
 		}
 		c.Message = "Worklease is not installed"
-		c.Fix = "Install Worklease >= 1.9.3 and add it to PATH"
+		c.Fix = "Install Worklease >= 1.10.1 and add it to PATH"
 		return c
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -246,18 +246,11 @@ func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
 	if err == nil {
 		err = json.Unmarshal(output, &version)
 	}
-	valid := false
-	parts := strings.Split(strings.TrimPrefix(version.Version, "v"), ".")
-	if len(parts) >= 3 {
-		major, e1 := strconv.Atoi(parts[0])
-		minor, e2 := strconv.Atoi(parts[1])
-		patch, e3 := strconv.Atoi(strings.SplitN(parts[2], "-", 2)[0])
-		valid = e1 == nil && e2 == nil && e3 == nil && (major > 1 || major == 1 && (minor > 9 || minor == 9 && patch >= 3))
-	}
+	valid := worklease.CompatibleVersion(version.Version)
 	if err != nil || !version.OK || version.Schema != 2 || !valid {
 		c.Status = "fail"
 		c.Message = "Worklease version probe failed or is incompatible"
-		c.Fix = "Install Worklease >= 1.9.3 with schema v2 support"
+		c.Fix = "Install Worklease >= 1.10.1 with schema v2 support"
 	} else {
 		c.Message = "Worklease " + version.Version + " (schema v2)"
 	}

@@ -60,7 +60,7 @@ Doctor checks existing native caches read-only, without repairing corruption.
 It never fetches Git refs: the control branch is compared with local origin/HEAD,
 then init.defaultBranch, then an existing main/master; unknown or nondefault
 branches warn. Worklease's local `version --json` must report schema v2 and
-version >= 1.9.3. Absence warns when coordination is disabled and fails when
+version >= 1.10.1. Absence warns when coordination is disabled and fails when
 configured. Source checks validate native directories and prefixes; unavailable
 adapters fail with a fix hint. Network probes are permitted only by `--online`,
 never before trust, and only for installed adapters; the native-only build
