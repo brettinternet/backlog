@@ -1,10 +1,11 @@
 ---
 id: BL-18
 title: 'Filter, sort, and group from the list'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 14:09'
 labels:
   - tui
   - query
@@ -38,27 +39,48 @@ Clunky filtering, sorting, and search are a core Backlog.md complaint. Every one
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Model tests cover typing, field and value completion, apply, restore, and an invalid query that shows a positioned error while keeping the last valid result
-- [ ] #2 A table test covers every `f`, `o`, and `z` second key in tui.md
-- [ ] #3 At 50k items, keys keep being processed while a projection is pending, the latest query wins, and keystroke-to-list latency is recorded against budget
-- [ ] #4 Free-text matches are highlighted in golden views
+- [x] #1 Model tests cover typing, field and value completion, apply, restore, and an invalid query that shows a positioned error while keeping the last valid result
+- [x] #2 A table test covers every `f`, `o`, and `z` second key in tui.md
+- [x] #3 At 50k items, keys keep being processed while a projection is pending, the latest query wins, and keystroke-to-list latency is recorded against budget
+- [x] #4 Free-text matches are highlighted in golden views
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task ci passes on the final commit
-- [ ] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
-- [ ] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
-- [ ] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
-- [ ] #5 No test was deleted, skipped, or weakened
-- [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
+- [x] #1 task ci passes on the final commit
+- [x] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
+- [x] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
+- [x] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
+- [x] #5 No test was deleted, skipped, or weakened
+- [x] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Connect query editing/completion and filter/sort/group menus to BL-15's latest-wins worker. Keep last valid rows on parse errors, enter commits, and esc restores the prior query.
-2. Resolve the draft keymap's duplicate za before coding: reserve za for fold and use zA for assignee grouping, updating docs/tui.md in the same implementation change. Keep one binding source for menus and later help.
-3. Implement matching highlights without unsafe provider escape sequences. Verify menu routing, apply/cancel/error transitions and stale projection rejection with model tests; run task test and opt-in 50k keystroke-to-list measurements.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Implemented inline query editing and snapshot completion through the bounded latest-wins engine worker, positioned syntax errors retaining valid rows, and enter/escape apply/restore.
+2. Implemented shared menu dispatch/help bindings, quick-value picker, reverse sort, fold-all, and zA assignee grouping while preserving za folding; documented in docs/tui.md.
+3. Verified model transitions, every menu key, Unicode match goldens and 50k responsiveness/latency, with one independent verifier acceptance/review pass.
+4. Committed implementation as 4c61490, fast-forward merged main, passed task ci on merged implementation; finalize shared task and clean up the session-owned worktree.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Scope includes internal/engine to produce completion candidates and nonfatal snapshot-validation warnings on the bounded projection worker; docs/tui.md documents shipped behavior and resolves assignee grouping to zA.
+
+AC#1: task cli:test PKG=./internal/tui -- -run TestQueryEditor -count=1 (included in passing full TUI suite and task ci): PASS typing, field/value completion, quoted values, apply/restore and positioned error retaining last valid rows.
+AC#2: task cli:test PKG=./internal/tui -- -run TestQueryMenuKeys -count=1 (included in passing full TUI suite and task ci): PASS every f/o/z second key, F clear, zA vs za, sort reversal and fold-all/toggle.
+AC#3: BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run TestQueryLatest50k -v -count=1: PASS continued input and latest-wins projection/preparation fencing; 50k Update+worker+View p95 26.016208ms (40 samples), below 80ms. Independent verifier measured 23.329167ms. Timing is in-process filter-to-list, not PTY navigation latency.
+AC#4: task cli:test PKG=./internal/tui -- -run TestQueryMatchGolden -count=1 (included in passing full TUI suite and task ci): PASS styled Unicode matches in query-highlight.golden and NO_COLOR behavior.
+Verification: task test and task ci PASS, including race/security/static checks. LSP diagnostics clean for model.go, query.go and engine/projection.go. scripts/tui-snapshot --width 100 --height 24 --keys f -- bin/bl -C bin/query-fixture tui showed all filter hints; a second capture using / C-u status:todo Enter showed only todo rows and the applied query footer.
+Independent verifier 0e4d36b0 / clarification f7c6baab returned PASS for AC#1–4 and confirmed no concrete defect. Initial contradictory overall FAIL was explicitly corrected to PASS without a second general review. No tests deleted, skipped, or weakened. Documentation updated in docs/tui.md. Source implementation 4c61490 merged locally to main; no push or PR. No remaining item blocker. Next step: finish task metadata and owned worktree cleanup.
+
+Cleanup completed: wt remove bl-18-list-query --foreground --format=json returned branch_outcome=deleted. Verified git worktree list contains only the primary checkout, the branch is absent, and Herdr workspace wJN (matched by exact checkout_path; inspected idle zsh before removal) disappeared. No retained task checkout/workspace and no remaining resumable work.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented live query editing/completion, filter/sort/group menus, last-valid error handling and Unicode match highlighting. Verified all criteria, independent verifier PASS, real tmux captures and task ci. 50k filter p95 26ms against 80ms budget. Implementation 4c61490 merged locally to main; no push.
+<!-- SECTION:FINAL_SUMMARY:END -->
