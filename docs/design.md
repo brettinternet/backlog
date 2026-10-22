@@ -273,6 +273,8 @@ A known unsatisfied blocker means `blocked`, even when other edges are unknown.
 
 Each result explains itself. For example, `high · rank a3 · unblocks 4 (BL-9, BL-12, +2)`.
 
+The pure engine's input contract, reason codes, tie fallbacks, and graph semantics are documented in [readiness.md](readiness.md).
+
 `bl next [QUERY] [-n N] [--explain]` narrows the candidates with a query. `--explain` also lists every excluded item with its reason. The TUI **Next** view shows the same order and explanations.
 
 ## 7. Agent interface
