@@ -77,6 +77,9 @@ func (c Capabilities) Allows(op Operation) bool { return c[op] }
 type Operation string
 
 const (
+	Create           Operation = "create"
+	Archive          Operation = "archive"
+	Unarchive        Operation = "unarchive"
 	Set              Operation = "set"
 	Add              Operation = "add"
 	Remove           Operation = "remove"
@@ -103,4 +106,5 @@ type Mutation struct {
 	Index           int
 	Comment         Comment
 	Original        []byte // only for a version-bound Restore returned by the codec
+	Item            *Item  // template for Create; the source allocates its ID
 }

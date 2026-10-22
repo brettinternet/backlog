@@ -119,6 +119,34 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
 - New IDs are `PREFIX-N`, with no padding and no dotted segments (design.md D6). `bl import` keeps imported IDs exactly, including padding and dots.
 - The allocator holds `<git-common-dir>/backlog/lock` (flock) and stores a counter at `<git-common-dir>/backlog/next/<source-id>`. The next number is the greater of the counter and one more than the highest number among active and archived items. Outside Git, the lock and counter live under XDG state, keyed by project ID.
 
+### Native source I/O
+
+The native source loads only regular files with native ID filenames directly in
+its source directory. It ignores other files, nested directories, and symlinks.
+Archive loading is opt-in; `Read` can find active or archived items. Malformed
+items and filename/status mismatches produce per-file findings and partial
+coverage without hiding successfully parsed items. Loads use at most GOMAXPROCS
+parsers. The configured source path is resolved against the control root before
+opening the source; Git discovery never runs a subprocess.
+
+Every existing-item mutation requires its current content hash. Missing or stale
+versions return reason `conflict` before writing. ID changes require renumbering,
+not field edits. Creation allocates and durably reserves an ID before publishing
+the item; failed creates may leave gaps. The allocator also checks active and
+archived filenames on each reservation, including imported padded or dotted IDs
+(the first numeric component advances the sequential counter). Outside Git,
+state is under `$XDG_STATE_HOME/backlog/projects/<SHA-256 of project ID>/`.
+
+Item writes and counter updates use a same-directory temporary file, fsync,
+rename, and directory fsync, under the shared lock. Existing file permissions
+are retained. Failures before rename leave the original intact and remove owned
+temporary files. A directory-fsync error after rename is reported, but the new
+bytes are already visible and durability is uncertain; callers must reread
+rather than retry blindly. Archive/unarchive require the same version guard,
+refuse occupied targets, and fsync both directories without rewriting bytes or
+changing the version. The source currently supports local Unix flock semantics;
+filesystem watching is a separate optional capability.
+
 ### Body sections
 
 - **Description.** Everything before the first recognized section heading. Leading and trailing blank lines are trimmed when reading. The writer puts exactly one blank line after the frontmatter.
