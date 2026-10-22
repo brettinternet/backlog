@@ -15,6 +15,10 @@ tasks:
     desc: Download Go modules
     cmd: mise exec go -- go mod download
 
+  tidy:
+    desc: Reconcile Go module dependencies
+    cmd: mise exec go -- go mod tidy
+
   build:
     desc: Build bin/bl
     cmds:
@@ -32,6 +36,8 @@ tasks:
     desc: Run source checks
     cmds:
       - test -z "$({{.GO_FILES_CMD}} -exec mise exec go -- gofmt -l {} +)"
+      - mise exec go -- go mod tidy -diff
+      - mise exec go -- go mod verify
       - mise exec go -- go vet ./...
       - mise exec staticcheck -- staticcheck ./...
 
@@ -40,8 +46,10 @@ tasks:
     cmd: "{{.GO_FILES_CMD}} -exec mise exec go -- gofmt -w {} +"
 
   test:
-    desc: Run tests
-    cmd: mise exec go -- go test ./...
+    desc: "Run tests (PKG selects packages; extra Go flags follow --)"
+    vars:
+      PKG: '{{.PKG | default "./..."}}'
+    cmd: mise exec go -- go test {{.PKG}} {{.CLI_ARGS}}
 
   race:
     desc: Run tests with the race detector

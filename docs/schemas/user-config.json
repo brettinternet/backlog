@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bl bootstrap user settings",
+  "description": "Initial UI preferences only. Project configuration and the full user schema are planned in BL-3.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "highContrast": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}

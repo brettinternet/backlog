@@ -9,13 +9,16 @@ mise install
 task init      # toolchain, Go modules, Git hooks
 ```
 
-`mise.toml` pins Go, Staticcheck, govulncheck, Task, Lefthook, Betterleaks, git-cliff, Worktrunk, Backlog.md, and Worklease.
+`mise.toml` pins Go, Staticcheck, govulncheck, Task, Lefthook, Betterleaks, git-cliff, Worktrunk, Backlog.md, and Worklease. `task init` is repeatable: it downloads modules and installs/updates hooks without uninstalling them first. Worktrunk's pre-start hook runs the same initialization for new checkouts.
 
 ## Build and run
 
 ```sh
 task cli:build          # writes bin/bl
 task cli:run -- --help  # run from source
+task cli:run            # open the empty TUI shell in a terminal
+task cli:tidy           # reconcile go.mod/go.sum after changing imports
+task cli:test PKG=./internal/project -- -count=1  # focused tests
 ```
 
 ## Checks
@@ -27,7 +30,7 @@ Use the smallest check that covers your change.
 | `task fix:staged` | Format staged Go files and re-stage them |
 | `task check:staged` | Pre-commit hooks on staged files: gofmt and a secret scan. Run before committing. |
 | `task test` | `go test ./...` |
-| `task check` | gofmt, `go vet ./...`, Staticcheck, changelog generation |
+| `task check` | gofmt, module tidiness/integrity, `go vet ./...`, Staticcheck, changelog generation |
 | `task race` | `go test -race ./...` |
 | `task security` | Betterleaks over the history, plus `govulncheck ./...` |
 | `task bench` | Benchmarks against the fixture generator (BL-12). Report only. |
@@ -43,7 +46,7 @@ These rules apply to every new or edited test.
 - **Golden files.** Put fixtures and golden files under the package's `testdata/`. Regenerate them with `-update`, and review the diff.
 - **Fuzz untrusted input.** Parsers of input `bl` does not control get fuzz targets: item files, Backlog.md files, the query language, quick-add tokens, adapter frames, and provider JSON.
 - **Time.** Inject clocks. Never `time.Sleep` to wait for something; poll for an observable condition with a bounded deadline.
-- **Isolation.** Tests never read the user's real config, state, or cache. Use the shared test helper that points `HOME` and `XDG_*` at `t.TempDir()`. BL-1 adds it.
+- **Isolation.** Tests never read the user's real config, state, or cache. Use `internal/testkit.Isolate(t)`, which points `HOME`, `USERPROFILE`, and XDG directories at `t.TempDir()` and clears `BL_*` and `WORKLEASE_*` overrides. Tests using it must not run in parallel.
 - **Parallelism.** Call `t.Parallel()` unless the test changes process-global state.
 - **Real providers.** Real `bd`, `worklease`, GitHub, Linear, or Jira round trips are skipped unless `BL_PROVIDER_TESTS=1`. Everything else fakes the provider.
 - **Benchmarks.** Write `Benchmark*` functions, or gate measurements behind `BL_BENCH_*` or `BL_TUI_*` variables. The default run never asserts absolute latency. Assert algorithmic guarantees with counters, such as "no file reads on navigation".

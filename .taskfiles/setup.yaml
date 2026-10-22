@@ -25,7 +25,6 @@ tasks:
   lefthook:
     desc: Synchronize Lefthook hooks
     cmds:
-      - mise exec lefthook -- lefthook uninstall
       - mise exec lefthook -- lefthook install
     preconditions:
       - test -f lefthook.yaml

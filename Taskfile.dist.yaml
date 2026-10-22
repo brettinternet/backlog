@@ -80,8 +80,10 @@ tasks:
       - task: cli:bench
 
   smoke:
-    desc: Build the binary and run it once
+    desc: Exercise help and build metadata without loading user configuration
     deps:
       - task: cli:build
     cmds:
       - bin/bl --version
+      - bin/bl --json version
+      - bin/bl --help

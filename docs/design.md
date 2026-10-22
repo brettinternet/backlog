@@ -166,6 +166,16 @@ Undo applies the stored inverse mutation through the same pipeline.
 
 ## 5. Projects, configuration, and trust
 
+**Bootstrap boundary.** `internal/project` currently resolves XDG user config,
+state, and cache paths without creating them and loads only `ui.highContrast`
+from the optional user file. Precedence is built-in `false`, user file,
+`BL_HIGH_CONTRAST`, then `--high-contrast` (including explicit `false`).
+The file is strict, single-document YAML, limited to 1 MiB; unknown fields are
+rejected. Its current schema is [schemas/user-config.json](schemas/user-config.json).
+`bl config show` prints these settings and paths, not the full project config.
+Discovery, project layers, per-project overrides, provenance, and trust below
+remain BL-3/BL-29 work. No committed configuration is loaded or executed yet.
+
 **Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Show them read-only and suggest `bl import` or an explicit source. Outside any repository, open the user's default workspace, if configured.
 
 **Identity.** `project.id` defaults to the normalized `origin` remote (`github.com/owner/repo`). If there is no remote, it falls back to the control root path, marked host-local, and claims show as host-local. The project ID keys caches, trust, events, and claim resources.
@@ -248,6 +258,8 @@ Each result explains itself. For example, `high · rank a3 · unblocks 4 (BL-9, 
 `bl next [QUERY] [-n N] [--explain]` narrows the candidates with a query. `--explain` also lists every excluded item with its reason. The TUI **Next** view shows the same order and explanations.
 
 ## 7. Agent interface
+
+The bootstrap implements `version`/`--version`, `config show`, and an empty TUI (`bl` or `bl tui`). These operations use the envelope below when `--json`/`-j` is requested; interactive TUI plus JSON is a usage error. Help remains plain text. Bare `bl` falls back to help off-terminal; explicit `bl tui` exits 6 off-terminal. Usage errors exit 2, invalid user configuration exits 5 (`invalid-config`), and internal failures exit 1. The remaining reason mappings and operations are backlog work, not stub commands.
 
 Commands (final names freeze in BL-7 and BL-8):
 

@@ -8,9 +8,8 @@ betterleaks = "1.9.0"
 lefthook = "2.2.2"
 task = "3.54.0"
 worktrunk = "0.80.0"
-# Go 1.27 export-data support; replace with the next stable Staticcheck release.
-staticcheck = "0.7.0-0.dev.0.20261009221906-f1838cc308e5"
-"go:golang.org/x/vuln/cmd/govulncheck" = "1.8.0"
+staticcheck = "0.8.2"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 # Tracks this repository's own tasks until BL-026 migrates them to bl.
 "github:MrLesk/Backlog.md" = { version = "1.52.0", bin = "backlog" }
 # Claims for parallel agents and the D20 integration.

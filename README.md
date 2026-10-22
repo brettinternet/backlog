@@ -21,6 +21,39 @@
 - **Many backends.** Native files first, then Backlog.md, Beads, GitHub Issues, Linear, Jira Cloud, and external adapters.
 - **Composable.** Hooks, actions, and an event stream connect it to [Worklease](https://github.com/brettinternet/worklease) claims and to any other tool.
 
+## Try the bootstrap
+
+```sh
+mise install
+mise exec task -- task init
+task cli:build
+bin/bl --help
+bin/bl --json version
+bin/bl config show
+bin/bl                     # empty TUI shell; ? help, q quit
+task ci
+```
+
+The tooling, CLI entry point, read-only user settings, and Bubble Tea v2 shell work.
+Task storage, project discovery, queries, and edits are still planned—not implemented.
+Bare `bl` prints help when stdin or stdout is not a terminal. `bl tui` requires both.
+
+User settings live at `$XDG_CONFIG_HOME/backlog/config.yaml` (default
+`~/.config/backlog/config.yaml`, including on macOS):
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/brettinternet/backlog/main/docs/schemas/user-config.json
+ui:
+  highContrast: false
+```
+
+Only `ui.highContrast` is supported in the bootstrap. Override it with
+`BL_HIGH_CONTRAST=true` or `--high-contrast`; an explicit
+`--high-contrast=false` overrides both. `NO_COLOR=1` disables styling.
+Config inspection never creates files or loads committed project configuration.
+
+The product sketch and capabilities above describe the target, not this bootstrap.
+
 ## Docs
 
 - [Design](docs/design.md): goals, decision register, architecture, budgets, and milestones

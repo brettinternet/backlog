@@ -2,6 +2,19 @@
 
 **Status:** Draft UX spec. BL-16 through BL-25 implement and refine it. Every key is remappable through user config `keys:`, and this file is the source for the default keymap and help text.
 
+## Bootstrap shell
+
+The current shell uses Bubble Tea v2, Lip Gloss v2, and the Bubbles v2 help
+component. Bare `bl` opens it only when stdin and stdout are terminals;
+`bl tui` explicitly requires a terminal. It paints an honest empty state,
+resizes to the viewport, toggles help with `?`, closes help with `esc`, and
+quits with `q` or `ctrl-c`. It has no timers, task reads/writes, or source I/O.
+`NO_COLOR` disables styling, and `--high-contrast` (or user
+`ui.highContrast`) uses bold and underline without color.
+
+This is a starting point, not the BL-14 performance spike or the BL-16 list
+implementation. The layouts, navigation, and editing below remain planned.
+
 ## Principles
 
 1. **Never wait.** Paint from the cache at once, sync behind it, and apply edits optimistically. A spinner marks work in flight; it never blocks input (design.md D14, D15).

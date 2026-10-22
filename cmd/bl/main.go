@@ -1,24 +1,29 @@
-// Command bl is a fast terminal backlog for people and coding agents.
-//
-// This is a placeholder until BL-001 establishes the CLI; see docs/design.md.
+// Command bl is a terminal backlog for people and coding agents.
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/brettinternet/backlog/internal/cli"
 )
 
-// Set by release builds through -ldflags.
+// Set by builds through -ldflags.
 var (
 	buildVersion = "dev"
 	buildCommit  = "unknown"
 )
 
 func main() {
-	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("bl %s (%s)\n", buildVersion, buildCommit)
-		return
-	}
-	fmt.Fprintln(os.Stderr, "bl: not implemented yet; see docs/design.md")
-	os.Exit(2)
+	os.Exit(run())
+}
+
+func run() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return cli.Run(ctx, os.Args, cli.BuildInfo{
+		Version: buildVersion, Commit: buildCommit,
+	}, os.Stdin, os.Stdout, os.Stderr)
 }
