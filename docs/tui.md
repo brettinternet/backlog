@@ -58,10 +58,12 @@ while retaining sort and group. Sort reversal toggles every explicit sort key.
 Item-field editing is implemented from the list, with version-checked engine
 mutations, fuzzy pickers, marks, repeat, undo/redo, criterion toggles, archive
 confirmation, and failure detail. `n`/`N` quick-add, full create/edit forms,
-section/full-file editor sessions, comments, and notes are available. Board column
-status defaults are accepted by the capture form; BL-22 connects the board layout. Picker catalogs and fuzzy filtering run in
-Bubble Tea commands; source I/O and backlog-sized work stay off `Update` (D14).
-Board/tree layouts, key remapping, the command palette, and mouse remain planned.
+section/full-file editor sessions, comments, and notes are available. The Board
+tab and saved board layouts support column navigation, horizontal scrolling,
+and column-status quick-add defaults, including empty columns. Picker catalogs,
+board preparation, and fuzzy filtering run in Bubble Tea commands; source I/O
+and backlog-sized work stay off `Update` (D14).
+Tree layout, key remapping, the command palette, and mouse remain planned.
 Claim columns await BL-32.
 
 Capture a real render without opening a user's pane:
@@ -153,14 +155,15 @@ Mine (`assignee:me`), and All open. They precede project `views`, user `views`,
 and user `projects.<project-id>.views`, each in declaration order. Same-named
 views in different layers remain separate tabs; names within a layer must be
 unique. This additive tab catalog does not change D16's list-replacement rule
-for effective configuration. Board is added when its layout ships.
+for effective configuration. The built-in Board tab follows All and shows open
+items grouped by status.
 
 A view has `name`, `query`, optional `sort`, `group`, `layout`, and `columns`.
 Explicit sort/group fields override query directives. Columns may be `id`,
 `priority`, `status`, `blockers`, `children`, and `title`, in display order;
 without columns the standard list is used. Below 80 columns, ID/title remain.
-Unavailable layouts (including board/tree for now) retain their setting but
-render a list with a footer notice.
+Unavailable layouts (tree for now) retain their setting but render a list with
+a footer notice.
 
 `ctrl-s` opens a name prompt, initially using the current name. `ctrl-u` clears
 the name; type a replacement and press enter. The default destination is user
@@ -176,6 +179,22 @@ survives restart. Config I/O runs in a command, not the update loop.
 | List | Grouped headers with counts. `za` folds a group, `[` `]` jump between groups. | All item edit keys |
 | Board | One column per status (or per group key). `h`/`l` move between columns, `j`/`k` within one. | `<`/`>` move the card to the previous or next status |
 | Tree | Parent and child hierarchy with progress. `h` collapses or moves to the parent; `l` expands or moves to the first child. | All item edit keys |
+
+Boards show configured status columns in workflow order, including empty
+columns, followed by undeclared statuses. A query with no grouping also uses
+status columns. Other group keys use the projection's group order. Each column
+shows its count, remembers its cursor, and scrolls independently. At least one
+column fits; columns target a minimum width of 28 cells and scroll horizontally
+to keep the focused column visible. `h`/`l` and left/right (also `[`/`]`) change
+columns; `j`/`k`, counts, page keys, and `gg`/`G` move within the focused column.
+An empty column can be focused but has no selected item. In boards, `l` navigates
+rather than opening the label picker. `<`/`>` always change workflow status,
+even when grouped by priority or another non-status key. Pending moves and
+rollbacks follow the selected item's stable reference while it remains in the
+query. Quick-add uses the focused status column, even when empty; other group
+keys retain the normal create default. Boards ignore list folds. Preparation
+runs off-loop; navigation is constant-time and rendering visits visible cards
+only, independent of backlog size.
 
 The detail pane has these tabs:
 
