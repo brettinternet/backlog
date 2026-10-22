@@ -280,7 +280,7 @@ func (st *storeState) begin(job *editJob) {
 	w.jobs <- job
 }
 func (s *Store) runSource(id string, w *sourceWorker) {
-	publish := func(delta source.Delta, err error) {
+	publish := func(delta source.Delta, err error, replaceInitial bool) {
 		s.send(func(st *storeState) {
 			n := st.snapshot.fork()
 			status := SourceState{Coverage: delta.Coverage}
@@ -306,7 +306,10 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 						n.records[i.Ref] = &record{item: cloneItem(i), edit: edit}
 					}
 				}
-				if delta.Coverage == source.Complete {
+				// Initial records are provisional, not a prior successful full
+				// refresh. Even a partial first load must discard omitted preview
+				// items (e.g. deleted files or files that now fail to parse).
+				if delta.Coverage == source.Complete || replaceInitial {
 					for ref := range n.records {
 						if ref.Source == id && !seen[ref] && !st.pending[ref] && !n.records[ref].archived {
 							delete(n.records, ref)
@@ -324,22 +327,22 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			st.publish(n)
 		})
 	}
-	load := func() {
+	load := func(replaceInitial bool) {
 		delta, err := w.backend.Load(s.ctx, source.Cursor{})
-		publish(delta, err)
+		publish(delta, err, replaceInitial)
 	}
 	if initial, ok := w.backend.(source.InitialLoader); ok {
 		if delta, err := initial.LoadInitial(s.ctx); err == nil && len(delta.Items) > 0 {
-			publish(delta, nil)
+			publish(delta, nil, false)
 		}
 	}
-	load()
+	load(true)
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-w.refresh:
-			load()
+			load(false)
 		case job := <-w.jobs:
 			s.runEdit(w, job)
 		}

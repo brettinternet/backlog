@@ -161,27 +161,34 @@ func (s *initialSource) LoadInitial(context.Context) (source.Delta, error) {
 }
 
 // Catches startup waiting for full I/O or retaining items removed between the
-// initial read and the complete authoritative load.
-func TestInitialSnapshotBeforeCompleteLoad(t *testing.T) {
+// initial read and the authoritative load, including a partial load caused by
+// a file becoming malformed after the preview.
+func TestInitialSnapshotBeforeFullLoad(t *testing.T) {
 	t.Parallel()
-	backend := fakeSource(t, "tasks")
-	gate := make(chan struct{})
-	backend.loadGate = gate
-	initial := backend.current()
-	initial.Ref.ID = "BL-2"
-	s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": &initialSource{backend, initial}})
-	defer s.Close()
-	first := awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Len() > 0 })
-	if first.Source("tasks").Coverage != source.Partial {
-		t.Fatal("initial snapshot reported complete")
-	}
-	if item, _, ok := first.Get(initial.Ref); !ok || item.Title != initial.Title || item.Version != initial.Version {
-		t.Fatal("initial item was not published")
-	}
-	close(gate)
-	full := awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Source("tasks").Coverage == source.Complete })
-	if _, _, ok := full.Get(initial.Ref); ok || full.Len() != 1 {
-		t.Fatal("complete load retained removed initial item")
+	for _, coverage := range []source.Coverage{source.Complete, source.Partial} {
+		t.Run(string(coverage), func(t *testing.T) {
+			t.Parallel()
+			backend := fakeSource(t, "tasks")
+			backend.coverage = coverage
+			gate := make(chan struct{})
+			backend.loadGate = gate
+			initial := backend.current()
+			initial.Ref.ID = "BL-2"
+			s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": &initialSource{backend, initial}})
+			defer s.Close()
+			first := awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Len() > 0 })
+			if first.Source("tasks").Coverage != source.Partial {
+				t.Fatal("initial snapshot reported complete")
+			}
+			if item, _, ok := first.Get(initial.Ref); !ok || item.Title != initial.Title || item.Version != initial.Version {
+				t.Fatal("initial item was not published")
+			}
+			close(gate)
+			full := awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Generation > first.Generation })
+			if _, _, ok := full.Get(initial.Ref); ok || full.Len() != 1 || full.Source("tasks").Coverage != coverage {
+				t.Fatal("authoritative load retained removed initial item or lost coverage")
+			}
+		})
 	}
 }
 
