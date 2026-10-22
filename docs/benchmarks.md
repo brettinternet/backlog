@@ -85,7 +85,7 @@ CLI RSS 22.41 MiB; 50k p95 12.48 ms and peak CLI RSS 22.47 MiB. The harness's
 unmeasured warm-up builds or validates the persistent filename index; a first
 lookup after index creation or a directory change enumerates item filenames.
 Every `show` still reads and parses its selected item directly from the source.
-Only the `show` row below uses this focused rerun.
+These measurements establish the pre-BL-48 `show` baseline.
 
 BL-47 focused rerun on 2026-10-22 on the same reference host and toolchain:
 
@@ -102,28 +102,52 @@ items are reparsed and FTS updates remain incremental. When any item changes,
 the snapshot payload is re-encoded. Build identity invalidates older cache
 encodings automatically. Query and ranking semantics are unchanged.
 
-The 10k `ls`/`next` cells below use this rerun. Their 50k cells and all other
-non-`show` rows retain the original full-run measurements. RSS remains above
-budget and the focused run's peaks exceed the old 10k measurements; BL-48 must
-address memory separately. This change does not claim the RSS budget is met.
+BL-48 final rerun on 2026-10-22 on the same reference host and toolchain,
+with `GOGC` and `GOMEMLIMIT` unset (runtime baseline `8d41dbb` plus BL-48):
+
+```sh
+task bench -- -bench 'BenchmarkCLI/(10000|50000)/(ls|next|show|write)$'
+```
+
+The run passed in 1,236.889 s with 20 measured subprocess samples per operation.
+All four CLI rows below use this final rerun; the in-process load rows retain
+the original full-run measurements. CLI peak RSS meets both §11 budgets.
+The 10k warm `ls`/`next` latency budgets remain met. Single-field writes miss
+50 ms at both sizes in this run; BL-50 remains responsible for that budget.
+
+The cache now encodes bounded batches of 128 items rather than one whole-source
+gob payload, avoiding simultaneous full-size encoded and decoded snapshots.
+Cache result records point to parsed items rather than copying them; source
+loads preallocate their result, read composition reuses the first source slice,
+and CLI filtering/selection avoids redundant full-item copies. The search
+closure retains only the cache generation, not its entire item snapshot.
+Full item data, query behavior, stat validation and incremental FTS semantics
+are unchanged. Existing cache encodings are invalidated by build identity.
+
+`bl` also defaults Go's **soft** memory target to 300 MiB, leaving headroom for
+SQLite and process overhead under the 400 MiB RSS budget. This bounds GC
+headroom, not supported backlog size: the runtime may exceed the target when
+live data requires it. An explicit standard `GOMEMLIMIT` setting takes
+precedence, including `GOMEMLIMIT=off`; the measurements above use the shipped
+default, not benchmark-only environment tuning. Timing remains report-only.
 
 | Operation | 10k p95 (ms) | 50k p95 (ms) | 10k peak CLI RSS (MiB) | 50k peak CLI RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: |
 | Cold native load | 244.0 | 1,103 | — | — |
 | Warm native load | 288.0 | 1,311 | — | — |
-| `bl ls` | 135.4 | 1,529 | 204.1 | 806.3 |
-| `bl next` | 115.6 | 1,379 | 251.1 | 752.5 |
-| `bl show BL-1` | 12.30 | 12.48 | 22.41 | 22.47 |
-| Single-field write | 37.84 | 95.25 | 17.27 | 33.98 |
+| `bl ls` | 132.6 | 815.0 | 116.6 | 383.8 |
+| `bl next` | 107.7 | 736.4 | 113.1 | 340.8 |
+| `bl show BL-1` | 12.29 | 15.15 | 22.48 | 22.84 |
+| Single-field write | 95.06 | 380.1 | 31.05 | 42.30 |
 
 ### Every applicable CLI budget in design §11
 
 | Budget | Reference result | Outcome / follow-up |
 | --- | --- | --- |
-| `bl show ID` ≤ 30 ms p95 | 10k 12.30 ms; 50k 12.48 ms | Both pass on the D26 reference host |
-| Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 135.4 ms; `next` 115.6 ms | Both pass ([BL-47](../backlog/BL-47.md)) |
-| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 37.84 ms; 50k 95.25 ms | 10k pass; 50k miss: [BL-50](../backlog/BL-50.md) |
-| Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 251.1 MiB (10k `next`) and 806.3 MiB (50k `ls`) | Both miss: [BL-48](../backlog/BL-48.md); `ls` and `next` miss at both sizes |
+| `bl show ID` ≤ 30 ms p95 | 10k 12.29 ms; 50k 15.15 ms | Both pass on the D26 reference host |
+| Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 132.6 ms; `next` 107.7 ms | Both pass ([BL-47](../backlog/BL-47.md)) |
+| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 95.06 ms; 50k 380.1 ms | Both miss: [BL-50](../backlog/BL-50.md) |
+| Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 116.6 MiB (10k `ls`) and 383.8 MiB (50k `ls`) | Both pass ([BL-48](../backlog/BL-48.md)) |
 
 Cold/warm native load and 50k `ls`/`next` timings are baselines without separate
 CLI latency thresholds in §11. TUI first paint, navigation, held keys, filter,

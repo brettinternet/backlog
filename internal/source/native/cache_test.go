@@ -115,6 +115,24 @@ func TestCacheWarmAndChanges(t *testing.T) {
 	write(t, archive, fixture(t, "BL-2"))
 	assertFresh(1)
 	assertFresh(0)
+	// Cross cache-batch boundaries: a partial view must preserve archived rows,
+	// and changing/deleting entries must not leave stale batches or lose a tail.
+	for n := 3; n <= 132; n++ {
+		id := fmt.Sprintf("BL-%d", n)
+		write(t, filepath.Join(root, "backlog", id+".md"), fixture(t, id))
+	}
+	assertFresh(130)
+	assertFresh(0)
+	if _, err := s.Load(context.Background(), source.Cursor{}); err != nil {
+		t.Fatal(err)
+	}
+	assertFresh(0)
+	write(t, filepath.Join(root, "backlog", "BL-130.md"), bytes.Replace(fixture(t, "BL-130"), []byte("Imported"), []byte("Modified"), 1))
+	if err := os.Remove(filepath.Join(root, "backlog", "BL-132.md")); err != nil {
+		t.Fatal(err)
+	}
+	assertFresh(1)
+	assertFresh(0)
 	// A warm item must be interpreted against current configuration, not the
 	// category that was in effect when it was cached.
 	changed, err := native.New(native.Options{ID: "tasks", Prefix: "BL", Path: filepath.Join(root, "backlog"), CommonDir: filepath.Join(root, "common"), ProjectID: "cache-test", CacheDir: filepath.Join(root, "cache"), Statuses: map[string]model.StatusCategory{"todo": model.Active}})

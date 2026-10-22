@@ -79,7 +79,11 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 		} else {
 			s.searchers = append(s.searchers, nil)
 		}
-		s.Query.Items = append(s.Query.Items, delta.Items...)
+		if len(s.Query.Items) == 0 {
+			s.Query.Items = delta.Items
+		} else {
+			s.Query.Items = append(s.Query.Items, delta.Items...)
+		}
 	}
 	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs})
 	for _, e := range s.Ranking.Items {

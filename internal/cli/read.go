@@ -138,7 +138,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if err != nil {
 				return &Error{Reason: "usage", Message: err.Error()}
 			}
-			items := []model.Item{}
+			items := make([]model.Item, 0, len(s.Query.Items))
 			for _, i := range s.Query.Items {
 				if q.Match(i, s.Query, nil) {
 					items = append(items, i)
@@ -149,7 +149,11 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				items = items[:n]
 			}
 			data := listData{Groups: []readGroup{}}
-			for _, g := range s.Query.Group(items, q.Group) {
+			groups := []query.Group{{Items: items}}
+			if q.Group != "" && q.Group != "none" {
+				groups = s.Query.Group(items, q.Group)
+			}
+			for _, g := range groups {
 				group := readGroup{Value: g.Value, Items: []readItem{}}
 				for _, i := range g.Items {
 					group.Items = append(group.Items, itemData(i))
@@ -252,13 +256,13 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if len(q.Sort) > 0 || q.Group != "" {
 				return &Error{Reason: "usage", Message: "next uses readiness ranking; sort and group are not supported"}
 			}
-			byRef := map[model.Ref]model.Item{}
-			for _, i := range s.Query.Items {
-				byRef[i.Ref] = i
+			byRef := make(map[model.Ref]int, len(s.Query.Items))
+			for n, i := range s.Query.Items {
+				byRef[i.Ref] = n
 			}
 			data := nextData{Items: []readItem{}}
 			for _, e := range s.Ranking.Items {
-				i := byRef[e.Ref]
+				i := s.Query.Items[byRef[e.Ref]]
 				match := q.Match(i, s.Query, nil)
 				included := e.Readiness == engine.Ready && match && (cmd.Int("n") == 0 || len(data.Items) < cmd.Int("n"))
 				if included {

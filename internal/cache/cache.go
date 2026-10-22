@@ -46,7 +46,7 @@ func init() {
 
 type Record struct {
 	Path string
-	Item model.Item
+	Item *model.Item
 	Err  error // failed parses are deliberately not cached
 }
 
@@ -320,8 +320,10 @@ func (s Store) Refresh(ctx context.Context, paths func() ([]string, error), cove
 	return Snapshot{}, warnings, err
 }
 
-// One gob stream amortizes type metadata across the snapshot, rather than
-// constructing a decoder and decoding the same model schema for every file.
+// Bounded gob batches amortize type metadata without holding the entire encoded
+// snapshot in Go and SQLite buffers alongside its decoded items.
+const batchSize = 128
+
 type cachedRecord struct {
 	Path, Identity string
 	Item           model.Item
@@ -344,11 +346,25 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			return Snapshot{}, err
 		}
 	} else {
-		var data []byte
-		err = tx.QueryRowContext(ctx, `SELECT data FROM items WHERE path=''`).Scan(&data)
+		rows, err := tx.QueryContext(ctx, `SELECT data FROM items ORDER BY path`)
 		if err != nil {
 			return Snapshot{}, err
-		} else if err = gob.NewDecoder(bytes.NewReader(data)).Decode(&records); err != nil {
+		}
+		for rows.Next() {
+			var data []byte
+			var batch []*cachedRecord
+			if err = rows.Scan(&data); err == nil {
+				err = gob.NewDecoder(bytes.NewReader(data)).Decode(&batch)
+			}
+			if err != nil {
+				_ = rows.Close()
+				return Snapshot{}, err
+			}
+			records = append(records, batch...)
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
 			return Snapshot{}, err
 		}
 	}
@@ -396,12 +412,11 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 				return Snapshot{}, err
 			}
 		}
-		if exists && r.Identity == identity {
-			records = append(records, r)
-		} else {
-			records = append(records, &cachedRecord{Path: path, Identity: identity, Item: item})
+		if !exists || r.Identity != identity {
+			r = &cachedRecord{Path: path, Identity: identity, Item: item}
 		}
-		snapshot.Records = append(snapshot.Records, Record{Path: path, Item: item})
+		records = append(records, r)
+		snapshot.Records = append(snapshot.Records, Record{Path: path, Item: &r.Item})
 	}
 	for path, r := range old {
 		// A partial native view must not evict cached archive rows.
@@ -415,14 +430,19 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		}
 	}
 	if changed {
-		var data bytes.Buffer
-		if err = gob.NewEncoder(&data).Encode(records); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM items`); err != nil {
 			return Snapshot{}, err
 		}
-		// The empty path is a snapshot, not a file. Build identity invalidates
-		// older per-item encodings before they can reach this decoder.
-		if _, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO items VALUES('','',?)`, data.Bytes()); err != nil {
-			return Snapshot{}, err
+		for start := 0; start < len(records); start += batchSize {
+			var data bytes.Buffer
+			if err = gob.NewEncoder(&data).Encode(records[start:min(start+batchSize, len(records))]); err != nil {
+				return Snapshot{}, err
+			}
+			// Keys identify batches, not files. Build identity invalidates older
+			// encodings before they can reach this decoder.
+			if _, err = tx.ExecContext(ctx, `INSERT INTO items VALUES(?,'',?)`, fmt.Sprint(start), data.Bytes()); err != nil {
+				return Snapshot{}, err
+			}
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE metadata SET generation=?,build=?`, snapshot.Generation, build); err != nil {

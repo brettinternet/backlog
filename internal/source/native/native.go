@@ -188,7 +188,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		result.Findings = append(result.Findings, source.Finding{Code: "cache-unavailable", Severity: "warning", Message: err.Error()})
 		return result, e
 	}
-	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
+	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}, Items: make([]model.Item, 0, len(snapshot.Records))}
 	byPath := map[string]model.Ref{}
 	for _, record := range snapshot.Records {
 		e := record.Err
@@ -202,7 +202,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 			result.Coverage = source.Partial
 			continue
 		}
-		item := record.Item
+		item := *record.Item
 		item.Category = s.options.Statuses[item.Status]
 		result.Items = append(result.Items, item)
 		byPath[record.Path] = item.Ref
@@ -212,8 +212,11 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	}
 	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Ref.ID < result.Items[j].Ref.ID })
 	sort.Slice(result.Findings, func(i, j int) bool { return result.Findings[i].Path < result.Findings[j].Path })
+	// Retain only the generation in the search closure, not the full cache
+	// snapshot and its duplicate item records for the lifetime of the delta.
+	generation := snapshot.Generation
 	result.TextSearch = func(ctx context.Context, text string) (map[model.Ref]bool, error) {
-		paths, e := store.Search(ctx, snapshot.Generation, text)
+		paths, e := store.Search(ctx, generation, text)
 		if e != nil || paths == nil {
 			return nil, e
 		}
