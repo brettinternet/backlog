@@ -7,10 +7,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 07:35'
+updated_date: '2026-10-22 08:07'
 labels:
   - engine
   - perf
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-5
@@ -91,6 +92,8 @@ AC#4: task cli:test PKG=./internal/engine -- -run ^$ -bench ^BenchmarkEngine$ -b
 AC#5: task race PASS in independent verification, and task ci PASS on implementation commit 97f0ece and merged main commit 69e6470, including full race suite; TestSourceIsolationCoverageAndBlockedSubscriber proves an undrained mailbox and blocked source cannot stall other work.
 Independent verifier 3e34f2c9-a998-408c-b63f-1a99e0a274fe returned PASS separately for AC#1 through AC#5, with no acceptance blockers. It independently measured warm filter p95 26.77 ms and 10k edit/create/delete/rename p95 31.95/48.88/28.24/43.48 ms. Residual measurement: first 50k projection 227.1 ms including initial readiness; warmed budget passes.
 Delivery complete: implementation 97f0ece merged to main as 69e6470, preserving concurrent BL-14 changes. task check:staged PASS before implementation commit; task ci PASS on final merged source commit. No tests deleted, skipped or weakened. docs/tui.md reflects the delivered engine contract. Required modified-file deviations are justified above. Worktrunk removed the verified session-owned .worktrees/feat-bl-15-engine checkout and feat/bl-15-engine branch; its exact Herdr workspace wJD had only an idle zsh pane and disappeared after post-remove. wt list now contains only primary main; no task-owned checkout/workspace remains. No push or PR performed. No remaining blocker or resumable implementation step.
+
+Review (31fb5bf): kqueue/inotify waits now block without a 20 ms timeout (EVFILT_USER / eventfd cancellation) to meet the idle ~0% CPU budget; a reload now clears a session archived mark when the item reappears active, so external unarchive is visible. TestCreateArchiveUndoAndShutdown covers the latter (fails before fix). task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
