@@ -41,6 +41,63 @@ func cachePath(root string) string {
 	return cache.New(filepath.Join(root, "cache"), "cache-test", "tasks", filepath.Join(root, "backlog")).Path
 }
 
+// Catches stale startup items, unbounded startup parsing, or a lossy cached
+// preview whose version matches but whose body differs from authoritative data.
+func TestInitialLoadBoundedAndFresh(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for n := 1; n <= 260; n++ {
+		id := fmt.Sprintf("BL-%d", n)
+		write(t, filepath.Join(root, "backlog", id+".md"), fixture(t, id))
+	}
+	var reads atomic.Int64
+	s := cachedSource(t, root, func(path string) ([]byte, error) { reads.Add(1); return os.ReadFile(path) })
+	initial, err := s.LoadInitial(context.Background())
+	if err != nil || initial.Coverage != source.Partial || len(initial.Items) != 256 || reads.Load() != 256 {
+		t.Fatalf("cold initial: items=%d reads=%d coverage=%s err=%v", len(initial.Items), reads.Load(), initial.Coverage, err)
+	}
+	full := cachedLoad(t, s)
+	if len(full.Items) != 260 {
+		t.Fatalf("full load lost items: %d", len(full.Items))
+	}
+	reads.Store(0)
+	warm, err := s.LoadInitial(context.Background())
+	if err != nil || reads.Load() != 0 || !reflect.DeepEqual(warm.Items, initial.Items) {
+		t.Fatalf("warm initial: reads=%d equal=%t err=%v", reads.Load(), reflect.DeepEqual(warm.Items, initial.Items), err)
+	}
+	path := filepath.Join(root, "backlog", "BL-1.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same size and restored mtime must not resurrect the cached title/version.
+	write(t, path, bytes.Replace(data, []byte("Imported"), []byte("Modified"), 1))
+	if err := os.Chtimes(path, now, now); err != nil {
+		t.Fatal(err)
+	}
+	deleted := filepath.Join(root, "backlog", "BL-10.md")
+	if err := os.Remove(deleted); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := s.LoadInitial(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range changed.Items {
+		if item.Ref.ID == "BL-10" {
+			t.Fatal("deleted cached item resurrected")
+		}
+		if item.Ref.ID == "BL-1" && (item.Title != "Modified" || item.Version == initial.Items[0].Version) {
+			t.Fatal("stale initial content/version")
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.LoadInitial(ctx); err != context.Canceled {
+		t.Fatalf("canceled startup: %v", err)
+	}
+}
+
 // Catches a full filename-index rebuild after every atomic item replacement.
 func TestFilenameIndexSurvivesAtomicReplacement(t *testing.T) {
 	t.Parallel()

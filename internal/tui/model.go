@@ -222,7 +222,7 @@ func (m Model) waitSnapshot() tea.Cmd {
 				status := s.Source(id)
 				label := "✓ synced"
 				if status.Coverage != "complete" {
-					label = "~ stale"
+					label = "~ partial"
 				}
 				if status.Coverage == "unknown" {
 					label = "⠋ syncing"

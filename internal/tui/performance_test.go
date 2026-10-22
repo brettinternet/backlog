@@ -42,7 +42,7 @@ func (m measuredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	next, cmd := m.Model.Update(msg)
 	m.Model = next.(Model)
-	if m.ready != nil && !m.loading && m.data.items > 0 && m.applied == m.request {
+	if m.ready != nil && !m.loading && m.data.items > 0 && m.applied == m.request && m.snapshot.Source("tasks").Coverage == "complete" {
 		close(m.ready)
 		m.ready = nil
 	}
@@ -51,7 +51,7 @@ func (m measuredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m measuredModel) View() tea.View {
 	v := m.Model.View()
 	state := "loading"
-	if !m.loading && m.snapshot != nil && m.snapshot.Len() > 0 && m.applied == m.request && m.prepared == m.serial {
+	if !m.loading && m.snapshot != nil && m.snapshot.Len() > 0 && m.applied == m.request && m.prepared == m.serial && m.snapshot.Source("tasks").Coverage == "complete" {
 		state = "ready"
 	}
 	// Replace the header rather than append a row, preserving viewport size.
@@ -60,7 +60,8 @@ func (m measuredModel) View() tea.View {
 	if m.editor.open {
 		query = m.editor.text
 	}
-	lines[0] = fmt.Sprintf("measure %s query=%q cursor=%06d applied=%d soak=%t", state, query, m.selected, m.prepared, m.done)
+	content := !m.loading && m.data.items > 0 && m.applied == m.request && m.prepared == m.serial
+	lines[0] = fmt.Sprintf("measure %s query=%q cursor=%06d applied=%d soak=%t content=%t", state, query, m.selected, m.prepared, m.done, content)
 	v.Content = strings.Join(lines, "\n")
 	return v
 }
@@ -231,7 +232,7 @@ func TestProductionMeasurements(t *testing.T) {
 			if count == 10000 {
 				t.Run("startup", func(t *testing.T) {
 					for _, condition := range []string{"cold", "warm"} {
-						paints, loads := make([]time.Duration, 20), make([]time.Duration, 20)
+						paints, contents, loads := make([]time.Duration, 20), make([]time.Duration, 20), make([]time.Duration, 20)
 						for i := range paints {
 							sampleCache := cache
 							if condition == "cold" {
@@ -242,11 +243,15 @@ func TestProductionMeasurements(t *testing.T) {
 								t.Fatal(err)
 							}
 							paints[i] = time.Since(start)
+							if err := child.WaitFor("content=true", 45*time.Minute); err != nil {
+								t.Fatal(err)
+							}
+							contents[i] = time.Since(start)
 							perfReady(t, child)
 							loads[i] = time.Since(start)
 							stop(child)
 						}
-						t.Logf("%d %s first-paint n=20 p95=%s loaded-list p95=%s", count, condition, percentile(paints), percentile(loads))
+						t.Logf("%d %s n=20 shell p95=%s first-content p95=%s complete-list p95=%s", count, condition, percentile(paints), percentile(contents), percentile(loads))
 					}
 				})
 			}

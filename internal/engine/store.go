@@ -280,8 +280,7 @@ func (st *storeState) begin(job *editJob) {
 	w.jobs <- job
 }
 func (s *Store) runSource(id string, w *sourceWorker) {
-	load := func() {
-		delta, err := w.backend.Load(s.ctx, source.Cursor{})
+	publish := func(delta source.Delta, err error) {
 		s.send(func(st *storeState) {
 			n := st.snapshot.fork()
 			status := SourceState{Coverage: delta.Coverage}
@@ -324,6 +323,15 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			n.sources[id] = status
 			st.publish(n)
 		})
+	}
+	load := func() {
+		delta, err := w.backend.Load(s.ctx, source.Cursor{})
+		publish(delta, err)
+	}
+	if initial, ok := w.backend.(source.InitialLoader); ok {
+		if delta, err := initial.LoadInitial(s.ctx); err == nil && len(delta.Items) > 0 {
+			publish(delta, nil)
+		}
 	}
 	load()
 	for {

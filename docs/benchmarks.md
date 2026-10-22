@@ -267,6 +267,43 @@ not reported as proof of usable backlog availability. The complete-list warm
 miss and directory-change miss also cannot be inferred from the much faster
 in-process viewport-only benchmark.
 
+### First-content startup (BL-54)
+
+2026-10-22, same D26 reference host: Apple M5 Max, 64 GiB, Darwin 27.0.0
+arm64, Go 1.27.3, default GOMAXPROCS=18, seed 1, 120×40, 120 FPS.
+Runtime baseline `76aed64` plus BL-54. No absolute timing assertion was added.
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/10000/startup$' -v -count=1 -timeout=45m
+```
+
+The production PTY run passed in 47.557 s with 20 subprocess samples per
+condition (unmeasured cache population excluded from warm samples):
+
+| 10k startup boundary (p95) | Cold | Warm |
+| --- | ---: | ---: |
+| Initial shell | 21.57 ms | 21.91 ms |
+| First usable list | 46.66 ms | 30.93 ms |
+| Complete source and list | 2,146.05 ms | 164.11 ms |
+
+First usable content now explicitly requires a nonempty, completed projection
+and prepared list, not a loading screen. Full completion additionally requires
+complete source coverage; interaction and soak measurements still wait for that
+boundary. Both first-content budgets pass, and the cold list appears before
+full loading completes. **Complete-load latency has not met the first-content
+thresholds** and is not relabeled as such.
+
+The source worker first publishes at most 256 complete items in native filename
+order. It reads at most two cached gob batches, validates each reused item's
+current file identity, and parses missing or changed items directly. The partial
+source badge remains visible; readiness, ranking and counts reflect only loaded
+items, missing dependency targets are unknown, and later full results preserve
+the selected item where possible. This is a usable partial list, not a promise
+that the full default Next ranking is already known. Details and writes retain
+full item data and authoritative version checks. A full load always follows,
+including all stat validation, findings, cache refresh and FTS indexing. The
+preview neither updates cache metadata nor changes the search generation.
+
 ### Cold-cache correction
 
 The original 10k cold completed-list p95 was 62,859.37 ms; the 50k initial
