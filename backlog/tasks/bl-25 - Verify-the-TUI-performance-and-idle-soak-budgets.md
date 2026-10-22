@@ -4,6 +4,7 @@ title: Verify the TUI performance and idle-soak budgets
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - perf
   - tui
@@ -57,3 +58,12 @@ Use the BL-14 PTY harness and BL-12 fixtures to measure every TUI row in §11 on
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Use the merged BL-12 fixtures, BL-14 PTY harness and complete BL-16–24 TUI. Record the commit, host, terminal size, seed, sample count and warm/cold conditions.
+2. Measure every design.md §11 TUI/RSS row, held-key release and a full one-hour idle soak with input after the soak. Run long measurements as a managed job, not a sleep/poll loop in bash.
+3. Write p95/results and reproduction commands to docs/benchmarks.md. Fix failures in scope; if a miss requires separate work, record its measurement and obtain approval for the follow-up without checking the unmet criterion. Run task test, task race and task ci after fixes; never convert absolute budgets into default CI timing assertions.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

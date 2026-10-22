@@ -4,6 +4,7 @@ title: 'Add the read commands: ls, show, and next'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - cli
   - agents
@@ -57,3 +58,12 @@ Agents and scripts need fast, stable, short read commands (D19). These freeze th
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Compose project discovery, source reads, query, readiness, and ranking behind engine entry points; do not make CLI handlers access sources directly. Resolve short and source-qualified IDs with explicit ambiguity/not-found errors.
+2. Implement ls/show/next, bounded terminal tables, section selection and JSON data shapes. Introduce one shared text sanitizer reused later by the TUI; raw stored content must remain untouched.
+3. Pin public JSON and ID behavior with CLI tests; check CSI/OSC stripping and included/excluded explanation output. Run task test and direct commands against a temporary native backlog; create docs/cli.md and freeze read command names in design.md.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

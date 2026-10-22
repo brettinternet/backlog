@@ -4,6 +4,7 @@ title: Probe Jira Cloud API behavior on an approved test project
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - jira
   - spike
@@ -63,3 +64,12 @@ Record the results in `docs/providers/jira.md`, separating observations from unk
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Do not start without the owner-approved site, disposable project(s), accountId, permitted operations and private credential-helper reference. Confirm cleanup permissions before creating anything.
+2. Run bounded probes with synthetic issues, recording requests' non-secret shapes, observations, stable IDs and cleanup inventory. Separate observed behavior from undocumented assumptions; do not induce disruptive rate-limit traffic.
+3. Remove every created issue and verify removal, then write docs/providers/jira.md covering each requested probe, unknowns and stable identity/version decisions. Update design.md §10; run relevant doc checks and record evidence. BL-41 remains blocked until this evidence exists.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

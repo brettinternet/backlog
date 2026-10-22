@@ -4,12 +4,15 @@ title: Sync GitHub Issues with Projects v2 status
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - github
   - source
+  - human
 milestone: m-3
 dependencies:
   - BL-35
+  - BL-32
 references:
   - >-
     https://github.com/brettinternet/worklease/blob/v1.9.3/docs/work-queue-tui-proposal.md
@@ -53,3 +56,18 @@ Port Worklease v1.9.3 `internal/queue/github.go`:
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Before starting, satisfy the owner-access gate in Implementation Notes. Port Worklease v1.9.3 github.go, github_projects.go and github_write.go onto BL-35 scheduling/credentials and BL-32 key policies, not its recovery journal.
+2. Implement paged reads, typed edges, Projects status mapping and reconciliation independent of issue updatedAt. Add capability/version-checked writes and stable repository/issue claim identity.
+3. Use fake-server tests for pagination, 304, secondary limits, project-only changes and write conflicts; run task test. Then run the required opt-in round trip only in the approved disposable repository/project, recording created IDs and cleanup. Never use or log a token directly; document scopes and credential-helper argv.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner-access gate: AC#3 requires a real GitHub round trip. Before selecting this task, the owner must authorize a disposable repository and (for Projects v2 writes) project, permitted create/update/close/delete cleanup operations, and an account credential-helper reference with required scopes. Never request a token in chat. Remove the human label only after these non-secret details and cleanup authority are recorded here. Fake-server implementation remains required; a skipped live test does not satisfy AC#3.
+<!-- SECTION:NOTES:END -->

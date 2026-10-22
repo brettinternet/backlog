@@ -4,6 +4,7 @@ title: 'Add init, check, and renumber'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - cli
   - format
@@ -55,3 +56,12 @@ New projects need one-command setup. CI and agents need a validator. Concurrent 
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement init without overwriting existing config. Add check findings directly from the format validation table, including active/archive duplicates, graph cycles and status lookup.
+2. Implement only documented --fix repairs under the write lock. Renumber must preflight the destination and all affected reference edits (including archived and qualified refs) before changing files; fail visibly without silently corrupting a partially repaired graph.
+3. Exercise every finding code, idempotent init, restricted fixes, target collision and reference rewrite through CLI fixtures. Document duplicate disambiguation and recovery behavior before freezing renumber syntax; run task test and direct init/check in a temporary repository.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

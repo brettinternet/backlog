@@ -4,12 +4,14 @@ title: Manage views as tabs and persist UI state
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
   - config
 milestone: m-1
 dependencies:
   - BL-18
+  - BL-17
 references:
   - docs/tui.md
   - docs/design.md
@@ -52,3 +54,12 @@ Backlog.md puts each view behind a separate command. In `bl`, views are tabs in 
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Build per-view state on BL-16 tabs and BL-17 detail, merging built-in/project/user views in documented order. Preserve selections by stable ref, not row index.
+2. Implement ctrl-s as a minimal config edit (user by default), and atomically persist per-project UI state in XDG state off the update loop. Missing items or unavailable layouts need a safe fallback; board/tree arrive later.
+3. Verify isolated restart restoration, view switching, minimal config diffs and corrupt-state warnings through task test and a recorded terminal round trip. Update docs/tui.md with merge/order and fallback rules.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

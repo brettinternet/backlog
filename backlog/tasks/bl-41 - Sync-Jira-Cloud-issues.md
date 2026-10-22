@@ -4,6 +4,7 @@ title: Sync Jira Cloud issues
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - jira
   - source
@@ -30,7 +31,7 @@ ordinal: 41000
 A Jira Cloud source built on the BL-40 evidence:
 
 - Site and JQL scope (a project or saved filter), with API-token credentials through the account helper.
-- Coverage reported as estimated or unknown.
+- Coverage uses the shared complete/partial/unknown contract; an estimated result is partial with evidence, never proof of deletion.
 - Configured link types as hard edges.
 - Raw status kept beside `statusCategory` and resolution. A done status with an unsuccessful resolution maps to `canceled`.
 - Writes: transitions discovered per issue, comments, and single-assignee replacement with confirmation.
@@ -56,3 +57,12 @@ Jira Data Center is out of scope.
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read BL-40's observed Jira behavior before implementing; do not substitute GitHub/Linear assumptions. Reuse BL-35 trust, credentials, scheduling and coverage types (complete/partial/unknown); describe estimated coverage as partial with evidence, not a new unrecognized enum.
+2. Implement JQL paging, stable site/numeric identity, configured directional hard links and raw status/resolution mapping. Discover transitions per issue and check expected versions before transitions/comments/assignee replacement.
+3. Use fake-server tests for paging, rate limits, permission loss, project moves, canceled mapping and unsupported transitions. Run task test and document scopes, confirmation semantics and Data Center exclusion; do not require an additional live environment beyond approved BL-40 evidence.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

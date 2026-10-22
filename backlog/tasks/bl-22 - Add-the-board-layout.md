@@ -4,11 +4,14 @@ title: Add the board layout
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
 milestone: m-1
 dependencies:
   - BL-20
+  - BL-19
+  - BL-21
 references:
   - docs/tui.md
 modified_files:
@@ -48,3 +51,12 @@ The tui.md board layout:
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Use worker-prepared grouped rows for status or other grouping; implement column-local viewport/selection and horizontal scrolling with O(visible cards) rendering.
+2. Route card status moves through the shared mutation pipeline, keeping selection on the stable ref through optimistic re-projection and failures. Wire BL-21 quick-add defaults to the focused column when grouped by status.
+3. Verify empty columns, non-status grouping, move/rollback selection and board quick-add status via model/integration tests. Capture 80/160-column views and measure visible-card render scaling at 50k; run task test and update docs/tui.md.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

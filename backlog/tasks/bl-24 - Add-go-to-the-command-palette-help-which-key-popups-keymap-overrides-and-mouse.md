@@ -6,11 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
 milestone: m-1
 dependencies:
   - BL-20
+  - BL-19
+  - BL-21
+  - BL-22
+  - BL-23
 references:
   - docs/tui.md
 modified_files:
@@ -54,3 +59,12 @@ The default keymap must equal the tables in docs/tui.md, the documented source o
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Consolidate existing bindings/menus into one action registry for palette, searchable help and which-key; keep capability-disabled reasons. Include only actions implemented so far and let later tasks extend the registry.
+2. Implement async cache-backed go-to including archived items, key overrides/conflict detection and mouse routing for rows/tabs/headers/divider. Do not load or scan all archived items on the update loop.
+3. Verify keymap/spec parity including BL-18's collision resolution, override conflicts, palette equivalence and mouse transitions through model tests. Run task test, capture help/palette views and record 50k go-to latency.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

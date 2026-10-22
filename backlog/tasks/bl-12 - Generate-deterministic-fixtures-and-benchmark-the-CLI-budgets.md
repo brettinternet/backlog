@@ -4,6 +4,7 @@ title: Generate deterministic fixtures and benchmark the CLI budgets
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - perf
   - tooling
@@ -11,6 +12,7 @@ milestone: m-0
 dependencies:
   - BL-7
   - BL-11
+  - BL-8
 references:
   - docs/design.md
   - docs/development.md
@@ -55,3 +57,12 @@ The §11 budgets are acceptance criteria (D26), so every later task needs a repr
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement seeded deterministic fixtures with a fixed clock, realistic graphs/bodies and Unicode titles; expose cmd/bl-fixtures with documented seed/count/output arguments.
+2. Wire task bench to opt-in cold/warm load, ls/next/show and single-field-write measurements at 10k/50k, with warm-up and multiple samples for p95. Use BL-8 writes rather than a benchmark-only mutation implementation.
+3. Run deterministic tree-hash verification under task test, then task bench on the design.md D26 reference host. Record host/toolchain/seed, exact commands and each CLI budget in docs/benchmarks.md. A miss is not a pass: diagnose/fix within scope or record measured follow-up and keep unmet acceptance visible.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

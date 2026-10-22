@@ -4,6 +4,7 @@ title: Read and write Backlog.md backlogs directly
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - backlog-md
   - source
@@ -56,3 +57,12 @@ Some repositories can't move off Backlog.md, such as team repositories. `bl` sho
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Reuse BL-10's Backlog.md decoder/mapping and study Worklease v1.9.3 backlog_write.go. Add minimal-diff expected-version writes using original Backlog.md field/section conventions, not native serialization.
+2. Implement capability declarations and padded/slugged creation rules with collision-safe allocation. Keep auto-detected unconfigured Backlog.md sources read-only; do not call its CLI from production code.
+3. Run golden mutation/create tests and fixture fuzzing, then opt-in compatibility checks against the pinned Backlog.md version in an isolated copy. Run task test; document exact supported fields/operations and unsupported reasons.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

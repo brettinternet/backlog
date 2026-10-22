@@ -4,6 +4,7 @@ title: Compute readiness and next ranking with explanations
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - engine
   - readiness
@@ -31,7 +32,7 @@ Backlog.md gives agents no reliable answer to "what's next". `bl` ranks determin
 
 `internal/engine` readiness over an item set and the ready config:
 
-- Candidate rules, readiness values, and reasons, exactly as §6 states. A known unsatisfied blocker means `blocked` even when other edges are unknown. Cross-source or unresolved references are `unknown`.
+- Candidate rules, readiness values, and reasons, exactly as §6 states. A known unsatisfied blocker means `blocked` even when other edges are unknown. Cross-source references resolve when their target is present in the supplied snapshot. Missing, unresolved, or stale targets are `unknown`; source qualification alone does not make an edge unknown (format.md#frontmatter-keys).
 - Claims come in as an input (`none`, `mine`, `others`, `unknown`) so BL-32 can plug in Worklease without changing the rules.
 - Total, deterministic ranking: priority, rank, unblock impact (open items transitively blocked, counted once, safe on cycles), created, natural ID.
 - A machine-readable explanation per item and the text form `high · rank a3 · unblocks 4 (BL-9, BL-12, +2)`.
@@ -55,3 +56,12 @@ Backlog.md gives agents no reliable answer to "what's next". `bl` ranks determin
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement a pure readiness calculation from items, config, identity, coverage, and claim inputs. Resolve cross-source edges when present in the supplied snapshot; only unresolved/stale edges are unknown. Keep known unsatisfied blockers dominant over unknown edges.
+2. Compute cycle-safe distinct transitive unblock impact and total ranking; break natural-ID equivalence deterministically by source/ref when needed. Generate structured and display explanations from the same result.
+3. Use table cases for reasons and shuffled-input ranking, plus shared descendants and cycles. Run task test and a 50k-item/100k-edge benchmark; record the command and timing without a wall-clock assertion in default tests.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

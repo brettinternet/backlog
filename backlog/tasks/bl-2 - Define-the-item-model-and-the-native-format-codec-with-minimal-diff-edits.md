@@ -4,6 +4,7 @@ title: Define the item model and the native format codec with minimal-diff edits
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - model
   - format
@@ -61,3 +62,12 @@ A YAML AST that keeps comments (for example `github.com/goccy/go-yaml`) can loca
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read all of docs/format.md and design.md §4.2. Implement the shared model and document parser retaining original bytes and section/key spans; do not reserialize untouched YAML.
+2. Implement canonical creation, minimal splices, section/comment/criterion edits, and inverses capturing original representation, not just normalized values. Treat updated as the sole permitted inverse difference.
+3. Extend golden fixtures for each edit kind, CRLF, unknown YAML, fences, malformed input, and duplicate sections. Add parser/round-trip fuzz targets; run task test and each fuzz target separately for 60s (use an exact anchored target name). Freeze docs/format.md only after reconciling the fixtures.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

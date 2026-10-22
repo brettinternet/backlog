@@ -4,6 +4,7 @@ title: 'Create and edit items with quick-add, forms, and $EDITOR'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
 milestone: m-1
@@ -50,3 +51,12 @@ Fast capture and comfortable long-form editing close the remaining gaps in the e
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Reuse BL-6 quick-add and BL-8 editor machinery for n/N, full forms, description/full-item editing, comments and notes. Carry parent and optional board-column status as explicit defaults.
+2. Suspend/resume the terminal around the editor outside Update. Implement version-conflict choices explicitly: keep theirs makes no write; keep yours uses a newly checked version, never an unchecked overwrite; reopen retains both versions.
+3. Exercise form validation and each editor transition after implementation with a fake editor, plus a PTY terminal-restoration test. Verify parser parity through CLI and TUI; run task test. BL-22 owns connecting the optional column default to the board.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

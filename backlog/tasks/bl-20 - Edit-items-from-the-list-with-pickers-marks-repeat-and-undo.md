@@ -4,6 +4,7 @@ title: 'Edit items from the list with pickers, marks, repeat, and undo'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
 milestone: m-1
@@ -55,3 +56,12 @@ Editing in Backlog.md means rewriting the document. In `bl`, every common edit i
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Route all in-scope edit keys through BL-15 mutations; add fuzzy capability-aware pickers, marks/ranges and batch outcomes without duplicating engine validation.
+2. Implement repeat as a repeatable operation on current targets, not a stale captured item/version; use engine undo/redo. Keep selection, criteria-space and mark-space contexts distinct; show pending/failure/conflict details.
+3. Add yank/OSC52 and safe URL opening. Verify key routing and unsupported-capability reasons with model tests, native undo/redo with an integration test, and branch-name clipboard bytes; run task test and capture representative picker/error views.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

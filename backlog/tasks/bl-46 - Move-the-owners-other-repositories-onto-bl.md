@@ -4,6 +4,7 @@ title: Move the owner's other repositories onto bl
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - import
   - human
@@ -56,3 +57,12 @@ For each chosen Backlog.md repository (hum, worklease, tell, noon, and others):
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Wait for the owner to name repositories, order, per-repository approval and the required Git delivery policy. This task does not authorize touching arbitrary sibling repositories.
+2. For each approved repository, inspect its own AGENTS.md and current task writers/claims, export the full provider state and rehearse import/check/comparison in a temporary location before cutover.
+3. Reuse BL-26's safe provider handoff and wrappers, retain a recoverable old-format copy, verify all fields/checks/dependencies and one real task loop, then commit separately in that repository. Record commit IDs, commands and retained backups here; do not push without explicit permission.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

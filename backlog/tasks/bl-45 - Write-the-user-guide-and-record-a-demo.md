@@ -4,12 +4,16 @@ title: Write the user guide and record a demo
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - docs
 milestone: m-4
 dependencies:
   - BL-25
   - BL-32
+  - BL-10
+  - BL-31
+  - BL-44
 references:
   - README.md
   - docs/design.md
@@ -51,3 +55,12 @@ ordinal: 45000
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Write the quickstart/guide against merged commands and link the actual docs, covering init/import, TUI, agent loop, config, hooks/actions and Worklease. Distinguish executable examples from owner-only install/auth/publication instructions.
+2. Build a deterministic VHS tape using BL-12 fixtures, fixed seed/time/terminal/theme and no real provider data; document required local tools and regeneration command.
+3. Run executable shell examples in temp HOME/XDG/project directories with fake external commands where necessary; never run installation/auth or real agent launches as doctests. Render/review the GIF, run task test and verify doc links; keep examples and transcript assertions synchronized.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

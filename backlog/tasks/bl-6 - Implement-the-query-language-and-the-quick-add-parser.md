@@ -4,6 +4,7 @@ title: Implement the query language and the quick-add parser
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - query
 milestone: m-0
@@ -57,3 +58,12 @@ Source pushdown waits for the first remote source (BL-35). Do not add the interf
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read docs/query.md and the quick-add section of docs/tui.md. Implement positioned AST parsing and evaluation using injected time and readiness; keep query-context defaults (such as ls adding is:open) out of the pure parser.
+2. Implement sort/group and snapshot completion, then the shared quick-add tokenizer including escaped literal tokens. changed: is available only with mutation context; claim/pending inputs must not require Worklease or the later TUI to exist.
+3. Verify parsing, evaluation, sorting and quick-add with table tests, then run separate 60s fuzz sessions for both parsers. Freeze docs/query.md with exact text-match semantics so BL-11 can preserve equivalence through FTS; defer provider pushdown to BL-35.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

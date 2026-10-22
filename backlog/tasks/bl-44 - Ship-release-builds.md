@@ -4,6 +4,7 @@ title: Ship release builds
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - release
   - tooling
@@ -57,3 +58,12 @@ Pushing the first tag and updating the Homebrew tap (`brettinternet/homebrew-tap
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read the local hum release workflow/install script/tests and record the source commit used. Port only the tag-CI gate, git-cliff notes, static target matrix, metadata and checksum publication needed here.
+2. Add task release:snapshot for a local nonpublishing build of all four targets, plus installer checksum verification. Do not push a tag, publish a release, alter the tap or require production credentials to finish this task.
+3. Run release:snapshot and installer tests with local artifacts including a corrupted download; verify the workflow gate rejects missing/failed/wrong-SHA CI evidence through a testable local check. Run task ci and document the separate owner publishing/tap checklist.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

@@ -4,6 +4,7 @@ title: Serve MCP over stdio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - mcp
   - agents
@@ -53,3 +54,12 @@ ordinal: 27000
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Expose the already-shipped engine operations through the Go MCP SDK with shared validation/types and reason codes. Keep stdout exclusively for MCP frames; route diagnostics to stderr.
+2. Add instructions as a resource and the foundation tool set only. BL-31/32 own action/claim/release registration; do not advertise unimplemented tools.
+3. Verify tool success/error behavior and CLI-option parity in-process, then initialize/list/call over a subprocess stdio connection. Run task test; document actual tool schemas and pi/Claude setup in docs/mcp.md using current host documentation.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

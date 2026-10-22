@@ -4,6 +4,7 @@ title: Import Backlog.md backlogs
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - import
   - backlog-md
@@ -61,3 +62,12 @@ The owner's repositories use Backlog.md 1.52. Moving them, starting with this on
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read Worklease v1.9.3 internal/queue/backlog*.go and the source format evidence. Implement a reusable Backlog.md decoder/mapping for BL-36, distinct from the native codec; never invoke backlog from production bl code.
+2. Build and validate an import manifest before writes: preserve IDs/relationships, all body sections and checks, unknown metadata, and stable ordinal ordering; reject case/ID collisions and non-empty destinations. Report skipped content and dry-run decisions.
+3. Use copies of Worklease v1.9.3 docs/backlog and the local hum backlog, never mutate those repositories. Record the exact hum commit used and keep synthetic regression fixtures in this repo. Run import and bl check with field-by-field before/after comparison, plus task test; document mapping and any unavailable corpus as a blocker, not a passing check.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

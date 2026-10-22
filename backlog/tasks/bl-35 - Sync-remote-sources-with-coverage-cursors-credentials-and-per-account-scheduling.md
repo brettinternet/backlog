@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - source
   - cache
@@ -63,3 +64,12 @@ Port `scheduler.go` and `credential_helper.go` from Worklease v1.9.3 `internal/q
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Port only needed scheduler/credential-helper behavior from Worklease v1.9.3; use its provider probes and tests as evidence, not current main. Extend existing engine/cache contracts for explicit coverage and durable cursors.
+2. Implement serialized host/account scheduling, cancellation, quota headers/ETags and memory-only account credentials behind trust. Partial/stale snapshots must retain unseen rows and unresolved dependencies.
+3. Use fake HTTP/sources to verify account isolation, rate limits, honest coverage, warm paint before network and credential canaries in every sink. Add pushdown only for exercised predicates with local parity checks; run task test and task race and document source failure/retry state.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

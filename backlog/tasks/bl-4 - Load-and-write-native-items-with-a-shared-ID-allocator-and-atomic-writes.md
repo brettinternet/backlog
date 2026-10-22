@@ -4,6 +4,7 @@ title: Load and write native items with a shared ID allocator and atomic writes
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - source
   - format
@@ -56,3 +57,12 @@ Agents in different worktrees create items concurrently, so IDs must be unique w
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement the design.md §4.3 Source contract and native backend using BL-2 documents and BL-3 roots. Return per-file findings and explicit coverage; archive loading is opt-in.
+2. Under the shared repository lock, seed/reconcile the allocator against active and archived IDs, check expected content hashes, and publish same-directory temp files using fsync/rename. Preserve originals and clean owned temporary files on failure; never reuse an archived ID.
+3. Verify the public source API with stale-version/failing-write cases and an actual subprocess concurrency harness creating 400 items from two temporary linked worktrees. Exercise byte-preserving archive/unarchive and bad-file isolation; run task test and task race.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

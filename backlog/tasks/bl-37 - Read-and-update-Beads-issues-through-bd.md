@@ -4,6 +4,7 @@ title: Read and update Beads issues through bd
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - beads
   - source
@@ -53,3 +54,12 @@ Document the field and edge mapping.
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Port Worklease v1.9.3 beads.go and beads_write.go, retaining bulk dependency reads and version checking while dropping receipts/recovery. Keep executable argv/context bounded and cancellable.
+2. Use --readonly --sandbox only for reads; write with the provider's supported update/comment commands after checking expected version. Map only blocks as hard edges and expose truthful capabilities.
+3. Verify bulk process count independent of N, mapping, malformed JSON and write conflicts through a fake bd executable. Run task test and an opt-in isolated bd 1.3.0 round trip; record installation/setup requirements and avoid touching any real user database.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

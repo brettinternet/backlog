@@ -4,6 +4,7 @@ title: Render the detail pane asynchronously
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
   - perf
@@ -54,3 +55,12 @@ Synchronous Markdown rendering on navigation is a known cause of held-key lag (Â
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement detail focus/open/close and responsive pane geometry with tabs backed by selected ref/version. Update cheap header fields immediately; queue full Read and Markdown rendering only after selection settles.
+2. Use cancellation/generation checks and a version/width/theme cache so late results cannot paint the wrong item. Bound huge bodies and load comments lazily; relations read live snapshot state.
+3. Verify no render during held navigation, cache reuse/invalidation, live relations and responsiveness during large-body work with counters and model tests. Capture all tabs at 80/120 columns and run task test plus focused PTY checks.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

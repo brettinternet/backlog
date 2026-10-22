@@ -4,11 +4,13 @@ title: Add the tree layout
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
 milestone: m-1
 dependencies:
   - BL-20
+  - BL-19
 references:
   - docs/tui.md
 modified_files:
@@ -49,3 +51,12 @@ The tui.md tree layout:
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Build hierarchy/ancestor closure, child progress and cycle findings in the projection worker, never during Update/View. Define progress over unique descendants to avoid double counting.
+2. Implement visible-row flattening and h/l/fold navigation preserving stable selection. Filtered trees retain context ancestors; high-contrast mode must not rely on faint styling.
+3. Verify deep navigation, filtered ancestry and cyclic input termination with model tests; measure viewport-bounded rendering at 50k. Run task test and document progress/fold behavior in docs/tui.md.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

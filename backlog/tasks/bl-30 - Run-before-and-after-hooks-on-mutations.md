@@ -4,6 +4,7 @@ title: Run before and after hooks on mutations
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - hooks
   - security
@@ -53,3 +54,12 @@ The §8 hooks: `on`, an `if` query (including `changed:`), `phase`, `run` argv, 
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Insert before hooks before any source write/optimistic publish and after hooks only after confirmed success/events. Reuse query changed-field context and the trust gate.
+2. Implement argv-only execution with placeholder validation, a minimal allowlisted environment, stdin context, bounded timeout/concurrency and depth propagation. Keep CLI detached-runner lifecycle/logging explicit so child completion cannot corrupt command stdout or require the parent process.
+3. Verify veto/timeout write-nothing behavior, after-hook responsiveness/logging, credential canaries, depth 4 refusal and literal shell metacharacters. Run task test and task race; document runner/log/error behavior and TUI failure reporting.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

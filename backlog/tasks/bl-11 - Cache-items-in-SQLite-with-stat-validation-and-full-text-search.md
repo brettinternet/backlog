@@ -4,6 +4,7 @@ title: Cache items in SQLite with stat validation and full-text search
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - cache
   - perf
@@ -61,3 +62,12 @@ The cache must never be needed for correctness (D22). Deleting it only costs tim
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement a disposable versioned SQLite WAL cache under isolated XDG cache. Key by project/source/path and validate native rows using the specified stat identity; source files remain authoritative.
+2. Serialize refresh across processes, publish rows/cursors atomically, and recover corrupt/schema-mismatched databases. Implement FTS as an optimization of BL-6 text semantics, post-filtering if needed rather than changing matches.
+3. Verify warm zero-read counters, filesystem changes (including same-size edits), corrupt recovery, two-process single-flight behavior, and FTS/evaluator parity through task test and task race. Ensure CLI reads actually use the cache without routing source access into handlers.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

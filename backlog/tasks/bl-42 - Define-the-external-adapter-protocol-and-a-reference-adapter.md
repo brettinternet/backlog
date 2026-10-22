@@ -4,6 +4,7 @@ title: Define the external adapter protocol and a reference adapter
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - external
   - source
@@ -54,3 +55,12 @@ ordinal: 42000
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read Worklease v1.9.3 docs/external-adapter-protocol.md and external_* implementation. Specify only initialize/manifest, capabilities, paged load/read/apply with versions, cancellation and bounds; exclude receipts and recovery.
+2. Implement the trusted argv-only host with frame/response limits, timeout/cancellation and bounded restart backoff, then a minimal reference adapter and bl adapter check sharing the same validator.
+3. Exercise a real child process for valid reference traffic and malformed/oversize/version/capability/hang/crash cases. Prove untrusted config cannot spawn it; run task test and fuzz frames. Freeze schemas and failure semantics in docs/external-adapter-protocol.md.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

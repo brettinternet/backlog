@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - engine
   - perf
@@ -15,6 +16,7 @@ dependencies:
   - BL-6
   - BL-8
   - BL-11
+  - BL-12
 references:
   - docs/design.md
 modified_files:
@@ -64,3 +66,12 @@ The TUI must never wait (D14, D15). That needs immutable snapshots, projections 
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Extend, do not duplicate, BL-8's mutation path. Implement immutable snapshots and per-source workers, then latest-wins projection jobs with generation IDs and cancellation; prepare rows outside UI callbacks.
+2. Add optimistic pending state, confirmed replacement, rollback/conflict state, and inverse-based undo/redo. Reject stale worker completions and do not let a failed older mutation overwrite newer state.
+3. Implement directory-entry notifications, a low-rate stat sweep, EMFILE polling fallback and latest-value subscriptions. Use deterministic fakes/counters for cancellation, blocked subscribers and shutdown; run task test and task race, then opt-in BL-12 fixture measurements for 80ms projections and 150ms external updates.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

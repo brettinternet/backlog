@@ -4,6 +4,7 @@ title: 'Spike: confirm Bubble Tea v2 against the TUI budgets'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - spike
   - tui
@@ -11,6 +12,7 @@ labels:
 milestone: m-1
 dependencies:
   - BL-1
+  - BL-12
 references:
   - docs/design.md
   - docs/tui.md
@@ -59,3 +61,12 @@ Record the results and decisions in `docs/spikes/tui-stack.md`. Keep the PTY har
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read design.md §11 and reuse BL-12 seeded fixtures for 10k/50k measurements. Build only a reusable virtualized prototype and PTY harness, with coalesced navigation and async detail.
+2. Compare the two renderer choices on 1/10/100 KB bodies; measure Update+View, PTY p95, 40Hz held-key release and ten-minute idle CPU/heap/goroutines on the reference host. Record exact commands and dependencies for later agent execution.
+3. Write docs/spikes/tui-stack.md with results and a clear stack/renderer decision; a budget miss needs diagnosis before accepting the stack. Keep reusable harness code, not dead prototype code; run task test and update D3 in the implementation commit if evidence changes it.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

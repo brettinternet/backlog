@@ -4,6 +4,7 @@ title: 'Filter, sort, and group from the list'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - tui
   - query
@@ -52,3 +53,12 @@ Clunky filtering, sorting, and search are a core Backlog.md complaint. Every one
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Connect query editing/completion and filter/sort/group menus to BL-15's latest-wins worker. Keep last valid rows on parse errors, enter commits, and esc restores the prior query.
+2. Resolve the draft keymap's duplicate za before coding: reserve za for fold and use zA for assignee grouping, updating docs/tui.md in the same implementation change. Keep one binding source for menus and later help.
+3. Implement matching highlights without unsafe provider escape sequences. Verify menu routing, apply/cancel/error transitions and stale projection rejection with model tests; run task test and opt-in 50k keystroke-to-list measurements.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

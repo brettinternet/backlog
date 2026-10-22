@@ -4,6 +4,7 @@ title: 'Establish the CLI skeleton, JSON envelope, exit codes, and test isolatio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - cli
   - tooling
@@ -58,3 +59,12 @@ Reuse patterns from Worklease v1.9.3 `internal/output`, `internal/reason`, and `
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Inspect cmd/bl/main.go, .taskfiles/cli.yaml, and Worklease v1.9.3 internal/output, internal/reason, and internal/testkit. Preserve the existing buildVersion/buildCommit ldflags contract; introduce only the helpers this CLI uses.
+2. Implement an injectable internal/cli runner with urfave/cli/v3, -C, version, help, one JSON envelope, and typed reason-to-exit mapping. Keep diagnostics off JSON stdout; bare bl remains help until BL-16.
+3. Add testkit isolation before using config/state in tests. Verify success/error serialization, usage failures, every exit mapping, and environment isolation through the runner; run task test, task cli:build, and task smoke, then execute bin/bl --json version and an invalid command.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

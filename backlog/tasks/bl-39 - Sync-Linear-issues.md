@@ -4,12 +4,15 @@ title: Sync Linear issues
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:46'
 labels:
   - linear
   - source
+  - human
 milestone: m-3
 dependencies:
   - BL-35
+  - BL-32
 references:
   - >-
     https://github.com/brettinternet/worklease/blob/v1.9.3/docs/work-queue-tui-proposal.md
@@ -53,3 +56,18 @@ Port Worklease v1.9.3 `internal/queue/linear.go`:
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Before starting, satisfy the owner-access gate in Implementation Notes. Port Worklease v1.9.3 linear.go and linear_write.go onto BL-35 and BL-32, retaining organization/UUID identity separately from display identifiers.
+2. Implement pages capped at 250, overlapping cursor scans, relation reconciliation and directional hard edges. Apply writes only with capability/version checks; use shared scheduler and credentials.
+3. Use fake-server regressions for moving-cursor omissions, relation-only changes, paging and conflicts; run task test. Run the mandatory opt-in round trip in the approved test team, track/clean synthetic issues, and record evidence without credentials. Document scopes and helper configuration.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner-access gate: AC#3 requires a real Linear round trip. Before selecting this task, the owner must authorize a disposable test team, permitted issue/comment/relation operations and cleanup, and a private credential-helper reference. Never request the API key in chat. Remove the human label only after the non-secret test scope and cleanup authority are recorded here. Fake-server implementation remains required; a skipped live test does not satisfy AC#3.
+<!-- SECTION:NOTES:END -->

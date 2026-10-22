@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - cli
   - agents
@@ -59,3 +60,12 @@ Agents must edit the backlog with short commands instead of rewriting documents 
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Build the synchronous engine mutation entry point around config/capability validation and expected versions. Reuse it for all write handlers; leave async optimism, hooks and claims to their owning tasks.
+2. Implement the listed commands with stdin support and explicit per-ID batch outcomes. Editor workflows capture the original version before launch, use a temporary edit buffer, validate before apply, and retain recoverable edited content on conflict.
+3. After implementation, exercise every command through the CLI with golden file diffs and fake-editor conflict/invalid-save cases. Document which batch failure determines the overall exit code, defaults and stdin behavior in docs/cli.md; run task test and freeze write names in design.md.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->

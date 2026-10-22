@@ -4,6 +4,7 @@ title: Record events and stream them with bl events
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
+updated_date: '2026-10-22 01:45'
 labels:
   - events
   - agents
@@ -57,3 +58,12 @@ Other tools coordinate around `bl` through an event stream instead of plugins (D
 - [ ] #5 No test was deleted, skipped, or weakened
 - [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add locked, bounded JSONL appends and rotation under XDG state, using the shared mutation-success point so CLI/TUI/MCP do not emit duplicate events.
+2. Persist external-change deduplication by project/source/ref/version across processes. Implement since/follow across rotations with stable event IDs and an explicit streaming JSON contract distinct from one-shot command envelopes.
+3. Verify one event per mutation, eight-process valid appends, resume across rotation and duplicate external observations. Use injected time/observable conditions rather than sleeps; run task test and task race, record follow latency, and freeze the schema/stream format in docs/events.md.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+<!-- SECTION:PLAN:END -->
