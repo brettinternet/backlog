@@ -384,7 +384,18 @@ func TestNativeUndoRedoAndExternalHistoryGap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	i, _, _ := s.Current().Get(ref)
+	initial := s.Current()
+	// Sharing native records must not let caller-owned Get/Items collections
+	// corrupt the source, nor let later edits rewrite an older snapshot.
+	i, _, _ := initial.Get(ref)
+	originalBody := i.Description
+	i.Fields["custom"].([]any)[0] = "corrupt"
+	items := initial.Items()
+	items[0].Fields["custom"].([]any)[1] = "corrupt"
+	i, _, _ = initial.Get(ref)
+	if fmt.Sprint(i.Fields["custom"]) != "[one two]" || !strings.HasSuffix(i.Description, "A body.") {
+		t.Fatalf("shared native snapshot aliases caller memory or lost body data: fields=%v description=%q", i.Fields["custom"], i.Description)
+	}
 	requireSuccess(t, s.Mutate(change(i, "First")))
 	first, _ := os.ReadFile(path)
 	i, _, _ = s.Current().Get(ref)
@@ -417,6 +428,10 @@ func TestNativeUndoRedoAndExternalHistoryGap(t *testing.T) {
 	got, _ := os.ReadFile(path)
 	if !bytes.Contains(got, []byte("External")) {
 		t.Fatal("external bytes overwritten")
+	}
+	before, _, _ := initial.Get(ref)
+	if before.Title != "Original" || before.Description != originalBody || fmt.Sprint(before.Fields["custom"]) != "[one two]" {
+		t.Fatal("edit or refresh mutated the older shared snapshot")
 	}
 }
 

@@ -83,12 +83,17 @@ func (s *eventSource) Load(ctx context.Context, c source.Cursor) (source.Delta, 
 			}
 			if hasArchive {
 				items := make([]model.Item, 0, len(result.Items))
-				for _, item := range result.Items {
+				var shared []*model.Item
+				for n, item := range result.Items {
 					if !result.Archived[item.Ref] {
 						items = append(items, item)
+						if len(result.ImmutableItems) == len(result.Items) {
+							shared = append(shared, result.ImmutableItems[n])
+						}
 					}
 				}
 				result.Items = items
+				result.ImmutableItems = shared
 			}
 		}
 		result.Cursor.IncludeArchive = c.IncludeArchive
@@ -120,10 +125,10 @@ func (s *eventSource) Apply(ctx context.Context, m model.Mutation) (model.Item, 
 				}
 			}
 		}
-		var prior eventRecord
+		prior := eventRecord{Item: new(model.Item)}
 		if m.Op != model.Create {
-			var err error
-			prior.Item, prior.Archived, err = s.Source.ReadState(ctx, m.Ref.ID)
+			item, archived, err := s.Source.ReadState(ctx, m.Ref.ID)
+			prior = eventRecord{Item: &item, Archived: archived}
 			if err != nil {
 				return err
 			}
@@ -152,13 +157,13 @@ func (s *eventSource) Apply(ctx context.Context, m model.Mutation) (model.Item, 
 			_, err = log.Append(e)
 			return err
 		}
-		return reconcileEvents(ctx, s.cfg, log, db, []eventRecord{{Item: result, Archived: archived}}, false, origin)
+		return reconcileEvents(ctx, s.cfg, log, db, []eventRecord{{Item: &result, Archived: archived}}, false, origin)
 	})
 	return result, err
 }
 
 type eventRecord struct {
-	Item     model.Item
+	Item     *model.Item
 	Archived bool
 }
 
@@ -207,10 +212,15 @@ func loadEventSources(ctx context.Context, cfg project.Config, reuse *native.Sou
 	return deltas, nil
 }
 func eventRecords(cfg project.Config, deltas map[string]source.Delta) []eventRecord {
-	var records []eventRecord
+	count := 0
+	for _, delta := range deltas {
+		count += len(delta.Items)
+	}
+	records := make([]eventRecord, 0, count)
 	for _, source := range cfg.Sources {
 		delta := deltas[source.ID]
-		for _, item := range delta.Items {
+		for n := range delta.Items {
+			item := &delta.Items[n]
 			records = append(records, eventRecord{Item: item, Archived: delta.Archived[item.Ref]})
 		}
 	}
@@ -288,7 +298,8 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 			}
 		}
 	}
-	var transitions []eventTransition
+	transitions := make([]eventTransition, 0, len(records))
+	empty := eventRecord{Item: new(model.Item)}
 	for _, r := range records {
 		ref := eventKey(r.Item.Ref)
 		identity, exists := old[ref]
@@ -296,8 +307,9 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 		if exists && identity.Version == r.Item.Version && identity.Archived == r.Archived {
 			continue
 		}
-		change := eventTransition{After: r}
+		change := eventTransition{Before: empty, After: r}
 		if exists {
+			change.Before = eventRecord{Item: new(model.Item)}
 			var data []byte
 			if err = tx.QueryRowContext(ctx, `SELECT item FROM event_records WHERE ref=?`, ref).Scan(&data); err != nil {
 				return err
@@ -325,7 +337,7 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 				return err
 			}
 			r.Archived = old[ref].Archived
-			transitions = append(transitions, eventTransition{Before: r, Deleted: true})
+			transitions = append(transitions, eventTransition{Before: r, After: empty, Deleted: true})
 		}
 	}
 	if len(transitions) == 0 {
@@ -366,8 +378,8 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 				r = change.Before
 			}
 			versions := transitionVersions(change)
-			e := makeEvent(ctx, cfg, r.Item, kind, origin, versions)
-			e.Changes = itemChanges(change.Before.Item, change.After.Item)
+			e := makeEvent(ctx, cfg, *r.Item, kind, origin, versions)
+			e.Changes = itemChanges(*change.Before.Item, *change.After.Item)
 			if change.Before.Archived != change.After.Archived {
 				e.Changes["archived"] = hooks.Change{From: change.Before.Archived, To: change.After.Archived}
 			}
@@ -400,7 +412,7 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 			}
 		}
 		if needsGraph && !change.Deleted {
-			if err = writeEventEdges(ctx, edgeStmt, change.After.Item); err != nil {
+			if err = writeEventEdges(ctx, edgeStmt, *change.After.Item); err != nil {
 				return err
 			}
 		}

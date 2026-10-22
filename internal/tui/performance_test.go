@@ -70,8 +70,8 @@ func TestProductionPerformanceChild(t *testing.T) {
 	if root == "" {
 		return
 	}
-	// Match interactive CLI startup: standard Go heap growth, with any
-	// explicit GOMEMLIMIT inherited by the child runtime unchanged.
+	// Use the same production policy, not measurement-only runtime tuning.
+	defer ConfigureRuntime()()
 	paths, err := project.UserPaths()
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,13 @@ func TestProductionMeasurements(t *testing.T) {
 			var peakRSS int64
 			stop := func(child *ptytest.Session) {
 				_ = child.Close()
-				peakRSS = max(peakRSS, child.ProcessState().SysUsage().(*syscall.Rusage).Maxrss)
+				childRSS := child.ProcessState().SysUsage().(*syscall.Rusage).Maxrss
+				peakRSS = max(peakRSS, childRSS)
+				rss := float64(childRSS) / (1024 * 1024)
+				if runtime.GOOS == "linux" {
+					rss *= 1024
+				}
+				t.Logf("%d child peak_RSS_MiB=%.2f", count, rss)
 			}
 			s, coldStart := performanceChild(t, root, cache, "", "")
 			perfReady(t, s)

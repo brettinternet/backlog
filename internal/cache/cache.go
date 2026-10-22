@@ -356,6 +356,22 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		return Snapshot{}, err
 	}
 	changed := written != build
+	// Decoded batches otherwise allocate identical body text repeatedly. The
+	// table is refresh-local: items retain strings, never the lookup table.
+	bodies := map[string]string{}
+	shareBody := func(text string) string {
+		if prior, ok := bodies[text]; ok {
+			return prior
+		}
+		bodies[text] = text
+		return text
+	}
+	shareBodies := func(item *model.Item) {
+		item.Description = shareBody(item.Description)
+		item.Plan = shareBody(item.Plan)
+		item.Notes = shareBody(item.Notes)
+		item.Summary = shareBody(item.Summary)
+	}
 	var records []*cachedRecord
 	if changed {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM items; DELETE FROM search;`); err != nil {
@@ -375,6 +391,9 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			if err != nil {
 				_ = rows.Close()
 				return Snapshot{}, err
+			}
+			for _, r := range batch {
+				shareBodies(&r.Item)
 			}
 			records = append(records, batch...)
 		}
@@ -433,6 +452,7 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			}
 		}
 		if !exists || r.Identity != identity {
+			shareBodies(&item)
 			r = &cachedRecord{Path: path, Identity: identity, Item: item}
 		}
 		records = append(records, r)

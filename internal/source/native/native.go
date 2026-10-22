@@ -211,11 +211,12 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		}
 		item := *record.Item
 		item.Category = s.options.Statuses[item.Status]
+		record.Item.Category = item.Category
 		result.Items = append(result.Items, item)
 		result.Archived[item.Ref] = filepath.Dir(record.Path) != s.options.Path
 		byPath[record.Path] = item.Ref
 		if record.Identity != "" {
-			nextLoaded[record.Path] = loadedItem{record.Identity, item}
+			nextLoaded[record.Path] = loadedItem{record.Identity, record.Item}
 		}
 	}
 	s.loaded = nextLoaded
@@ -226,6 +227,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	sort.Slice(result.Findings, func(i, j int) bool { return result.Findings[i].Path < result.Findings[j].Path })
 	// Retain only the generation in the search closure, not the full cache
 	// snapshot and its duplicate item records for the lifetime of the delta.
+	s.shareItems(&result)
 	generation := snapshot.Generation
 	result.TextSearch = func(ctx context.Context, text string) (map[model.Ref]bool, error) {
 		paths, e := store.Search(ctx, generation, text)
@@ -245,7 +247,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 
 type loadedItem struct {
 	identity string
-	item     model.Item
+	item     *model.Item
 }
 
 func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
@@ -256,6 +258,8 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		result.Coverage = source.Unknown
 		return result, err
 	}
+	result.Items = make([]model.Item, 0, len(paths))
+	nextLoaded = make(map[string]loadedItem, len(paths))
 	var mu sync.Mutex
 	jobs := make(chan string)
 	var wg sync.WaitGroup
@@ -267,10 +271,12 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				}
 				identity, e := cache.FileIdentity(path)
 				var item model.Item
+				var retained *model.Item
 				if e == nil {
 					old, ok := s.loaded[path]
 					if ok && identity == old.identity {
-						item = old.item
+						item = *old.item
+						retained = old.item
 					} else {
 						var doc *format.Document
 						doc, e = s.document(path)
@@ -289,7 +295,10 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				} else {
 					result.Items = append(result.Items, item)
 					result.Archived[item.Ref] = filepath.Dir(path) != s.options.Path
-					nextLoaded[path] = loadedItem{identity, item}
+					if retained == nil {
+						retained = &item
+					}
+					nextLoaded[path] = loadedItem{identity, retained}
 				}
 				mu.Unlock()
 			}
@@ -310,8 +319,23 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	s.loaded = nextLoaded
 	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Ref.ID < result.Items[j].Ref.ID })
 	sort.Slice(result.Findings, func(i, j int) bool { return result.Findings[i].Path < result.Findings[j].Path })
+	s.shareItems(&result)
 	return result, nil
 }
+
+// Each shared item has independent storage: pointing into the full delta slice
+// would retain an entire old backlog array for every subsequently edited item.
+func (s *Source) shareItems(delta *source.Delta) {
+	delta.ImmutableItems = make([]*model.Item, len(delta.Items))
+	for n, item := range delta.Items {
+		dir := s.options.Path
+		if delta.Archived[item.Ref] {
+			dir = filepath.Join(dir, "archive")
+		}
+		delta.ImmutableItems[n] = s.loaded[filepath.Join(dir, item.Ref.ID+".md")].item
+	}
+}
+
 func (s *Source) locate(ctx context.Context, id string) (string, error) {
 	if !idPattern.MatchString(id) {
 		return "", source.Refuse("invalid-id", id)

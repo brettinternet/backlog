@@ -254,9 +254,9 @@ func (st *storeState) begin(job *editJob) {
 		if m.ExpectedVersion == "" || m.ExpectedVersion != before.item.Version {
 			err := source.Refuse("conflict", "expected version does not match displayed item")
 			if m.ExpectedVersion != "" {
-				local := cloneItem(before.item)
+				local := cloneItem(*before.item)
 				local.Version = m.ExpectedVersion
-				remote := cloneItem(before.item)
+				remote := cloneItem(*before.item)
 				n := st.snapshot.fork()
 				n.records[m.Ref] = &record{item: before.item, edit: EditState{Error: err.Error(), Local: &local, Remote: &remote}, archived: before.archived}
 				st.publish(n)
@@ -274,7 +274,7 @@ func (st *storeState) begin(job *editJob) {
 	st.pending[m.Ref] = true
 	st.historyBusy = job.history != 0
 	n := st.snapshot.fork()
-	n.records[m.Ref] = &record{item: cloneItem(job.preview), edit: EditState{Pending: true}, archived: m.Op == model.Archive || job.before != nil && job.before.archived && m.Op != model.Unarchive}
+	n.records[m.Ref] = &record{item: new(cloneItem(job.preview)), edit: EditState{Pending: true}, archived: m.Op == model.Archive || job.before != nil && job.before.archived && m.Op != model.Unarchive}
 	st.publish(n)
 	// This actor is the only producer; the worker can only free queue capacity.
 	w.jobs <- job
@@ -282,6 +282,9 @@ func (st *storeState) begin(job *editJob) {
 func (s *Store) runSource(id string, w *sourceWorker) {
 	publish := func(delta source.Delta, err error, replaceInitial bool) {
 		s.send(func(st *storeState) {
+			// The actor can retain its last callback while idle. Records own
+			// individual items, not the full transfer slice or search closure.
+			defer func() { delta = source.Delta{} }()
 			n := st.snapshot.fork()
 			status := SourceState{Coverage: delta.Coverage}
 			if err != nil {
@@ -289,13 +292,19 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 				status.Coverage = source.Unknown
 			} else {
 				seen := map[model.Ref]bool{}
-				for _, i := range delta.Items {
-					i.Ref.Source = id
-					seen[i.Ref] = true
-					if st.pending[i.Ref] {
+				for index := range delta.Items {
+					i := &delta.Items[index]
+					shared := len(delta.ImmutableItems) == len(delta.Items) && delta.ImmutableItems[index] != nil
+					if shared {
+						i = delta.ImmutableItems[index]
+					}
+					ref := i.Ref
+					ref.Source = id
+					seen[ref] = true
+					if st.pending[ref] {
 						continue
 					}
-					old := n.records[i.Ref]
+					old := n.records[ref]
 					// Loads list active items only, so a session-archived record seen here
 					// was unarchived externally; a version check alone would keep it hidden.
 					if old == nil || old.item.Version != i.Version || old.archived {
@@ -303,7 +312,11 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 						if old != nil {
 							edit = old.edit
 						}
-						n.records[i.Ref] = &record{item: cloneItem(i), edit: edit}
+						if !shared || i.Ref.Source != id {
+							i = new(cloneItem(*i))
+							i.Ref.Source = id
+						}
+						n.records[i.Ref] = &record{item: i, edit: edit}
 					}
 				}
 				// Initial records are provisional, not a prior successful full
@@ -363,8 +376,8 @@ func preparePreview(cfg project.Config, job *editJob) {
 		job.preview.Ref = m.Ref
 		job.inverse = model.Mutation{Ref: m.Ref, Op: model.Archive}
 	} else {
-		job.preview = job.before.item
-		if data, err := format.Serialize(job.before.item); err == nil {
+		job.preview = *job.before.item
+		if data, err := format.Serialize(*job.before.item); err == nil {
 			if doc, err := format.Parse(data); err == nil {
 				preview := m
 				preview.ExpectedVersion = ""
@@ -432,20 +445,20 @@ func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err e
 				state.Remote = remote
 			}
 			if item.Version != "" {
-				n.records[ref] = &record{item: cloneItem(item), edit: state, archived: job.before != nil && job.before.archived}
+				n.records[ref] = &record{item: new(cloneItem(item)), edit: state, archived: job.before != nil && job.before.archived}
 			} else if job.before != nil {
 				prior := job.before.item
 				if remote != nil {
-					prior = *remote
+					prior = remote
 				}
 				n.records[ref] = &record{item: prior, edit: state, archived: job.before.archived}
 			} else {
-				n.records[ref] = &record{item: job.preview, edit: state}
+				n.records[ref] = &record{item: new(cloneItem(job.preview)), edit: state}
 			}
 		} else {
 			item = cloneItem(item)
 			delete(n.records, ref)
-			n.records[item.Ref] = &record{item: item, archived: job.mutation.Op == model.Archive || job.before != nil && job.before.archived && job.mutation.Op != model.Unarchive}
+			n.records[item.Ref] = &record{item: &item, archived: job.mutation.Op == model.Archive || job.before != nil && job.before.archived && job.mutation.Op != model.Unarchive}
 			inverse := job.inverse
 			inverse.Ref = item.Ref
 			inverse.ExpectedVersion = item.Version
