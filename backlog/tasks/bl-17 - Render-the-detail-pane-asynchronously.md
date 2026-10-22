@@ -1,10 +1,11 @@
 ---
 id: BL-17
 title: Render the detail pane asynchronously
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:39'
+updated_date: '2026-10-22 13:58'
 labels:
   - tui
   - perf
@@ -39,29 +40,48 @@ Synchronous Markdown rendering on navigation is a known cause of held-key lag (�
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Holding `j` through 10k rows starts no Markdown render until the selection settles (counter assertion), while header fields update every frame
-- [ ] #2 Returning to an item hits the render cache; a version or width change invalidates it
-- [ ] #3 The Relations tab shows blocker and child status and updates after an external change
-- [ ] #4 Input is handled while a 1 MB body renders, and the capped view offers show more
-- [ ] #5 Golden views cover every tab at 120 and 80 columns
-- [ ] #6 The Overview tab shows a declared milestone's name next to its key, and an undeclared milestone as its raw value
+- [x] #1 Holding `j` through 10k rows starts no Markdown render until the selection settles (counter assertion), while header fields update every frame
+- [x] #2 Returning to an item hits the render cache; a version or width change invalidates it
+- [x] #3 The Relations tab shows blocker and child status and updates after an external change
+- [x] #4 Input is handled while a 1 MB body renders, and the capped view offers show more
+- [x] #5 Golden views cover every tab at 120 and 80 columns
+- [x] #6 The Overview tab shows a declared milestone's name next to its key, and an undeclared milestone as its raw value
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task ci passes on the final commit
-- [ ] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
-- [ ] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
-- [ ] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
-- [ ] #5 No test was deleted, skipped, or weakened
-- [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
+- [x] #1 task ci passes on the final commit
+- [x] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
+- [x] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
+- [x] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
+- [x] #5 No test was deleted, skipped, or weakened
+- [x] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Implement detail focus/open/close and responsive pane geometry with tabs backed by selected ref/version. Update cheap header fields immediately; queue full Read and Markdown rendering only after selection settles.
-2. Use cancellation/generation checks and a version/width/theme cache so late results cannot paint the wrong item. Bound huge bodies and load comments lazily; relations read live snapshot state.
-3. Verify no render during held navigation, cache reuse/invalidation, live relations and responsiveness during large-body work with counters and model tests. Capture all tabs at 80/120 columns and run task test plus focused PTY checks.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Inspect shell, engine Read/snapshot APIs and detail specification. 2. Implement debounced lazy detail loading, cached async Markdown, responsive tabs and live relations. 3. Add focused regression counters and tab goldens; verify all acceptance criteria independently. 4. Run task ci, commit and merge, finalize task evidence and clean up.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claim session pi-backlog-20260724. Implementation checkout .worktrees/bl-17-async-detail, branch bl-17-async-detail; creation receipt .git/worktrees/bl-17-async-detail/agent-creation.json (Pi session 01a163d2-0abe-729e-88c1-f5c38ec3fdfe; creation commit 168b0eb). Baseline task ci passed. Modified-file scope may include engine/CLI wiring for lazy source Read and milestone config plus docs/tui.md, as the shell currently has neither dependency; required to deliver the detail pane.
+
+Implemented and independently verified all ACs (verifier 0f27834f-7a21-48c2-abc3-66ed54479d54: PASS AC1–AC6). Full task ci including race passed. Required scope deviations: engine projection prepares readiness and live reverse relations off-loop; engine ReadItem/CLI wire lazy reads and milestone catalog; docs/tui.md documents implemented keys and caps; scripts/tui-snapshot recognizes the detail footer/loading state. go.mod/go.sum were tidied after the sole Bubbles key-binding import became unused. Golden padding deliberately preserves fixed terminal-cell geometry; no tests deleted, skipped or weakened. Real-terminal scripts/tui-snapshot captures passed at 120 (Description split) and 80 (Overview replacement) against a 20-item deterministic fixture. A 10k real-terminal capture failed to settle (source badge remained syncing), so it is not claimed as measured native-load performance; AC1 is verified by the 10k-row model counter test.
+
+AC#1: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailHeldNavigation: 10k rows, zero reads/renders while moving, header current each frame, one render after settle.
+AC#2: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailCacheAndStaleResults: cache hit on return, version and width invalidation, stale completion rejected, lazy comments retained.
+AC#3: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailExternalRelations: live blocker/child statuses update after source refresh without selected-item version change.
+AC#4: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailLargeBodyInput: >1 MB body capped before blocked render, input continues, visible show-more expands bounded output.
+AC#5: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailTabGoldens: all six tabs at 80/120 cols, fixed cell-width assertions.
+AC#6: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailTabGoldens: declared m-1 — TUI, undeclared raw m-1.
+Delivery: implementation 006e5ed; integrated concurrent main selection/fold fixes in 78a3226, then fast-forward merged to main. Final task ci PASS on 78a3226 including tests/race/security/check/smoke; LSP clean. Source-sync timeout on the 10k terminal fixture also reproduced with pre-change primary binary 168b0eb, confirming it predates this item. Required independent verifier returned PASS for every AC; post-integration full suite also passes. Worktrunk removed the session-owned checkout and branch; Herdr cleanup checked separately. No remaining implementation blocker or resumable step.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented debounced lazy detail reads, bounded async Markdown and cache, responsive six-tab detail with live relations/readiness and milestone labels. Verified AC1–AC6 with counter/model/golden tests and independent PASS, 80/120 real-terminal captures, and task ci on final implementation commit 78a3226. Merged to main and removed implementation worktree/branch.
+<!-- SECTION:FINAL_SUMMARY:END -->
