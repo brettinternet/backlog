@@ -1,13 +1,13 @@
 ---
 id: BL-46
-title: Move the owner's other repositories onto bl
+title: Document and rehearse standalone backlog migration
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 04:49'
+updated_date: '2026-10-22 05:01'
 labels:
   - import
-  - human
+  - docs
 milestone: m-4
 dependencies:
   - BL-26
@@ -28,29 +28,26 @@ ordinal: 46000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Why
 
-The goal is to replace Backlog.md across the owner's projects (design.md §1).
-
-## Needs the owner
-
-This edits other repositories. The owner chooses the order and approves each migration.
+Provide a portable migration procedure without coupling this project to the owner's other repositories.
 
 ## What
 
-For each chosen Backlog.md repository (only repositories explicitly approved by the owner):
+- Document bl import backlog-md and the native agent workflow using this repository's CLI contracts.
+- Rehearse migration against synthetic temporary Backlog.md projects maintained in this repository; include data comparison, bl check, recoverable backup, writer quiescence, cutover, and rollback.
+- Document provider-aware agent routing: native projects use bl-owned claim commands; unmigrated Backlog.md projects retain their own workflow. Include example snippets, not edits to global skills.
+- Verify concurrent agent selection using isolated temporary projects and fake coordination. Real-provider checks remain opt-in.
 
-- Run `bl import backlog-md`.
-- Port the repository's backlog Taskfile targets and AGENTS.md workflow to `bl`.
-- Commit separately in that repository.
+## Boundaries
 
-Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-source-workflow`, `backlog-md`, `worklease`). In a `bl` project they must select, claim, and start through `bl next --claim --start` or MCP `next`, renew with `bl heartbeat`, and finish with `bl done`. Today's skills treat setting In Progress as the claim and derive `backlog-md:` keys, which never contend with `bl`'s keys (D20). Mixed clients could then take the same task.
+No migration or import of Hum, Noon, Worklease, Tell, or any other real project is part of this task. Do not edit another repository, global skills, or the owner's configuration. Do not require sibling checkouts, their data, credentials, services, or artifacts in this project's build/tests/CI. Other projects may be read as optional reference code and copied where useful; copied code must be owned and tested here. Any future real migration is a separate owner-authorized task, not a release prerequisite.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each migrated repository passes `bl check`, and a pre- and post-migration comparison shows nothing lost
-- [ ] #2 Each repository's agent workflow runs one full task loop with `bl`
-- [ ] #3 With the updated skills, two agent loops started together in one migrated repository claim different items with no contention or `claim-held` error, and no skill sets status as a claim or calls `worklease key` for a `bl` item
-- [ ] #4 Updated shared skills preserve Backlog.md routing for unmigrated projects while native projects use the bl-owned resource/claim protocol; each migrated repository records which incompatible launchers remain disabled until updated.
+- [ ] #1 A repository-local synthetic Backlog.md fixture imports into a temporary native project, passes bl check, and a pre/post comparison demonstrates preserved task content, metadata, relationships, milestones and labels
+- [ ] #2 The documented cutover and rollback procedure is rehearsed entirely in temporary projects and one complete native task loop is verified
+- [ ] #3 Two distinct-session agent loops using fake coordination in a temporary native project select different tasks through bl; examples never treat status changes as claims or derive alternate Worklease keys
+- [ ] #4 Provider-aware workflow examples preserve Backlog.md routing for unmigrated fixtures; documentation and automated checks require no real-project imports, sibling checkouts, external repository edits or global-skill changes
 <!-- AC:END -->
 
 ## Definition of Done
@@ -66,15 +63,16 @@ Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-sour
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Obtain owner approval for target repositories, their order, delivery policy and shared skill paths. Inspect each repository's instructions and actual launchers; approval to migrate a repository is not blanket authority over unrelated repositories or global skills.
-2. Before enabling native loops in each target, update the approved shared skills with provider-aware dispatch: native projects use bl next --claim --start or MCP next with stable distinct sessions and request-scoped ownership, while unmigrated Backlog.md projects retain their existing provider workflow. Do not globally replace all providers with bl.
-3. Use BL-26's already-proven local cutover contract: quiesce writers, export/rehearse/compare, retain a recoverable backup, deliver primary-built wrappers and local instructions, then reload clients. Until a shared skill or launcher is updated and verified, keep it excluded locally rather than permit alternate-key or status-only claims.
-4. Verify two distinct-session loops and one real complete native task loop per migrated repository, including done/release and recovery guidance; verify the same skills still dispatch correctly for an unmigrated Backlog.md fixture. Record evidence and separate commits in each authorized repository and the skills' owning repository, with any deviation from this task's local file scope explained. Do not push without explicit permission.
-5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Write a portable migration/cutover/rollback guide and agent workflow examples using current merged commands. Keep all work within this repository.
+2. Reuse repository-local synthetic Backlog.md fixtures and temporary native projects for data comparison, bl check, backup/restore, and one full task loop.
+3. Verify native and unmigrated provider routing plus concurrent selection with fake coordination and stable distinct sessions. Real coordinator checks are opt-in and do not require another project's backlog or checkout.
+4. Run focused checks and task ci, obtain independent acceptance verification, and record evidence. No edits or migrations in real external projects or global skills; any such future work requires its own owner authorization.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner clarification: Hum is a reference Go project whose code/conventions may be copied, not an assumed migration target or project dependency. Removed its nomination from this task; no Hum changes are authorized.
+
+Owner clarified that there must be no coupling with any other project. Supersedes the earlier cross-repository migration/shared-skill-edit plan: this task is now repository-local documentation and a synthetic rehearsal only. No real project is nominated for migration or import.
 <!-- SECTION:NOTES:END -->

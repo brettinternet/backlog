@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 04:51'
+updated_date: '2026-10-22 05:01'
 labels:
   - import
   - backlog-md
@@ -85,6 +85,8 @@ AC#3: task cli:test PKG=./internal/cli: TestImportDryRunAndDestinationRefusal PA
 AC#4: Read docs/import.md and docs/cli.md; independent verifier PASS confirms documented field/section/config mappings and skipped content match report behavior.
 AC#5: self-final import/check above: PASS with five milestones m-0 through m-4 and all 33 labels; package fixture verifies names/descriptions, archived milestone, title rewrite and unresolved milestone report. Independent verifier PASS.
 Delivery: implementation 673407e merged to main as f2b4a96. task check:staged PASS; task ci PASS on implementation commit and merged main (ci-final.log, ci-merged.log in temp evidence directory). Independent verifier e436ff55 then corrected-scope continuation d899d36c returned PASS for every AC. Scope correction was owner-directed, not a weakened test. No tests deleted/skipped/weakened; source diff stays in declared scope. Removed verified session-owned worktree and branch with wt remove --foreground; post-remove hook completed. No push/PR. BL-46 migration assumption corrected separately per owner clarification.
+
+Owner follow-up: no real external project is a required import/migration target. The Worklease snapshot used above was historical read-only validation evidence, not a production dependency or a future CI prerequisite. Maintained regression coverage uses repository-local synthetic fixtures; no sibling checkout or external project data is required by the importer or test suite.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

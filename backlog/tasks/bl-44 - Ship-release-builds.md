@@ -4,7 +4,7 @@ title: Ship release builds
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:46'
+updated_date: '2026-10-22 05:01'
 labels:
   - release
   - tooling
@@ -30,15 +30,17 @@ ordinal: 44000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## What
 
-Port hum's release pipeline (`.github/workflows/release.yaml`, `install.sh`, `scripts/install_test.sh`):
+Implement this repository's standalone release pipeline:
 
 - Triggered by a tag. Fails closed unless the tag commit's CI run passed.
 - git-cliff release notes.
-- `CGO_ENABLED=0` builds for darwin and linux on arm64 and amd64, with checksums.
-- An install script that verifies the checksums.
-- `task release:snapshot` runs a local dry run.
+- CGO_ENABLED=0 builds for darwin and linux on arm64 and amd64, with version metadata and checksums.
+- An install script that verifies checksums.
+- task release:snapshot runs a local, nonpublishing dry run.
 
-Pushing the first tag and updating the Homebrew tap (`brettinternet/homebrew-tap`) are owner steps. Document them as a checklist.
+Hum's release workflow and installer are optional reference material to copy and adapt, not required inputs. All resulting workflows, scripts, tests, and fixtures must live in this repository. Do not import Hum, Noon, Worklease, Tell, or another reference project as a Go module, checkout another repository in CI, call another project's release pipeline, or require a sibling checkout, release, credentials, or artifacts to build/test this project.
+
+Pushing the first tag and optionally updating a Homebrew tap are separate owner steps. Document them as a checklist; neither is required to validate the local pipeline.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -62,8 +64,14 @@ Pushing the first tag and updating the Homebrew tap (`brettinternet/homebrew-tap
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Read the local hum release workflow/install script/tests and record the source commit used. Port only the tag-CI gate, git-cliff notes, static target matrix, metadata and checksum publication needed here.
-2. Add task release:snapshot for a local nonpublishing build of all four targets, plus installer checksum verification. Do not push a tag, publish a release, alter the tap or require production credentials to finish this task.
-3. Run release:snapshot and installer tests with local artifacts including a corrupted download; verify the workflow gate rejects missing/failed/wrong-SHA CI evidence through a testable local check. Run task ci and document the separate owner publishing/tap checklist.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Implement the tag-CI gate, git-cliff notes, static four-target matrix, version metadata, checksums, and installer locally. Existing projects may be consulted as optional reference code; their availability must not gate this task.
+2. Add task release:snapshot for local nonpublishing builds and local installer fixtures. No external project checkouts, module imports, workflows, or artifacts are required for build or tests.
+3. Verify installer checksum rejection with corrupted local artifacts, and test the release gate against missing/failed/wrong-SHA CI evidence. Run task ci and document owner-only publishing and optional tap steps.
+4. Record acceptance evidence and independent verification. Do not push tags, publish releases, edit other repositories or global skills, or change a tap without separate explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Refined per owner: other projects are optional reference code only. This task delivers a standalone release pipeline and has no migration, data import, sibling-checkout, cross-repository CI, or runtime/module dependency obligation.
+<!-- SECTION:NOTES:END -->
