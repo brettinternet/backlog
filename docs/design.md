@@ -259,7 +259,7 @@ Each result explains itself. For example, `high · rank a3 · unblocks 4 (BL-9, 
 
 ## 7. Agent interface
 
-The bootstrap implements `version`/`--version`, `config show`, and an empty TUI (`bl` or `bl tui`). These operations use the envelope below when `--json`/`-j` is requested; interactive TUI plus JSON is a usage error. Help remains plain text. Bare `bl` falls back to help off-terminal; explicit `bl tui` exits 6 off-terminal. Usage errors exit 2, invalid user configuration exits 5 (`invalid-config`), and internal failures exit 1. The remaining reason mappings and operations are backlog work, not stub commands.
+The bootstrap implements `version`/`--version`, `config show`, and an empty TUI (`bl` or `bl tui`). These operations use the envelope below when `--json`/`-j` is requested; interactive TUI plus JSON is a usage error. Help remains plain text. Bare `bl` falls back to help off-terminal; explicit `bl tui` exits 6 off-terminal. Usage errors exit 2, invalid user configuration exits 5 (`invalid-config`), and internal failures exit 1. All reason mappings below are implemented; the remaining operations are backlog work, not stub commands. Global `-C DIR` resolves an absolute invocation directory without changing the process working directory. `config show` reports it as `directory` in JSON and `Directory:` in text; user XDG paths are unaffected.
 
 Commands (final names freeze in BL-7 and BL-8):
 
@@ -288,18 +288,18 @@ bl instructions [TOPIC] | bl mcp
   - error: `{"schemaVersion":1,"ok":false,"command":"set","error":{"reason":"conflict","message":"...","details":{}}}`
 - **Exit codes.**
 
-  | Code | Meaning |
-  | --- | --- |
-  | 0 | Success |
-  | 1 | Internal error |
-  | 2 | Usage error |
-  | 3 | Not found |
-  | 4 | Conflict |
-  | 5 | Rejected (validation or hook veto) |
-  | 6 | Unavailable (capability, trust, or source) |
-  | 7 | Contention (claimed elsewhere) |
+  | Code | Meaning | Reasons |
+  | --- | --- | --- |
+  | 0 | Success | No error |
+  | 1 | Internal error | `internal` (also the fallback for unknown reasons) |
+  | 2 | Usage error | `usage`, `session-required` |
+  | 3 | Not found | `not-found` |
+  | 4 | Conflict | `conflict`, `claim-held`, `run-mismatch` |
+  | 5 | Rejected (validation or hook veto) | `rejected`, `invalid-config` |
+  | 6 | Unavailable (capability, trust, or source) | `unavailable` |
+  | 7 | Contention (claimed elsewhere) | `contention` |
 
-  Exit codes and reasons are a public contract with tests.
+  Exit codes and reasons are a public contract with tests. Error `details` is always an object (empty when there is no additional metadata). `-C` failures include `flag` and `path`; unexpected arguments include `argument`. Help remains plain text, even with `--json`.
 - **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `claim`, `release`, and `heartbeat`. They share types, validation, and claim rules with the CLI. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
 
 ## 8. Extensions

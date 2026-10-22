@@ -15,20 +15,37 @@ type Envelope struct {
 }
 
 type Error struct {
-	Reason  string `json:"reason"`
-	Message string `json:"message"`
+	Reason  string         `json:"reason"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details"`
 }
 
 func (e *Error) Error() string { return e.Message }
 
+// MarshalJSON keeps details an object, even when there is no additional metadata.
+func (e *Error) MarshalJSON() ([]byte, error) {
+	type wire Error
+	value := wire(*e)
+	if value.Details == nil {
+		value.Details = map[string]any{}
+	}
+	return json.Marshal(value)
+}
+
 func (e *Error) ExitCode() int {
 	switch e.Reason {
-	case "usage":
+	case "usage", "session-required":
 		return 2
-	case "invalid-config":
+	case "not-found":
+		return 3
+	case "conflict", "claim-held", "run-mismatch":
+		return 4
+	case "rejected", "invalid-config":
 		return 5
 	case "unavailable":
 		return 6
+	case "contention":
+		return 7
 	default:
 		return 1
 	}

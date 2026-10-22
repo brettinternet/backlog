@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ type BuildInfo struct {
 func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out, errOut io.Writer) int {
 	build.Go = runtime.Version()
 	command := "bl"
+	var directory string
 	version := func(_ context.Context, cmd *urfave.Command) error {
 		command = "version"
 		if cmd.Bool("json") {
@@ -45,10 +47,13 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			return err
 		}
 		if cmd.Bool("json") {
-			return success(out, "config show", cfg)
+			return success(out, "config show", struct {
+				project.Config
+				Directory string `json:"directory"`
+			}{cfg, directory})
 		}
-		_, err = fmt.Fprintf(out, "User config: %s\nState: %s\nCache: %s\nui.highContrast: %t\n",
-			cfg.Paths.ConfigFile, cfg.Paths.StateDir, cfg.Paths.CacheDir, cfg.UI.HighContrast)
+		_, err = fmt.Fprintf(out, "Directory: %s\nUser config: %s\nState: %s\nCache: %s\nui.highContrast: %t\n",
+			directory, cfg.Paths.ConfigFile, cfg.Paths.StateDir, cfg.Paths.CacheDir, cfg.UI.HighContrast)
 		return err
 	}
 	openTUI := func(ctx context.Context, cmd *urfave.Command) error {
@@ -78,9 +83,27 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		Reader:      in, Writer: out, ErrWriter: errOut,
 		ExitErrHandler: func(context.Context, *urfave.Command, error) {},
 		Flags: []urfave.Flag{
+			&urfave.StringFlag{Name: "C", Value: ".", Usage: "Resolve the invocation from directory DIR"},
 			&urfave.BoolFlag{Name: "json", Aliases: []string{"j"}, Usage: "Print a versioned JSON envelope"},
 			&urfave.BoolFlag{Name: "version", Aliases: []string{"v"}, Usage: "Print version and commit"},
 			&urfave.BoolFlag{Name: "high-contrast", Usage: "Use bold and underline instead of color (env: BL_HIGH_CONTRAST)"},
+		},
+		Before: func(_ context.Context, cmd *urfave.Command) (context.Context, error) {
+			requested := cmd.String("C")
+			resolved, err := filepath.Abs(requested)
+			if err == nil {
+				var info os.FileInfo
+				info, err = os.Stat(resolved)
+				if err == nil && !info.IsDir() {
+					err = fmt.Errorf("not a directory")
+				}
+			}
+			if err != nil {
+				return nil, &Error{Reason: "usage", Message: fmt.Sprintf("-C %q: %v", requested, err),
+					Details: map[string]any{"flag": "C", "path": requested}}
+			}
+			directory = resolved
+			return nil, nil
 		},
 		Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Bool("version") {
@@ -112,7 +135,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			cmd.Action = func(ctx context.Context, selected *urfave.Command) error {
 				command = commandName(selected)
 				if selected.Args().Present() {
-					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First())}
+					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
 				}
 				return action(ctx, selected)
 			}
@@ -172,18 +195,23 @@ func commandName(cmd *urfave.Command) string {
 	return strings.TrimPrefix(cmd.FullName(), "bl ")
 }
 
-// The bootstrap flags are all booleans. Inspect them even when parsing fails
-// before reaching --json, but never interpret positional data after "--".
+// Inspect output flags even when parsing fails before reaching --json.
+// Skip values of non-boolean flags and positional data after "--".
 func jsonRequested(args []string) bool {
 	if len(args) < 2 {
 		return false
 	}
 	value := false
-	for _, arg := range args[1:] {
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
 		if arg == "--" {
 			break
 		}
 		name, raw, hasValue := strings.Cut(arg, "=")
+		if (name == "-C" || name == "--C") && !hasValue {
+			i++
+			continue
+		}
 		if name == "--json" || name == "-j" {
 			value = true
 			if hasValue {

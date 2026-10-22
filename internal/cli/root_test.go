@@ -1,7 +1,6 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -16,10 +15,10 @@ import (
 )
 
 func run(args ...string) (int, string, string) {
-	var out, errOut bytes.Buffer
-	code := cli.Run(context.Background(), append([]string{"bl"}, args...),
-		cli.BuildInfo{Version: "test", Commit: "abc1234"}, strings.NewReader(""), &out, &errOut)
-	return code, out.String(), errOut.String()
+	return testkit.RunCLI(context.Background(), append([]string{"bl"}, args...),
+		func(ctx context.Context, argv []string, out, errOut io.Writer) int {
+			return cli.Run(ctx, argv, cli.BuildInfo{Version: "test", Commit: "abc1234"}, strings.NewReader(""), out, errOut)
+		})
 }
 
 func TestMachineOutput(t *testing.T) {
@@ -61,7 +60,7 @@ func TestMachineOutput(t *testing.T) {
 				if !ok || info["version"] != "test" || info["commit"] != "abc1234" || info["go"] == "" || envelope.Error != nil {
 					t.Fatalf("missing build metadata: %+v", envelope)
 				}
-			} else if envelope.Data != nil || envelope.Error == nil || envelope.Error.Reason != tc.reason {
+			} else if envelope.Data != nil || envelope.Error == nil || envelope.Error.Reason != tc.reason || envelope.Error.Details == nil {
 				t.Fatalf("wrong error: %+v", envelope)
 			}
 		})
@@ -73,6 +72,53 @@ func TestMachineOutput(t *testing.T) {
 	code, out, stderr = run("--unknown", "--json=false")
 	if code != 2 || out != "" || !strings.Contains(stderr, "usage") {
 		t.Fatalf("human usage: %d %q %q", code, out, stderr)
+	}
+}
+
+func TestInvocationDirectory(t *testing.T) {
+	testkit.Isolate(t)
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	relative, err := filepath.Rel(original, directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"-C", relative, "--json", "config", "show"},
+		{"config", "show", "-C=" + directory, "-j"},
+	} {
+		code, out, stderr := run(args...)
+		var envelope struct{ Data struct{ Directory string } }
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 0 || stderr != "" || envelope.Data.Directory != directory {
+			t.Fatalf("directory resolution: %d %q %q: %v", code, out, stderr, err)
+		}
+	}
+	current, err := os.Getwd()
+	if err != nil || current != original {
+		t.Fatalf("Run changed process cwd: %s: %v", current, err)
+	}
+
+	for _, args := range [][]string{
+		{"-C", "--json", "version"},
+		{"--C", "--json", "version"},
+		{"--unknown", "-C", "--json"},
+		{"-C=--json", "version"},
+		{"version", "--", "--json"},
+		{"missing"},
+		{"--unknown"},
+	} {
+		code, out, stderr := run(args...)
+		if code != 2 || out != "" || !strings.Contains(stderr, "usage") {
+			t.Fatalf("flag value changed output mode: %v: %d %q %q", args, code, out, stderr)
+		}
+	}
+	code, out, stderr := run("-j", "-C", filepath.Join(directory, "missing"), "version")
+	var envelope cli.Envelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 2 || stderr != "" || envelope.Error == nil || envelope.Error.Details["flag"] != "C" {
+		t.Fatalf("directory error details: %d %q %q: %v", code, out, stderr, err)
 	}
 }
 
@@ -98,8 +144,10 @@ func TestConfigInvocation(t *testing.T) {
 		if envelope.Data.UI.HighContrast != want || envelope.Data.Paths != paths {
 			t.Fatalf("wrong effective settings: %+v", envelope.Data)
 		}
-		if !strings.HasPrefix(envelope.Data.Paths.StateDir, home+string(filepath.Separator)) {
-			t.Fatal("CLI escaped isolated home")
+		for _, path := range []string{envelope.Data.Paths.ConfigFile, envelope.Data.Paths.StateDir, envelope.Data.Paths.CacheDir} {
+			if !strings.HasPrefix(path, home+string(filepath.Separator)) {
+				t.Fatalf("CLI escaped isolated home: %s", path)
+			}
 		}
 	}
 	check(true)

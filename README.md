@@ -51,6 +51,11 @@ Only `ui.highContrast` is supported in the bootstrap. Override it with
 `BL_HIGH_CONTRAST=true` or `--high-contrast`; an explicit
 `--high-contrast=false` overrides both. `NO_COLOR=1` disables styling.
 Config inspection never creates files or loads committed project configuration.
+Use `bl -C DIR config show` to inspect the resolved invocation directory; this
+leaves user config/state/cache paths and the process working directory unchanged.
+`--json`/`-j` returns a versioned success or error envelope, with structured error
+`details`. Usage errors exit 2; see [the exit-code contract](docs/design.md#7-agent-interface)
+for all stable reasons and codes.
 
 The product sketch and capabilities above describe the target, not this bootstrap.
 
