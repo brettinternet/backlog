@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 03:20'
+updated_date: '2026-10-22 04:36'
 labels:
   - engine
   - readiness
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-2
@@ -79,6 +80,8 @@ AC#4: task cli:test PKG=./internal/engine -- -count=1 PASS; TestExplanationText 
 AC#5: task bench PASS on Apple M5 Max, 50k items / exactly 100k edges: 38,118,387 ns/op total, 16,454,140 readiness-ns/op, 21,663,493 ranking-ns/op, 50,201,492 B/op. Phase metrics supersede the earlier aggregate-only measurement.
 Independent verifier 123e17eb and targeted correction d31f7e5e: PASS AC1-5. Only finding was missing separate phase timing; corrected without changing public behavior and reverified. No tests deleted/skipped/weakened. LSP clean on all three Go files. task check:staged PASS; task ci PASS on final implementation commit 329e346845d6d810e2d092989935010c1b232855.
 Delivery: fast-forward merged 329e346 into main. Verified creation receipt/session ownership and idle shell in exact Herdr workspace wHV; wt remove bl-5-readiness --foreground --format=json removed the worktree and branch; workspace list confirms wHV disappeared. No retained checkout/workspace, no remaining blocker or resumable implementation step. No push or PR.
+
+Review (62249df): unresolved explicit children now appear as source-qualified refs in the container reason instead of an empty ref; table test covers it. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

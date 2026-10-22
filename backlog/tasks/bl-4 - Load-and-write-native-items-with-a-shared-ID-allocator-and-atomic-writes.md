@@ -5,11 +5,12 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 03:12'
+updated_date: '2026-10-22 04:36'
 labels:
   - source
   - format
   - git
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-2
@@ -81,6 +82,8 @@ AC#3: task cli:test PKG=./internal/source/... -- -count=1 — PASS; TestLoadAndA
 AC#4: task cli:test PKG=./internal/source/... -- -count=1 — PASS; TestLoadAndArchive verified byte-identical archive/unarchive and allocator reconciliation with archived padded/dotted/imported IDs.
 Independent verifier e96281fd-c6ee-4b17-b63a-d3fa5be427e3 returned PASS separately for all four criteria; no concrete data-loss defects or excess surface. Its focused suite and git diff --check passed.
 Implementation commit a70a9c4 passed task check:staged and task ci on that commit, then fast-forward merged into main. Worktrunk removed the session-owned worktree and branch; its Herdr workspace wHT was inspected (idle shell only), closed by the removal hook, and verified absent. No retained checkout/workspace, no blocker, and no remaining item-scoped step. Nothing pushed.
+
+Review (62249df): Load findings now use the refusal reason or format code with the parse line; unreadable files report code unreadable instead of an error-string prefix. Test asserts finding codes. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

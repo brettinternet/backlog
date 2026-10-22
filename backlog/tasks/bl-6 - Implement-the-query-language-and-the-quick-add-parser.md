@@ -5,9 +5,10 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 03:35'
+updated_date: '2026-10-22 04:36'
 labels:
   - query
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-2
@@ -87,6 +88,8 @@ AC#6: task cli:test PKG=./internal/query -- -count=1 — PASS TestEvents for cha
 AC#7: task cli:test PKG=./internal/query -- -count=1 — PASS TestGroupsAndCompletion for milestone catalog order then undeclared values, declared labels first, unarchived named milestone completion, and display-name matching.
 Independent verifier 6d681e47-4c38-44fe-bbc9-a52b8c06adab returned PASS for AC1–AC7, no acceptance-blocking defects. Single verification pass; only concrete correction was reserved NONE validation, covered by the extended existing test. All affected LSP diagnostics clean. task check:staged and task ci PASS on implementation commit fe2316ecc65f038e7a892c6b925e46c9903e37c6. No existing tests were deleted, skipped, or weakened. Source diff is limited to internal/query and docs/query.md.
 Delivery: committed feat(query): add query language and quick-add parser (fe2316e), fast-forward merged into main. Verified session receipt and clean linked worktree; wt remove bl-6-query --foreground --format=json deleted the worktree and branch. Herdr workspace wHX disappeared; git worktree list reports primary only. No retained task checkout or workspace, no push. Remaining blocker: none. Next resumable step: none for BL-6; consumers can now use the pure query package.
+
+Review (62249df): quick-add treats colons as reference syntax only for ^ and <; field.NAME matches raw keys case-insensitively; field-name completion offers raw keys in use; priority groups follow priority order; docs/query.md updated. FuzzQuickAdd 20 s PASS; task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
