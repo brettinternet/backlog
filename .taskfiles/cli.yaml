@@ -56,5 +56,7 @@ tasks:
     cmd: mise exec go -- go test -race ./...
 
   bench:
-    desc: Run benchmarks
-    cmd: mise exec go -- go test -run '^$' -bench . -benchmem ./...
+    desc: Measure CLI budgets at 10k and 50k (20 samples, report only)
+    cmds:
+      - task: build
+      - BL_BENCH_BINARY="$(pwd)/bin/bl" mise exec go -- go test -run '^$' -bench '^BenchmarkCLI$' -benchtime=20x -count=1 -timeout=45m ./internal/fixtures {{.CLI_ARGS}}
