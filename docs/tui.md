@@ -15,6 +15,39 @@ quits with `q` or `ctrl-c`. It has no timers, task reads/writes, or source I/O.
 This is a starting point, not the BL-14 performance spike or the BL-16 list
 implementation. The layouts, navigation, and editing below remain planned.
 
+## Engine foundation
+
+The shell is not wired to task data yet (BL-16). `internal/engine.OpenStore`
+provides the background engine: `Current` reads an immutable snapshot in O(1),
+`Subscribe` delivers only the latest snapshot, and `Mutate`, `Undo`, `Redo`, and
+`Refresh` enqueue bounded requests without source I/O on the caller. Full
+request queues return `busy`; overlapping edits to one item are rejected.
+Unsubscribe when a view closes. Close the store outside the UI update loop.
+
+`NewProjector` owns a single latest-wins worker. Pass a snapshot and query to
+`Request`; consume prepared row groups from `Results`. Superseded requests are
+canceled and cannot publish stale results. Readiness, filtering, sorting and
+grouping all run in the background, never in Bubble Tea callbacks.
+
+Edits publish a pending snapshot before source I/O, including while another
+item's write is queued. Confirmation installs the source version; a failure
+rolls back and retains its error. Conflicts retain local and current source
+versions and never retry automatically. Session undo/redo use version-checked
+inverse mutations; native inverses preserve original bytes except `updated`.
+An external edit breaks the undo chain rather than granting permission to
+restore bytes from before that edit. Undo/redo wait for pending writes. Undo
+of creation archives the new item; redo unarchives it. Archived session items
+remain available for undo but are excluded by normal projections.
+
+Native sources watch directory entries only: two descriptors on macOS
+(kqueue plus directory), one on Linux (inotify), independent of item count.
+Atomic edits, creates, deletes and renames signal immediately. A two-second
+stat sweep catches in-place edits on macOS, which do not signal the directory;
+the 150 ms filesystem-event budget applies to directory-signaled changes.
+`EMFILE`/`ENFILE` degrade to 50 ms stat polling, with no per-file watches. All
+watchers and workers stop on context cancellation. Source coverage is explicit:
+a partial or failed refresh never proves deletion.
+
 ## Principles
 
 1. **Never wait.** Paint from the cache at once, sync behind it, and apply edits optimistically. A spinner marks work in flight; it never blocks input (design.md D14, D15).

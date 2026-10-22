@@ -40,6 +40,8 @@ type Options struct {
 type Source struct {
 	options Options
 	state   string
+	loadMu  sync.Mutex
+	loaded  map[string]loadedItem
 }
 
 var _ source.Source = (*Source)(nil)
@@ -70,7 +72,7 @@ func New(o Options) (*Source, error) {
 		statuses[k] = v
 	}
 	o.Statuses = statuses
-	return &Source{o, state}, nil
+	return &Source{options: o, state: state}, nil
 }
 func (s *Source) Info() source.Info {
 	caps := model.Capabilities{}
@@ -226,7 +228,15 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	return result, nil
 }
 
+type loadedItem struct {
+	stat os.FileInfo
+	item model.Item
+}
+
 func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
+	nextLoaded := map[string]loadedItem{}
 	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
 	paths, err := s.paths(cursor.IncludeArchive)
 	if err != nil {
@@ -242,13 +252,27 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				if ctx.Err() != nil {
 					continue
 				}
-				doc, e := s.document(path)
+				stat, e := os.Lstat(path)
+				var item model.Item
+				if e == nil {
+					old, ok := s.loaded[path]
+					if ok && stat.Mode().IsRegular() && os.SameFile(stat, old.stat) && stat.Size() == old.stat.Size() && stat.ModTime() == old.stat.ModTime() && stat.Mode() == old.stat.Mode() {
+						item = old.item
+					} else {
+						var doc *format.Document
+						doc, e = s.document(path)
+						if e == nil {
+							item = s.item(doc)
+						}
+					}
+				}
 				mu.Lock()
 				if e != nil {
 					result.Findings = append(result.Findings, loadFinding(path, e))
 					result.Coverage = source.Partial
 				} else {
-					result.Items = append(result.Items, s.item(doc))
+					result.Items = append(result.Items, item)
+					nextLoaded[path] = loadedItem{stat, item}
 				}
 				mu.Unlock()
 			}
@@ -266,6 +290,7 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		result.Coverage = source.Partial
 		return result, err
 	}
+	s.loaded = nextLoaded
 	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Ref.ID < result.Items[j].Ref.ID })
 	sort.Slice(result.Findings, func(i, j int) bool { return result.Findings[i].Path < result.Findings[j].Path })
 	return result, nil
