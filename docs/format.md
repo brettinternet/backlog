@@ -94,8 +94,8 @@ Keep the header fields synchronous; only the body waits.
 | `type` | string | no | Free text. Config may list suggestions. |
 | `priority` | enum | no | `urgent`, `high`, `medium`, or `low`. Absent means unset. |
 | `assignees` | list of strings | no | `@handle` or email. `me` resolves through user config `me`. |
-| `labels` | list of strings | no | |
-| `milestone` | string | no | |
+| `labels` | list of strings | no | Free text. Config may list suggestions. |
+| `milestone` | string | no | A milestone key. Config may give it a name (design.md §5). |
 | `parent` | ID | no | Hierarchy. Cycles are errors. |
 | `blocked_by` | list of IDs | no | Hard prerequisites (design.md §6). Cycles are errors. |
 | `related` | list of IDs | no | Informational |

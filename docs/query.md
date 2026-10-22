@@ -52,7 +52,7 @@ Sort and group are separate view parameters. The filter bar also accepts them in
 | Parameter | Syntax | Notes |
 | --- | --- | --- |
 | `sort` | `field[,field…]` | Prefix `-` to reverse. Keys: `next` (design.md §6 order), `priority`, `rank`, `updated`, `created`, `due`, `id`, `title`, `status`. Ties always break by `next`, then `id`. |
-| `group` | One key | `status`, `category`, `priority`, `assignee`, `label`, `milestone`, `type`, `parent`, `source`, `none`. An item with several labels appears in each label group. Groups follow workflow order for status and category, and value order otherwise. |
+| `group` | One key | `status`, `category`, `priority`, `assignee`, `label`, `milestone`, `type`, `parent`, `source`, `none`. An item with several labels appears in each label group. Groups follow workflow order for status and category, catalog order for declared milestones (design.md §5), and value order otherwise. |
 
 ## Errors
 
@@ -60,4 +60,4 @@ A malformed query returns a positioned error, for example `unknown field "lable"
 
 ## Completion
 
-The TUI completes field names first, then values from the loaded snapshot and config: statuses, labels, assignees, milestones, IDs, and titles. Free-text matches highlight in the list.
+The TUI completes field names first, then values from the loaded snapshot and config: statuses, labels, assignees, milestones (with their names), IDs, and titles. Declared, unarchived labels and milestones come first. Free-text matches highlight in the list.

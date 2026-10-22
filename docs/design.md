@@ -62,7 +62,7 @@ Non-goals:
 | D1 | Scope is in §2. Anything listed there as a non-goal needs a register change before work starts. |
 | D2 | Ship one static Go binary, `bl` (`CGO_ENABLED=0`), module `github.com/brettinternet/backlog`. CLI framework: `urfave/cli/v3`. Mise pins the Go toolchain. This matches Worklease and Hum, so their adapters and conventions port directly. |
 | D3 | Build the TUI on Bubble Tea v2, Lip Gloss v2, and Bubbles v2 (`charm.land/...`). A spike (BL-14) confirms the stack against §11 before TUI feature work. Fall back to v1 only with recorded evidence. |
-| D4 | The native format ([format.md](format.md)) is the primary backend and the only one `bl` fully owns. Backlog.md is supported by `bl import backlog-md` and a file-level adapter that reads and writes Backlog.md files directly. `bl` never shells out to the Backlog.md CLI. |
+| D4 | The native format ([format.md](format.md)) is the primary backend and the only one `bl` fully owns. Backlog.md is supported by `bl import backlog-md` and a file-level adapter that reads and writes Backlog.md files directly. Both cover task files, drafts, archives, milestone files, and the configured label list. Docs and decisions are not managed (§2). `bl` never shells out to the Backlog.md CLI and does not imitate its CLI or MCP. |
 | D5 | **Control root.** Invoked from a linked worktree, `bl` reads and writes the backlog in the repository's primary worktree, so every checkout and agent sees one live backlog. Resolve the primary worktree by reading `.git` and `commondir` files, without spawning `git`. `root: checkout` in project config opts out. A bare repository with no primary worktree falls back to the invoking checkout with a warning. `bl doctor` warns when the control checkout is not on the default branch. |
 | D6 | **IDs** are `PREFIX-N`. They are allocated under an exclusive lock, with a counter in the Git common directory that all worktrees share, seeded from the highest existing ID. `bl check` detects duplicates across clones and `bl renumber` repairs them, rewriting references. Imported IDs are kept verbatim, including zero padding and dotted suffixes. `bl` never allocates dotted IDs. |
 | D7 | **Files.** Each item lives at `backlog/<ID>.md` in one flat directory. Archived items move to `backlog/archive/`, which default loads skip. Titles never appear in filenames, and status never moves files. |
@@ -131,7 +131,7 @@ Dependencies point downward. `tui`, `cli`, and `mcp` depend on `engine`. Only `e
 | `status`, `category` | Raw status key or name, plus the D11 category |
 | `priority` | `urgent`, `high`, `medium`, `low`, or unset. Raw value kept. |
 | `rank` | Manual order key (lexicographic string) |
-| `assignees`, `labels`, `milestone`, `due` | Lists and strings. `due` is a date. |
+| `assignees`, `labels`, `milestone`, `due` | Lists and strings. `due` is a date. `milestone` is a key that the source's milestone catalog may name (§5). |
 | `parent`, `children` | Hierarchy. `children` is derived. |
 | `blockedBy`, `blocks`, `related`, `duplicateOf` | Typed edges. Only `blockedBy` is a hard prerequisite. Inverses are derived. |
 | `refs`, `files` | Links or repository paths, and the declared file scope |
@@ -194,6 +194,10 @@ statuses:
   - {key: in-progress, name: In Progress, category: active}
   - {key: done, name: Done, category: done}
 workflow: {start: in-progress, done: done}
+milestones:
+  - {key: m-0, name: Foundation, archived: true}
+  - {key: m-2, name: Agents and automation, description: "MCP, events, hooks, actions, and claims"}
+labels: [tui, perf, blocked, deferred]   # suggestions; items may carry others
 ready: {statuses: [todo], excludeLabels: [blocked, deferred]}
 defaults: {type: task, dod: ["task ci passes on the final commit"]}   # applied by `bl new`
 views:
@@ -217,6 +221,8 @@ workspaces:
   - {name: mine, projects: [~/dev/me/worklease, ~/dev/me/hum, ~/dev/me/backlog]}
 keys: {}       # keymap overrides (tui.md)
 ```
+
+**Catalogs.** A source may supply a milestone catalog and a label list. The native source takes both from project config. The Backlog.md source reads its milestone files (including `archive/milestones/`) and the `labels` list in its `config.yml`. A catalog never restricts values. An item may name an undeclared milestone or label, and `bl` keeps it as written. Pickers and completion offer declared, unarchived entries first, then values in use. Milestone group headers and the detail pane show the name next to the key, and milestone groups follow catalog order. `bl` never edits a catalog. Change project config or Backlog.md's milestone files instead.
 
 Precedence follows D16. `bl config show` prints the effective config and where each value came from. Each file has a JSON Schema under `docs/schemas/` for editor completion.
 
@@ -399,7 +405,7 @@ These features turn on when `coordination.worklease` is configured and `workleas
 | Source | Access | Identity | Edges | Writes | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | native | Files | `ID` | `blocked_by` and parent fields | All | [format.md](format.md) |
-| Backlog.md | Files, no CLI | Task ID, filename slug tolerated | `dependencies`, `parent_task_id` | Status, fields, sections, AC, comments | Worklease §3 Backlog.md 1.52.0 |
+| Backlog.md | Files, no CLI | Task ID, filename slug tolerated | `dependencies`, `parent_task_id` | Status, fields, sections, AC, comments. Milestone files and the label list are read-only. | Worklease §3 Backlog.md 1.52.0 |
 | Beads | `bd` 1.3.0 `--json --readonly --sandbox` | Issue ID | Bulk `dependencies`. `blocks` is hard. | `bd update` and comment | Worklease §3 Beads |
 | GitHub | GraphQL and REST over HTTPS, one serial queue per host and account | `owner/repo#N` | `blockedBy` and sub-issues | State, labels, assignees, comments, Projects v2 status | Worklease §3 GitHub and Projects |
 | Linear | GraphQL over HTTPS | Organization and issue UUID, identifier displayed | Directional `blocks` | State, assignee, priority, labels, comments | Worklease §3 Linear |
