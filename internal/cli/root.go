@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -107,6 +108,14 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		}
 		if err := tui.ValidateKeys(cfg.Keys); err != nil {
 			return &Error{Reason: "invalid-config", Message: err.Error()}
+		}
+		// The batch CLI's fixed soft target can be smaller than a live TUI
+		// snapshot, forcing continuous GC and delaying input/PTY frames. Use
+		// Go's normal heap growth for interactive sessions unless explicitly
+		// configured, and restore the caller's target when the session ends.
+		if os.Getenv("GOMEMLIMIT") == "" {
+			previous := debug.SetMemoryLimit(1<<63 - 1)
+			defer debug.SetMemoryLimit(previous)
 		}
 		session, cancel := context.WithCancel(engine.WithEventOrigin(ctx, "tui"))
 		defer cancel()

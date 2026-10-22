@@ -125,12 +125,13 @@ closure retains only the cache generation, not its entire item snapshot.
 Full item data, query behavior, stat validation and incremental FTS semantics
 are unchanged. Existing cache encodings are invalidated by build identity.
 
-`bl` also defaults Go's **soft** memory target to 300 MiB, leaving headroom for
+The batch CLI also defaults Go's **soft** memory target to 300 MiB, leaving headroom for
 SQLite and process overhead under the 400 MiB RSS budget. This bounds GC
 headroom, not supported backlog size: the runtime may exceed the target when
 live data requires it. An explicit standard `GOMEMLIMIT` setting takes
 precedence, including `GOMEMLIMIT=off`; the measurements above use the shipped
-default, not benchmark-only environment tuning. Timing remains report-only.
+default, not benchmark-only environment tuning. Interactive sessions use standard
+Go heap growth instead (see BL-55 below). Timing remains report-only.
 
 BL-50 focused rerun on 2026-10-22 on the same D26 reference host and toolchain:
 
@@ -192,8 +193,10 @@ projector and TUI `Model`, and BL-14's real PTY/emulator at 120×40 and 120 FPS.
 They do not measure the spike's synthetic `List`. A measurement-only header
 replaces one screen row to expose completed projections and cursor positions;
 it does not add a row, change the input path, or render details synchronously.
-The child applies the production 300 MiB soft Go memory target unless the caller
-sets `GOMEMLIMIT`. HOME and XDG paths are isolated from user data.
+The child uses the production interactive memory policy: standard Go heap growth,
+with an explicit `GOMEMLIMIT` inherited unchanged. The original BL-25 run below
+used the former shared 300 MiB target; BL-55 records the policy change and its
+memory cost. HOME and XDG paths are isolated from user data.
 
 ```sh
 BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$' -v -count=1 -timeout=90m
@@ -246,7 +249,7 @@ BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasur
 | Warm first paint, 10k | Initial shell p95 26.84 ms; completed list p95 193.17 ms | ≤ 100 ms: meaningful list misses; [BL-54](../backlog/BL-54.md) |
 | Cold first paint, 10k | Initial shell p95 25.47 ms; completed list p95 2,239.06 ms | ≤ 400 ms: shell paints before load, meaningful list misses; [BL-54](../backlog/BL-54.md) |
 | Navigation Update+View, 50k | p95 0.109 ms, n=2,000 | ≤ 4 ms: passes |
-| Navigation key-to-PTY, 50k | p95 34.92 ms, n=100 | ≤ 16 ms: misses; [BL-55](../backlog/BL-55.md) |
+| Navigation key-to-PTY, 50k | p95 34.92 ms, n=100 | Original miss; BL-55 rerun below passes at 9.36 ms |
 | Navigation key-to-PTY, 10k | p95 8.99 ms, n=100 | Baseline; §11's PTY budget applies at 50k |
 | Held `j`, 10k, 40 Hz for 5 s | 200 keys in 5.001 s; final selection observed 7.77 ms after release | One 120 FPS frame = 8.33 ms: passes |
 | Filter single keystroke-to-PTY, 10k / 50k | p95 9.28 / 158.09 ms, n=20 each | ≤ 30 / 80 ms: 10k passes, 50k misses; [BL-56](../backlog/BL-56.md) |
@@ -303,6 +306,54 @@ that the full default Next ranking is already known. Details and writes retain
 full item data and authoritative version checks. A full load always follows,
 including all stat validation, findings, cache refresh and FTS indexing. The
 preview neither updates cache metadata nor changes the search generation.
+
+### Interactive navigation (BL-55)
+
+2026-10-22, same D26 reference host and toolchain, default `GOMAXPROCS=18`,
+seed 1, 120×40, 120 FPS. Runtime baseline `2d242ad` plus BL-55. Both `GOGC`
+and `GOMEMLIMIT` were unset; no benchmark-only runtime tuning was applied.
+
+Baseline command (before the change):
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/(10000|50000)/interaction$' -v -count=1 -timeout=30m
+```
+
+The baseline reproduced the 50k miss: PTY p95 31.69 ms (100 keys), despite
+viewport-only Update+View. Heap/CPU profiles identified GC pressure under the
+shared 300 MiB soft target; a diagnostic `GOMEMLIMIT=off` run measured 9.77 ms.
+Snapshot-description compression and releasing cached full-item scratch did not
+meet the latency budget and were discarded, not shipped.
+
+Final command:
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/(10000|50000)/interaction$|^TestShellMeasurement$' -v -count=1 -timeout=30m
+```
+
+| Boundary | Result | Budget |
+| --- | --- | --- |
+| 50k navigation key-to-PTY, n=100 | p95 9.36 ms | ≤ 16 ms: passes |
+| 50,001 prepared rows, Update+View, n=2,000 | p95 0.087 ms | ≤ 4 ms: passes |
+| 10k held `j`, 40 Hz, 200 keys in 5.001 s | Final cursor 6.48 ms after release | ≤ 8.33 ms: passes |
+| 10k navigation key-to-PTY, n=100 | p95 9.19 ms | Baseline |
+| 10k / 50k filter, n=20 each | p95 9.19 / 41.56 ms | Observations; BL-56 owns qualification |
+| 10k / 50k peak child RSS | 300.34 / 1,072.70 MiB | **Both still miss D26; BL-58 remains open** |
+
+Interactive startup now restores standard Go heap growth before opening the
+store, rather than forcing a live snapshot under the batch CLI's fixed soft
+memory target. The previous target is restored after the session closes. An
+explicit `GOMEMLIMIT` (including `off`) is never overridden; a user-supplied
+small target can still trade responsiveness for memory. Batch CLI commands
+retain the 300 MiB default and their existing RSS/latency behavior. No query,
+item, source, worker or renderer behavior changed; navigation still does no I/O
+or backlog-sized work on Update.
+
+This is a latency/memory tradeoff, **not a memory-budget fix**: the same-command
+pre-change RSS maxima were 311.97 / 728.84 MiB, so 50k peak RSS increases
+substantially. D26's 150/400 MiB TUI budgets are unchanged and unmet. BL-58 must
+reduce retained/load memory while preserving these navigation measurements;
+reimposing the fixed target without that reduction recreates GC thrashing.
 
 ### Cold-cache correction
 
