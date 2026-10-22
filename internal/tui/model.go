@@ -29,6 +29,10 @@ type Options struct {
 	Milestones            []project.Milestone
 	Read                  func(context.Context, model.Ref) (model.Item, error)
 	Render                func(string, int) (string, error)
+	Views                 []project.SavedView
+	Session               *Session
+	Warning               string
+	SaveView              func(project.ViewConfig, bool) (project.SavedView, error)
 }
 
 type screenRow struct {
@@ -41,6 +45,7 @@ type prepared struct {
 	rows            []screenRow
 	starts          []int
 	pending, failed int
+	items           int
 }
 type snapshotMsg struct {
 	snapshot *engine.Snapshot
@@ -99,6 +104,11 @@ type Model struct {
 	detailGeneration         uint64
 	detailIdentity           detailIdentity
 	detailWorker             *detailWorker
+	views                    []viewState
+	restore                  *selection
+	splitWidth               int
+	save                     savePrompt
+	notice                   string
 }
 
 var viewNames = []string{"Next", "Active", "Mine", "All"}
@@ -130,6 +140,8 @@ func New(opts Options) Model {
 		}
 		model.detailWorker = newDetailWorker(opts.Context, opts.Read, opts.Render, theme)
 	}
+	model.initViews()
+	model.notice = opts.Warning
 	return model
 }
 
@@ -205,7 +217,7 @@ func (m Model) selectedRow() (engine.Row, bool) {
 }
 func (m Model) detailWidth() int {
 	if m.width >= 120 {
-		listWidth := (m.width - 3) / 2
+		listWidth := m.listWidth()
 		return max(1, m.width-listWidth-1)
 	}
 	return max(1, m.width)
@@ -259,6 +271,12 @@ func (m Model) prepare() tea.Cmd {
 	} else {
 		anchor = m.data.rows[from]
 	}
+	var restore *selection
+	if m.restore != nil {
+		copy := *m.restore
+		restore = &copy
+		from = m.selected
+	}
 	return func() tea.Msg {
 		states := map[string]bool{}
 		if foldAll {
@@ -272,7 +290,11 @@ func (m Model) prepare() tea.Cmd {
 		data := prepareGroupedRows(groups, states, !ungrouped)
 		selected := -1
 		for i, r := range data.rows {
-			if r.value == anchor.value && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "") {
+			matches := r.value == anchor.value && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
+			if restore != nil {
+				matches = (restore.Header && r.header != "" && r.value == restore.Group) || (!restore.Header && r.header == "" && r.row.Ref == restore.Ref)
+			}
+			if matches {
 				selected = i
 				break
 			}
@@ -286,6 +308,7 @@ func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
 func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, grouped bool) prepared {
 	p := prepared{}
 	for g, group := range groups {
+		p.items += len(group.Rows)
 		p.starts = append(p.starts, len(p.rows))
 		glyph := "▾"
 		if folded[group.Value] {
@@ -319,21 +342,23 @@ func (m *Model) project() {
 	}
 }
 func (m *Model) switchView(n int) {
-	if n < 0 || n >= len(viewNames) {
+	if n < 0 || n >= len(m.views) {
 		return
 	}
+	m.captureView()
 	m.serial++
 	m.view = n
-	m.query = viewQueries[n]
+	m.query = m.views[n].Config.Query
+	m.restore = &m.views[n].Selection
 	m.editor = queryEditor{}
 	m.queryError = ""
 	m.queryWarning = ""
 	m.highlights = nil
-	m.foldAll = false
+	m.foldAll = m.views[n].foldAll
 	m.selected = 0
 	m.top = 0
 	m.loading = true
-	m.folded = nil
+	m.folded = m.views[n].folded
 	m.project()
 }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -385,12 +410,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ungrouped = msg.Ungrouped
 		m.serial++
 		return m, tea.Batch(m.prepare(), m.waitProjection())
+	case viewSaved:
+		m.saved(msg)
+		return m, nil
 	case foldedMsg:
 		if msg.serial != m.serial {
 			return m, nil
 		}
 		m.data = msg.data
 		m.loading = false
+		// The store can publish its empty loading snapshot before source data.
+		// Keep the restart anchor until rows exist to resolve it against.
+		if m.data.items > 0 {
+			m.restore = nil
+		}
 		if msg.selected >= 0 && m.selected == msg.from {
 			m.selected = msg.selected
 		}
@@ -430,8 +463,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
+		if m.save.open {
+			return m.updateSave(msg)
+		}
 		if m.editor.open {
 			return m.updateQuery(msg)
+		}
+		if s == "ctrl+s" {
+			m.save = savePrompt{open: true, name: m.views[m.view].Config.Name}
+			m.notice = ""
+			return m, nil
+		}
+		if m.detailOpen && m.width >= 120 && (s == "ctrl+left" || s == "ctrl+right") {
+			delta := 5
+			if s == "ctrl+left" {
+				delta = -5
+			}
+			m.splitWidth = max(30, min(m.listWidth()+delta, m.width-31))
+			return m, m.scheduleDetail()
 		}
 		if (m.prefix == "f" || m.prefix == "o" || m.prefix == "z") && s != "esc" {
 			prefix := m.prefix
@@ -567,9 +616,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case prefix == "g" && s == "g":
 			m.selected = 0
 		case prefix == "g" && s == "t":
-			m.switchView((m.view + 1) % len(viewNames))
+			m.switchView((m.view + 1) % len(m.views))
 		case prefix == "g" && s == "T":
-			m.switchView((m.view + len(viewNames) - 1) % len(viewNames))
+			m.switchView((m.view + len(m.views) - 1) % len(m.views))
 		case s == "g":
 			m.prefix = s
 			m.count = n
@@ -661,8 +710,9 @@ func priority(p model.Priority) string {
 }
 func (m Model) View() tea.View {
 	lines := make([]string, 0, m.height)
-	tabs := make([]string, len(viewNames))
-	for i, name := range viewNames {
+	tabs := make([]string, len(m.views))
+	for i, v := range m.views {
+		name := textutil.Line(v.Config.Name)
 		tabs[i] = name
 		if i == m.view {
 			tabs[i] = "[" + name + "]"
@@ -675,8 +725,11 @@ func (m Model) View() tea.View {
 	if wide {
 		columns = "  ID           P  Status         ⊘   ▣       Title"
 	}
+	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
+		columns = "  " + strings.Join(custom, "  ")
+	}
 	if m.detailOpen && m.width >= 120 {
-		listWidth := (m.width - 3) / 2
+		listWidth := m.listWidth()
 		detailWidth := m.detailWidth()
 		lines = append(lines, cell(columns, listWidth)+"│"+cell(m.detailHeader(), detailWidth))
 		page := max(0, m.height-5)
@@ -711,6 +764,22 @@ func (m Model) View() tea.View {
 			}
 		}
 	}
+	if m.notice != "" {
+		footer = "warning: " + m.notice + " · " + footer
+	}
+	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" {
+		footer = layout + " unavailable; list · " + footer
+	}
+	if m.save.open {
+		destination := "user"
+		if m.save.project {
+			destination = "project"
+		}
+		footer = "Save view (" + destination + ", tab destination, ctrl-u clear): " + m.save.name
+		if m.save.busy {
+			footer = "Saving view…"
+		}
+	}
 	if m.editor.open {
 		footer = "/ " + m.editor.text[:m.editor.cursor] + "▏" + m.editor.text[m.editor.cursor:]
 	}
@@ -738,7 +807,8 @@ func (m Model) listLine(index int, wide bool) string {
 		hints := []string{
 			"j/k ↓/↑ · count + move · gg/G/NG",
 			"ctrl-d/u half page · ctrl-f/b full page",
-			"[/] groups · za fold · 1–4 views · gt/gT",
+			"[/] groups · za fold · 1–9 views · gt/gT",
+			"ctrl-s save view · ctrl-left/right resize split",
 			"enter toggles detail · tab focuses/cycles detail tabs",
 			"detail: j/k scroll · h list · m show more · esc/q back",
 			"R resync · ? help · q/ctrl-c quit",
@@ -784,6 +854,26 @@ func (m Model) listLine(index int, wide bool) string {
 	}
 	if r.row.Error != "" {
 		state = "! "
+	}
+	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
+		values := make([]string, 0, len(custom))
+		for _, column := range custom {
+			switch column {
+			case "id":
+				values = append(values, cell(r.row.Ref.ID, 12))
+			case "priority":
+				values = append(values, cell(priority(r.row.Priority), 2))
+			case "status":
+				values = append(values, cell(r.row.Status, 14))
+			case "blockers":
+				values = append(values, strconv.Itoa(r.row.OpenBlockers))
+			case "children":
+				values = append(values, fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal))
+			case "title":
+				values = append(values, state+textutil.Line(r.row.Title))
+			}
+		}
+		return marker + strings.Join(values, "  ")
 	}
 	line := marker + cell(r.row.Ref.ID, 12) + " "
 	if wide {

@@ -59,6 +59,7 @@ type UIConfig struct {
 
 type Config struct {
 	Settings         `yaml:",inline"`
+	SavedViews       []SavedView                `yaml:"-" json:"savedViews,omitempty"`
 	Paths            Paths                      `yaml:"-" json:"paths"`
 	Discovery        Discovery                  `yaml:"-" json:"discovery"`
 	HostLocal        bool                       `yaml:"-" json:"hostLocal"`
@@ -136,6 +137,13 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 				projectFile = checkoutFile
 				projectNode = checkoutNode
 			}
+			if views := field(projectNode, "views"); views != nil {
+				var entries []ViewConfig
+				if err := views.Decode(&entries); err != nil {
+					return Config{}, err
+				}
+				cfg.SavedViews = appendViews(cfg.SavedViews, "project", entries)
+			}
 			overlay(effective, projectNode, "", Provenance{Layer: "project", File: projectFile}, cfg.Provenance)
 			replaceField(effective, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "root"}, cloneNode(root))
 			cfg.Provenance["root"] = rootOrigin
@@ -179,6 +187,10 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	}
 	if err := validateSettings(effective); err != nil {
 		return Config{}, err
+	}
+	cfg.SavedViews = appendViews(cfg.SavedViews, "user", user.Views)
+	if override, ok := user.Projects[cfg.Project.ID]; ok {
+		cfg.SavedViews = appendViews(cfg.SavedViews, "user-project", override.Views)
 	}
 	cfg.Privileged = privileged(cfg)
 	return cfg, nil
@@ -445,6 +457,28 @@ func validateSettings(node *yaml.Node) error {
 				}
 				if phase := field(entry, "phase"); phase != nil && phase.Value != "before" && phase.Value != "after" {
 					return fail(phase, "hooks.phase", "must be before or after")
+				}
+			}
+		}
+	}
+	if views := field(node, "views"); views != nil {
+		seen := map[string]bool{}
+		for _, entry := range views.Content {
+			name := field(entry, "name")
+			if name == nil || strings.TrimSpace(name.Value) == "" {
+				return fail(entry, "views.name", "required")
+			}
+			if seen[name.Value] {
+				return fail(name, "views.name", "duplicate "+name.Value)
+			}
+			seen[name.Value] = true
+			if columns := field(entry, "columns"); columns != nil {
+				for _, column := range columns.Content {
+					switch column.Value {
+					case "id", "priority", "status", "blockers", "children", "title":
+					default:
+						return fail(column, "views.columns", "unknown column")
+					}
 				}
 			}
 		}

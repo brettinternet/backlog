@@ -94,7 +94,20 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		for _, s := range cfg.Sources {
 			sources = append(sources, s.ID)
 		}
+		restored, warning := tui.LoadSession(cfg)
 		app := tui.New(tui.Options{
+			Views: cfg.SavedViews, Session: restored, Warning: warning,
+			SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
+				path, scope := cfg.Paths.ConfigFile, "user"
+				if shared {
+					if cfg.Discovery.ControlRoot == "" {
+						return project.SavedView{}, fmt.Errorf("project config requires a repository")
+					}
+					path, scope = filepath.Join(cfg.Discovery.ControlRoot, ".config", "backlog.yaml"), "project"
+				}
+				err := project.SaveView(path, !shared, v)
+				return project.SavedView{ID: scope + ":" + v.Name, ViewConfig: v}, err
+			},
 			Context: session, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID,
 			Milestones: cfg.Milestones,
 			Read: func(readCtx context.Context, ref model.Ref) (model.Item, error) {
@@ -104,7 +117,13 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			NoColor:      os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb",
 		})
 		app.Bind(snapshots)
-		_, err = tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
+		final, runErr := tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
+		err = runErr
+		if result, ok := final.(tui.Model); ok {
+			if saveErr := result.SaveSession(cfg); saveErr != nil {
+				fmt.Fprintf(errOut, "bl: warning: UI state not saved: %v\n", saveErr)
+			}
+		}
 		cancel()
 		if ctx.Err() != nil || errors.Is(err, tea.ErrInterrupted) {
 			return nil

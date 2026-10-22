@@ -379,12 +379,12 @@ tasks ✓ synced
   ID           P  Status         ⊘   ▣       Title                              
 j/k ↓/↑ · count + move · gg/G/NG                                                
 ctrl-d/u half page · ctrl-f/b full page                                         
-[/] groups · za fold · 1–4 views · gt/gT                                        
+[/] groups · za fold · 1–9 views · gt/gT                                        
+ctrl-s save view · ctrl-left/right resize split                                 
 enter toggles detail · tab focuses/cycles detail tabs                           
 detail: j/k scroll · h list · m show more · esc/q back                          
 R resync · ? help · q/ctrl-c quit                                               
 A digit selects a view after 350ms; follow it with a motion for a count.        
-                                                                                
                                                                                 
                                                                                 
                                                                                 
