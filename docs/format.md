@@ -130,7 +130,7 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
   Each may appear at most once, in any order. The writer adds missing sections in that order.
 - **Section extent.** A section runs to the next recognized heading or the end of the file. Any other heading inside a section, at any level, belongs to that section.
 - **Code fences.** Headings inside fenced code blocks are never headings.
-- **Criteria and definition of done.** Each GFM task-list item (`- [ ] text` or `- [x] text`, `*` accepted) is one entry, together with any following lines indented by two or more spaces. Entries are numbered from 1 in file order. Lines that aren't task-list items are kept but are not entries.
+- **Criteria and definition of done.** Each GFM task-list item (`- [ ] text` or `- [x] text`, `*` accepted) is one entry, together with any following lines indented by two or more spaces. Entries are numbered from 1 in file order. Numbers aren't stored, so they shift when an entry is added or removed above them. Callers that address entries by number guard the write with the item version (design.md §7). Lines that aren't task-list items are kept but are not entries.
 - **Comments.** Each comment starts with a line of the form `### <RFC3339 UTC timestamp> <author>` and runs until the next such line or the end of the section. Level-3 headings without that shape are part of a comment body. Comments are append-only through `bl`.
 - **Plan, notes, and summary.** Free Markdown. `bl note` appends a paragraph to Notes, separated by one blank line.
 
