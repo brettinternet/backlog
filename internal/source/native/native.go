@@ -332,8 +332,15 @@ func (s *Source) locate(ctx context.Context, id string) (string, error) {
 			}
 			return canonical(fileID), true
 		})
+		// Trust the index only for one hit that still exists. A miss, duplicate, or
+		// vanished path rechecks the directories, so a stale index (identity
+		// unchanged on a coarse-timestamp filesystem) never decides the outcome.
 		if err == nil {
-			return find(paths)
+			if path, e := find(paths); e == nil {
+				if _, e = os.Stat(path); e == nil {
+					return path, nil
+				}
+			}
 		}
 	}
 	paths, err := s.paths(true)
