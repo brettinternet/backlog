@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@01a16205-e986-729e-88c1-f544e7657f9e'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 06:07'
+updated_date: '2026-10-22 06:25'
 labels:
   - perf
   - tooling
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-7
@@ -81,6 +82,8 @@ AC#3: task bench results were compared against docs/benchmarks.md by independent
 Independent verifier 4425db9a plus pending-evidence completion ac1af477 returned PASS for all three criteria; no concrete scoped defects found. Source unchanged after verification. No existing test deleted, skipped or weakened. The newly added BenchmarkCLI opt-in gate is benchmark-only, not a skipped correctness test.
 Delivery: implementation d194aa7 merged into main as 1a8f55d; task ci passed on integrated source (/tmp/bl-12-ci-final.log). docs/design.md is the only justified extension beyond declared file scope (owner-approved D26 update). No pushes or PRs.
 Cleanup verified: session-owned checkout /Users/brett/dev/me/backlog/.worktrees/bl-12-fixture-benchmarks, branch bl-12-fixture-benchmarks, receipt creation ffa8f2846a09be53f8ea090d90f7649ee204dec9, session 01a16205-e986-729e-88c1-f544e7657f9e. wt list and receipt matched; Herdr wJ5 had only an idle zsh. wt remove --foreground --format=json deleted checkout and branch; subsequent wt list shows primary only and herdr workspace list confirms wJ5 disappeared. Workbench plugin unavailable, so equivalent Herdr CLI inspection was used. No retained task worktrees/workspaces. No blocker or resumable BL-12 work remains.
+
+Review: fixtures, RSS units, p95 nearest-rank, opt-in gate and benchmarks.md budget table checked; no defects found. Budget misses tracked by BL-47–BL-50.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

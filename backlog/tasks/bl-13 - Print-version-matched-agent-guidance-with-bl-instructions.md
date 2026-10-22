@@ -5,10 +5,11 @@ status: Done
 assignee:
   - pi-bl-20260906-01
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 06:14'
+updated_date: '2026-10-22 06:25'
 labels:
   - agents
   - docs
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-8
@@ -80,6 +81,8 @@ AC#2: task cli:test PKG=./internal/cli -- -run TestInstructionsCommandDrift -cou
 AC#3: task cli:test PKG=./internal/cli -- -run TestInstructionsWorkflow -count=1 (covered by TestInstructions run) passed: isolated next/show/start/note/ac-check/done loop consumes returned JSON versions and persists criterion evidence; embedded workflow includes JSON response example and correct version paths.
 Independent verifier 9de6a518-affc-4bef-9628-56f82fb86aaf returned PASS for AC1, AC2, AC3 after task cli:test PKG=./internal/cli -- -run TestInstructions -count=1. No concrete defects found; no tests deleted, skipped, or weakened. LSP diagnostics clean for command implementation.
 Delivery: implementation commit 68b0c4a passed task check:staged and task ci, then fast-forward merged into main. Worktrunk removed session-owned feat/bl-13-instructions checkout and branch; Herdr workspace wJA disappeared after the post-remove hook. No retained task worktree/workspace. No push performed. No remaining blocker or next implementation step.
+
+Review 6df19c6: removed repository task IDs (BL-32/BL-33) from shipped workflow guidance and replaced the query negation example, which failed with unknown-label usage error in projects without a wontfix label, with -priority:low (verified live). TestInstructions and internal/fixtures tests pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
