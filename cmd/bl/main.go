@@ -18,8 +18,9 @@ var (
 )
 
 func main() {
-	// Leave headroom for SQLite and process overhead within the 400 MiB RSS
-	// budget. This is a soft GC target, not a cap on supported backlog size.
+	// Leave headroom for SQLite and process overhead within the batch CLI's
+	// 400 MiB RSS budget. Interactive startup restores normal Go heap growth
+	// to avoid GC thrashing when its live snapshot exceeds this soft target.
 	// An explicit Go runtime setting always takes precedence.
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(300 << 20)

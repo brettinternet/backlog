@@ -522,4 +522,10 @@ reasons, without exposing the underlying board/list or duplicating its header.
 
 ## Rendering and safety
 
+Interactive sessions use standard Go heap growth instead of the batch CLI's
+300 MiB soft memory target, avoiding continuous GC when a live snapshot exceeds
+that target. An explicit `GOMEMLIMIT` is respected unchanged; a small target can
+trade responsiveness for memory. The TUI RSS budgets remain unchanged and are
+not yet met; see [benchmarks.md](benchmarks.md#interactive-navigation-bl-55).
+
 All provider text is sanitized before rendering. CSI, OSC, and other control sequences are stripped (design.md D21). Width uses terminal cells (`x/ansi`). Under `NO_COLOR` there is no styling, and `--high-contrast` uses bold, underline, and reverse instead of faint text.

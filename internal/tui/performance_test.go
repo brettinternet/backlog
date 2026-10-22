@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -71,9 +70,8 @@ func TestProductionPerformanceChild(t *testing.T) {
 	if root == "" {
 		return
 	}
-	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(300 << 20)
-	}
+	// Match interactive CLI startup: standard Go heap growth, with any
+	// explicit GOMEMLIMIT inherited by the child runtime unchanged.
 	paths, err := project.UserPaths()
 	if err != nil {
 		t.Fatal(err)
