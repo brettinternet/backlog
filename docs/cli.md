@@ -22,8 +22,10 @@ own database and adjacent refresh lock. Unchanged items are validated by size,
 nanosecond mtime, inode, and ctime without opening item files. Changed files
 alone are reparsed; refreshes are serialized across processes.
 
-Corrupt or incompatible caches are quarantined beside the database and rebuilt
-with a warning on stderr. An unavailable cache falls back to native files.
+Corrupt or incompatible caches are deleted and rebuilt with a warning on
+stderr. Rows written by a different `bl` executable are reparsed silently, so
+an upgraded parser never serves stale items. An unavailable cache falls back to
+native files.
 Removing cache data only costs the next read time; it never removes backlog
 items. `show` and writes read authoritative files directly.
 

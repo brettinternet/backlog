@@ -1167,7 +1167,11 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 		return fmt.Errorf("native serializer returned invalid frontmatter")
 	}
 	output := append(bytes.Clone(serialized[:index+len(separator)]), []byte(body)...)
-	if _, err := format.Parse(output); err != nil {
+	doc, err := format.Parse(output)
+	if err != nil {
+		return fmt.Errorf("native item validation: %w", err)
+	}
+	if err := verifyBody(doc.Item(), task.doc.body, task.updated); err != nil {
 		return fmt.Errorf("native item validation: %w", err)
 	}
 	task.outputPath = filepath.ToSlash(filepath.Join("backlog", id+".md"))
@@ -1214,6 +1218,33 @@ func renderNativeBody(body parsedBody, fallback time.Time) string {
 		return ""
 	}
 	return out.String()
+}
+
+// verifyBody refuses source text that would change native structure, such as
+// a comment line shaped like a native comment header or an unclosed fence that
+// would swallow later comments. Silently splitting or merging content would
+// misattribute it.
+func verifyBody(parsed model.Item, body parsedBody, fallback time.Time) error {
+	for _, section := range []struct{ name, got, want string }{
+		{"description", parsed.Description, body.sections["description"]},
+		{"plan", parsed.Plan, body.sections["plan"]},
+		{"notes", parsed.Notes, body.sections["notes"]},
+		{"summary", parsed.Summary, body.sections["summary"]},
+	} {
+		if strings.TrimSpace(section.got) != strings.TrimSpace(section.want) {
+			return fmt.Errorf("%s section does not keep its content in the native format", section.name)
+		}
+	}
+	want := parseComments(body.comments, fallback)
+	if len(parsed.Comments) != len(want) {
+		return fmt.Errorf("comments would become %d native comments instead of %d; a comment line looks like a native comment header (### <RFC 3339 UTC time> <author>) or opens an unclosed code fence", len(parsed.Comments), len(want))
+	}
+	for i, comment := range want {
+		if strings.TrimSpace(parsed.Comments[i].Body) != strings.TrimSpace(comment.body) {
+			return fmt.Errorf("comment %d does not keep its content in the native format", i+1)
+		}
+	}
+	return nil
 }
 
 type importedComment struct {

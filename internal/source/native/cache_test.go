@@ -216,6 +216,25 @@ func TestCacheRecovery(t *testing.T) {
 			t.Fatalf("%s recovery: %+v", kind, got)
 		}
 	}
+	// Rows written by another binary may reflect an older parser and must be
+	// reparsed silently, even though their stat identities still match.
+	db, err := sql.Open("sqlite", cachePath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`UPDATE metadata SET build='older-binary'`)
+	_ = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reads atomic.Int64
+	counted := cachedSource(t, root, func(path string) ([]byte, error) { reads.Add(1); return os.ReadFile(path) })
+	if got := cachedLoad(t, counted); reads.Load() != 1 || len(got.Findings) != 0 {
+		t.Fatalf("other binary rows reused: reads=%d %+v", reads.Load(), got)
+	}
+	if cachedLoad(t, counted); reads.Load() != 1 {
+		t.Fatalf("same binary rows not reused: reads=%d", reads.Load())
+	}
 	// A cache location that cannot be opened must also leave source loading usable.
 	blocked := filepath.Join(root, "blocked")
 	write(t, blocked, []byte("file"))

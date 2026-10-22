@@ -22,7 +22,21 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schema = 1
+const schema = 2
+
+// build identifies the executable that wrote cached rows. Parsed items are
+// opaque gob values, so a parser or model change in a new binary must discard
+// them; an unknown executable never matches and always reparses.
+var build = func() string {
+	path, err := os.Executable()
+	if err == nil {
+		var info os.FileInfo
+		if info, err = os.Stat(path); err == nil {
+			return fmt.Sprintf("%s:%d:%d", path, info.Size(), info.ModTime().UnixNano())
+		}
+	}
+	return rand.Text()
+}()
 
 func init() {
 	gob.Register(map[string]any{})
@@ -99,8 +113,8 @@ func (s Store) open(ctx context.Context) (*sql.DB, error) {
 	if version == 0 {
 		_, err = db.ExecContext(ctx, `CREATE TABLE items(path TEXT PRIMARY KEY, identity TEXT NOT NULL, data BLOB NOT NULL);
 CREATE VIRTUAL TABLE search USING fts5(path UNINDEXED, text, tokenize='trigram case_sensitive 1');
-CREATE TABLE metadata(generation TEXT NOT NULL);
-INSERT INTO metadata VALUES (''); PRAGMA user_version=1;`)
+CREATE TABLE metadata(generation TEXT NOT NULL, build TEXT NOT NULL);
+INSERT INTO metadata VALUES ('',''); PRAGMA user_version=2;`)
 		if err != nil {
 			return fail(err)
 		}
@@ -118,12 +132,17 @@ func (s Store) Refresh(ctx context.Context, paths func() ([]string, error), cove
 		return Snapshot{}, nil, err
 	}
 	defer unlock(lock)
+	// Enumeration failures are source errors, not cache damage.
+	files, err := paths()
+	if err != nil {
+		return Snapshot{}, nil, err
+	}
 	var warnings []string
 	for attempt := 0; attempt < 2; attempt++ {
 		db, e := s.open(ctx)
 		if e == nil {
 			var snapshot Snapshot
-			snapshot, e = refresh(ctx, db, paths, covered, parse)
+			snapshot, e = refresh(ctx, db, files, covered, parse)
 			_ = db.Close()
 			if e == nil {
 				return snapshot, warnings, nil
@@ -134,10 +153,10 @@ func (s Store) Refresh(ctx context.Context, paths func() ([]string, error), cove
 			break
 		}
 		warnings = append(warnings, "rebuilding disposable cache: "+e.Error())
-		// Quarantine rather than reuse a damaged database or its WAL sidecars.
-		suffix := fmt.Sprintf(".broken-%x", rand.Text())
+		// Discard rather than reuse a damaged database or its WAL sidecars. The
+		// cache is disposable, and kept copies would grow without bound.
 		for _, extra := range []string{"", "-wal", "-shm"} {
-			if e := os.Rename(s.Path+extra, s.Path+suffix+extra); e != nil && !errors.Is(e, os.ErrNotExist) {
+			if e := os.Remove(s.Path + extra); e != nil && !errors.Is(e, os.ErrNotExist) {
 				return Snapshot{}, warnings, e
 			}
 		}
@@ -150,12 +169,24 @@ type row struct {
 	data     []byte
 }
 
-func refresh(ctx context.Context, db *sql.DB, paths func() ([]string, error), covered func(string) bool, parse func(string) (model.Item, error)) (Snapshot, error) {
+func refresh(ctx context.Context, db *sql.DB, files []string, covered func(string) bool, parse func(string) (model.Item, error)) (Snapshot, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	defer tx.Rollback()
+	var written string
+	if err = tx.QueryRowContext(ctx, `SELECT build FROM metadata`).Scan(&written); err != nil {
+		return Snapshot{}, err
+	}
+	if written != build {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM items; DELETE FROM search;`); err != nil {
+			return Snapshot{}, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE metadata SET build=?`, build); err != nil {
+			return Snapshot{}, err
+		}
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT path,identity,data FROM items`)
 	if err != nil {
 		return Snapshot{}, err
@@ -172,10 +203,6 @@ func refresh(ctx context.Context, db *sql.DB, paths func() ([]string, error), co
 	}
 	err = rows.Err()
 	_ = rows.Close()
-	if err != nil {
-		return Snapshot{}, err
-	}
-	files, err := paths()
 	if err != nil {
 		return Snapshot{}, err
 	}

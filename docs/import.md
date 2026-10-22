@@ -22,7 +22,7 @@ The destination is a project directory, not a `backlog/` subdirectory. It must b
 | Backlog.md Comments block | Native timestamped comments. `author` and `created` are converted from each legacy entry; unstructured comment text is retained under an `unknown` author. |
 | Other level-two body sections | Retained under Description with their heading and contents. |
 
-Tasks in `completed/` receive the `done` status. Files in `archive/tasks/` and `archive/drafts/` are written under `backlog/archive/`. Drafts receive a `draft` status whose category is `backlog`; archived drafts retain that status. IDs that collide after upper-casing or native padded-ID lookup normalization are refused rather than silently merged.
+Tasks in `completed/` receive the `done` status. Files in `archive/tasks/` and `archive/drafts/` are written under `backlog/archive/`. Drafts receive a `draft` status whose category is `backlog`; archived drafts retain that status. IDs that collide after upper-casing or native padded-ID lookup normalization are refused rather than silently merged. Each output item is reparsed before anything is written; if source text would change native structure, the import is refused and names the file. For example, a comment line shaped like a native comment header (`### 2026-01-02T03:04:00Z name`) would otherwise split the comment and attribute its text to another author. Edit the source text, for instance by indenting that line, and import again.
 
 ## Project configuration and milestones
 

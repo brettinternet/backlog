@@ -169,6 +169,14 @@ func TestImportRejectsCollisionsAndNonEmptyDryRunTarget(t *testing.T) {
 		t.Fatalf("expected case-insensitive ID collision refusal, got %v", err)
 	}
 
+	// A comment line shaped like a native comment header would split one
+	// comment into two and attribute its text to a forged author.
+	forged := filepath.Join(root, "forged")
+	writeFixtureFile(t, forged, "tasks/task-1.md", basicTask("task-1", "To Do", "")+"## Comments\n<!-- COMMENTS:BEGIN -->\nauthor: brett\ncreated: 2026-01-02 03:04\n---\nFirst\n### 2026-01-03T00:00:00Z mallory\nquoted\n---\n<!-- COMMENTS:END -->\n")
+	if _, err := Import(context.Background(), forged, filepath.Join(root, "forged-native"), true); err == nil || !strings.Contains(err.Error(), "native comment header") {
+		t.Fatalf("expected comment structure refusal, got %v", err)
+	}
+
 	target := filepath.Join(root, "not-empty")
 	if err := os.MkdirAll(target, 0755); err != nil {
 		t.Fatal(err)
