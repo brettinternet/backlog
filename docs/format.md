@@ -54,6 +54,7 @@ after the selection is stable for one frame, and reuse cached renders.
 
 - [ ] `go test ./internal/tui -run TestDetailDebounce` passes
 - [x] Held-key benchmark p95 ≤ 16 ms at 10k
+  Evidence: `BL_TUI_SAMPLES=20 go test ./internal/tui -run TestHeldKey` p95 9.8 ms.
 
 ## Definition of done
 
@@ -65,7 +66,7 @@ after the selection is stable for one frame, and reuse cached renders.
 
 ## Notes
 
-AC#2: `BL_TUI_SAMPLES=20 go test ./internal/tui -run TestHeldKey` p95 9.8 ms.
+The 40 Hz held-key run needed a warm cache to reach budget.
 
 ## Summary
 
@@ -133,6 +134,7 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
 - **Section extent.** A section runs to the next recognized heading or the end of the file. Any other heading inside a section, at any level, belongs to that section.
 - **Code fences.** Headings, task-list entries, and comment headers inside fenced code blocks are never structural. Backtick and tilde fences use at least three identical characters, with up to three leading spaces. Closing fences use the same character, at least the opening length, and no non-whitespace suffix. An unclosed fence extends to EOF.
 - **Criteria and definition of done.** Each column-1 GFM task-list item (`- [ ] text` or `- [x] text`, `*` and uppercase `X` accepted) is one entry, together with any following lines indented by two or more spaces (or a tab). Entries are numbered from 1 in file order. Numbers aren't stored, so they shift when an entry is added or removed above them. Callers that address entries by number guard the write with the item version (design.md §7). Lines that aren't task-list items are kept but are not entries.
+- **Evidence.** An entry's continuation line that starts with `Evidence:` is that entry's evidence. `bl ac ID check N --evidence TEXT` writes or replaces it as one line, and unchecking removes it. Evidence sits under its own entry, so it moves and disappears with that entry and never refers to a number.
 - **Comments.** Each comment starts with a line of the form `### <RFC3339 UTC timestamp> <author>` and runs until the next such line or the end of the section. Level-3 headings without that shape are part of a comment body. Text before the first valid header is retained but is not a comment. Comment headers start at column 1; timestamps use `YYYY-MM-DDTHH:MM:SSZ`, and authors are nonempty single-line strings. Comments are append-only through `bl`.
 - **Plan, notes, and summary.** Free Markdown. `bl note` appends a paragraph to Notes, separated by one blank line.
 
@@ -158,6 +160,7 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
 | `unknown-status` | error | no |
 | `blocker-cycle`, `parent-cycle` | error | no |
 | `duplicate-section` | error | no |
+| `merge-conflict` | error | Resolve the two kinds of hunk that `bl` understands. When the sides differ only in `updated`, the later timestamp wins. When both sides only add whole comments, both are kept in timestamp order and exact duplicates dropped. Both marker styles (`merge` and `diff3`) are read. Other hunks are left for you, and the file stays an error until they're gone. |
 | `dangling-ref` | warning | no |
 | `noncanonical` | info | Normalize line endings and the trailing newline |
 

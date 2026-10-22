@@ -86,6 +86,7 @@ Non-goals:
 | D24 | **Backends**, in delivery order: native, Backlog.md (file adapter), Beads (`bd` 1.3.0 JSON CLI), GitHub Issues (with Projects v2 status), Linear, Jira Cloud, external. Port from Worklease v1.9.3 where it applies, but drop Worklease's receipt and recovery journal; D15 replaces it. |
 | D25 | **Worklease becomes claims-only.** Worklease TASK-156 removes its work queue. Its provider probe evidence stays referenced at tag `v1.9.3` (§10). |
 | D26 | **Budgets.** The §11 budgets are acceptance criteria, measured on the reference host (Apple M1 Max, 32 GiB) with the deterministic fixture generator. CI tracks relative regressions only and never asserts absolute latency. |
+| D28 | **Evidence and merges.** Evidence for a criterion is written under that criterion, never in Notes by number, so it can't point at the wrong one after a renumber. A file with conflict markers fails to parse with `merge-conflict`. `bl check --fix` resolves the two conflicts that every edit and comment produce, `updated` and appended comments, and leaves anything else for you. `bl` doesn't install a Git merge driver, because a driver needs per-clone Git config and runs without the project's lock. |
 
 ## 4. Architecture
 
@@ -279,7 +280,8 @@ bl set ID... FIELD=V FIELD+=V FIELD-=V
                                      e.g. status=active priority=high label+=bug blocked_by+=BL-7
 bl start ID | bl done ID             workflow transitions
 bl note ID TEXT|- | bl comment ID TEXT|-
-bl ac ID (check|uncheck) N... | bl ac ID add TEXT | bl ac ID rm N
+bl ac ID (check|uncheck) N... | bl ac ID check N --evidence TEXT
+bl ac ID add TEXT | bl ac ID rm N
 bl edit ID [--section S]             open $EDITOR
 bl archive ID... | bl unarchive ID...
 bl claim ID | bl release ID | bl heartbeat    claims (§9)
@@ -289,7 +291,7 @@ bl instructions [TOPIC] | bl mcp
 ```
 
 - **ID shorthand.** `12`, `012`, and `BL-12` all resolve within the default source. Use `source:ID` when IDs are ambiguous.
-- **Versions.** `bl show --json` and every write's JSON report the item's `version`. Any single-item write accepts `--if-version V` and fails with `conflict` (exit 4), writing nothing, when the item has changed since. The flag is optional. People at the CLI rarely need it, and the TUI always sends the version it displayed. Agents pass it whenever a write depends on what they read, especially `bl ac ID check N`, because criterion numbers shift when one is added or removed. A write that names several IDs refuses `--if-version` with `usage` (exit 2).
+- **Versions.** `bl show --json` and every write's JSON report the item's `version`. Any single-item write accepts `--if-version V` and fails with `conflict` (exit 4), writing nothing, when the item has changed since. The flag is optional. People at the CLI rarely need it, and the TUI always sends the version it displayed. Agents pass it whenever a write depends on what they read, especially `bl ac ID check N`, because criterion numbers shift when one is added or removed. `--evidence TEXT` records the evidence under criterion N (format.md, criteria) and takes exactly one N. A write that names several IDs refuses `--if-version` with `usage` (exit 2).
 - **JSON envelope.** `--json` (`-j`) prints one envelope:
   - success: `{"schemaVersion":1,"ok":true,"command":"next","data":{...}}`
   - error: `{"schemaVersion":1,"ok":false,"command":"set","error":{"reason":"conflict","message":"...","details":{}}}`
@@ -307,7 +309,7 @@ bl instructions [TOPIC] | bl mcp
   | 7 | Contention (claimed elsewhere) | `contention` |
 
   Exit codes and reasons are a public contract with tests. Error `details` is always an object (empty when there is no additional metadata). `-C` failures include `flag` and `path`; unexpected arguments include `argument`. Help remains plain text, even with `--json`.
-- **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `claim`, `release`, and `heartbeat`. They share types, validation, and claim rules with the CLI. Write tools take an optional `version` with the same meaning as `--if-version`. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
+- **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `claim`, `release`, and `heartbeat`. They share types, validation, and claim rules with the CLI. Write tools take an optional `version` with the same meaning as `--if-version`. `criteria` takes an optional `evidence` for a single check. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
 
 ## 8. Extensions
 
