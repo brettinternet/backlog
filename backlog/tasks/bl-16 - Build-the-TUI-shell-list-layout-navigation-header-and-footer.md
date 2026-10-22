@@ -1,10 +1,11 @@
 ---
 id: BL-16
 title: 'Build the TUI shell: list layout, navigation, header, and footer'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:13'
+updated_date: '2026-10-22 13:34'
 labels:
   - tui
 milestone: m-1
@@ -45,21 +46,21 @@ The TUI is the owner's main reason for `bl`. This task builds the frame that eve
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Model tests at a fixed size and theme cover every tui.md navigation key, including counts and group jumps, against golden views
-- [ ] #2 A benchmark shows navigation Update+View at 50k items within 4 ms, and the result is recorded
-- [ ] #3 `scripts/tui-snapshot` captures renders at 80x24 and 160x48, used as evidence in Implementation Notes
-- [ ] #4 Under `NO_COLOR` the output has no styling; `--high-contrast` uses no faint text; glyphs still carry meaning
-- [ ] #5 At 79 columns secondary columns hide, and CJK and emoji titles align in golden views
+- [x] #1 Model tests at a fixed size and theme cover every tui.md navigation key, including counts and group jumps, against golden views
+- [x] #2 A benchmark shows navigation Update+View at 50k items within 4 ms, and the result is recorded
+- [x] #3 `scripts/tui-snapshot` captures renders at 80x24 and 160x48, used as evidence in Implementation Notes
+- [x] #4 Under `NO_COLOR` the output has no styling; `--high-contrast` uses no faint text; glyphs still carry meaning
+- [x] #5 At 79 columns secondary columns hide, and CJK and emoji titles align in golden views
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task ci passes on the final commit
-- [ ] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
-- [ ] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
-- [ ] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
-- [ ] #5 No test was deleted, skipped, or weakened
-- [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
+- [x] #1 task ci passes on the final commit
+- [x] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
+- [x] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
+- [x] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
+- [x] #5 No test was deleted, skipped, or weakened
+- [x] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -71,3 +72,27 @@ The TUI is the owner's main reason for `bl`. This task builds the frame that eve
 4. Add scripts/tui-snapshot using an owned tmux pane and isolated fixture root. Capture 80x24/160x48 and verify 79-column collapse, Unicode and accessibility; run task test and opt-in 50k navigation measurements, then reconcile docs/tui.md.
 5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementation scope adds internal/engine/store.go (reuse the native source constructor for the live TUI) and internal/engine/projection.go (prepare blocker/child columns off-loop), plus README.md/docs/tui.md for required user documentation. No design decision changes. Four implemented built-in list tabs; Board remains BL-22, saved views BL-19. Digits settle after 350ms to distinguish a view shortcut from count-prefixed motions.
+
+AC#1: task cli:test PKG=./internal/tui -- -count=1 passed: fixed 80x24 navigation goldens cover j/k/arrows, counts, gg/G/NG, half/full page, group jumps, za folds, digit views, gt/gT, help/esc/quit; TestShellLiveRefresh verifies R through the live Store/Projector command chain. Golden suite was expanded to include loading tab/help/unfold and refresh frames after initial verifier run.
+
+AC#2: BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run ^TestShellMeasurement$ -v reported production-shell 50k Update+View n=2000 p95=73.375 microseconds (<4ms). task cli:test PKG=./internal/tui -- -run ^$ -bench BenchmarkShellNavigation50k -benchtime=2s reported 57.294 microseconds/op. Independent verifier measured p95=71.875 microseconds and 63.013 microseconds/op.
+
+AC#3: scripts/tui-snapshot --width 80 --height 24 -- bin/bl -C /tmp/bl-16-evidence.WKuf19/fixture tui and the same command with --width 160 --height 48 succeeded. Captures retained at /tmp/bl-16-evidence.WKuf19/80x24.txt and 160x48.txt: both show [Next], tasks synced, todo (4), BL-16/80/20/8, footer with 0 pending/0 failed. At 79 columns the All-view capture (79x24.txt) hides secondary columns. The verifier intentionally supplied --keys g t g t g t at 160x48, selecting All rather than Next; differing view/rows are expected, not nondeterminism. Recheck with identical argv requested.
+
+AC#4: task cli:test PKG=./internal/tui -- -run TestShellRendering -count=1 passed: NO_COLOR contains no ANSI styling, high contrast no faint text, priority/pending/error glyphs remain visible.
+
+AC#5: task cli:test PKG=./internal/tui -- -run TestShellRendering -count=1 passed: 79-column golden hides secondary columns, 80/160 show them, every row has the expected terminal-cell width with sanitized CJK/emoji titles.
+
+Delivery: implementation aaa87fc merged into main as d2bd4b5, preserving concurrent BL-15 fixes. task check:staged passed before the implementation commit; task ci passed on aaa87fc and again on integrated d2bd4b5 (security, static checks, all tests, race detector, smoke). Independent verifier aba2be7a and targeted evidence recheck ecb56693 returned overall PASS for all five criteria; no concrete source defects. Identical no-key 160x48 capture reproduced byte-for-byte. No tests deleted/skipped/weakened; added model/golden/live-refresh regressions only. Worktrunk receipt matched this session and checkout; merged checkout and local branch removed, associated Herdr workspace wJF closed by post-remove hook. Temporary /tmp/bl-16-evidence.WKuf19 retained as render evidence, no owned checkout/workspace retained. No push or PR. No blocker or remaining BL-16 work.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented native live TUI list with async engine projections, source badges, status groups/folds, Vim navigation/counts, built-in tabs, responsive Unicode-safe columns, accessibility and isolated tmux snapshots. Verified with golden/live-refresh tests, 50k p95 73.375us, 80x24/160x48 captures, independent PASS for every AC and task ci on merged d2bd4b5.
+<!-- SECTION:FINAL_SUMMARY:END -->
