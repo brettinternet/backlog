@@ -1,10 +1,11 @@
 ---
 id: BL-21
 title: 'Create and edit items with quick-add, forms, and $EDITOR'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 15:32'
 labels:
   - tui
 milestone: m-1
@@ -36,20 +37,20 @@ Fast capture and comfortable long-form editing close the remaining gaps in the e
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Quick-add in the TUI and `bl new` produce identical items from the same input (one shared-parser test through both paths)
-- [ ] #2 Form tests create and edit with every field and show validation errors inline
-- [ ] #3 With a fake editor, a save applies; a concurrent change offers each conflict choice and each works; invalid frontmatter offers reopen and discard
-- [ ] #4 A PTY test shows the terminal restored and the TUI responsive after the editor exits
+- [x] #1 Quick-add in the TUI and `bl new` produce identical items from the same input (one shared-parser test through both paths)
+- [x] #2 Form tests create and edit with every field and show validation errors inline
+- [x] #3 With a fake editor, a save applies; a concurrent change offers each conflict choice and each works; invalid frontmatter offers reopen and discard
+- [x] #4 A PTY test shows the terminal restored and the TUI responsive after the editor exits
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task ci passes on the final commit
-- [ ] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
-- [ ] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
-- [ ] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
-- [ ] #5 No test was deleted, skipped, or weakened
-- [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
+- [x] #1 task ci passes on the final commit
+- [x] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
+- [x] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
+- [x] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
+- [x] #5 No test was deleted, skipped, or weakened
+- [x] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -60,3 +61,25 @@ Fast capture and comfortable long-form editing close the remaining gaps in the e
 3. Exercise form validation and each editor transition after implementation with a fake editor, plus a PTY terminal-restoration test. Verify parser parity through CLI and TUI; run task test. BL-22 owns connecting the optional column default to the board.
 4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claimed by session 01a16427-ecf6-729e-88c1-f6191260ce4e. Implementing in .worktrees/feat-bl-21-create-edit (feat/bl-21-create-edit), creation receipt .git/worktrees/feat-bl-21-create-edit/agent-creation.json. User explicitly authorized commit, local merge, and cleanup; no push or PR. Modified-file list may extend to internal/cli for engine/config/editor callback wiring and shared-parser parity verification, and docs/tui.md for the required user-visible specification update. Independent verifier will check every acceptance criterion before finalization.
+
+AC#1: task cli:test PKG=./internal/cli -- -run ^TestCLIAndTUIQuickAddParity$ -count=1 -v passed, including numeric existing, padded, dangling and cross-source references. task cli:test PKG=./internal/tui -- -run ^TestMultiSourceCaptureChoosesSourceAndChildUsesParent$ passed in the focused combined run; n selects a capable source and N uses the parent source.
+
+AC#2: task cli:test PKG=./internal/tui -- -run "^(TestFullFormFieldsAndInlineValidation|TestNativeCaptureCreateAndEditAllFields)$" -count=1 -v passed as part of the focused combined run; creates/edits all supported form fields and shows validation before mutation.
+
+AC#3: task cli:test PKG=./internal/tui -- -run ^TestEditorConflictChoicesAndInvalidFrontmatter$ -count=1 -v passed as part of the focused combined run; save, keep yours/theirs, reopen with both, invalid reopen/discard all passed. Native unknown bytes retained through version-checked mutations.
+
+AC#4: task cli:test PKG=./internal/tui -- -run ^TestEditorRestoresPTYAndInput$ -count=1 -v passed as part of the focused combined run with a real PTY and responsive post-editor input.
+
+Delivery: implementation b810e12; integrated concurrent main BL-20 fixes in b8941d8 and fast-forwarded main to b8941d8. task check:staged passed before commit; task ci passed on b810e12 and final integration commit b8941d8 (security, static checks, full normal/race tests, smoke). Independent verifier 87b298d8 passed AC2-4 and identified AC1 numeric-reference/source-selection defects; corrected those and targeted verifier 2805dddc returned PASS for every AC. No second general review, no tests deleted/skipped/weakened. Scope extensions: internal/cli/root.go callbacks, internal/cli/write.go shared resolver, internal/cli/quickadd_tui_test.go parity and docs/tui.md required UX spec update. No blocker or next implementation step; BL-22 owns actual board hookup. Session-owned worktree and branch removed through Worktrunk; Herdr workspace wJS shell-only pane checked before cleanup and workspace disappearance verified. No retained attempt/workspace. No push or PR.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented TUI quick-add and multi-source child capture, full forms, comments/notes and suspended version-checked editors with conflict/invalid recovery. All four ACs independently PASS, focused checks and task ci pass on integrated b8941d8. Merged locally and cleaned owned worktree, branch and Herdr workspace.
+<!-- SECTION:FINAL_SUMMARY:END -->
