@@ -1,6 +1,6 @@
 # Native format v1
 
-**Status:** Draft. BL-2 freezes it. After that, any incompatible change needs a new `version` in `.config/backlog.yaml` and a migration in `bl check --fix`.
+**Status:** Frozen v1. Any incompatible change needs a new `version` in `.config/backlog.yaml` and a migration in `bl check --fix`.
 
 The native format is plain Markdown with YAML frontmatter, and it is designed for Git:
 
@@ -82,7 +82,9 @@ Keep the header fields synchronous; only the body waits.
 
 - UTF-8.
 - Reading accepts LF and CRLF. Editing preserves the line ending the file already uses. New files use LF and end with a newline.
-- The file starts with a `---` line, then a YAML mapping, then a closing `---` line, then the body.
+- The file starts with a `---` line, then a block-style YAML mapping (one key per line), then a closing `---` line, then the body.
+- Frontmatter uses LF or CRLF line terminators, not bare CR or Unicode line separators. Frontmatter keys are literal strings, not merge keys. Duplicate keys and aliases for known fields are rejected. Unknown values may use nested YAML; existing documents always retain their original representation.
+- The codec rejects malformed frontmatter, missing required keys, invalid known-field types, IDs, dates, timestamps, priorities, and duplicate sections. Status membership, filename checks, graph validation, and filesystem writes belong to the source/check layer, not the codec.
 
 ### Frontmatter keys
 
@@ -127,11 +129,11 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
   - `Summary`
   - `Comments`
 
-  Each may appear at most once, in any order. The writer adds missing sections in that order.
+  Each may appear at most once, in any order. A duplicate is a `duplicate-section` parse error, not a merged or silently discarded section. Headings start at column 1 with `##` and a space; only the name's surrounding whitespace is ignored. The writer inserts a missing section before the next existing section in canonical order, or at the end.
 - **Section extent.** A section runs to the next recognized heading or the end of the file. Any other heading inside a section, at any level, belongs to that section.
-- **Code fences.** Headings inside fenced code blocks are never headings.
-- **Criteria and definition of done.** Each GFM task-list item (`- [ ] text` or `- [x] text`, `*` accepted) is one entry, together with any following lines indented by two or more spaces. Entries are numbered from 1 in file order. Lines that aren't task-list items are kept but are not entries.
-- **Comments.** Each comment starts with a line of the form `### <RFC3339 UTC timestamp> <author>` and runs until the next such line or the end of the section. Level-3 headings without that shape are part of a comment body. Comments are append-only through `bl`.
+- **Code fences.** Headings, task-list entries, and comment headers inside fenced code blocks are never structural. Backtick and tilde fences use at least three identical characters, with up to three leading spaces. Closing fences use the same character, at least the opening length, and no non-whitespace suffix. An unclosed fence extends to EOF.
+- **Criteria and definition of done.** Each column-1 GFM task-list item (`- [ ] text` or `- [x] text`, `*` and uppercase `X` accepted) is one entry, together with any following lines indented by two or more spaces (or a tab). Entries are numbered from 1 in file order. Lines that aren't task-list items are kept but are not entries.
+- **Comments.** Each comment starts with a line of the form `### <RFC3339 UTC timestamp> <author>` and runs until the next such line or the end of the section. Level-3 headings without that shape are part of a comment body. Text before the first valid header is retained but is not a comment. Comment headers start at column 1; timestamps use `YYYY-MM-DDTHH:MM:SSZ`, and authors are nonempty single-line strings. Comments are append-only through `bl`.
 - **Plan, notes, and summary.** Free Markdown. `bl note` appends a paragraph to Notes, separated by one blank line.
 
 ### Writing
@@ -139,8 +141,10 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
 - An edit rewrites only the lines that represent changed values. Every other byte stays identical, including key order, comments, quoting, and list style. Golden tests enforce this.
 - New keys and new files use the canonical key order from the table above, then unknown keys.
 - New lists use flow style (`[a, b]`). Empty lists and unset optional values are removed, not written as empty.
-- Strings are written plain when YAML allows it, and double-quoted otherwise.
-- Every write updates `updated` and is atomic (design.md D8).
+- Strings in new fields/files are written plain when YAML allows it, and quoted otherwise (the YAML emitter may use single quotes). Existing scalar quote style and list flow/block style are retained on edits where applicable. List add/remove operations keep the quoting of existing elements.
+- Every write updates `updated` and is atomic (design.md D8). The pure codec takes an explicit clock and returns bytes; the native source owns the lock, fsync, and rename.
+- `Document.Bytes()` losslessly serializes an existing document. `Serialize(Item)` creates a canonical new file: it emits known keys in table order, unknown keys in lexical order, and nonempty sections in the order above. Unstructured text among criteria or before the first comment header is preserved by document edits, not reconstructed from an Item.
+- Applying a mutation returns a representation-exact inverse bound to the resulting content hash. Applying that inverse refuses a version mismatch and restores the original bytes except for `updated`; undo also returns a redo inverse. Unknown keys and unedited sections are never reserialized.
 
 ## Validation
 
