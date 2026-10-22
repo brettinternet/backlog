@@ -355,6 +355,32 @@ substantially. D26's 150/400 MiB TUI budgets are unchanged and unmet. BL-58 must
 reduce retained/load memory while preserving these navigation measurements;
 reimposing the fixed target without that reduction recreates GC thrashing.
 
+### Filter latency (BL-56)
+
+2026-10-22, D26 host: Apple M5 Max, 64 GiB, Darwin 27.0.0 arm64,
+Go 1.27.3, default GOMAXPROCS=18, seed 1, 120×40, 120 FPS. Runtime
+baseline `2d242ad` plus BL-56; this initial run preceded BL-55 and retained
+its former 300 MiB Go memory limit. No absolute timing assertion was added.
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/(10000|50000)/interaction$' -v -count=1 -timeout=30m
+```
+
+| Final filter keystroke to completed PTY list, 20 samples, p95 | Before | After | Budget |
+| --- | ---: | ---: | ---: |
+| 10k | 10.22 ms | 8.88 ms | ≤ 30 ms |
+| 50k | 132.12 ms | 65.64 ms | ≤ 80 ms |
+
+Completion filters used values before sorting, retaining declared-value order,
+alias matching and deduplication. Completion scans and row preparation check
+cancellation; the single latest-wins worker and request fences are unchanged.
+Selective projections collect matching indices before allocating item storage,
+and zero/one-result sorts no longer build a full-backlog ranking map. All work
+remains off the UI update loop. Query correctness, canceled completions, rapid
+50k editor requests and stale projection/preparation fencing pass with `-race`.
+These results qualify only filter latency: navigation, external-update and RSS
+misses reported by that pre-BL-55 harness remain separate work, not passing budgets.
+
 ### Cold-cache correction
 
 The original 10k cold completed-list p95 was 62,859.37 ms; the 50k initial

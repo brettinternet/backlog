@@ -323,7 +323,11 @@ func (p *Projector) run() {
 				result.Warning = claimErr
 			}
 			if req.complete {
-				result.Completions = base.Complete(req.field, req.prefix, query.Options{})
+				var err error
+				result.Completions, err = base.CompleteContext(req.ctx, req.field, req.prefix, query.Options{})
+				if err != nil {
+					continue
+				}
 			}
 			q, err := query.Parse(req.text, query.Options{})
 			if err == nil {
@@ -358,7 +362,10 @@ func (p *Projector) run() {
 				if err == nil {
 					for _, g := range groups {
 						group := RowGroup{Value: g.Value, Rows: make([]Row, 0, len(g.Items))}
-						for _, i := range g.Items {
+						for n, i := range g.Items {
+							if n%256 == 0 && req.ctx.Err() != nil {
+								break
+							}
 							r := req.snapshot.records[i.Ref]
 							explanation := explanations[i.Ref]
 							reason := readinessReason(explanation)
