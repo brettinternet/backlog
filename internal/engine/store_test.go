@@ -425,3 +425,42 @@ func TestCreateArchiveUndoAndShutdown(t *testing.T) {
 		t.Fatal("shutdown stranded request")
 	}
 }
+
+// A version mismatch against the current snapshot is a conflict before source
+// I/O; it must still carry the displayed and current versions for the UI.
+func TestDisplayedVersionConflictRetainsBothVersions(t *testing.T) {
+	t.Parallel()
+	backend := fakeSource(t, "tasks")
+	store := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
+	defer store.Close()
+	ref := model.Ref{Source: "tasks", ID: "BL-1"}
+	initial := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	old, _, _ := initial.Get(ref)
+	backend.mu.Lock()
+	remote, _, err := backend.doc.Apply(change(old, "Remote"), time.Now())
+	if err != nil {
+		backend.mu.Unlock()
+		t.Fatal(err)
+	}
+	backend.doc = remote
+	backend.mu.Unlock()
+	store.Refresh()
+	current := awaitSnapshot(t, store, func(s *engine.Snapshot) bool {
+		item, _, ok := s.Get(ref)
+		return ok && item.Title == "Remote"
+	})
+	latest, _, _ := current.Get(ref)
+	if latest.Version == old.Version {
+		t.Fatal("external edit did not change the version")
+	}
+	if err := awaitResult(t, store.Mutate(change(old, "Local"))); err == nil || !strings.Contains(err.Error(), "conflict") {
+		t.Fatalf("stale write result: %v", err)
+	}
+	item, edit, _ := store.Current().Get(ref)
+	if item.Title != "Remote" || edit.Local == nil || edit.Remote == nil || edit.Local.Version != old.Version || edit.Remote.Version != latest.Version {
+		t.Fatalf("conflict detail did not retain both versions: item=%+v edit=%+v", item, edit)
+	}
+	if backend.calls.Load() != 0 {
+		t.Fatal("preflight conflict reached the source")
+	}
+}

@@ -109,7 +109,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				return project.SavedView{ID: scope + ":" + v.Name, ViewConfig: v}, err
 			},
 			Context: session, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID,
-			Milestones: cfg.Milestones,
+			Statuses: cfg.Statuses, Workflow: cfg.Workflow, Labels: cfg.Labels, Milestones: cfg.Milestones, Me: cfg.Me.Default,
 			Read: func(readCtx context.Context, ref model.Ref) (model.Item, error) {
 				return engine.ReadItem(readCtx, cfg, ref)
 			},

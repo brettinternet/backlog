@@ -34,6 +34,19 @@ type Snapshot struct {
 }
 
 func (s *Snapshot) Len() int { return len(s.records) }
+
+// Items returns active snapshot items. It is intended for background work such
+// as picker candidate construction, not the Bubble Tea update loop.
+func (s *Snapshot) Items() []model.Item {
+	items := make([]model.Item, 0, len(s.records))
+	for _, r := range s.records {
+		if !r.archived {
+			items = append(items, cloneItem(r.item))
+		}
+	}
+	return items
+}
+
 func (s *Snapshot) Get(ref model.Ref) (model.Item, EditState, bool) {
 	r, ok := s.records[ref]
 	if !ok {

@@ -377,14 +377,14 @@ is:open group:status · 3 pending · 0 failed · ? help · q quit
 backlog · fixture · [Next]  Active  Mine  All                                   
 tasks ✓ synced                                                                  
   ID           P  Status         ⊘   ▣       Title                              
-j/k ↓/↑ · count + move · gg/G/NG                                                
-ctrl-d/u half page · ctrl-f/b full page                                         
-[/] groups · za fold · 1–9 views · gt/gT                                        
-ctrl-s save view · ctrl-left/right resize split                                 
-enter toggles detail · tab focuses/cycles detail tabs                           
-detail: j/k scroll · h list · m show more · esc/q back                          
-R resync · ? help · q/ctrl-c quit                                               
-A digit selects a view after 350ms; follow it with a motion for a count.        
+j/k ↓/↑ · count + move · gg/G/NG · [/]/groups                                   
+enter detail · tab focus/cycle · detail j/k scroll · esc back                   
+s status · </> workflow · p priority · a/A assignee · l labels                  
+m milestone · b blocker · P parent · t title · S/D start/done                   
+Criteria: x/space toggle · dd archive · . repeat · u/ctrl-r undo/redo           
+space mark · V range · ctrl-a mark all · esc clear marks                        
+y + key yank · yb branch name · O open safe URL · ? help                        
+R resync · 1–9 views · gt/gT cycle · q/ctrl-c quit                              
                                                                                 
                                                                                 
                                                                                 

@@ -56,7 +56,7 @@ Overview  Description  [Criteria]  Plan/Notes  Comments  Relations
                                                                                 
   ## Acceptance criteria                                                        
                                                                                 
-  [x] Keep input responsive                                                     
+>   [x] Keep input responsive                                                   
   Evidence: counter                                                             
                                                                                 
   ## Definition of done                                                         

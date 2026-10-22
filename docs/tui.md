@@ -55,9 +55,12 @@ picker with completion; enter chooses and applies. `fr` shows ready items and
 while retaining sort and group. Sort reversal toggles every explicit sort key.
 `zA` groups assignees, leaving `za` for folds; `zM`/`zR` fold/unfold all.
 
-Editing, board/tree, key remapping, palette, searchable
-help and mouse below remain planned. They are not advertised
-as available in the shell. Claim columns await BL-32.
+Item-field editing is implemented from the list, with version-checked engine
+mutations, fuzzy pickers, marks, repeat, undo/redo, criterion toggles, archive
+confirmation, and failure detail. Picker catalogs and fuzzy filtering run in
+Bubble Tea commands; source I/O and backlog-sized work stay off `Update` (D14).
+Board/tree layouts, key remapping, the command palette, and mouse remain planned.
+Claim columns await BL-32.
 
 Capture a real render without opening a user's pane:
 
@@ -232,7 +235,7 @@ These apply to the marked items if any, otherwise to the current item. An edit t
 | `e`, `E` | Edit the description in `$EDITOR`; edit the whole item (the file for native sources, a full form for others) |
 | `c`, `i` | Add a comment; append a note (native sources) |
 | `x`, `space` | In the Criteria tab, toggle the criterion under the cursor |
-| `S`, `D` | Start (claims first with Worklease); Done (releases your claim) |
+| `S`, `D` | Start at workflow status (claim acquisition is BL-32); Done status |
 | `C` | Claim or release (Worklease) |
 | `dd` | Archive (asks for confirmation) |
 | `.` | Repeat the last edit on the current or marked items |
@@ -240,7 +243,31 @@ These apply to the marked items if any, otherwise to the current item. An edit t
 | `n`, `N` | Quick-add; quick-add a child of the current item. In board layout, the new item takes the column's status. |
 | `!` | Actions menu (design.md §8). An action's own `key` binds directly. |
 | `y` + key | Yank. The second key picks what to copy: `y` ID, `t` title, `b` branch name (`{branch}`, design.md §8), `u` URL, `m` Markdown link. |
-| `O` | Open the item's URL or provider page |
+| `O` | Open the item's URL or provider page (absolute HTTP(S), no credentials) |
+
+Pickers preselect the current value and fuzzy-filter as you type. Assignee and
+label pickers are multi-select; configured labels appear before labels in use.
+Milestones show configured names, omit archived entries, then show undeclared
+milestone keys in use. Typing an undeclared milestone key sets it as free text;
+no picker edits project configuration. Status order is the configured status
+order. `S`/`D` use workflow start/done, falling back to the first active/done
+status; `S` does not acquire a claim yet (BL-32). Unsupported source
+operations do not open a picker or write; the footer shows the unavailable
+capability.
+
+`space` toggles a mark in the list; `V` starts a visual range and navigation
+extends it; `ctrl-a` marks the current view. Edits target all marks/range items,
+or the selected item when there are no marks. `esc` closes detail or clears
+marks. `.` repeats the last edit against current targets and current versions.
+Pending rows show `●`; failed rows show `!`. Opening detail shows the failure
+reason and, for a conflict, both local and source versions. `u`/`ctrl-r` use the
+engine's session history and never bypass optimistic version checks.
+
+`yb` copies the shared design.md §8 branch name with OSC 52. The name is the
+lowercase ID plus an ASCII title slug, capped at 48 characters on a word
+boundary. `y` + `y`/`t`/`b`/`u`/`m` copies ID/title/branch/URL/Markdown link.
+`O` launches only absolute HTTP(S) URLs without embedded credentials and uses
+an argv-based platform opener, never a shell.
 
 **Selection**
 

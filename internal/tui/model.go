@@ -26,7 +26,12 @@ type Options struct {
 	Projector             *engine.Projector
 	Context               context.Context
 	Sources               []string
+	Statuses              []project.StatusConfig
+	Workflow              project.WorkflowConfig
+	Labels                []string
 	Milestones            []project.Milestone
+	Me                    string
+	OpenURL               func(context.Context, string) error
 	Read                  func(context.Context, model.Ref) (model.Item, error)
 	Render                func(string, int) (string, error)
 	Views                 []project.SavedView
@@ -104,6 +109,7 @@ type Model struct {
 	detailLines              []string
 	detailError              string
 	detailScroll             int
+	criteriaCursor           int
 	detailGeneration         uint64
 	detailIdentity           detailIdentity
 	detailWorker             *detailWorker
@@ -112,6 +118,13 @@ type Model struct {
 	splitWidth               int
 	save                     savePrompt
 	notice                   string
+	picker                   pickerState
+	pickerSerial             int
+	marks                    *markSet
+	visual                   bool
+	visualAnchor             int
+	lastEdit                 *editAction
+	archiveConfirm           bool
 }
 
 var viewNames = []string{"Next", "Active", "Mine", "All"}
@@ -133,7 +146,7 @@ func New(opts Options) Model {
 			style = style.Foreground(lipgloss.Color("6"))
 		}
 	}
-	model := Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil, query: viewQueries[0]}
+	model := Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil, query: viewQueries[0], marks: newMarkSet()}
 	if opts.Read != nil {
 		theme := "color"
 		if opts.NoColor {
@@ -468,10 +481,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailScroll = 0
 		}
 		return m, m.waitDetail()
+	case pickerChoicesMsg:
+		if m.picker.open && msg.generation == m.picker.generation {
+			updatePickerChoices(&m.picker, msg)
+			if m.picker.query != "" {
+				return m, m.filterPicker()
+			}
+		}
+		return m, nil
+	case pickerFilterMsg:
+		if m.picker.open && msg.generation == m.picker.generation && msg.query == m.picker.query {
+			m.picker.filtered = msg.choices
+			m.picker.loading = false
+			m.picker.cursor = msg.cursor
+		}
+		return m, nil
+	case editResultMsg:
+		m.editResult(msg)
+		return m, nil
+	case openResultMsg:
+		m.notice = msg.err
+		return m, nil
 	case tea.KeyPressMsg:
 		s := msg.String()
 		if s == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.picker.open {
+			return m, m.updatePickerKey(s)
+		}
+		if m.archiveConfirm {
+			switch s {
+			case "esc", "n":
+				m.archiveConfirm = false
+				return m, nil
+			case "enter", "y":
+				return m, m.confirmArchive()
+			default:
+				return m, nil
+			}
 		}
 		if m.save.open {
 			return m.updateSave(msg)
@@ -491,6 +539,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.splitWidth = max(30, min(m.listWidth()+delta, m.width-31))
 			return m, m.scheduleDetail()
+		}
+		if m.prefix == "g" && (s == "t" || s == "T") {
+			m.prefix = ""
+			m.count = 0
+			m.inputSerial++
+			if s == "t" {
+				m.switchView((m.view + 1) % len(m.views))
+			} else {
+				m.switchView((m.view + len(m.views) - 1) % len(m.views))
+			}
+			return m, nil
+		}
+		if m.prefix == "y" && s != "esc" {
+			m.prefix = ""
+			m.count = 0
+			m.inputSerial++
+			return m, m.yank(s)
+		}
+		if m.prefix == "d" && s != "esc" {
+			m.prefix = ""
+			m.count = 0
+			m.inputSerial++
+			if s == "d" {
+				m.archivePrompt()
+			}
+			return m, nil
 		}
 		if (m.prefix == "f" || m.prefix == "o" || m.prefix == "z") && s != "esc" {
 			prefix := m.prefix
@@ -539,6 +613,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.count = 0
 			m.prefix = ""
 			m.inputSerial++
+			m.visual = false
+			if m.marks != nil && m.marks.size() > 0 {
+				m.marks.clear()
+				m.notice = "Marks cleared."
+			}
 			return m, nil
 		}
 		if m.detailOpen && m.detailFocus {
@@ -558,10 +637,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "tab":
 				m.detailTab = (m.detailTab + 1) % detailTab(len(detailTabNames))
 				m.detailExpanded = false
+				if m.detailTab == tabCriteria {
+					m.criteriaCursor = 0
+				}
 				return m, m.scheduleDetail()
 			case "shift+tab":
 				m.detailTab = (m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames))
 				m.detailExpanded = false
+				if m.detailTab == tabCriteria {
+					m.criteriaCursor = 0
+				}
 				return m, m.scheduleDetail()
 			case "m":
 				if m.detailTruncated || m.detailExpanded {
@@ -569,9 +654,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.scheduleDetail()
 				}
 				return m, nil
+			case "x", "space", " ":
+				if m.detailTab == tabCriteria {
+					return m, m.toggleCriterion()
+				}
 			case "j", "down":
+				if m.detailTab == tabCriteria {
+					if count := m.criterionCount(); count > 0 {
+						m.criteriaCursor = min(count-1, m.criteriaCursor+1)
+						m.keepCriterionVisible()
+					}
+					return m, nil
+				}
 				m.scrollDetail(1)
 			case "k", "up":
+				if m.detailTab == tabCriteria {
+					m.criteriaCursor = max(0, m.criteriaCursor-1)
+					m.keepCriterionVisible()
+					return m, nil
+				}
 				m.scrollDetail(-1)
 			case "ctrl+d", "pagedown":
 				m.scrollDetail(max(1, (m.height-6)/2))
@@ -607,6 +708,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if s == "q" {
 			return m, tea.Quit
+		}
+		if !m.detailFocus {
+			if s == "y" || s == "d" {
+				m.prefix = s
+				m.inputSerial++
+				return m, nil
+			}
+			if s == "space" || s == " " {
+				m.markCurrent()
+				return m, nil
+			}
+			if s == "V" {
+				m.visual = !m.visual
+				if m.visual {
+					m.visualAnchor = m.selected
+				}
+				return m, nil
+			}
+			if s == "ctrl+a" {
+				return m, m.markAll()
+			}
+			if cmd, handled := m.updateEditKey(s); handled {
+				return m, cmd
+			}
 		}
 		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
 			m.count = min(1000000, m.count*10+int(s[0]-'0'))
@@ -777,11 +902,20 @@ func (m Model) View() tea.View {
 			}
 		}
 	}
+	if m.visual {
+		footer += " · visual range"
+	}
+	if m.marks != nil && m.marks.size() > 0 {
+		footer += fmt.Sprintf(" · %d marked", m.marks.size())
+	}
 	if m.notice != "" {
 		footer = "warning: " + m.notice + " · " + footer
 	}
 	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" {
 		footer = layout + " unavailable; list · " + footer
+	}
+	if m.picker.open || m.archiveConfirm {
+		return m.editView()
 	}
 	if m.save.open {
 		destination := "user"
@@ -818,14 +952,14 @@ func (m Model) listLine(index int, wide bool) string {
 	}
 	if m.showHelp {
 		hints := []string{
-			"j/k ↓/↑ · count + move · gg/G/NG",
-			"ctrl-d/u half page · ctrl-f/b full page",
-			"[/] groups · za fold · 1–9 views · gt/gT",
-			"ctrl-s save view · ctrl-left/right resize split",
-			"enter toggles detail · tab focuses/cycles detail tabs",
-			"detail: j/k scroll · h list · m show more · esc/q back",
-			"R resync · ? help · q/ctrl-c quit",
-			"A digit selects a view after 350ms; follow it with a motion for a count.",
+			"j/k ↓/↑ · count + move · gg/G/NG · [/]/groups",
+			"enter detail · tab focus/cycle · detail j/k scroll · esc back",
+			"s status · </> workflow · p priority · a/A assignee · l labels",
+			"m milestone · b blocker · P parent · t title · S/D start/done",
+			"Criteria: x/space toggle · dd archive · . repeat · u/ctrl-r undo/redo",
+			"space mark · V range · ctrl-a mark all · esc clear marks",
+			"y + key yank · yb branch name · O open safe URL · ? help",
+			"R resync · 1–9 views · gt/gT cycle · q/ctrl-c quit",
 		}
 		if index < len(hints) {
 			return hints[index]
@@ -858,11 +992,21 @@ func (m Model) listLine(index int, wide bool) string {
 	}
 	r := m.data.rows[index]
 	marker := "  "
-	if index == m.selected {
-		marker = "> "
-	}
 	if r.header != "" {
+		if index == m.selected {
+			marker = "> "
+		}
 		return marker + r.header
+	}
+	if m.isMarked(index, r.row.Ref) {
+		marker = "* "
+	}
+	if index == m.selected {
+		if marker == "* " {
+			marker = "*>"
+		} else {
+			marker = "> "
+		}
 	}
 	state := ""
 	if r.row.Pending {
@@ -938,6 +1082,19 @@ func (m Model) detailPaneLine(index int) string {
 	return m.detailContentLine(index - 1)
 }
 func (m Model) detailContentLine(index int) string {
+	if row, ok := m.selectedRow(); ok && row.Error != "" {
+		if index == 0 {
+			return "! " + textutil.Line(row.Error)
+		}
+		if index == 1 && (row.ErrorLocalVersion != "" || row.ErrorRemoteVersion != "") {
+			return fmt.Sprintf("Conflict versions: local %s · source %s", row.ErrorLocalVersion, row.ErrorRemoteVersion)
+		}
+		index--
+	}
+	line := m.detailScroll + index
+	if m.detailTab == tabCriteria && m.criteriaCursor >= 0 && criteriaLineAt(m.detailLines, m.criteriaCursor) == line && line < len(m.detailLines) {
+		return "> " + m.detailLines[line]
+	}
 	if !m.detailIdentity.Valid {
 		if index == 0 {
 			return "Select an item to view details."
@@ -956,7 +1113,6 @@ func (m Model) detailContentLine(index int) string {
 		}
 		return ""
 	}
-	line := m.detailScroll + index
 	if line >= len(m.detailLines) {
 		return ""
 	}

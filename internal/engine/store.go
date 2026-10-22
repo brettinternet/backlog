@@ -18,15 +18,16 @@ import (
 // perform no source I/O or backlog-sized work. Close waits for workers; call it
 // outside a UI callback. Sources must honor context cancellation.
 type Store struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	cfg         project.Config
-	current     atomic.Pointer[Snapshot]
-	events      chan func(*storeState)
-	wg          sync.WaitGroup
-	subMu       sync.Mutex
-	subscribers map[chan *Snapshot]struct{}
-	results     sync.Map // outstanding result channels, completed exactly once
+	ctx          context.Context
+	cancel       context.CancelFunc
+	cfg          project.Config
+	capabilities map[string]model.Capabilities
+	current      atomic.Pointer[Snapshot]
+	events       chan func(*storeState)
+	wg           sync.WaitGroup
+	subMu        sync.Mutex
+	subscribers  map[chan *Snapshot]struct{}
+	results      sync.Map // outstanding result channels, completed exactly once
 }
 type sourceWorker struct {
 	backend source.Source
@@ -72,10 +73,15 @@ func OpenProjectStore(ctx context.Context, cfg project.Config) (*Store, error) {
 
 func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry) *Store {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}
+	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, capabilities: make(map[string]model.Capabilities, len(registry)), events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}
 	initial := &Snapshot{records: map[model.Ref]*record{}, sources: map[string]SourceState{}}
 	st := &storeState{store: s, snapshot: initial, workers: map[string]*sourceWorker{}, pending: map[model.Ref]bool{}}
 	for id, backend := range registry {
+		caps := backend.Info().Capabilities
+		s.capabilities[id] = make(model.Capabilities, len(caps))
+		for op, allowed := range caps {
+			s.capabilities[id][op] = allowed
+		}
 		initial.sources[id] = SourceState{Coverage: source.Unknown}
 		st.workers[id] = &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1)}
 	}
@@ -120,6 +126,18 @@ func (s *Store) complete(result chan error, err error) {
 	}
 }
 func (s *Store) Current() *Snapshot { return s.current.Load() }
+
+// Capabilities returns a source's declared capabilities without touching the
+// source from a caller such as the TUI update loop.
+func (s *Store) Capabilities(sourceID string) model.Capabilities {
+	capabilities := s.capabilities[sourceID]
+	copy := make(model.Capabilities, len(capabilities))
+	for op, allowed := range capabilities {
+		copy[op] = allowed
+	}
+	return copy
+}
+
 func (s *Store) Subscribe() (<-chan *Snapshot, func()) {
 	ch := make(chan *Snapshot, 1)
 	s.subMu.Lock()
@@ -223,7 +241,16 @@ func (st *storeState) begin(job *editJob) {
 			return
 		}
 		if m.ExpectedVersion == "" || m.ExpectedVersion != before.item.Version {
-			reject(source.Refuse("conflict", "expected version does not match displayed item"))
+			err := source.Refuse("conflict", "expected version does not match displayed item")
+			if m.ExpectedVersion != "" {
+				local := cloneItem(before.item)
+				local.Version = m.ExpectedVersion
+				remote := cloneItem(before.item)
+				n := st.snapshot.fork()
+				n.records[m.Ref] = &record{item: before.item, edit: EditState{Error: err.Error(), Local: &local, Remote: &remote}, archived: before.archived}
+				st.publish(n)
+			}
+			reject(err)
 			return
 		}
 		job.before = before

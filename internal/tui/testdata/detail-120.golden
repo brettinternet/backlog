@@ -56,7 +56,7 @@ backlog · fixture · [Next]  Active  Mine  All
   BL-2         Item 2                                     │                                                             
                                                           │  ## Acceptance criteria                                     
                                                           │                                                             
-                                                          │  [x] Keep input responsive                                  
+                                                          │>   [x] Keep input responsive                                
                                                           │  Evidence: counter                                          
                                                           │                                                             
                                                           │  ## Definition of done                                      

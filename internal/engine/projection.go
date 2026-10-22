@@ -29,6 +29,7 @@ type Row struct {
 	RelationVersion                           string
 	Pending                                   bool
 	Error                                     string
+	ErrorLocalVersion, ErrorRemoteVersion     string
 	OpenBlockers, ChildrenDone, ChildrenTotal int
 }
 type Relation struct {
@@ -304,12 +305,20 @@ func (p *Projector) run() {
 							explanation := explanations[i.Ref]
 							reason := readinessReason(explanation)
 							relations := relationRows(i, req.snapshot, blockingBy, childrenBy)
+							localVersion, remoteVersion := "", ""
+							if r.edit.Local != nil {
+								localVersion = r.edit.Local.Version
+							}
+							if r.edit.Remote != nil {
+								remoteVersion = r.edit.Remote.Version
+							}
 							row := Row{
 								Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
 								Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
 								Category: i.Category, Priority: i.Priority,
 								Assignees: i.Assignees, Labels: i.Labels, Pending: r.edit.Pending,
-								Error: r.edit.Error, Readiness: explanation.Readiness,
+								Error: r.edit.Error, ErrorLocalVersion: localVersion,
+								ErrorRemoteVersion: remoteVersion, Readiness: explanation.Readiness,
 								ReadinessReason:  reason,
 								ReadinessVersion: string(explanation.Readiness) + "\x00" + reason,
 								Relations:        relations, RelationVersion: relationVersion(relations),
