@@ -102,9 +102,9 @@ original full-run measurements.
 | Budget | Reference result | Outcome / follow-up |
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms p95 | 10k 12.30 ms; 50k 12.48 ms | Both pass on the D26 reference host |
-| Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 574.6 ms; `next` 309.4 ms | Both miss: [BL-47](../backlog/tasks/bl-47%20-%20Meet-the-warm-ls-and-next-CLI-latency-budget.md) |
-| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 37.84 ms; 50k 95.25 ms | 10k pass; 50k miss: [BL-50](../backlog/tasks/bl-50%20-%20Meet-the-single-field-write-latency-budget-at-50k-items.md) |
-| Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 182.5 MiB and 806.3 MiB (`ls`) | Both miss: [BL-48](../backlog/tasks/bl-48%20-%20Meet-the-CLI-peak-RSS-budgets-at-10k-and-50k.md); `next` also misses at both sizes |
+| Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 574.6 ms; `next` 309.4 ms | Both miss: [BL-47](../backlog/BL-47.md) |
+| Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 37.84 ms; 50k 95.25 ms | 10k pass; 50k miss: [BL-50](../backlog/BL-50.md) |
+| Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 182.5 MiB and 806.3 MiB (`ls`) | Both miss: [BL-48](../backlog/BL-48.md); `next` also misses at both sizes |
 
 Cold/warm native load and 50k `ls`/`next` timings are baselines without separate
 CLI latency thresholds in §11. TUI first paint, navigation, held keys, filter,
