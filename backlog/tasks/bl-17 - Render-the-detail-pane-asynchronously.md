@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 13:58'
+updated_date: '2026-10-22 14:24'
 labels:
   - tui
   - perf
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-16
@@ -78,6 +79,8 @@ AC#4: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS 
 AC#5: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailTabGoldens: all six tabs at 80/120 cols, fixed cell-width assertions.
 AC#6: task cli:test PKG=./internal/tui -- -run ^TestDetail -count=1 -v — PASS TestDetailTabGoldens: declared m-1 — TUI, undeclared raw m-1.
 Delivery: implementation 006e5ed; integrated concurrent main selection/fold fixes in 78a3226, then fast-forward merged to main. Final task ci PASS on 78a3226 including tests/race/security/check/smoke; LSP clean. Source-sync timeout on the 10k terminal fixture also reproduced with pre-change primary binary 168b0eb, confirming it predates this item. Required independent verifier returned PASS for every AC; post-integration full suite also passes. Worktrunk removed the session-owned checkout and branch; Herdr cleanup checked separately. No remaining implementation blocker or resumable step.
+
+Review (a65ce91): split list kept 80-column secondary columns in a 58-cell pane, truncating titles to ~12 cells; the list pane now hides them below 80 cells. Empty detail repeated 'Select an item' on every line; Overview/Relations showed literal ** under the notty renderer; resizing below 120 with list focus left an invisible list cursor (focus now moves to detail). The 10k 'syncing never settles' note did not reproduce; the real cause of flaky captures was a false 'No matching items.' between sync and projection, now shown as loading. task ci passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

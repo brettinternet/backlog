@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 14:09'
+updated_date: '2026-10-22 14:24'
 labels:
   - tui
   - query
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-16
@@ -77,6 +78,8 @@ Verification: task test and task ci PASS, including race/security/static checks.
 Independent verifier 0e4d36b0 / clarification f7c6baab returned PASS for AC#1–4 and confirmed no concrete defect. Initial contradictory overall FAIL was explicitly corrected to PASS without a second general review. No tests deleted, skipped, or weakened. Documentation updated in docs/tui.md. Source implementation 4c61490 merged locally to main; no push or PR. No remaining item blocker. Next step: finish task metadata and owned worktree cleanup.
 
 Cleanup completed: wt remove bl-18-list-query --foreground --format=json returned branch_outcome=deleted. Verified git worktree list contains only the primary checkout, the branch is absent, and Herdr workspace wJN (matched by exact checkout_path; inspected idle zsh before removal) disappeared. No retained task checkout/workspace and no remaining resumable work.
+
+Review (a65ce91): za in group:none jumped the cursor without folding; now a no-op. Keys sent right after sync hit a false empty list (fixed with BL-17 review). Query editor, menus and highlighting otherwise correct. task ci passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
