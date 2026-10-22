@@ -1,10 +1,11 @@
 ---
 id: BL-26
 title: Move this repository's backlog onto bl
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:55'
+updated_date: '2026-10-22 15:39'
 labels:
   - tooling
   - import
@@ -78,3 +79,9 @@ Dogfooding starts as soon as the agent CLI works. After this task, every later t
 6. Exercise two distinct-session interim claimers against an isolated migrated fixture to prove distinct claims and one resource policy, and verify the wrapper from a linked worktree. Record exact continuation commands and local client exclusions, then finish BL-26 only after lossless comparison, real loop and task ci pass. Stop legacy-provider continuations; do not leave an old supervisor writing stale files.
 7. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner confirmed all other backlog writers stopped for cutover. Rehearsal import/check completed in isolated Git repository. Native wrapper builds committed primary main only; regression test proves dirty source exclusion and SHA-keyed refresh. Additional modified paths scripts/backlog-cli, scripts/backlog-claim-next, scripts/test_backlog_cli.py and Taskfile.dist.yaml are required launcher and build-boundary verification surfaces. Retain migration claim/session 01a1643e-8844-729e-88c1-f649c0f12596 without reacquisition. Legacy skills with status-as-claim/backlog-md keys disabled locally before any native client resumes.
+<!-- SECTION:NOTES:END -->
