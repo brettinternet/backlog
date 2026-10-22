@@ -7,7 +7,11 @@
 Bare `bl` opens the list when stdin and stdout are terminals; `bl tui`
 explicitly requires both. The frame paints a loading state before native
 sources load, then consumes immutable engine projections. Source badges show
-syncing, synced, stale, or error. Rows show ID, priority, raw status, open
+syncing, synced, stale, or error. Untrusted project hooks, actions, or adapters
+replace the badge line with a persistent `Untrusted project config · bl trust --show`
+banner; untrusted adapters are not opened. Native sources remain browsable, and
+trust-state reads happen during configuration loading, not on the UI loop.
+Rows show ID, priority, raw status, open
 blockers, child progress, title and pending/failed glyphs. When the list (or
 the list pane beside detail) is narrower than 80 columns, only ID, title and
 edit glyphs remain. The list shows loading, not "No matching items.", while a

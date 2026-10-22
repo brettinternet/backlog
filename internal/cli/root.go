@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,6 +62,29 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err != nil {
 			return err
 		}
+		settings, err := json.MarshalIndent(cfg.Settings, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := writeLine(out, string(settings)); err != nil {
+			return err
+		}
+		keys := make([]string, 0, len(cfg.Provenance))
+		for key := range cfg.Provenance {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			p := cfg.Provenance[key]
+			if err := writeLine(out, fmt.Sprintf("%s: %s (%s:%d)", key, p.Layer, p.File, p.Line)); err != nil {
+				return err
+			}
+		}
+		for _, entry := range cfg.Privileged {
+			if err := writeLine(out, fmt.Sprintf("%s trusted: %t", entry.Key, entry.Trusted)); err != nil {
+				return err
+			}
+		}
 		for _, warning := range cfg.Discovery.Warnings {
 			fmt.Fprintf(errOut, "bl: warning: %s\n", warning)
 		}
@@ -103,7 +127,12 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if len(cfg.Sources) == 1 {
 			createSource = cfg.Sources[0].ID
 		}
+		trustWarning := ""
+		if len(cfg.Untrusted()) > 0 {
+			trustWarning = "Untrusted project config · bl trust --show"
+		}
 		app := tui.New(tui.Options{
+			TrustWarning: trustWarning,
 			CreateSource: createSource, DefaultType: cfg.Defaults.Type, DefaultDoD: cfg.Defaults.DOD,
 			ValidateItem: func(item model.Item) error { return engine.ValidateItem(cfg, item) },
 			ResolveRef: func(ctx context.Context, source string, ref model.Ref) (model.Ref, error) {
@@ -209,6 +238,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			},
 		},
 	}
+	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
 	root.Commands = append(root.Commands, eventsCommand(&directory, out))
 	root.Commands = append(root.Commands, instructionsCommand(out))
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)

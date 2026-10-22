@@ -188,11 +188,20 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	if err := validateSettings(effective); err != nil {
 		return Config{}, err
 	}
+	// Milestone archived is serialized even when omitted in YAML. Attribute its
+	// implicit false value to built-ins, without replacing an explicit origin.
+	for i := range cfg.Milestones {
+		key := fmt.Sprintf("milestones[%d].archived", i)
+		if _, ok := cfg.Provenance[key]; !ok {
+			cfg.Provenance[key] = Provenance{Layer: "built-in"}
+		}
+	}
 	cfg.SavedViews = appendViews(cfg.SavedViews, "user", user.Views)
 	if override, ok := user.Projects[cfg.Project.ID]; ok {
 		cfg.SavedViews = appendViews(cfg.SavedViews, "user-project", override.Views)
 	}
 	cfg.Privileged = privileged(cfg)
+	cfg.resolveTrust()
 	return cfg, nil
 }
 

@@ -105,6 +105,14 @@ func readSource(cfg project.Config, c project.SourceConfig) (source.Source, erro
 }
 
 func rawSource(cfg project.Config, c project.SourceConfig) (*native.Source, error) {
+	for i, configured := range cfg.Sources {
+		if configured.ID == c.ID {
+			if err := cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)); err != nil {
+				return nil, source.Refuse("unavailable", err.Error())
+			}
+			break
+		}
+	}
 	if c.Type != "native" {
 		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)
 	}

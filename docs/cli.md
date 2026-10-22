@@ -13,6 +13,59 @@ bl show tasks:BL-012 --section criteria --json
 bl next 'label:cli' -n 3 --explain --json
 ```
 
+## Configuration, trust, and diagnostics
+
+`bl config show [--json]` loads settings without running declarations or contacting
+sources. JSON `data` contains the effective non-secret settings at the top level,
+plus `directory`, `paths`, `discovery`, `hostLocal`, `provenance`, and `privileged`.
+`provenance` maps each declared value's dotted/indexed key to
+`{layer, file?, line?}`; layers are `built-in`, `discovery`, `user`, `project`,
+`user-project`, `environment`, and `flag`. Implicit serialized defaults such as
+`milestones[0].archived: false` have the `built-in` layer. For example:
+
+```json
+{"ui":{"highContrast":false},"provenance":{"ui.highContrast":{"layer":"project","file":"/repo/.config/backlog.yaml","line":4}},"privileged":[{"key":"hooks[0]","trusted":false,"origin":{"layer":"project","file":"/repo/.config/backlog.yaml","line":8}}]}
+```
+
+Human output prints effective settings and their provenance. Account credentials
+are never included. `privileged` lists hooks, actions, and program/network-backed
+sources, with each declaration's trust marker and origin.
+
+`bl trust --show [--json]` shows the control root, SHA-256 digest, declarations,
+and trust markers without granting consent. Inspect it before `bl trust`, which
+atomically records consent under `$XDG_STATE_HOME/backlog/trust/` (default
+`~/.local/state/backlog/trust/`). JSON `data` has `root`, `digest`, `granted`,
+`entries`, and effective `hooks`, `actions`, and `sources` when present.
+Consent is bound to the canonical control-root path, project identity, and the
+effective project-origin privileged subset. Every field of those declarations
+is hashed, including argv, cwd, conditions, subscriptions, and timeouts. Mapping
+key order, comments, and nonprivileged settings do not invalidate consent;
+semantic privileged changes require re-trust. User and user-per-project
+config are always trusted. Grants never launch anything by themselves.
+
+Untrusted programs and network sources remain inert on every interface. The TUI
+shows a persistent trust banner and can still browse local native sources.
+This build does not ship hooks, actions, or remote/external adapters: trust does
+not install them, and configured non-native sources remain unavailable.
+Future runners must call `Config.RequireTrusted` before executing declarations.
+
+`bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
+`control-root`, `cache`, `worklease`, and `sources`. Each check has `name`,
+`status` (`pass`, `warn`, `fail`, or `skip`), `message`, and a nonempty `fix` hint.
+JSON `data.checks` contains every check, including on failure (`ok: false`,
+`error.reason: rejected`, exit 5). Invalid config yields a failed config check
+and skipped dependent checks. Any failed check exits 5; warnings alone exit 0.
+
+Doctor checks existing native caches read-only, without repairing corruption.
+It never fetches Git refs: the control branch is compared with local origin/HEAD,
+then init.defaultBranch, then an existing main/master; unknown or nondefault
+branches warn. Worklease's local `version --json` must report schema v2 and
+version >= 1.9.3. Absence warns when coordination is disabled and fails when
+configured. Source checks validate native directories and prefixes; unavailable
+adapters fail with a fix hint. Network probes are permitted only by `--online`,
+never before trust, and only for installed adapters; the native-only build
+performs no network probes even with that flag.
+
 ## `bl instructions [TOPIC]`
 
 Print embedded, version-matched Markdown without loading project configuration.

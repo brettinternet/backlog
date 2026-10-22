@@ -62,7 +62,11 @@ type storeState struct {
 // OpenProjectStore constructs the configured sources without loading items.
 func OpenProjectStore(ctx context.Context, cfg project.Config) (*Store, error) {
 	registry := source.Registry{}
-	for _, configured := range cfg.Sources {
+	for i, configured := range cfg.Sources {
+		// Keep untrusted adapters inert while allowing the local TUI and trust banner.
+		if cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)) != nil {
+			continue
+		}
 		backend, err := readSource(cfg, configured)
 		if err != nil {
 			return nil, err

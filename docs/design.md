@@ -185,7 +185,7 @@ and [schemas/project-config.json](schemas/project-config.json). `bl config show 
 prints effective non-secret settings, discovery, provenance, and a trust marker
 for each privileged entry. Credentials are retained in memory but omitted from
 output. Loading never writes, executes programs, or contacts providers. Project
-privileged entries remain untrusted; trust grants and doctor remain BL-29 work.
+privileged entries remain inert until a root-bound trust grant matches their canonical digest. Trust grants and doctor diagnostics are documented in [cli.md](cli.md).
 Workspace declarations and the optional user `defaultWorkspace` name are loaded;
 opening a multi-project workspace remains BL-43 work. The TUI builds a separate
 additive saved-view catalog (built-ins, project, user, user per-project) without
