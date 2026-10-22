@@ -22,6 +22,7 @@ import (
 	"github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/brettinternet/backlog/internal/tui"
 	"github.com/brettinternet/backlog/internal/worklease"
@@ -212,7 +213,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 					Details: map[string]any{"flag": "C", "path": requested}}
 			}
 			directory = resolved
-			return nil, nil
+			return engine.WithEventCWD(ctx, resolved), nil
 		},
 		Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Bool("version") {
@@ -244,6 +245,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	root.Commands = append(root.Commands, claimCommands(&directory, out)...)
 	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
 	root.Commands = append(root.Commands, eventsCommand(&directory, out))
+	root.Commands = append(root.Commands, hooksCommand(&directory))
 	root.Commands = append(root.Commands, instructionsCommand(out))
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
@@ -321,6 +323,14 @@ func loadConfig(cmd *urfave.Command, directory string) (project.Config, error) {
 	if err != nil {
 		return project.Config{}, &Error{Reason: "invalid-config", Message: err.Error()}
 	}
+	for i, hook := range cfg.Hooks {
+		if hook.If == "" {
+			continue
+		}
+		if _, err := query.Parse(hook.If, query.Options{Hook: true}); err != nil {
+			return project.Config{}, &Error{Reason: "invalid-config", Message: fmt.Sprintf("hooks[%d].if: %v", i, err)}
+		}
+	}
 	return cfg, nil
 }
 
@@ -331,7 +341,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "claim", "release", "events", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
+	case "claim", "release", "events", "run", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
 		return true
 	}
 	return false

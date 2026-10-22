@@ -28,6 +28,23 @@ type eventContext struct {
 	Depth  int
 }
 type eventContextKey struct{}
+type eventCWDKey struct{}
+type beforeHooksKey struct{}
+
+// WithEventCWD preserves the caller's invocation directory through event dispatch.
+func WithEventCWD(ctx context.Context, cwd string) context.Context {
+	return context.WithValue(ctx, eventCWDKey{}, cwd)
+}
+
+func eventCWD(ctx context.Context, cfg project.Config) string {
+	if cwd, _ := ctx.Value(eventCWDKey{}).(string); cwd != "" {
+		return cwd
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+	return cfg.Discovery.ControlRoot
+}
 
 // WithEventOrigin identifies a caller without changing the mutation contract.
 func WithEventOrigin(ctx context.Context, origin string) context.Context {
@@ -40,8 +57,11 @@ func WithEventOrigin(ctx context.Context, origin string) context.Context {
 		} else {
 			e.Depth = depth + 1
 		}
-		if inherited := os.Getenv("BL_EVENT_ORIGIN"); inherited == "hook" || inherited == "action" {
+		inherited := os.Getenv("BL_EVENT_ORIGIN")
+		if inherited == "hook" || inherited == "action" {
 			e.Origin = inherited
+		} else {
+			e.Origin = "hook"
 		}
 	}
 	return context.WithValue(ctx, eventContextKey{}, e)
@@ -56,7 +76,7 @@ var errIncompleteEvents = errors.New("incomplete event snapshot")
 
 func (s *eventSource) Load(ctx context.Context, c source.Cursor) (source.Delta, error) {
 	var result source.Delta
-	err := eventTransaction(ctx, s.cfg, func(tx *hooks.Transaction, db *sql.DB) error {
+	appended, err := eventTransaction(ctx, s.cfg, func(tx *hooks.Transaction, db *sql.DB) error {
 		deltas, err := loadEventSources(ctx, s.cfg, s.Source)
 		if err != nil {
 			return err
@@ -102,14 +122,22 @@ func (s *eventSource) Load(ctx context.Context, c source.Cursor) (source.Delta, 
 	if errors.Is(err, errIncompleteEvents) {
 		return s.Source.Load(ctx, c)
 	}
+	if err == nil {
+		startHookRunners(s.cfg, appended, eventCWD(ctx, s.cfg))
+	}
 	return result, err
 }
 func (s *eventSource) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	if event, ok := ctx.Value(eventContextKey{}).(eventContext); ok && event.Depth < 0 {
 		return model.Item{}, source.Refuse("rejected", "invalid causal depth")
 	}
+	var err error
+	ctx, err = runBeforeMutation(ctx, s.cfg, m, s.Source)
+	if err != nil {
+		return model.Item{}, err
+	}
 	var result model.Item
-	err := eventTransaction(ctx, s.cfg, func(log *hooks.Transaction, db *sql.DB) error {
+	appended, err := eventTransaction(ctx, s.cfg, func(log *hooks.Transaction, db *sql.DB) error {
 		var initialized int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM event_metadata`).Scan(&initialized); err != nil {
 			return err
@@ -159,7 +187,104 @@ func (s *eventSource) Apply(ctx context.Context, m model.Mutation) (model.Item, 
 		}
 		return reconcileEvents(ctx, s.cfg, log, db, []eventRecord{{Item: &result, Archived: archived}}, false, origin)
 	})
+	if err == nil {
+		startHookRunners(s.cfg, appended, eventCWD(ctx, s.cfg))
+	}
 	return result, err
+}
+
+func startHookRunners(cfg project.Config, events []hooks.Event, cwd string) {
+	var synced, originated []hooks.Event
+	for _, event := range events {
+		if event.Origin == "sync" {
+			synced = append(synced, event)
+		} else {
+			originated = append(originated, event)
+		}
+	}
+	if len(synced) > 0 {
+		syncCWD := cfg.Discovery.ControlRoot
+		if syncCWD == "" {
+			syncCWD = cwd
+		}
+		if err := hooks.StartRunner(cfg, synced, syncCWD); err != nil {
+			fmt.Fprintf(os.Stderr, "bl: warning: cannot start hook runner: %v\n", err)
+		}
+	}
+	if err := hooks.StartRunner(cfg, originated, cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "bl: warning: cannot start hook runner: %v\n", err)
+	}
+}
+
+func runBeforeMutation(ctx context.Context, cfg project.Config, m model.Mutation, backend source.Source) (context.Context, error) {
+	if done, _ := ctx.Value(beforeHooksKey{}).(bool); done {
+		return ctx, nil
+	}
+	eventType := "item.updated"
+	if m.Op == model.Create {
+		eventType = "item.created"
+	} else if m.Op == model.Archive {
+		eventType = "item.archived"
+	}
+	ctx = context.WithValue(ctx, beforeHooksKey{}, true)
+	if current, ok := ctx.Value(eventContextKey{}).(eventContext); ok && current.Depth > 3 {
+		return ctx, nil
+	}
+	if !hooks.HasBefore(cfg, eventType) {
+		return ctx, nil
+	}
+	var before *model.Item
+	var after model.Item
+	if m.Op == model.Create {
+		if m.Item == nil {
+			return ctx, source.Refuse("rejected", "create item template required")
+		}
+		after = *m.Item
+		after.Ref.Source = m.Ref.Source
+		for _, status := range cfg.Statuses {
+			if after.Status == status.Key {
+				after.Category = model.StatusCategory(status.Category)
+			}
+		}
+	} else {
+		prior, err := backend.Read(ctx, m.Ref.ID)
+		if err != nil {
+			return ctx, err
+		}
+		before = &prior
+		preparer, ok := backend.(source.Preparer)
+		if !ok {
+			return ctx, source.Refuse("unavailable", "source cannot prepare a before-hook event")
+		}
+		prepared, err := preparer.Prepare(ctx, m)
+		if err != nil {
+			return ctx, err
+		}
+		after = prepared.Item
+	}
+	origin := "cli"
+	if current, ok := ctx.Value(eventContextKey{}).(eventContext); ok && current.Origin != "" {
+		origin = current.Origin
+	}
+	versions := []string{"", after.Version}
+	if before != nil {
+		versions[0] = before.Version
+	}
+	event := makeEvent(ctx, cfg, after, eventType, origin, versions)
+	prior := model.Item{}
+	if before != nil {
+		prior = *before
+	}
+	event.Changes = itemChanges(prior, after)
+	if m.Op == model.Archive {
+		event.Changes["archived"] = hooks.Change{From: false, To: true}
+	} else if m.Op == model.Unarchive {
+		event.Changes["archived"] = hooks.Change{From: true, To: false}
+	}
+	if err := hooks.Before(ctx, cfg, event, eventCWD(ctx, cfg)); err != nil {
+		return ctx, err
+	}
+	return ctx, nil
 }
 
 type eventRecord struct {
@@ -226,8 +351,9 @@ func eventRecords(cfg project.Config, deltas map[string]source.Delta) []eventRec
 	}
 	return records
 }
-func eventTransaction(ctx context.Context, cfg project.Config, fn func(*hooks.Transaction, *sql.DB) error) error {
-	return hooks.New(cfg.Paths.StateDir, cfg.Project.ID).Update(ctx, func(log *hooks.Transaction) error {
+func eventTransaction(ctx context.Context, cfg project.Config, fn func(*hooks.Transaction, *sql.DB) error) ([]hooks.Event, error) {
+	var appended []hooks.Event
+	err := hooks.New(cfg.Paths.StateDir, cfg.Project.ID).Update(ctx, func(log *hooks.Transaction) error {
 		key := sha256.Sum256([]byte(cfg.Project.ID))
 		dir := filepath.Join(cfg.Paths.CacheDir, "events")
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -242,8 +368,13 @@ func eventTransaction(ctx context.Context, cfg project.Config, fn func(*hooks.Tr
 		if _, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS event_records (ref TEXT PRIMARY KEY, version TEXT NOT NULL, archived INTEGER NOT NULL, item BLOB NOT NULL, graph BLOB NOT NULL); CREATE TABLE IF NOT EXISTS event_metadata (initialized INTEGER NOT NULL, revision TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS event_edges (item TEXT NOT NULL, owner TEXT NOT NULL, target TEXT NOT NULL); CREATE INDEX IF NOT EXISTS event_edge_target ON event_edges(target); CREATE INDEX IF NOT EXISTS event_edge_owner ON event_edges(owner); CREATE INDEX IF NOT EXISTS event_edge_item ON event_edges(item);`); err != nil {
 			return err
 		}
-		return fn(log, db)
+		if err := fn(log, db); err != nil {
+			return err
+		}
+		appended = log.Appended()
+		return nil
 	})
+	return appended, err
 }
 
 type eventIdentity struct {

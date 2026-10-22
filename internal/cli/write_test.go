@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"github.com/brettinternet/backlog/internal/cli"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
 
@@ -157,6 +159,57 @@ func TestWriteGolden(t *testing.T) {
 			}
 			if want := get(t, golden); want != result {
 				t.Fatalf("%s differs (-update to regenerate):\n%s", golden, result)
+			}
+		})
+	}
+}
+
+// A veto and a timeout must both fail with exit 5 before item bytes or events change.
+func TestBeforeHookVetoAndTimeoutDoNotWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name, script, timeout, stderr string
+	}{
+		{"stderr", `#!/bin/sh
+printf 'deny first\nsecond line\n' >&2
+exit 7
+`, "1s", "bl: deny first"},
+		{"timeout", `#!/bin/sh
+exec /bin/sleep 1
+`, "10ms", "bl: before hook veto timed out"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := writeFixture(t)
+			paths, err := project.UserPaths()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(paths.ConfigFile), 0700); err != nil {
+				t.Fatal(err)
+			}
+			hookPath := filepath.Join(root, "before-hook")
+			put(t, hookPath, tc.script)
+			if err := os.Chmod(hookPath, 0700); err != nil {
+				t.Fatal(err)
+			}
+			put(t, paths.ConfigFile, fmt.Sprintf(`hooks:
+  - name: veto
+    on: item.updated
+    phase: before
+    run: [%q]
+    timeout: %s
+`, hookPath, tc.timeout))
+			itemPath := filepath.Join(root, "items", "BL-012.md")
+			before := get(t, itemPath)
+			var out, stderr bytes.Buffer
+			code := cli.Run(context.Background(), []string{"bl", "-C", root, "set", "12", "title=Rejected"}, cli.BuildInfo{}, strings.NewReader(""), &out, &stderr)
+			if code != 5 || !strings.HasPrefix(stderr.String(), tc.stderr) {
+				t.Fatalf("before hook result: exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+			}
+			if got := get(t, itemPath); got != before {
+				t.Fatalf("veto wrote the item: %s", got)
+			}
+			if _, err := os.Stat(filepath.Join(paths.StateDir, "events")); !os.IsNotExist(err) {
+				t.Fatalf("veto appended an event: %v", err)
 			}
 		})
 	}
