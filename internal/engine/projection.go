@@ -258,7 +258,15 @@ func (p *Projector) run() {
 				// A canceled rebuild must not leave the old cache key pointing at a
 				// partially replaced base when the user switches back to that snapshot.
 				cached = nil
-				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, States: map[model.Ref]query.State{}}
+				// Only this worker owns the query scratch. Reuse its item array
+				// across rebuilds, including canceled ones; projections copy results.
+				items := base.Items
+				clear(items)
+				items = items[:0]
+				if cap(items) < req.snapshot.Len() {
+					items = make([]model.Item, 0, req.snapshot.Len())
+				}
+				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, Items: items, States: make(map[model.Ref]query.State, req.snapshot.Len())}
 				if p.cfg.Me.Default != "" {
 					base.Me = []string{p.cfg.Me.Default}
 				}
@@ -266,7 +274,7 @@ func (p *Projector) run() {
 					if req.ctx.Err() != nil {
 						break
 					}
-					base.Items = append(base.Items, r.item)
+					base.Items = append(base.Items, *r.item)
 					base.States[ref] = query.State{Pending: r.edit.Pending, Archived: r.archived}
 				}
 				if req.ctx.Err() != nil {

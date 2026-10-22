@@ -16,7 +16,7 @@ type EditState struct {
 	Local, Remote *model.Item
 }
 type record struct {
-	item     model.Item
+	item     *model.Item
 	edit     EditState
 	archived bool
 }
@@ -41,7 +41,7 @@ func (s *Snapshot) Items() []model.Item {
 	items := make([]model.Item, 0, len(s.records))
 	for _, r := range s.records {
 		if !r.archived {
-			items = append(items, cloneItem(r.item))
+			items = append(items, cloneItem(*r.item))
 		}
 	}
 	return items
@@ -61,7 +61,7 @@ func (s *Snapshot) Get(ref model.Ref) (model.Item, EditState, bool) {
 		v := cloneItem(*e.Remote)
 		e.Remote = &v
 	}
-	return cloneItem(r.item), e, true
+	return cloneItem(*r.item), e, true
 }
 func (s *Snapshot) Source(id string) SourceState { return s.sources[id] }
 func cloneValue(v any) any {

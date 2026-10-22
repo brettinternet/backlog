@@ -35,6 +35,16 @@ func cachedLoad(t *testing.T, s *native.Source) source.Delta {
 	if err != nil || d.Coverage != source.Complete {
 		t.Fatalf("load: %+v %v", d, err)
 	}
+	// Shared storage must remain aligned after sorting, archive filtering and
+	// configuration reinterpretation, without dropping body or raw-field data.
+	if len(d.ImmutableItems) != len(d.Items) {
+		t.Fatal("missing immutable items")
+	}
+	for n, item := range d.Items {
+		if d.ImmutableItems[n] == nil || !reflect.DeepEqual(*d.ImmutableItems[n], item) {
+			t.Fatalf("shared item differs at %d", n)
+		}
+	}
 	return d
 }
 func cachePath(root string) string {
@@ -223,6 +233,9 @@ func TestCacheWarmAndChanges(t *testing.T) {
 	}
 	if got := cachedLoad(t, changed); got.Items[0].Category != model.Active {
 		t.Fatal("cached stale category")
+	}
+	if !reflect.DeepEqual(*cold.ImmutableItems[0], cold.Items[0]) {
+		t.Fatal("refresh mutated a previously published immutable item")
 	}
 }
 

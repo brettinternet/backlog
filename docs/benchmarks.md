@@ -193,10 +193,10 @@ projector and TUI `Model`, and BL-14's real PTY/emulator at 120×40 and 120 FPS.
 They do not measure the spike's synthetic `List`. A measurement-only header
 replaces one screen row to expose completed projections and cursor positions;
 it does not add a row, change the input path, or render details synchronously.
-The child uses the production interactive memory policy: standard Go heap growth,
-with an explicit `GOMEMLIMIT` inherited unchanged. The original BL-25 run below
-used the former shared 300 MiB target; BL-55 records the policy change and its
-memory cost. HOME and XDG paths are isolated from user data.
+The child calls the same interactive runtime configuration as the CLI: 20%
+heap growth, with explicit `GOGC` and `GOMEMLIMIT` inherited unchanged. The original
+BL-25 run below used the former shared 300 MiB target; BL-55 records its removal
+and memory cost, and BL-58 records the retained-memory and pacing changes. HOME and XDG paths are isolated from user data.
 
 ```sh
 BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$' -v -count=1 -timeout=90m
@@ -429,6 +429,68 @@ directory-only descriptors, resource-exhaustion polling and cancellation remain
 in place. Native regressions exercise in-place edits, same-size/restored-mtime
 edits, replacements, deletion and cancellation. This qualifies external-change
 latency only, not startup, RSS or the remaining §11 budgets.
+
+### Production TUI memory (BL-58)
+
+2026-10-22, D26 host: Apple M5 Max, 64 GiB, Darwin 27.0.0 arm64,
+Go 1.27.3, default GOMAXPROCS=18, seed 1, 120×40, 120 FPS. Runtime
+base `ab173df` plus BL-58. Both `GOGC` and `GOMEMLIMIT` were unset;
+the measurement child and CLI call the same shipped runtime configuration.
+No profile hooks or measurement-only memory settings were present.
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$|^TestShellMeasurement$' -v -count=1 -timeout=10m
+```
+
+The complete run passed in 82.567 s. RSS is each production child's high-water
+mark, maximized over initial cold cache population, all 40 startup samples at
+10k, navigation/held keys and filtering/external changes. It excludes the parent
+fixture generator. Startup samples wait for full load before closing the child,
+not just first content.
+
+| Boundary | 10k | 50k | Budget |
+| --- | ---: | ---: | --- |
+| Peak child RSS | 133.11 MiB | 382.83 MiB | ≤ 150 / 400 MiB: pass |
+| Cold initial cache-population child RSS | 117.23 MiB | 382.83 MiB | Included in maxima |
+| Cold startup p95, shell / first content / complete list | 21.80 / 54.50 / 2,180.02 ms | — | First content ≤ 400 ms |
+| Warm startup p95, shell / first content / complete list | 21.61 / 37.60 / 205.12 ms | — | First content ≤ 100 ms |
+| Navigation key-to-PTY p95, n=100 | 9.55 ms | 10.13 ms | 50k ≤ 16 ms |
+| Filter key-to-completed-PTY p95, n=20 | 9.38 ms | 17.13 ms | ≤ 30 / 80 ms |
+| External rename-to-visible p95, n=20 | 91.45 ms | — | ≤ 150 ms |
+
+Update+View over 50,001 prepared rows was 0.081 ms p95 (n=2,000,
+≤ 4 ms). Held navigation delivered all 200 keys at 40 Hz in 5.002 s,
+with the final cursor visible 6.61 ms after release (≤ 8.33 ms).
+Complete-source load is reported separately, not claimed as first-content latency.
+
+Native live records and store snapshots now share immutable, individually owned
+items instead of duplicate full item structs and raw-field maps. Get/Items still
+copy mutable collections, and writes still reread authoritative files and check
+versions. Event reconciliation retains item pointers rather than copying bodies
+into large transition arrays. Native transfer arrays are preallocated, and the
+single projection worker reuses its private item scratch across snapshot rebuilds,
+including cancellation. No backlog-sized work moved onto Update.
+
+Cache refresh also shares byte-identical description/plan/notes/summary strings
+across decoded batches and parsed records. This is lossless and refresh-local;
+unique body text is neither truncated nor dropped, and no deduplication lookup
+table survives the refresh. The deterministic fixture has repeated bodies, so
+this saving depends on content and is not a bound for arbitrary unique documents.
+All item, detail, raw-field and text-query data remains available.
+
+After these retained/transient reductions, interactive GC uses 20% heap growth
+rather than the standard 100%, without a fixed memory target below the live data.
+This policy ships for all TUI sessions, not only the harness. Explicit `GOGC`
+(including `off`) and `GOMEMLIMIT` (including `off`) take precedence; previous
+runtime settings are restored when the session closes. Batch CLI policy is
+unchanged. Diagnostic external GOGC experiments and temporary heap-profile hooks
+were removed before the qualification run. Latencies remain report-only in CI.
+
+An independent verifier reran the full command with both runtime variables unset:
+peak child RSS was 131.48 / 379.34 MiB at 10k / 50k, again passing both budgets.
+Focused race checks passed for engine, native source, cache and TUI. The full
+`task ci` gate passes, including the shared-item data-parity/old-snapshot
+regressions, query/cancellation/version checks, race detection, security and smoke.
 
 ### Cold-cache correction
 

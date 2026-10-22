@@ -25,6 +25,10 @@ type Finding struct {
 	Line                          int
 }
 type Delta struct {
+	// ImmutableItems optionally supplies shared, immutable storage for Items,
+	// in the same order. Nil entries use defensive copying. Neither source nor
+	// consumers may mutate these items. Public snapshot reads still copy.
+	ImmutableItems []*model.Item
 	// Archived identifies archived items when IncludeArchive is requested.
 	Archived map[model.Ref]bool
 	Items    []model.Item

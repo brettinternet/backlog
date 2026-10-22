@@ -153,6 +153,12 @@ type Source interface {
 }
 ```
 
+Native deltas may supply immutable per-item storage shared with the snapshot
+store. Sources and consumers never mutate that shared storage; adapters without
+it are copied defensively. Public snapshot reads still return independent
+collections. Shared items have individual allocations, not pointers into a full
+backlog array that would pin old versions after edits.
+
 Coverage is explicit: complete, partial, or unknown. Partial or stale coverage never proves that an item was deleted, and never makes an unknown blocker look satisfied (Worklease D23 and D27 lessons). Each source gets its own worker, so one slow or rate-limited source never stalls another, and the header shows a badge per source.
 
 ### 4.4 Mutations
