@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi-01a163f2'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 14:26'
+updated_date: '2026-10-22 14:56'
 labels:
   - tui
   - config
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-18
@@ -79,6 +80,8 @@ Integration pending: primary checkout has unrelated uncommitted edits in interna
 
 Integration completed: owner committed the unrelated edits as a65ce91, followed by backlog review commit 5784bd6. Merge 46c0453a9ef8319bd6364f16b94bbc6f091a7b91 preserves both the readable-list-width fix and saved split sizing; the single model.go merge conflict was resolved accordingly. task check:staged, focused tests, and task ci all passed on the final merged implementation. python3 /tmp/bl19-verify.py passed again against the merged primary binary; captures at /var/folders/jp/1mwx72h172955139pth4h8800000gn/T/bl19-acceptance-4yjs47m0.
 Cleanup complete: verified session receipt/path/branch and integration ancestry, inspected Herdr workspace wJP (one zsh pane), then wt remove bl-19-views --foreground --format=json --yes removed the checkout and branch. wt list now shows only primary; herdr workspace list confirms wJP disappeared. No retained task worktree/workspace. Temporary acceptance fixtures remain as evidence only. No blocker or next resumable step; all delivery obligations satisfied. No push or PR performed.
+
+Review: restored session config shadowed edited view declarations forever (a teammate's project view change never appeared); sessions now record each view's base declaration and restore overrides only while it is unchanged (regression in TestViewsRestoreSession). SaveView left .config/backlog.yaml.lock in the checkout; it now flocks the directory. Commit below; task ci passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
