@@ -45,6 +45,7 @@ type prepared struct {
 type snapshotMsg struct {
 	snapshot *engine.Snapshot
 	badges   string
+	syncing  bool
 }
 type projectionMsg engine.Projection
 type foldedMsg struct {
@@ -83,9 +84,11 @@ type Model struct {
 	data                     prepared
 	loading                  bool
 	badges, failure          string
+	syncing                  bool
 	snapshots                <-chan *engine.Snapshot
 	snapshot                 *engine.Snapshot
 	request                  uint64
+	applied, prepared        uint64 // latest projection and preparation shown
 	detailOpen               bool
 	detailFocus              bool
 	detailTab                detailTab
@@ -154,6 +157,7 @@ func (m Model) waitSnapshot() tea.Cmd {
 			return nil
 		case s := <-m.snapshots:
 			badges := make([]string, 0, len(m.opts.Sources))
+			syncing := false
 			for _, id := range m.opts.Sources {
 				status := s.Source(id)
 				label := "✓ synced"
@@ -162,13 +166,14 @@ func (m Model) waitSnapshot() tea.Cmd {
 				}
 				if status.Coverage == "unknown" {
 					label = "⠋ syncing"
+					syncing = syncing || status.Error == ""
 				}
 				if status.Error != "" {
 					label = "! error: " + textutil.Line(status.Error)
 				}
 				badges = append(badges, textutil.Line(id)+" "+label)
 			}
-			return snapshotMsg{s, strings.Join(badges, " · ")}
+			return snapshotMsg{s, strings.Join(badges, " · "), syncing}
 		}
 	}
 }
@@ -341,17 +346,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		oldDetailWidth := m.detailWidth()
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
+		if m.width < 120 {
+			m.detailFocus = m.detailOpen // the detail pane replaces the list
+		}
 		if m.detailOpen && m.detailWidth() != oldDetailWidth {
 			return m, m.scheduleDetail()
 		}
 	case snapshotMsg:
-		m.snapshot, m.badges = msg.snapshot, msg.badges
+		m.snapshot, m.badges, m.syncing = msg.snapshot, msg.badges, msg.syncing
 		m.project()
 		return m, m.waitSnapshot()
 	case projectionMsg:
 		if msg.Request != m.request {
 			return m, m.waitProjection()
 		}
+		m.applied = msg.Request
 		if m.editor.open {
 			m.editor.candidates = msg.Completions
 			m.editor.candidate = 0
@@ -390,6 +399,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.data = msg.data
+		m.prepared = msg.serial
 		m.loading = false
 		if msg.selected >= 0 && m.selected == msg.from {
 			m.selected = msg.selected
@@ -670,13 +680,16 @@ func (m Model) View() tea.View {
 	}
 	header := "backlog · " + textutil.Line(m.opts.Project) + " · " + strings.Join(tabs, "  ")
 	lines = append(lines, m.title.Render(cell(header, m.width)), cell(m.badges, m.width))
-	wide := m.width >= 80
+	listWidth := m.width
+	if m.detailOpen && m.width >= 120 {
+		listWidth = (m.width - 3) / 2
+	}
+	wide := listWidth >= 80
 	columns := "  ID           Title"
 	if wide {
 		columns = "  ID           P  Status         ⊘   ▣       Title"
 	}
 	if m.detailOpen && m.width >= 120 {
-		listWidth := (m.width - 3) / 2
 		detailWidth := m.detailWidth()
 		lines = append(lines, cell(columns, listWidth)+"│"+cell(m.detailHeader(), detailWidth))
 		page := max(0, m.height-5)
@@ -762,6 +775,9 @@ func (m Model) listLine(index int, wide bool) string {
 		return ""
 	}
 	if len(m.data.rows) == 0 {
+		if index == 0 && (m.applied != m.request || m.prepared != m.serial || m.syncing) {
+			return "\u280b Loading\u2026" // not empty yet: a newer result is pending
+		}
 		if index == 0 {
 			return "No matching items."
 		}
@@ -833,7 +849,10 @@ func (m Model) detailPaneLine(index int) string {
 }
 func (m Model) detailContentLine(index int) string {
 	if !m.detailIdentity.Valid {
-		return "Select an item to view details."
+		if index == 0 {
+			return "Select an item to view details."
+		}
+		return ""
 	}
 	if m.detailError != "" {
 		if index == 0 {

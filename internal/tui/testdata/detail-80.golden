@@ -6,13 +6,13 @@ BL-1 · Item 1 · todo · high
                                                                                 
   ## BL-1 · Detail fixture                                                      
                                                                                 
-  • **Type:**                                                                   
-  • **Status:** todo                                                            
-  • **Category:** todo                                                          
-  • **Priority:** high                                                          
-  • **Milestone:** m-1 — TUI                                                    
-  • **Readiness:** ready                                                        
-  • **Reason:** all readiness checks pass                                       
+  • Type:                                                                       
+  • Status: todo                                                                
+  • Category: todo                                                              
+  • Priority: high                                                              
+  • Milestone: m-1 — TUI                                                        
+  • Readiness: ready                                                            
+  • Reason: all readiness checks pass                                           
                                                                                 
                                                                                 
                                                                                 
@@ -131,11 +131,11 @@ Overview  Description  Criteria  Plan/Notes  Comments  [Relations]
                                                                                 
   ## BLOCKED BY                                                                 
                                                                                 
-  • **BL-2** · active — Dependency                                              
+  • BL-2 · active — Dependency                                                  
                                                                                 
   ## CHILDREN                                                                   
                                                                                 
-  • **BL-3** · done — Child                                                     
+  • BL-3 · done — Child                                                         
                                                                                 
                                                                                 
                                                                                 

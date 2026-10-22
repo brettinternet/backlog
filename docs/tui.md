@@ -8,8 +8,10 @@ Bare `bl` opens the list when stdin and stdout are terminals; `bl tui`
 explicitly requires both. The frame paints a loading state before native
 sources load, then consumes immutable engine projections. Source badges show
 syncing, synced, stale, or error. Rows show ID, priority, raw status, open
-blockers, child progress, title and pending/failed glyphs. Below 80 columns,
-only ID, title and edit glyphs remain. The footer reports the active query and
+blockers, child progress, title and pending/failed glyphs. When the list (or
+the list pane beside detail) is narrower than 80 columns, only ID, title and
+edit glyphs remain. The list shows loading, not "No matching items.", while a
+source syncs or a newer result is pending. The footer reports the active query and
 pending/failed counts in that projection, including folded rows.
 
 Next, Active, Mine and All are built-in list tabs, grouped by status. `j`/`k`

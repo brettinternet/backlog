@@ -237,7 +237,7 @@ func TestDetailTabGoldens(t *testing.T) {
 	_ = m.scheduleDetail()
 	m = settleDetail(t, m)
 	body := strings.Join(m.detailLines, "\n")
-	if !strings.Contains(body, "Milestone:** m-1\n") || strings.Contains(body, "TUI") {
+	if !strings.Contains(body, "Milestone: m-1\n") || strings.Contains(body, "TUI") {
 		t.Fatal("undeclared milestone was not raw")
 	}
 }

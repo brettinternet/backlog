@@ -421,23 +421,23 @@ func detailBody(item model.Item, row engine.Row, tab detailTab, milestones []pro
 	switch tab {
 	case tabOverview:
 		body.line("## ", row.Ref.ID, " · ", item.Title)
-		body.line("- **Type:** ", item.Type)
-		body.line("- **Status:** ", item.Status)
-		body.line("- **Category:** ", string(item.Category))
-		body.line("- **Priority:** ", string(item.Priority))
-		body.list("- **Assignees:** ", item.Assignees)
-		body.list("- **Labels:** ", item.Labels)
+		body.line("- Type: ", item.Type)
+		body.line("- Status: ", item.Status)
+		body.line("- Category: ", string(item.Category))
+		body.line("- Priority: ", string(item.Priority))
+		body.list("- Assignees: ", item.Assignees)
+		body.list("- Labels: ", item.Labels)
 		if item.Milestone != "" {
-			body.line("- **Milestone:** ", milestoneName(item.Milestone, milestones))
+			body.line("- Milestone: ", milestoneName(item.Milestone, milestones))
 		}
 		if item.Due != "" {
-			body.line("- **Due:** ", item.Due)
+			body.line("- Due: ", item.Due)
 		}
 		if item.URL != "" {
-			body.line("- **URL:** ", item.URL)
+			body.line("- URL: ", item.URL)
 		}
-		body.line("- **Readiness:** ", string(row.Readiness))
-		body.line("- **Reason:** ", row.ReadinessReason)
+		body.line("- Readiness: ", string(row.Readiness))
+		body.line("- Reason: ", row.ReadinessReason)
 	case tabDescription:
 		body.write(item.Description)
 		if item.Description == "" {
@@ -488,7 +488,7 @@ func detailBody(item model.Item, row engine.Row, tab detailTab, milestones []pro
 				body.line("## ", strings.ToUpper(relation.Kind))
 				lastKind = relation.Kind
 			}
-			body.line("- **", relation.Ref.ID, "** · ", relation.Status, " — ", relation.Title)
+			body.line("- ", relation.Ref.ID, " · ", relation.Status, " — ", relation.Title)
 		}
 	}
 	return body.builder.String(), body.full

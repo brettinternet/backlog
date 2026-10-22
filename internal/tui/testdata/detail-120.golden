@@ -1,18 +1,18 @@
 == Overview ==
 backlog · fixture · [Next]  Active  Mine  All                                                                           
                                                                                                                         
-  ID           P  Status         ⊘   ▣       Title        │BL-1 · Item 1 · todo · high                                  
-> BL-1         ▲  todo           ─   ─       Item 1       │[Overview] · tab/shift-tab to switch                         
-  BL-2         ▲  todo           ─   ─       Item 2       │                                                             
+  ID           Title                                      │BL-1 · Item 1 · todo · high                                  
+> BL-1         Item 1                                     │[Overview] · tab/shift-tab to switch                         
+  BL-2         Item 2                                     │                                                             
                                                           │  ## BL-1 · Detail fixture                                   
                                                           │                                                             
-                                                          │  • **Type:**                                                
-                                                          │  • **Status:** todo                                         
-                                                          │  • **Category:** todo                                       
-                                                          │  • **Priority:** high                                       
-                                                          │  • **Milestone:** m-1 — TUI                                 
-                                                          │  • **Readiness:** ready                                     
-                                                          │  • **Reason:** all readiness checks pass                    
+                                                          │  • Type:                                                    
+                                                          │  • Status: todo                                             
+                                                          │  • Category: todo                                           
+                                                          │  • Priority: high                                           
+                                                          │  • Milestone: m-1 — TUI                                     
+                                                          │  • Readiness: ready                                         
+                                                          │  • Reason: all readiness checks pass                        
                                                           │                                                             
                                                           │                                                             
                                                           │                                                             
@@ -26,9 +26,9 @@ tab next · shift-tab previous · j/k scroll · h list · esc/q back
 == Description ==
 backlog · fixture · [Next]  Active  Mine  All                                                                           
                                                                                                                         
-  ID           P  Status         ⊘   ▣       Title        │BL-1 · Item 1 · todo · high                                  
-> BL-1         ▲  todo           ─   ─       Item 1       │[Description] · tab/shift-tab to switch                      
-  BL-2         ▲  todo           ─   ─       Item 2       │                                                             
+  ID           Title                                      │BL-1 · Item 1 · todo · high                                  
+> BL-1         Item 1                                     │[Description] · tab/shift-tab to switch                      
+  BL-2         Item 2                                     │                                                             
                                                           │  # Description                                              
                                                           │                                                             
                                                           │  A **selected** item. 修正 🚀                               
@@ -51,9 +51,9 @@ tab next · shift-tab previous · j/k scroll · h list · esc/q back
 == Criteria ==
 backlog · fixture · [Next]  Active  Mine  All                                                                           
                                                                                                                         
-  ID           P  Status         ⊘   ▣       Title        │BL-1 · Item 1 · todo · high                                  
-> BL-1         ▲  todo           ─   ─       Item 1       │[Criteria] · tab/shift-tab to switch                         
-  BL-2         ▲  todo           ─   ─       Item 2       │                                                             
+  ID           Title                                      │BL-1 · Item 1 · todo · high                                  
+> BL-1         Item 1                                     │[Criteria] · tab/shift-tab to switch                         
+  BL-2         Item 2                                     │                                                             
                                                           │  ## Acceptance criteria                                     
                                                           │                                                             
                                                           │  [x] Keep input responsive                                  
@@ -76,9 +76,9 @@ tab next · shift-tab previous · j/k scroll · h list · esc/q back
 == Plan/Notes ==
 backlog · fixture · [Next]  Active  Mine  All                                                                           
                                                                                                                         
-  ID           P  Status         ⊘   ▣       Title        │BL-1 · Item 1 · todo · high                                  
-> BL-1         ▲  todo           ─   ─       Item 1       │[Plan/Notes] · tab/shift-tab to switch                       
-  BL-2         ▲  todo           ─   ─       Item 2       │                                                             
+  ID           Title                                      │BL-1 · Item 1 · todo · high                                  
+> BL-1         Item 1                                     │[Plan/Notes] · tab/shift-tab to switch                       
+  BL-2         Item 2                                     │                                                             
                                                           │  ## Plan                                                    
                                                           │                                                             
                                                           │  Implement detail                                           
@@ -101,9 +101,9 @@ tab next · shift-tab previous · j/k scroll · h list · esc/q back
 == Comments ==
 backlog · fixture · [Next]  Active  Mine  All                                                                           
                                                                                                                         
-  ID           P  Status         ⊘   ▣       Title        │BL-1 · Item 1 · todo · high                                  
-> BL-1         ▲  todo           ─   ─       Item 1       │[Comments] · tab/shift-tab to switch                         
-  BL-2         ▲  todo           ─   ─       Item 2       │                                                             
+  ID           Title                                      │BL-1 · Item 1 · todo · high                                  
+> BL-1         Item 1                                     │[Comments] · tab/shift-tab to switch                         
+  BL-2         Item 2                                     │                                                             
                                                           │  ## brett                                                   
                                                           │                                                             
                                                           │  Looks good                                                 
@@ -126,16 +126,16 @@ tab next · shift-tab previous · j/k scroll · h list · esc/q back
 == Relations ==
 backlog · fixture · [Next]  Active  Mine  All                                                                           
                                                                                                                         
-  ID           P  Status         ⊘   ▣       Title        │BL-1 · Item 1 · todo · high                                  
-> BL-1         ▲  todo           ─   ─       Item 1       │[Relations] · tab/shift-tab to switch                        
-  BL-2         ▲  todo           ─   ─       Item 2       │                                                             
+  ID           Title                                      │BL-1 · Item 1 · todo · high                                  
+> BL-1         Item 1                                     │[Relations] · tab/shift-tab to switch                        
+  BL-2         Item 2                                     │                                                             
                                                           │  ## BLOCKED BY                                              
                                                           │                                                             
-                                                          │  • **BL-2** · active — Dependency                           
+                                                          │  • BL-2 · active — Dependency                               
                                                           │                                                             
                                                           │  ## CHILDREN                                                
                                                           │                                                             
-                                                          │  • **BL-3** · done — Child                                  
+                                                          │  • BL-3 · done — Child                                      
                                                           │                                                             
                                                           │                                                             
                                                           │                                                             

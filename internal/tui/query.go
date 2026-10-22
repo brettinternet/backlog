@@ -289,7 +289,7 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 		case "z":
 			switch key {
 			case "a":
-				if len(m.data.rows) > 0 {
+				if len(m.data.rows) > 0 && !m.ungrouped {
 					r := m.data.rows[m.selected]
 					m.folded = &foldState{group: r.value, previous: m.folded}
 					m.selected = m.data.starts[r.group]
