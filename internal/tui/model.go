@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -25,6 +25,9 @@ type Options struct {
 	Projector             *engine.Projector
 	Context               context.Context
 	Sources               []string
+	Milestones            []project.Milestone
+	Read                  func(context.Context, model.Ref) (model.Item, error)
+	Render                func(string, int) (string, error)
 }
 
 type screenRow struct {
@@ -72,9 +75,20 @@ type Model struct {
 	snapshots           <-chan *engine.Snapshot
 	snapshot            *engine.Snapshot
 	request             uint64
+	detailOpen          bool
+	detailFocus         bool
+	detailTab           detailTab
+	detailExpanded      bool
+	detailPending       bool
+	detailLoading       bool
+	detailTruncated     bool
+	detailLines         []string
+	detailError         string
+	detailScroll        int
+	detailGeneration    uint64
+	detailIdentity      detailIdentity
+	detailWorker        *detailWorker
 }
-
-var quitKey = key.NewBinding(key.WithKeys("q", "ctrl+c"))
 
 var viewNames = []string{"Next", "Active", "Mine", "All"}
 var viewQueries = []string{"is:ready sort:next group:status", "category:active group:status", "assignee:me group:status", "is:open group:status"}
@@ -82,6 +96,9 @@ var viewQueries = []string{"is:ready sort:next group:status", "category:active g
 func New(opts Options) Model {
 	if opts.Context == nil {
 		opts.Context = context.Background()
+	}
+	if opts.Render == nil {
+		opts.Render = RenderMarkdown
 	}
 	style := lipgloss.NewStyle()
 	if !opts.NoColor {
@@ -92,17 +109,32 @@ func New(opts Options) Model {
 			style = style.Foreground(lipgloss.Color("6"))
 		}
 	}
-	return Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil}
+	model := Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil}
+	if opts.Read != nil {
+		theme := "color"
+		if opts.NoColor {
+			theme = "no-color"
+		} else if opts.HighContrast {
+			theme = "high-contrast"
+		}
+		model.detailWorker = newDetailWorker(opts.Context, opts.Read, opts.Render, theme)
+	}
+	return model
 }
 
 // Bind subscribes before the program starts. The caller owns unsubscribe and
 // closes the engine after Run, never on Bubble Tea's update loop.
 func (m *Model) Bind(ch <-chan *engine.Snapshot) { m.snapshots = ch }
 func (m Model) Init() tea.Cmd {
-	if m.opts.Store == nil {
-		return nil
+	var commands []tea.Cmd
+	if m.opts.Store != nil {
+		commands = append(commands, m.waitSnapshot(), m.waitProjection())
 	}
-	return tea.Batch(m.waitSnapshot(), m.waitProjection())
+	if m.detailWorker != nil {
+		m.detailWorker.start()
+		commands = append(commands, m.waitDetail())
+	}
+	return tea.Batch(commands...)
 }
 func (m Model) waitSnapshot() tea.Cmd {
 	return func() tea.Msg {
@@ -138,6 +170,71 @@ func (m Model) waitProjection() tea.Cmd {
 			return projectionMsg(p)
 		}
 	}
+}
+func (m Model) waitDetail() tea.Cmd {
+	if m.detailWorker == nil {
+		return nil
+	}
+	worker := m.detailWorker
+	return func() tea.Msg {
+		select {
+		case <-worker.ctx.Done():
+			return nil
+		case result := <-worker.results:
+			return detailResultMsg(result)
+		}
+	}
+}
+func (m Model) selectedRow() (engine.Row, bool) {
+	if m.selected < 0 || m.selected >= len(m.data.rows) {
+		return engine.Row{}, false
+	}
+	row := m.data.rows[m.selected]
+	return row.row, row.header == ""
+}
+func (m Model) detailWidth() int {
+	if m.width >= 120 {
+		listWidth := (m.width - 3) / 2
+		return max(1, m.width-listWidth-1)
+	}
+	return max(1, m.width)
+}
+func (m *Model) scheduleDetail() tea.Cmd {
+	m.detailGeneration++
+	row, ok := m.selectedRow()
+	m.detailIdentity = identityFor(row, ok)
+	m.detailLines = nil
+	m.detailScroll = 0
+	m.detailTruncated = false
+	m.detailError = ""
+	m.detailLoading = m.detailOpen && ok
+	if !m.detailOpen {
+		return nil
+	}
+	if !m.detailPending {
+		m.detailPending = true
+		generation := m.detailGeneration
+		return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return detailDue(generation) })
+	}
+	return nil
+}
+func (m *Model) submitDetail() {
+	row, ok := m.selectedRow()
+	if !ok {
+		m.detailLoading = false
+		m.detailError = "Select an item to view details."
+		return
+	}
+	if m.detailWorker == nil {
+		m.detailLoading = false
+		m.detailError = "detail reading is unavailable"
+		return
+	}
+	m.detailLoading = true
+	m.detailWorker.submit(detailRequest{
+		generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-4),
+		tab: m.detailTab, expanded: m.detailExpanded, milestones: m.opts.Milestones,
+	})
 }
 
 // Flattening and folding are commands: even a single giant group cannot put
@@ -194,7 +291,11 @@ func (m *Model) switchView(n int) {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		oldDetailWidth := m.detailWidth()
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
+		if m.detailOpen && m.detailWidth() != oldDetailWidth {
+			return m, m.scheduleDetail()
+		}
 	case snapshotMsg:
 		m.snapshot, m.badges = msg.snapshot, msg.badges
 		m.project()
@@ -219,14 +320,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.data = msg.data
 		m.loading = false
+		m.selected = max(0, min(m.selected, len(m.data.rows)-1))
+		if m.detailOpen && identityForSelected(m) != m.detailIdentity {
+			return m, m.scheduleDetail()
+		}
 	case viewDue:
 		if uint64(msg) == m.inputSerial && m.count > 0 && m.prefix == "" {
 			m.switchView(m.count - 1)
 			m.count = 0
 		}
+	case detailDue:
+		if !m.detailOpen {
+			m.detailPending = false
+			return m, nil
+		}
+		if uint64(msg) != m.detailGeneration {
+			generation := m.detailGeneration
+			return m, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return detailDue(generation) })
+		}
+		m.detailPending = false
+		m.submitDetail()
+		return m, nil
+	case detailResultMsg:
+		result := detailResult(msg)
+		if m.detailOpen && result.generation == m.detailGeneration && result.identity.Ref == m.detailIdentity.Ref {
+			m.detailLoading = false
+			m.detailError = result.err
+			m.detailLines = result.lines
+			m.detailTruncated = result.truncated
+			m.detailScroll = 0
+		}
+		return m, m.waitDetail()
 	case tea.KeyPressMsg:
 		s := msg.String()
-		if key.Matches(msg, quitKey) {
+		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
 		if s == "?" {
@@ -234,11 +361,89 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if s == "esc" {
-			m.showHelp = false
+			if m.showHelp {
+				m.showHelp = false
+				return m, nil
+			}
+			if m.detailOpen {
+				m.detailOpen = false
+				m.detailFocus = false
+				m.detailGeneration++
+				m.detailLoading = false
+				m.detailLines = nil
+				return m, nil
+			}
 			m.count = 0
 			m.prefix = ""
 			m.inputSerial++
 			return m, nil
+		}
+		if m.detailOpen && m.detailFocus {
+			switch s {
+			case "h", "left":
+				if m.width >= 120 {
+					m.detailFocus = false
+				}
+				return m, nil
+			case "q", "enter":
+				m.detailOpen = false
+				m.detailFocus = false
+				m.detailGeneration++
+				m.detailLoading = false
+				m.detailLines = nil
+				return m, nil
+			case "tab":
+				m.detailTab = (m.detailTab + 1) % detailTab(len(detailTabNames))
+				m.detailExpanded = false
+				return m, m.scheduleDetail()
+			case "shift+tab":
+				m.detailTab = (m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames))
+				m.detailExpanded = false
+				return m, m.scheduleDetail()
+			case "m":
+				if m.detailTruncated || m.detailExpanded {
+					m.detailExpanded = !m.detailExpanded
+					return m, m.scheduleDetail()
+				}
+				return m, nil
+			case "j", "down":
+				m.scrollDetail(1)
+			case "k", "up":
+				m.scrollDetail(-1)
+			case "ctrl+d", "pagedown":
+				m.scrollDetail(max(1, (m.height-6)/2))
+			case "ctrl+u", "pageup":
+				m.scrollDetail(-max(1, (m.height-6)/2))
+			case "ctrl+f":
+				m.scrollDetail(max(1, m.height-6))
+			case "ctrl+b":
+				m.scrollDetail(-max(1, m.height-6))
+			}
+			return m, nil
+		}
+		if s == "enter" {
+			m.detailOpen = !m.detailOpen
+			m.detailFocus = m.detailOpen
+			if m.detailOpen {
+				return m, m.scheduleDetail()
+			}
+			m.detailGeneration++
+			m.detailLoading = false
+			m.detailLines = nil
+			return m, nil
+		}
+		if s == "tab" || s == "shift+tab" {
+			if !m.detailOpen {
+				m.detailOpen = true
+				m.detailFocus = true
+				m.detailTab = tabOverview
+				return m, m.scheduleDetail()
+			}
+			m.detailFocus = true
+			return m, nil
+		}
+		if s == "q" {
+			return m, tea.Quit
 		}
 		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
 			m.count = min(1000000, m.count*10+int(s[0]-'0'))
@@ -246,6 +451,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			serial := m.inputSerial
 			return m, tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg { return viewDue(serial) })
 		}
+		previousSelection := m.selected
 		n := max(1, m.count)
 		hadCount := m.count > 0
 		m.count = 0
@@ -307,8 +513,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.opts.Store.Refresh()
 			}
 		}
+		m.selected = max(0, min(m.selected, len(m.data.rows)-1))
+		if m.selected < m.top {
+			m.top = m.selected
+		}
+		if m.selected >= m.top+page {
+			m.top = m.selected - page + 1
+		}
+		if m.detailOpen && m.selected != previousSelection {
+			return m, m.scheduleDetail()
+		}
 	}
-	m.selected = max(0, min(m.selected, len(m.data.rows)-1))
 	page := max(1, m.height-5)
 	if m.selected < m.top {
 		m.top = m.selected
@@ -318,6 +533,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.top = max(0, min(m.top, max(0, len(m.data.rows)-page)))
 	return m, nil
+}
+func identityForSelected(m Model) detailIdentity {
+	row, ok := m.selectedRow()
+	return identityFor(row, ok)
+}
+func (m *Model) scrollDetail(delta int) {
+	visible := max(1, m.height-6)
+	m.detailScroll = max(0, min(m.detailScroll+delta, max(0, len(m.detailLines)-visible)))
 }
 
 func cell(s string, width int) string {
@@ -356,63 +579,42 @@ func (m Model) View() tea.View {
 	if wide {
 		columns = "  ID           P  Status         ⊘   ▣       Title"
 	}
-	lines = append(lines, cell(columns, m.width))
-	page := max(0, m.height-5)
-	for i := 0; i < page; i++ {
-		line := ""
-		index := m.top + i
-		if m.showHelp {
-			hints := []string{"j/k ↓/↑ · count + move · gg/G/NG", "ctrl-d/u half page · ctrl-f/b full page", "[/] groups · za fold · 1–4 views · gt/gT", "R resync · ? help · esc back · q/ctrl-c quit", "A digit selects a view after 350ms; follow it with a motion for a count.", "Detail, editing, saved views and board are not available yet."}
-			if i < len(hints) {
-				line = hints[i]
-			}
-		} else if m.loading {
-			if i == 0 {
-				line = "⠋ Loading…"
-			}
-		} else if m.failure != "" {
-			if i == 0 {
-				line = "! " + m.failure
-			}
-		} else if len(m.data.rows) == 0 {
-			if i == 0 {
-				line = "No matching items."
-			}
-		} else if index < len(m.data.rows) {
-			r := m.data.rows[index]
-			marker := "  "
-			if index == m.selected {
-				marker = "> "
-			}
-			if r.header != "" {
-				line = marker + r.header
-			} else {
-				state := ""
-				if r.row.Pending {
-					state = "● "
-				}
-				if r.row.Error != "" {
-					state = "! "
-				}
-				line = marker + cell(r.row.Ref.ID, 12) + " "
-				if wide {
-					line += cell(priority(r.row.Priority), 2) + " " + cell(r.row.Status, 14) + " "
-					blockers, children := "─", "─"
-					if r.row.OpenBlockers > 0 {
-						blockers = strconv.Itoa(r.row.OpenBlockers)
-					}
-					if r.row.ChildrenTotal > 0 {
-						children = fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal)
-					}
-					line += cell(blockers, 3) + " " + cell(children, 7) + " "
-				}
-				line += state + textutil.Line(r.row.Title)
-			}
+	if m.detailOpen && m.width >= 120 {
+		listWidth := (m.width - 3) / 2
+		detailWidth := m.detailWidth()
+		lines = append(lines, cell(columns, listWidth)+"│"+cell(m.detailHeader(), detailWidth))
+		page := max(0, m.height-5)
+		for i := 0; i < page; i++ {
+			left := m.listLine(m.top+i, wide)
+			right := m.detailPaneLine(i)
+			lines = append(lines, cell(left, listWidth)+"│"+cell(right, detailWidth))
 		}
-		lines = append(lines, cell(line, m.width))
+	} else if m.detailOpen {
+		lines = append(lines, cell(m.detailHeader(), m.width), cell(m.detailTabs(), m.width))
+		for i := 0; i < max(0, m.height-6); i++ {
+			lines = append(lines, cell(m.detailContentLine(i), m.width))
+		}
+	} else {
+		lines = append(lines, cell(columns, m.width))
+		for i := 0; i < max(0, m.height-5); i++ {
+			lines = append(lines, cell(m.listLine(m.top+i, wide), m.width))
+		}
 	}
 	lines = append(lines, strings.Repeat("─", m.width))
 	footer := fmt.Sprintf("%s · %d pending · %d failed · ? help · q quit", viewQueries[m.view], m.data.pending, m.data.failed)
+	if m.detailOpen {
+		footer = "tab next · shift-tab previous · j/k scroll · h list · esc/q back"
+		if !m.detailFocus {
+			footer = "j/k select · tab focus · enter close · q quit"
+		}
+		if m.detailTruncated {
+			if m.detailExpanded {
+				footer = "m show less · " + footer
+			} else {
+				footer = "m show more · " + footer
+			}
+		}
+	}
 	if m.count > 0 {
 		footer += " · " + strconv.Itoa(m.count) + m.prefix
 	}
@@ -423,4 +625,124 @@ func (m Model) View() tea.View {
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	return v
+}
+func (m Model) listLine(index int, wide bool) string {
+	if m.showHelp {
+		hints := []string{
+			"j/k ↓/↑ · count + move · gg/G/NG",
+			"ctrl-d/u half page · ctrl-f/b full page",
+			"[/] groups · za fold · 1–4 views · gt/gT",
+			"enter toggles detail · tab focuses/cycles detail tabs",
+			"detail: j/k scroll · h list · m show more · esc/q back",
+			"R resync · ? help · q/ctrl-c quit",
+			"A digit selects a view after 350ms; follow it with a motion for a count.",
+		}
+		if index < len(hints) {
+			return hints[index]
+		}
+		return ""
+	}
+	if m.loading {
+		if index == 0 {
+			return "⠋ Loading…"
+		}
+		return ""
+	}
+	if m.failure != "" {
+		if index == 0 {
+			return "! " + m.failure
+		}
+		return ""
+	}
+	if len(m.data.rows) == 0 {
+		if index == 0 {
+			return "No matching items."
+		}
+		return ""
+	}
+	if index >= len(m.data.rows) {
+		return ""
+	}
+	r := m.data.rows[index]
+	marker := "  "
+	if index == m.selected {
+		marker = "> "
+	}
+	if r.header != "" {
+		return marker + r.header
+	}
+	state := ""
+	if r.row.Pending {
+		state = "● "
+	}
+	if r.row.Error != "" {
+		state = "! "
+	}
+	line := marker + cell(r.row.Ref.ID, 12) + " "
+	if wide {
+		line += cell(priority(r.row.Priority), 2) + " " + cell(r.row.Status, 14) + " "
+		blockers, children := "─", "─"
+		if r.row.OpenBlockers > 0 {
+			blockers = strconv.Itoa(r.row.OpenBlockers)
+		}
+		if r.row.ChildrenTotal > 0 {
+			children = fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal)
+		}
+		line += cell(blockers, 3) + " " + cell(children, 7) + " "
+	}
+	return line + state + textutil.Line(r.row.Title)
+}
+func (m Model) detailHeader() string {
+	row, ok := m.selectedRow()
+	if !ok {
+		return "Detail · no item selected"
+	}
+	parts := []string{row.Ref.ID, row.Title, row.Status, string(row.Priority)}
+	if row.Milestone != "" {
+		parts = append(parts, "milestone "+row.Milestone)
+	}
+	return strings.Join(parts, " · ")
+}
+func (m Model) detailTabs() string {
+	tabs := make([]string, len(detailTabNames))
+	for i, name := range detailTabNames {
+		if detailTab(i) == m.detailTab {
+			tabs[i] = "[" + name + "]"
+		} else {
+			tabs[i] = name
+		}
+	}
+	text := strings.Join(tabs, "  ")
+	if ansi.StringWidth(text) > m.detailWidth() {
+		return "[" + detailTabNames[m.detailTab] + "] · tab/shift-tab to switch"
+	}
+	return text
+}
+func (m Model) detailPaneLine(index int) string {
+	if index == 0 {
+		return m.detailTabs()
+	}
+	return m.detailContentLine(index - 1)
+}
+func (m Model) detailContentLine(index int) string {
+	if !m.detailIdentity.Valid {
+		return "Select an item to view details."
+	}
+	if m.detailError != "" {
+		if index == 0 {
+			return "! " + m.detailError
+		}
+		return ""
+	}
+	if m.detailLoading && len(m.detailLines) == 0 {
+		if index == 0 {
+			return "⠋ Loading full detail…"
+		}
+		return ""
+	}
+	line := m.detailScroll + index
+	if line >= len(m.detailLines) {
+		return ""
+	}
+	return m.detailLines[line]
 }

@@ -2,7 +2,7 @@
 
 **Status:** Draft UX spec. BL-16 through BL-25 implement and refine it. Every key is remappable through user config `keys:`, and this file is the source for the default keymap and help text.
 
-## Implemented list shell
+## Implemented list and detail shell
 
 Bare `bl` opens the list when stdin and stdout are terminals; `bl tui`
 explicitly requires both. The frame paints a loading state before native
@@ -17,14 +17,28 @@ and arrows move by display row (including group headers); counts, `gg`, `G`,
 `NG`, half/full pages, `[`/`]` group jumps and `za` folding work. `gt`/`gT`
 cycle tabs. A digit waits 350 ms to distinguish `1`–`4` view shortcuts from
 count-prefixed motions; `5`–`9` are reserved until more views exist. `R`
-requests a background refresh. `?` toggles help, `esc` cancels help/prefixes,
-and `q`/`ctrl-c` quit. `NO_COLOR` disables styling; `--high-contrast` uses
-bold and underline, never faint text. All external text is sanitized and
-widths use terminal cells.
+requests a background refresh. `?` toggles help. `NO_COLOR` disables styling;
+`--high-contrast` uses bold and underline, never faint text. All external text
+is sanitized and widths use terminal cells.
 
-Detail, editing, custom/saved views, board/tree, key remapping, palette,
-searchable help, mouse and which-key popups below remain planned. They are
-not advertised as available in the shell. Claim columns await BL-32.
+`enter` toggles detail. At 120 columns or more it opens beside the list; below
+120 columns it replaces the list. `tab` focuses the detail pane or advances its
+tabs, and `shift-tab` moves to the previous tab. In detail focus, `j`/`k` and
+page keys scroll, `m` expands a capped body, and `esc`/`q` close the pane.
+At split widths, `h`/`left` returns focus to the list without closing detail,
+so held navigation keeps the header current while postponing body work.
+The detail header follows selection immediately. Full item content, including
+comments, is read only after selection settles for 50 ms; a single bounded
+worker renders Markdown off the update loop and keeps a bounded version/width/
+theme/tab/expansion cache. Bodies initially render at most 32 KiB; `m` shows
+up to 128 KiB, with a 128 KiB output cap even after expansion. The Overview
+shows declared milestone names beside their keys and preserves undeclared values.
+Relations and readiness summaries come from the live
+projection, so linked-item status changes appear without rereading the detail.
+
+Editing, custom/saved views, board/tree, key remapping, palette, searchable
+help, mouse and which-key popups below remain planned. They are not advertised
+as available in the shell. Claim columns await BL-32.
 
 Capture a real render without opening a user's pane:
 
@@ -124,7 +138,7 @@ The detail pane has these tabs:
 - **Comments**
 - **Relations:** blockers, blocking, parent, children, each with live status
 
-Markdown renders asynchronously and is cached. While the selection moves, the header fields update at once and the body updates once the selection settles.
+Markdown renders asynchronously and is cached. While the selection moves, the header fields update at once and the body updates once the selection settles. Bodies are capped at 32 KiB by default; `m` expands the cap to 128 KiB, and an indicator remains if content is still truncated.
 
 ## Default keymap
 
@@ -136,15 +150,18 @@ Markdown renders asynchronously and is cached. While the selection moves, the he
 | `gg`, `G`, `NG` | First row, last row, row N |
 | `ctrl-d`/`ctrl-u`, `ctrl-f`/`ctrl-b` | Half page, full page |
 | `[`/`]` | Previous or next group |
-| `enter` | Open or close the detail pane |
-| `tab`/`shift-tab` | Detail tabs. In list focus, moves focus to detail. |
-| `esc` | Back, clear marks, or cancel |
+| `enter` | Toggle the detail pane and focus it when opening |
+| `tab`/`shift-tab` | In list focus, focus detail; in detail focus, cycle tabs |
+| `j`/`k`, arrows, page keys | In detail focus, scroll the current body |
+| `m` | In detail focus, show more of a capped body (or show less) |
+| `h`/`←` in split detail | Focus the list without closing the pane |
+| `esc` | Close detail, clear marks, or cancel |
 | `1`–`9`, `gt`/`gT` | Jump to a view; next or previous view |
 | `ctrl-p` | Go to any item by fuzzy ID or title, including done and archived |
 | `?`, `:` | Help (searchable); command palette |
 | `W` | Toggle between project and workspace scope |
 | `R` | Resync sources |
-| `q`, `ctrl-c` | Quit. In detail, `q` goes back. |
+| `q`, `ctrl-c` | In detail, `q` goes back; otherwise quit. `ctrl-c` quits. |
 
 **Filter, sort, and group**
 

@@ -1,0 +1,150 @@
+== Overview ==
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+BL-1 · Item 1 · todo · high                                                     
+[Overview]  Description  Criteria  Plan/Notes  Comments  Relations              
+                                                                                
+  ## BL-1 · Detail fixture                                                      
+                                                                                
+  • **Type:**                                                                   
+  • **Status:** todo                                                            
+  • **Category:** todo                                                          
+  • **Priority:** high                                                          
+  • **Milestone:** m-1 — TUI                                                    
+  • **Readiness:** ready                                                        
+  • **Reason:** all readiness checks pass                                       
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+== Description ==
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+BL-1 · Item 1 · todo · high                                                     
+Overview  [Description]  Criteria  Plan/Notes  Comments  Relations              
+                                                                                
+  # Description                                                                 
+                                                                                
+  A **selected** item. 修正 🚀                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+== Criteria ==
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+BL-1 · Item 1 · todo · high                                                     
+Overview  Description  [Criteria]  Plan/Notes  Comments  Relations              
+                                                                                
+  ## Acceptance criteria                                                        
+                                                                                
+  [x] Keep input responsive                                                     
+  Evidence: counter                                                             
+                                                                                
+  ## Definition of done                                                         
+                                                                                
+  [ ] CI passes                                                                 
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+== Plan/Notes ==
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+BL-1 · Item 1 · todo · high                                                     
+Overview  Description  Criteria  [Plan/Notes]  Comments  Relations              
+                                                                                
+  ## Plan                                                                       
+                                                                                
+  Implement detail                                                              
+                                                                                
+  ## Notes                                                                      
+                                                                                
+  Verified asynchronously                                                       
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+== Comments ==
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+BL-1 · Item 1 · todo · high                                                     
+Overview  Description  Criteria  Plan/Notes  [Comments]  Relations              
+                                                                                
+  ## brett                                                                      
+                                                                                
+  Looks good                                                                    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+== Relations ==
+backlog · fixture · [Next]  Active  Mine  All                                   
+                                                                                
+BL-1 · Item 1 · todo · high                                                     
+Overview  Description  Criteria  Plan/Notes  Comments  [Relations]              
+                                                                                
+  ## BLOCKED BY                                                                 
+                                                                                
+  • **BL-2** · active — Dependency                                              
+                                                                                
+  ## CHILDREN                                                                   
+                                                                                
+  • **BL-3** · done — Child                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+tab next · shift-tab previous · j/k scroll · h list · esc/q back                

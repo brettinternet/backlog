@@ -18,6 +18,7 @@ import (
 	urfave "github.com/urfave/cli/v3"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/brettinternet/backlog/internal/tui"
@@ -93,13 +94,17 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		for _, s := range cfg.Sources {
 			sources = append(sources, s.ID)
 		}
-		model := tui.New(tui.Options{
+		app := tui.New(tui.Options{
 			Context: session, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID,
+			Milestones: cfg.Milestones,
+			Read: func(readCtx context.Context, ref model.Ref) (model.Item, error) {
+				return engine.ReadItem(readCtx, cfg, ref)
+			},
 			HighContrast: cfg.UI.HighContrast,
 			NoColor:      os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb",
 		})
-		model.Bind(snapshots)
-		_, err = tea.NewProgram(model, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
+		app.Bind(snapshots)
+		_, err = tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
 		cancel()
 		if ctx.Err() != nil || errors.Is(err, tea.ErrInterrupted) {
 			return nil

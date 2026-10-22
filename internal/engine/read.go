@@ -104,6 +104,24 @@ func readSource(cfg project.Config, c project.SourceConfig) (*native.Source, err
 	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses, CacheDir: cfg.Paths.CacheDir})
 }
 
+// ReadItem reads one source-qualified ref without parsing or ranking the entire backlog.
+func ReadItem(ctx context.Context, cfg project.Config, ref model.Ref) (model.Item, error) {
+	if ref.Source == "" || ref.ID == "" {
+		return model.Item{}, source.Refuse("invalid-id", "source and item ID are required")
+	}
+	items, err := ReadDetail(ctx, cfg, ref.Source+":"+ref.ID)
+	if err != nil {
+		return model.Item{}, err
+	}
+	if len(items) == 0 {
+		return model.Item{}, source.Refuse("not-found", ref.ID)
+	}
+	if len(items) > 1 {
+		return model.Item{}, source.Refuse("ambiguous-id", ref.ID)
+	}
+	return items[0], nil
+}
+
 // ReadDetail resolves shorthand without parsing or ranking the entire backlog.
 // It returns every match instead of guessing and includes explicitly named archives.
 func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.Item, error) {
