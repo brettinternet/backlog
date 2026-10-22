@@ -4,7 +4,7 @@ title: 'Edit items from the list with pickers, marks, repeat, and undo'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:54'
+updated_date: '2026-10-22 02:39'
 labels:
   - tui
 milestone: m-1
@@ -46,6 +46,7 @@ Editing in Backlog.md means rewriting the document. In `bl`, every common edit i
 - [ ] #3 Pending and failed glyphs render; a failed edit shows its reason and a conflict shows both versions
 - [ ] #4 Keys for unsupported capabilities do nothing except show the disabled reason
 - [ ] #5 `yb` emits OSC 52 with the design.md §8 `{branch}` value, produced by the shared branch-name function that BL-30 placeholders reuse; table tests cover slugging, non-ASCII titles, and the 48-character word-boundary cut
+- [ ] #6 The label picker lists configured labels before labels in use; the milestone picker shows names, hides archived milestones, and sets a typed undeclared key as free text without editing config
 <!-- AC:END -->
 
 ## Definition of Done

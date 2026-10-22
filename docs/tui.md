@@ -109,8 +109,8 @@ These apply to the marked items if any, otherwise to the current item. An edit t
 | `<`/`>` | Previous or next status in workflow order |
 | `p` | Priority picker. Hotkeys inside it: `u`, `h`, `m`, `l`, `n`. |
 | `a`, `A` | Assignee picker; toggle assigning yourself |
-| `l` | Label picker: multi-select, type to filter or create |
-| `m` | Milestone picker |
+| `l` | Label picker: multi-select, type to filter or create. Configured labels come first. |
+| `m` | Milestone picker. Shows names and hides archived milestones. Typing an undeclared key sets it as free text. |
 | `b` | Blocker editor: fuzzy item picker to add, `d` to remove |
 | `P` | Parent picker |
 | `t` | Edit the title inline |

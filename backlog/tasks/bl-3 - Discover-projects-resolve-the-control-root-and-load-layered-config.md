@@ -4,7 +4,7 @@ title: 'Discover projects, resolve the control root, and load layered config'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:13'
+updated_date: '2026-10-22 02:39'
 labels:
   - config
   - git
@@ -35,6 +35,7 @@ Every worktree and agent must see one live backlog (D5), each repository needs i
 - Project identity: normalize the `origin` URL read from the Git config (ssh, https, scp-like, ports, `.git` suffix) to `host/owner/repo`. Without a remote, fall back to the control-root path marked host-local.
 - Layered config in D16 order: built-ins, user `$XDG_CONFIG_HOME/backlog/config.yaml`, project `.config/backlog.yaml`, user `projects.<id>` overrides, `BL_*` environment, flags. Record which layer set each value so BL-29 can print it.
 - Without a project config, detect Backlog.md (`backlog/config.yml`, `backlog.config.yml`) and Beads (`.beads/`) and report them.
+- The native milestone catalog and label list from project config (design.md §5): `milestones` entries with `key`, `name`, optional `description`, and `archived`, and a `labels` list of suggestions. Duplicate milestone keys are config errors.
 - JSON Schemas in `docs/schemas/` for project and user config. Config errors name the file, line, and key.
 - Privileged entries load but stay marked untrusted. BL-29 adds trust.
 <!-- SECTION:DESCRIPTION:END -->

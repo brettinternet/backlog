@@ -96,8 +96,8 @@ Keep the header fields synchronous; only the body waits.
 | `type` | string | no | Free text. Config may list suggestions. |
 | `priority` | enum | no | `urgent`, `high`, `medium`, or `low`. Absent means unset. |
 | `assignees` | list of strings | no | `@handle` or email. `me` resolves through user config `me`. |
-| `labels` | list of strings | no | |
-| `milestone` | string | no | |
+| `labels` | list of strings | no | Free text. Config may list suggestions. |
+| `milestone` | string | no | A milestone key. Config may give it a name (design.md §5). |
 | `parent` | ID | no | Hierarchy. Cycles are errors. |
 | `blocked_by` | list of IDs | no | Hard prerequisites (design.md §6). Cycles are errors. |
 | `related` | list of IDs | no | Informational |
@@ -132,7 +132,7 @@ Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.
   Each may appear at most once, in any order. A duplicate is a `duplicate-section` parse error, not a merged or silently discarded section. Headings start at column 1 with `##` and a space; only the name's surrounding whitespace is ignored. The writer inserts a missing section before the next existing section in canonical order, or at the end.
 - **Section extent.** A section runs to the next recognized heading or the end of the file. Any other heading inside a section, at any level, belongs to that section.
 - **Code fences.** Headings, task-list entries, and comment headers inside fenced code blocks are never structural. Backtick and tilde fences use at least three identical characters, with up to three leading spaces. Closing fences use the same character, at least the opening length, and no non-whitespace suffix. An unclosed fence extends to EOF.
-- **Criteria and definition of done.** Each column-1 GFM task-list item (`- [ ] text` or `- [x] text`, `*` and uppercase `X` accepted) is one entry, together with any following lines indented by two or more spaces (or a tab). Entries are numbered from 1 in file order. Lines that aren't task-list items are kept but are not entries.
+- **Criteria and definition of done.** Each column-1 GFM task-list item (`- [ ] text` or `- [x] text`, `*` and uppercase `X` accepted) is one entry, together with any following lines indented by two or more spaces (or a tab). Entries are numbered from 1 in file order. Numbers aren't stored, so they shift when an entry is added or removed above them. Callers that address entries by number guard the write with the item version (design.md §7). Lines that aren't task-list items are kept but are not entries.
 - **Comments.** Each comment starts with a line of the form `### <RFC3339 UTC timestamp> <author>` and runs until the next such line or the end of the section. Level-3 headings without that shape are part of a comment body. Text before the first valid header is retained but is not a comment. Comment headers start at column 1; timestamps use `YYYY-MM-DDTHH:MM:SSZ`, and authors are nonempty single-line strings. Comments are append-only through `bl`.
 - **Plan, notes, and summary.** Free Markdown. `bl note` appends a paragraph to Notes, separated by one blank line.
 
