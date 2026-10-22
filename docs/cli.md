@@ -426,8 +426,8 @@ lifecycle, handle, run, and list commands, plus conditional release using
 `release --if-claim-id ID`. The guard binds release to the verified claim rather
 than a mutable session handle.
 
-Worklease 1.10.1 is the minimum supported coordination release and is pinned
-by this repository. It includes exact public resource identities and guarded
+Worklease 1.10.1 is the minimum supported coordination release; this
+repository selects the latest release through mise. It includes exact public resource identities and guarded
 release. Worklease 1.9.3 remains the historical key-policy baseline, not a
 supported lifecycle provider. Repository coordination remains optional; the
 interim development claim protocol continues until BL-33.
