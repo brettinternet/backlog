@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:35'
+updated_date: '2026-10-22 04:01'
 labels:
   - cli
   - tooling
+  - reviewed
 milestone: m-0
 dependencies: []
 references:
@@ -84,6 +85,8 @@ AC#3: task cli:test PKG=./internal/cli PASS; unknown command/flag exit 2 with hu
 AC#4: task cli:test PKG=./internal/cli PASS; TestConfigInvocation proves config, state and cache paths stay under testkit.Isolate temp home.
 AC#5: task cli:test PKG=./internal/cli PASS; TestInvocationDirectory checks relative/absolute -C, unchanged process cwd, -C values containing --json and structured path/flag details. Independent PTY runs of bare bl and bl tui PASS; existing nonterminal/JSON dispatch checks PASS.
 Independent verifier 51b75adb-89e0-4567-9f90-e4c005d38a2d returned PASS for AC1-AC5 with no concrete item-scoped defects (one general pass). LSP diagnostics clean on affected CLI files; task test, task smoke, task check:staged, task ci including race/security PASS. No tests deleted, skipped or weakened. README.md and docs/design.md were changed outside initial modified-file list to satisfy required user-visible documentation and publish exact reason/details/directory contract. No design decisions altered. Delivery complete locally; no push requested. Next step: none.
+
+Review (6fcd2be): jsonRequested now derives value-taking flags from the command tree instead of a hand-kept list; test covers a subcommand value flag. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

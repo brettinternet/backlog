@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 02:53'
+updated_date: '2026-10-22 04:01'
 labels:
   - model
   - format
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-1
@@ -87,6 +88,8 @@ AC#4: task test passed TestEditsAndInverse: every operation plus Restore/redo re
 AC#5: task ci passed with docs/format.md Frozen v1; independent verifier b2502fde-ba4a-4f91-9579-d9e5f5cb1802 returned PASS for all five criteria and no blocking defect after checking codec/spec behavior.
 Delivery: implementation commit 36ff6a9; merge commit cfb2d23 incorporates concurrent main documentation changes without losing their milestone/label or version-guard guidance. Fast-forwarded primary main to cfb2d23 and task ci passed there (security, checks, tests, race, smoke). task check:staged passed before commits. No tests removed, skipped, or weakened. All implementation paths are in the declared scope; backlog metadata is maintained separately through the CLI.
 Cleanup: verified session creation receipt (session 01a16177-9a4e-729e-88c1-f468a8f76d5c), Worktrunk listing, and shell-only pane wHP:p1. wt remove bl-2-native-codec --foreground --format=json removed the checkout and merged branch. herdr workspace list confirmed matching workspace wHP disappeared; git worktree list shows only primary. No retained checkout/workspace, blockers, or next resumable step.
+
+Review (6fcd2be): fixed codec writes that silently moved content: section/note/comment/serialized text adding, hiding (unclosed fence), or forging sections/comments is now rejected; empty section replacement removes the heading; new sections at EOF and empty-description files no longer leave stray blank lines; added criteria must be single-line. Regression cases in TestConflictAndValidation; format.md Writing updated. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

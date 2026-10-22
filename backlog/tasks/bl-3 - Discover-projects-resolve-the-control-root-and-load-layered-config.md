@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 03:05'
+updated_date: '2026-10-22 04:01'
 labels:
   - config
   - git
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-1
@@ -84,6 +85,8 @@ Independent verifier b7ad0394-b6c4-48f5-a03b-d1587b3a96a1 returned PASS for AC1â
 Additional verification: task cli:test PKG=./internal/project -- -fuzz=FuzzConfig -fuzztime=5s passed 15,094 executions. LSP diagnostics clean for config.go, discovery.go, root.go. task check:staged passed. A synthetic credential URL triggered the staged scanner; construction now uses net/url with unchanged normalization coverage, and all checks passed.
 Delivery: implementation 6df01e6 merged locally into main as fe95427. task ci passed on both committed implementation and merged main. Concurrent primary-checkout changes were preserved. No push or PR. Cleanup: wt remove feat/bl-3-project-config --foreground --format=json removed owned checkout and branch; Herdr workspace wHQ disappearance verified; no retained task checkout/workspace.
 No remaining blocker or resumable implementation step.
+
+Review (6fcd2be): local-path and file:// origins previously failed all config resolution; they now fall back to host-local identity (Git SCP rule), and malformed network origins suggest setting project.id. TestRemoteIdentity extended; README/design.md updated. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
