@@ -9,7 +9,7 @@ mise install
 task init      # toolchain, Go modules, Git hooks
 ```
 
-`mise.toml` pins Go, Staticcheck, govulncheck, Task, Lefthook, Betterleaks, git-cliff, Worktrunk, Backlog.md, and Worklease. `task init` is repeatable: it downloads modules and installs/updates hooks without uninstalling them first. Worktrunk's pre-start hook runs the same initialization for new checkouts.
+`mise.toml` pins Go, Staticcheck, govulncheck, Task, Lefthook, Betterleaks, git-cliff, Worktrunk and Worklease. `task init` is repeatable: it downloads modules and installs/updates hooks without uninstalling them first. Worktrunk's pre-start hook runs the same initialization for new checkouts.
 
 ## Build and run
 
@@ -35,7 +35,33 @@ Use the smallest check that covers your change.
 | `task security` | Betterleaks over the history, plus `govulncheck ./...` |
 | `task bench` | Benchmarks against the fixture generator (BL-12). Report only. |
 | `task ci` | The gate: security, check, test, race, smoke |
-| `task backlog:next` | First ready To Do task from the primary checkout's backlog |
+| `task backlog:next` | First ready native item from the primary checkout's backlog |
+
+## Repository backlog
+
+This repository tracks work in native `backlog/BL-N.md` files, not the import
+provider. From any checkout, use `task backlog:cli -- instructions workflow`
+and follow the repository's AGENTS.md claim protocol. `task backlog:next` is
+read-only; `task backlog:claim-next -- SESSION` claims before any `start`.
+Claims use Worklease's generic policy with source
+`github.com/brettinternet/backlog`, never the `backlog-md` policy. Keep one
+stable session per loop, heartbeat at least every 7 minutes, and release after
+`done`. Native coordination remains unset until BL-32/BL-33.
+
+The wrapper builds an archived snapshot of committed primary `main`, not dirty
+primary files or the invoking worktree, into
+`<git-common-dir>/backlog-cli/<commit>/bl` under a cross-process build lock.
+Primary must be on `main`. Changing CLI code requires merging it before the
+shared backlog can use it. `task backlog:test` checks this build boundary.
+Acceptance checks use `ac ID check N --evidence 'COMMAND: RESULT'`; use the
+version from `show --json` with `--if-version` for index-based changes.
+
+Legacy Backlog.md CLI/MCP, status-only claiming, and launchers deriving
+`backlog-md:` keys are disabled locally. Do not resume a pre-cutover supervisor;
+start a fresh native loop using AGENTS.md. Backlog.md remains an import/adapter
+format supported by the product, not a development dependency. The pre-cutover
+backlog remains recoverable from Git history; any rollback requires stopping all
+writers and reconciling native changes first, not starting both providers.
 
 ## Tests
 

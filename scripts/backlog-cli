@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Run the shared backlog with a build of committed primary main, never a worktree build."""
+
+import fcntl
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args], text=True).strip()
+
+
+def main():
+    primary = git("worktree", "list", "--porcelain").splitlines()[0].removeprefix("worktree ")
+    os.chdir(primary)
+    if git("symbolic-ref", "--quiet", "--short", "HEAD") != "main":
+        sys.exit("backlog-cli: primary checkout must be on main")
+    revision = git("rev-parse", "HEAD")
+    cache = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "backlog-cli"
+    cache.mkdir(exist_ok=True)
+    binary = cache / revision / "bl"
+    with (cache / "build.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not binary.is_file():
+            binary.parent.mkdir(exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="bl-primary-build-") as directory:
+                archive = Path(directory) / "source.tar"
+                subprocess.run(["git", "archive", revision, "-o", str(archive)], check=True)
+                subprocess.run(["tar", "-xf", str(archive), "-C", directory], check=True)
+                subprocess.run(
+                    ["mise", "exec", "go", "--", "go", "build", "-trimpath", "-o", str(binary) + ".tmp", "./cmd/bl"],
+                    cwd=directory, env={**os.environ, "CGO_ENABLED": "0"}, check=True,
+                )
+                os.replace(str(binary) + ".tmp", binary)
+    os.execv(binary, [str(binary), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    main()

@@ -1,9 +1,6 @@
 ---
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
-#
-# Backlog.md tracks this repository's tasks until BL-26 migrates them to bl.
-# Backlog state lives in the primary checkout (design.md D5), so these tasks
-# target it from any linked worktree.
+# Native state and claim handles always resolve from the primary checkout.
 version: "3"
 
 vars:
@@ -11,35 +8,27 @@ vars:
     sh: git worktree list --porcelain | sed -n '1s/^worktree //p'
 
 tasks:
+  test:
+    desc: Verify the primary-only CLI build boundary
+    cmd: mise exec -- python3 -B -m unittest discover -s scripts -p 'test_backlog_cli.py'
+
   cli:
-    desc: "Run the backlog CLI against the primary checkout: task backlog:cli -- task list --plain"
+    desc: "Run committed primary main's bl: task backlog:cli -- show BL-12"
     dir: "{{.CONTROL_ROOT}}"
-    env:
-      BACKLOG_CWD: "{{.CONTROL_ROOT}}"
-    cmd: mise exec -- backlog {{.CLI_ARGS}}
+    cmd: mise exec -- python3 scripts/backlog-cli {{.CLI_ARGS}}
 
   claim:
-    desc: "Run Worklease from the primary checkout so a claim resolves from every worktree: task backlog:claim -- release -s SESSION"
+    desc: "Run Worklease from the primary checkout: task backlog:claim -- release -s SESSION"
     dir: "{{.CONTROL_ROOT}}"
     cmd: mise exec -- worklease {{.CLI_ARGS}}
 
   claim-next:
-    desc: "Claim the first ready To Do task no other session holds: task backlog:claim-next -- SESSION"
+    desc: "Claim the first unclaimed ready native item: task backlog:claim-next -- SESSION"
     dir: "{{.CONTROL_ROOT}}"
     cmd: mise exec -- python3 scripts/backlog-claim-next {{.CLI_ARGS}}
 
   next:
-    desc: Show the first ready To Do task that needs no owner action
+    desc: Show the first ready native item (read-only)
     dir: "{{.CONTROL_ROOT}}"
     silent: true
-    cmd: |
-      mise exec -- backlog task list --ready --status "To Do" --json | python3 -c '
-      import json, sys
-      unavailable = {"blocked", "deferred", "escalated", "human"}
-      for task in json.load(sys.stdin)["tasks"]:
-          if not {label.casefold() for label in task["labels"]} & unavailable:
-              print(task["id"] + " - " + task["title"])
-              break
-      else:
-          print("No available To Do tasks.")
-      '
+    cmd: mise exec -- python3 scripts/backlog-cli next

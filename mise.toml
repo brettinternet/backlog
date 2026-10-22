@@ -10,7 +10,5 @@ task = "3.54.0"
 worktrunk = "0.80.0"
 staticcheck = "0.8.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
-# Tracks this repository's own tasks until BL-026 migrates them to bl.
-"github:MrLesk/Backlog.md" = { version = "1.52.0", bin = "backlog" }
 # Claims for parallel agents and the D20 integration.
 "github:brettinternet/worklease" = "1.9.3"

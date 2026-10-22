@@ -12,7 +12,6 @@ import subprocess
 import sys
 
 SOURCE = "github.com/brettinternet/backlog"
-UNAVAILABLE = {"blocked", "deferred", "escalated", "human"}
 # A handle or run inherited from the caller must not redirect this claim.
 CLEARED = ("WORKLEASE_SESSION_ID", "WORKLEASE_HANDLE", "WORKLEASE_RUN_ID")
 
@@ -25,13 +24,10 @@ def main() -> int:
     env = {key: value for key, value in os.environ.items() if key not in CLEARED}
 
     listing = subprocess.run(
-        ["backlog", "task", "list", "--ready", "--status", "To Do", "--json"],
+        [sys.executable, "scripts/backlog-cli", "next", "-n", "0", "--json"],
         capture_output=True, text=True, check=True,
     )
-    tasks = [
-        task for task in json.loads(listing.stdout)["tasks"]
-        if not {label.casefold() for label in task["labels"]} & UNAVAILABLE
-    ]
+    tasks = json.loads(listing.stdout)["data"]["items"]
 
     for task in tasks:
         result = subprocess.run(

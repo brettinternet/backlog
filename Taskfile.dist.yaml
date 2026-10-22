@@ -68,6 +68,7 @@ tasks:
     desc: Run all tests
     deps:
       - task: cli:test
+      - task: backlog:test
 
   race:
     desc: Run tests with the race detector

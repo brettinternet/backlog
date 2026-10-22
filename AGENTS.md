@@ -18,8 +18,8 @@
 
 ## Backlog
 
-- `backlog/` (Backlog.md) is this repository's task queue until BL-26 migrates it to `bl`'s native format. Read and change tasks only through the `backlog` CLI. Never edit task Markdown directly.
-- Backlog state lives in the primary checkout. From a linked worktree, run `task backlog:cli -- <args>`, for example `task backlog:cli -- task view BL-12 --plain`, instead of calling `backlog` directly.
+- `backlog/` is this repository's native `bl` task queue. Read and change tasks only through `task backlog:cli -- <args>` (for example `show BL-12 --json`). Never edit task Markdown directly.
+- The wrapper runs from the primary checkout and builds only committed primary `main`, cached by commit in the Git common directory. Worktrees must not use an unmerged build to manage the shared backlog. Primary must remain on `main`.
 - Pick and claim work in one step, before changing any status. Use one stable session for your whole loop:
 
   ```sh
@@ -27,8 +27,9 @@
   ```
 
   It walks the ready To Do tasks in order, skips tasks labelled `blocked`, `deferred`, `escalated`, or `human`, skips tasks another session holds, and claims the first free one. If your session already holds a claim, it stops and tells you so. `task backlog:next` only shows the first ready task, without claiming. To claim a specific task instead, run `task backlog:claim -- acquire --provider generic --source github.com/brettinternet/backlog --item BL-12 -s SESSION`. Renew long work with `task backlog:claim -- heartbeat -s SESSION` at least every 7 minutes, and release with `task backlog:claim -- release -s SESSION` when you finish. The target runs Worklease from the primary checkout. A plain `worklease` call from a linked worktree can't see the claim, because Worklease keys claims by checkout. `bl` uses the same key (D20). This interim protocol lasts until BL-33 ships `bl next --claim --start`.
-- Read the guides before acting: `backlog instructions task-execution`, then `backlog instructions task-finalization`. Keep status, assignee, plan, notes, and acceptance checks in the task.
-- When you finish, record one `AC#N:` evidence line per criterion in Implementation Notes. Each line names the command you ran and its result.
+- Read `task backlog:cli -- instructions` and `task backlog:cli -- instructions workflow` before acting. After acquiring a claim, use `start ID`, `set ID assignees=@NAME`, `note ID TEXT`, `ac ID check N --evidence TEXT`, and `done ID`. `next` is read-only and `start` does not acquire a claim yet. Keep plan, notes, summary, and acceptance checks in the task; use `edit ID --section plan` (or `dod` / `summary`) for section updates.
+- Record each criterion's command and observed result with `ac ID check N --evidence TEXT`, not `AC#N:` note lines. Read `show ID --json` first and pass `--if-version VERSION` when acting on criterion indices. Run `task ci` and satisfy DoD before `done`, then release the claim.
+- **Local provider override:** inherited `backlog-md` status-as-claim guidance, Backlog.md CLI/MCP writes, Worklease `backlog-md:` keys, and queue/launcher paths that derive them are disabled in this repository. This overrides generic skills referring to `@backlog/`. Only the native wrapper plus the generic-key interim protocol above may launch work; incompatible supervisors must stay stopped. Do not restart a legacy continuation after cutover. Shared-skill migration is separate BL-46 work.
 - Commit backlog changes separately in the primary checkout with `docs(backlog): …`. Other sessions change `backlog/` at the same time, so commit only your own task files, by path: `git add FILES` then `git commit -m MESSAGE -- FILES`. A commit limited to paths leaves out whatever another session has staged. If Git reports that `index.lock` exists, another session is using the index: retry after a few seconds, and never delete the lock.
 - A task labelled `human` needs the owner: credentials, publishing, pushing, or other repositories. Don't start one without explicit instruction.
 - Never skip, delete, or weaken a test to make the gate pass. Stop and escalate instead.
