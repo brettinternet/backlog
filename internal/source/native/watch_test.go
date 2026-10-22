@@ -1,6 +1,7 @@
 package native_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
 
@@ -139,4 +141,89 @@ func TestDirectoryWatchDescriptorBound(t *testing.T) {
 		t.Fatalf("leaked %d descriptors", after-before)
 	}
 	t.Logf("10k directory watch FDs: before=%d during=%d after=%d", before, during, after)
+}
+
+// Catches stale reuse after same-size edits, replacements, and a racing read.
+func TestWatchedCacheRefresh(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "backlog", "BL-1.md")
+	data := fixture(t, "BL-1")
+	write(t, path, data)
+	write(t, filepath.Join(root, "backlog", "BL-2.md"), fixture(t, "BL-2"))
+	var reads atomic.Int64
+	var race atomic.Bool
+	s := cachedSource(t, root, func(filename string) ([]byte, error) {
+		reads.Add(1)
+		content, err := os.ReadFile(filename)
+		if filename == path && race.Swap(false) {
+			write(t, path, bytes.Replace(content, []byte("Modified"), []byte("Replaced"), 1))
+		}
+		return content, err
+	})
+	cachedLoad(t, s)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Watch(ctx, func() {
+			select {
+			case ready <- struct{}{}:
+			default:
+			}
+		})
+	}()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch startup deadline")
+	}
+	reads.Store(0)
+	cachedLoad(t, s)
+	if reads.Load() != 0 {
+		t.Fatal("unchanged watched items reparsed")
+	}
+	write(t, path, bytes.Replace(data, []byte("Imported"), []byte("Modified"), 1))
+	if err := os.Chtimes(path, now, now); err != nil {
+		t.Fatal(err)
+	}
+	changed := cachedLoad(t, s)
+	if reads.Load() != 1 || changed.Items[0].Title != "Modified" {
+		t.Fatalf("missed same-size edit: reads=%d items=%+v", reads.Load(), changed.Items)
+	}
+	write(t, path, bytes.Replace(data, []byte("Imported"), []byte("Modified"), 1))
+	race.Store(true)
+	cachedLoad(t, s)
+	if got := cachedLoad(t, s); got.Items[0].Title != "Replaced" {
+		t.Fatal("racing read retained old bytes under a new identity")
+	}
+	replacement := filepath.Join(root, "backlog", ".replacement")
+	write(t, replacement, data)
+	if err := os.Rename(replacement, path); err != nil {
+		t.Fatal(err)
+	}
+	if got := cachedLoad(t, s); got.Items[0].Title != "Imported" {
+		t.Fatal("atomic replacement missed")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := cachedLoad(t, s); len(got.Items) != 1 || got.Items[0].Ref.ID != "BL-2" {
+		t.Fatal("deleted item retained")
+	}
+	canceled, stop := context.WithCancel(context.Background())
+	stop()
+	if _, err := s.Load(canceled, source.Cursor{}); err != context.Canceled {
+		t.Fatalf("canceled load: %v", err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watch cancellation deadline")
+	}
 }

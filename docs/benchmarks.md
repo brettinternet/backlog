@@ -395,6 +395,41 @@ integration commit. This qualifies filter latency, not all §11 budgets. The sam
 run measured peak child RSS of 308.19/963.48 MiB at 10k/50k and external-update
 p95 of 721.51 ms at 10k; those budgets remain unmet and separately tracked.
 
+### External-change visibility (BL-57)
+
+2026-10-22, D26 host: Apple M5 Max, 64 GiB, Darwin 27.0.0 arm64,
+Go 1.27.3, default GOMAXPROCS=18, fixture seed 1, 120×40, 120 FPS,
+standard interactive heap growth (no explicit GOMEMLIMIT). Runtime base
+`b4c04fc` plus BL-57:
+
+```sh
+BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestProductionMeasurements$/10000/interaction$' -v -count=1 -timeout=10m
+```
+
+| 10k external atomic replacement to visible title, 20 samples, p95 | Result |
+| --- | ---: |
+| BL-25 post-cold-cache-correction baseline | 258.273 ms |
+| BL-57 watched-source reuse | 100.124 ms |
+| Budget | ≤ 150 ms |
+
+The production store, native directory watcher, projector, model and PTY renderer
+are exercised, not a fake source. The clock starts immediately before the atomic
+rename and ends when the unique changed title appears in PTY output. Thus it
+conservatively includes rename and filesystem-event delivery, and upper-bounds
+the specified filesystem-event-to-visible interval; it does not start at a later
+refresh or projection boundary. Each sample waits for its own unique title.
+
+The event adapter now reuses its watched native source. After the initial
+persistent-cache load, refreshes reuse immutable parsed records in memory and
+validate every file's inode, ctime, size and mtime instead of decoding and
+rewriting the full SQLite snapshot. A read racing a replacement is never reused
+under the replacement's identity. One-shot CLI cache behavior, atomic writes and
+version conflict checks remain unchanged. The two-second in-place sweep,
+directory-only descriptors, resource-exhaustion polling and cancellation remain
+in place. Native regressions exercise in-place edits, same-size/restored-mtime
+edits, replacements, deletion and cancellation. This qualifies external-change
+latency only, not startup, RSS or the remaining §11 budgets.
+
 ### Cold-cache correction
 
 The original 10k cold completed-list p95 was 62,859.37 ms; the 50k initial

@@ -28,6 +28,8 @@ func (s *Source) Watch(ctx context.Context, changed func()) error {
 // WatchWithOptions exposes resource-exhaustion injection and sweep cadence for
 // tests. Signals are hints; Load remains authoritative and validates file stats.
 func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOptions) error {
+	s.watching.Store(true)
+	defer s.watching.Store(false)
 	if o.SweepInterval <= 0 {
 		o.SweepInterval = 2 * time.Second
 	}

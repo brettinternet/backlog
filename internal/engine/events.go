@@ -57,7 +57,7 @@ var errIncompleteEvents = errors.New("incomplete event snapshot")
 func (s *eventSource) Load(ctx context.Context, c source.Cursor) (source.Delta, error) {
 	var result source.Delta
 	err := eventTransaction(ctx, s.cfg, func(tx *hooks.Transaction, db *sql.DB) error {
-		deltas, err := loadEventSources(ctx, s.cfg)
+		deltas, err := loadEventSources(ctx, s.cfg, s.Source)
 		if err != nil {
 			return err
 		}
@@ -175,18 +175,25 @@ func eventRevision(cfg project.Config, deltas map[string]source.Delta) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 func eventSnapshot(ctx context.Context, cfg project.Config) ([]eventRecord, map[string]source.Delta, error) {
-	deltas, err := loadEventSources(ctx, cfg)
+	deltas, err := loadEventSources(ctx, cfg, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	return eventRecords(cfg, deltas), deltas, nil
 }
-func loadEventSources(ctx context.Context, cfg project.Config) (map[string]source.Delta, error) {
+func loadEventSources(ctx context.Context, cfg project.Config, reuse *native.Source) (map[string]source.Delta, error) {
 	deltas := map[string]source.Delta{}
 	for _, c := range cfg.Sources {
-		backend, err := rawSource(cfg, c)
-		if err != nil {
-			return nil, err
+		var backend *native.Source
+		if reuse != nil && reuse.Info().ID == c.ID {
+			backend = reuse
+		}
+		if backend == nil {
+			var err error
+			backend, err = rawSource(cfg, c)
+			if err != nil {
+				return nil, err
+			}
 		}
 		delta, err := backend.Load(ctx, source.Cursor{IncludeArchive: true})
 		if err != nil {

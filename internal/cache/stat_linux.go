@@ -6,7 +6,9 @@ import (
 	"syscall"
 )
 
-func fileIdentity(path string) (string, error) {
+// FileIdentity includes inode and ctime, detecting replacements and edits even
+// when size and mtime are restored. Non-regular files are rejected.
+func FileIdentity(path string) (string, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return "", err

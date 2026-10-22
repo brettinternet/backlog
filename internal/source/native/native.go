@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
@@ -38,10 +39,11 @@ type Options struct {
 	ReadFile             func(string) ([]byte, error) // optional item-read instrumentation
 }
 type Source struct {
-	options Options
-	state   string
-	loadMu  sync.Mutex
-	loaded  map[string]loadedItem
+	options  Options
+	state    string
+	loadMu   sync.Mutex
+	loaded   map[string]loadedItem
+	watching atomic.Bool
 }
 
 var _ source.Source = (*Source)(nil)
@@ -172,7 +174,11 @@ func loadFinding(path string, err error) source.Finding {
 	return f
 }
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
-	if s.options.CacheDir == "" {
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
+	// A live source already owns validated records. Re-stat those on refresh;
+	// rebuilding the disposable disk cache is only useful to a future process.
+	if s.options.CacheDir == "" || s.watching.Load() && s.loaded != nil {
 		return s.load(ctx, cursor)
 	}
 	store := cache.New(s.options.CacheDir, s.options.ProjectID, s.options.ID, s.options.Path)
@@ -190,6 +196,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	}
 	result := source.Delta{Archived: map[model.Ref]bool{}, Coverage: source.Complete, Cursor: source.Cursor{Value: snapshot.Revision, IncludeArchive: cursor.IncludeArchive}, Items: make([]model.Item, 0, len(snapshot.Records))}
 	byPath := map[string]model.Ref{}
+	nextLoaded := make(map[string]loadedItem, len(snapshot.Records))
 	for _, record := range snapshot.Records {
 		e := record.Err
 		if e == nil && len(s.options.Statuses) > 0 {
@@ -207,7 +214,11 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		result.Items = append(result.Items, item)
 		result.Archived[item.Ref] = filepath.Dir(record.Path) != s.options.Path
 		byPath[record.Path] = item.Ref
+		if record.Identity != "" {
+			nextLoaded[record.Path] = loadedItem{record.Identity, item}
+		}
 	}
+	s.loaded = nextLoaded
 	for _, warning := range warnings {
 		result.Findings = append(result.Findings, source.Finding{Code: "cache-rebuilt", Severity: "warning", Message: warning})
 	}
@@ -233,13 +244,11 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 }
 
 type loadedItem struct {
-	stat os.FileInfo
-	item model.Item
+	identity string
+	item     model.Item
 }
 
 func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
-	s.loadMu.Lock()
-	defer s.loadMu.Unlock()
 	nextLoaded := map[string]loadedItem{}
 	result := source.Delta{Archived: map[model.Ref]bool{}, Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
 	paths, err := s.paths(cursor.IncludeArchive)
@@ -256,17 +265,20 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				if ctx.Err() != nil {
 					continue
 				}
-				stat, e := os.Lstat(path)
+				identity, e := cache.FileIdentity(path)
 				var item model.Item
 				if e == nil {
 					old, ok := s.loaded[path]
-					if ok && stat.Mode().IsRegular() && os.SameFile(stat, old.stat) && stat.Size() == old.stat.Size() && stat.ModTime() == old.stat.ModTime() && stat.Mode() == old.stat.Mode() {
+					if ok && identity == old.identity {
 						item = old.item
 					} else {
 						var doc *format.Document
 						doc, e = s.document(path)
 						if e == nil {
 							item = s.item(doc)
+							if after, err := cache.FileIdentity(path); err != nil || after != identity {
+								identity = "" // Never reuse content under a newer identity.
+							}
 						}
 					}
 				}
@@ -277,7 +289,7 @@ func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				} else {
 					result.Items = append(result.Items, item)
 					result.Archived[item.Ref] = filepath.Dir(path) != s.options.Path
-					nextLoaded[path] = loadedItem{stat, item}
+					nextLoaded[path] = loadedItem{identity, item}
 				}
 				mu.Unlock()
 			}

@@ -45,9 +45,11 @@ func init() {
 }
 
 type Record struct {
-	Path string
-	Item *model.Item
-	Err  error // failed parses are deliberately not cached
+	// Identity is the validated file identity, empty if the file raced parsing.
+	Identity string
+	Path     string
+	Item     *model.Item
+	Err      error // failed parses are deliberately not cached
 }
 
 type Snapshot struct {
@@ -394,7 +396,7 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		}
 		r, exists := old[path]
 		delete(old, path)
-		identity, e := fileIdentity(path)
+		identity, e := FileIdentity(path)
 		var item model.Item
 		if exists {
 			item = r.Item
@@ -403,7 +405,7 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			item, e = parse(path)
 			changed = true
 			if e == nil {
-				after, statErr := fileIdentity(path)
+				after, statErr := FileIdentity(path)
 				// Never associate old content with a newer stat identity.
 				if statErr != nil || after != identity {
 					identity = ""
@@ -434,7 +436,7 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			r = &cachedRecord{Path: path, Identity: identity, Item: item}
 		}
 		records = append(records, r)
-		snapshot.Records = append(snapshot.Records, Record{Path: path, Item: &r.Item})
+		snapshot.Records = append(snapshot.Records, Record{Path: path, Item: &r.Item, Identity: r.Identity})
 	}
 	for path, r := range old {
 		// A partial native view must not evict cached archive rows.
@@ -516,7 +518,7 @@ func (s Store) Initial(ctx context.Context, files []string) map[string]model.Ite
 			if !wanted[r.Path] {
 				continue
 			}
-			identity, err := fileIdentity(r.Path)
+			identity, err := FileIdentity(r.Path)
 			if err == nil && identity == r.Identity {
 				result[r.Path] = r.Item
 			}
