@@ -5,11 +5,12 @@ status: Done
 assignee:
   - '@pi-01a1623f'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 06:45'
+updated_date: '2026-10-22 07:02'
 labels:
   - spike
   - tui
   - perf
+  - reviewed
 milestone: m-1
 dependencies:
   - BL-1
@@ -84,6 +85,8 @@ AC#2: git diff 598cd4f 4ade600 -- docs/design.md docs/spikes/tui-stack.md review
 AC#3: task cli:test PKG=./internal/tui/... -- -race -count=1 PASS, including reusable ptytest external-package incremental-frame regression and model-mediated telemetry-routing regression. Independent verifier returned AC1 PASS, AC2 PASS, AC3 PASS after focused tests/race and completed-soak evidence review.
 Delivery: implementation commit 4ade600, rebased onto current main without modifying concurrent work, then git merge --ff-only spike/bl-14-tui-stack succeeded. task check:staged and task ci PASS on 4ade600 (security, check, full tests, race, build, smoke); no tests deleted, skipped or weakened. git diff --name-status 598cd4f 4ade600 confirms only the declared modified-file scope. Documentation and D3 included in the implementation commit; production bootstrap behavior is unchanged.
 Cleanup: verified original session creation receipt and wt list, inspected exact owned Herdr workspace wJB, then wt remove spike/bl-14-tui-stack --foreground --format=json removed both checkout and merged branch. git worktree list shows only the primary checkout; herdr workspace list confirms wJB disappeared. No retained task checkout/workspace. No remaining blocker or resumable item-scoped step; BL-16 can reuse the list core and harness.
+
+Review: 4151f1a skips detail re-render/clear when navigation at a list boundary does not move the selection, and makes ptytest.KeyToOutput reject a marker already on screen (prevented false ~0 latency). task cli:test PKG=./internal/tui/... -- -race -count=1 PASS; task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
