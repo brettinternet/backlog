@@ -19,14 +19,23 @@ func (q Query) Project(s Snapshot, event *Event) []Group {
 // ProjectContext cooperatively cancels filtering, sorting and grouping. A
 // canceled projection never returns partially prepared rows.
 func (q Query) ProjectContext(ctx context.Context, s Snapshot, event *Event) ([]Group, error) {
-	items := make([]model.Item, 0, len(s.Items))
+	// Keep matches as indices until their count is known. A selective filter
+	// must not allocate a backlog-sized array of the much larger Item values.
+	matches := make([]int, 0, len(s.Items))
 	for n, i := range s.Items {
 		if n%256 == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		if q.Match(i, s, event) {
-			items = append(items, i)
+			matches = append(matches, n)
 		}
+	}
+	items := make([]model.Item, len(matches))
+	for n, index := range matches {
+		if n%256 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		items[n] = s.Items[index]
 	}
 	s.sortContext(ctx, items, q.Sort)
 	if ctx.Err() != nil {
@@ -45,6 +54,9 @@ func (s Snapshot) Sort(items []model.Item, keys []SortKey) {
 	s.sortContext(context.Background(), items, keys)
 }
 func (s Snapshot) sortContext(ctx context.Context, items []model.Item, keys []SortKey) {
+	if len(items) < 2 {
+		return
+	}
 	next := make(map[model.Ref]int, len(s.Next))
 	for n, r := range s.Next {
 		next[r] = n

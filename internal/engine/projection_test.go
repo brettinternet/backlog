@@ -42,13 +42,16 @@ func TestLatestProjectionAndCancellation(t *testing.T) {
 	defer p.Close()
 	// A burst supersedes work even when the worker has started the prior query.
 	for range 50 {
-		p.Request(snapshot, "sort:title group:status")
+		p.RequestEditor(snapshot, "sort:title group:status", "id", "BL-")
 	}
-	id := p.Request(snapshot, "id:BL-49999")
+	id := p.RequestEditor(snapshot, "id:BL-49999", "id", "BL-49999")
 	select {
 	case result := <-p.Results():
 		if result.Request != id || result.Error != nil || len(result.Groups) != 1 || len(result.Groups[0].Rows) != 1 || result.Groups[0].Rows[0].Ref.ID != "BL-49999" {
 			t.Fatalf("stale or incorrect projection: %+v", result)
+		}
+		if len(result.Completions) != 1 || result.Completions[0].Value != "BL-49999" {
+			t.Fatalf("stale or incorrect completions: %v", result.Completions)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("projection stalled")

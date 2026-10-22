@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"slices"
 	"strings"
 )
@@ -12,6 +13,13 @@ type Candidate struct{ Value, Name string }
 // Complete offers fields for an empty field, otherwise values. Hook-only fields
 // are omitted outside hook if:. Declared values precede sorted values in use.
 func (s Snapshot) Complete(field, prefix string, options Options) []Candidate {
+	candidates, _ := s.CompleteContext(context.Background(), field, prefix, options)
+	return candidates
+}
+
+// CompleteContext cancels obsolete editor work and filters used values before
+// sorting them, rather than sorting the entire backlog for each keystroke.
+func (s Snapshot) CompleteContext(ctx context.Context, field, prefix string, options Options) ([]Candidate, error) {
 	var candidates []Candidate
 	field = strings.ToLower(field)
 	if field == "" {
@@ -21,7 +29,10 @@ func (s Snapshot) Complete(field, prefix string, options Options) []Candidate {
 			}
 		}
 		var raw []string
-		for _, i := range s.Items {
+		for n, i := range s.Items {
+			if n%256 == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			for key := range i.Fields {
 				raw = append(raw, "field."+strings.ToLower(key)+":")
 			}
@@ -31,7 +42,7 @@ func (s Snapshot) Complete(field, prefix string, options Options) []Candidate {
 			candidates = append(candidates, Candidate{Value: f})
 		}
 	} else if !hookField(field) || options.Hook {
-		candidates = s.values(field)
+		candidates = s.valuesPrefix(ctx, field, prefix)
 	}
 	out := make([]Candidate, 0, len(candidates))
 	for _, c := range candidates {
@@ -39,9 +50,15 @@ func (s Snapshot) Complete(field, prefix string, options Options) []Candidate {
 			out = append(out, c)
 		}
 	}
-	return out
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 func (s Snapshot) values(field string) []Candidate {
+	return s.valuesPrefix(context.Background(), field, "")
+}
+func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Candidate {
 	var out []Candidate
 	seen := map[string]bool{}
 	add := func(value, name string) {
@@ -103,24 +120,37 @@ func (s Snapshot) values(field string) []Candidate {
 		}
 	}
 	var used []string
-	for _, i := range s.Items {
+	prefix = strings.ToLower(prefix)
+	use := func(value string) {
+		if strings.HasPrefix(strings.ToLower(value), prefix) {
+			used = append(used, value)
+		}
+	}
+	for n, i := range s.Items {
+		if n%256 == 0 && ctx.Err() != nil {
+			return nil
+		}
 		switch field {
 		case "id", "parent", "blocked-by", "blocks":
-			used = append(used, i.Ref.ID)
+			use(i.Ref.ID)
 		case "title", "text":
-			used = append(used, i.Title)
+			use(i.Title)
 		case "status":
-			used = append(used, i.Status)
+			use(i.Status)
 		case "label":
-			used = append(used, i.Labels...)
+			for _, value := range i.Labels {
+				use(value)
+			}
 		case "milestone":
-			used = append(used, i.Milestone)
+			use(i.Milestone)
 		case "assignee":
-			used = append(used, i.Assignees...)
+			for _, value := range i.Assignees {
+				use(value)
+			}
 		case "type":
-			used = append(used, i.Type)
+			use(i.Type)
 		case "source":
-			used = append(used, i.Ref.Source)
+			use(i.Ref.Source)
 		}
 	}
 	slices.Sort(used)

@@ -1,9 +1,11 @@
 package query_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,6 +333,28 @@ func TestGroupsAndCompletion(t *testing.T) {
 	}
 	if got := s.Complete("status", "In Progress", query.Options{}); len(got) != 1 || got[0].Value != "doing" {
 		t.Fatal(got)
+	}
+	// Filtering before sorting must preserve declared aliases, case folding,
+	// deduplication and the declared-before-used ordering of completion results.
+	for _, field := range []string{"", "status", "milestone", "label", "id", "title"} {
+		for _, prefix := range []string{"", "B", "t", "PER", "Release", "In Progress", "field.o"} {
+			all := s.Complete(field, "", query.Options{})
+			want := slices.DeleteFunc(all, func(c query.Candidate) bool {
+				return !strings.HasPrefix(strings.ToLower(c.Value), strings.ToLower(prefix)) && !strings.HasPrefix(strings.ToLower(c.Name), strings.ToLower(prefix))
+			})
+			got, err := s.CompleteContext(context.Background(), field, prefix, query.Options{})
+			if err != nil || !slices.Equal(got, want) {
+				t.Fatalf("%s %q: %v, %v; want %v", field, prefix, got, err, want)
+			}
+		}
+	}
+	// A superseded editor request must never publish partial completions.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, field := range []string{"", "id"} {
+		if got, err := s.CompleteContext(ctx, field, "", query.Options{}); got != nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled %q: %v, %v", field, got, err)
+		}
 	}
 }
 
