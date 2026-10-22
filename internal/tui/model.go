@@ -48,10 +48,12 @@ type Options struct {
 }
 
 type screenRow struct {
-	row    engine.Row
-	group  int
-	value  string // group value; folds and selection survive live projections
-	header string
+	row                        engine.Row
+	group                      int
+	value                      string // group value; folds and selection survive live projections
+	header                     string
+	depth, parent              int
+	branch, collapsed, context bool
 }
 type prepared struct {
 	rows            []screenRow
@@ -294,6 +296,7 @@ func (m Model) prepare() tea.Cmd {
 	groups, folded, serial, from := m.groups, m.folded, m.serial, m.selected
 	foldAll, ungrouped := m.foldAll, m.ungrouped
 	board, statusGroup := m.isBoard(), m.boardStatusGroup()
+	tree, snapshot := m.isTree(), m.snapshot
 	var statuses []string
 	if board {
 		for _, s := range m.opts.Statuses {
@@ -327,9 +330,12 @@ func (m Model) prepare() tea.Cmd {
 			states = nil // board columns never fold
 		}
 		data := prepareGroupedRows(groups, states, board || !ungrouped)
+		if tree {
+			data = prepareTree(groups, snapshot, folded, foldAll)
+		}
 		selected := -1
 		for i, r := range data.rows {
-			matches := (board || r.value == anchor.value) && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
+			matches := (board || tree || r.value == anchor.value) && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
 			if board && anchor.header != "" {
 				matches = r.value == anchor.value && r.header != ""
 			}
@@ -767,6 +773,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if s == "ctrl+a" {
 				return m, m.markAll()
 			}
+			if m.isTree() && (s == "h" || s == "l" || s == "left" || s == "right") {
+				m.count = 0
+				m.inputSerial++
+				cmd := m.navigateTree(s)
+				page := max(1, m.height-5)
+				if m.selected < m.top {
+					m.top = m.selected
+				}
+				if m.selected >= m.top+page {
+					m.top = m.selected - page + 1
+				}
+				return m, cmd
+			}
 			if m.isBoard() && (s == "h" || s == "l" || s == "left" || s == "right") {
 				previous := m.selected
 				m.navigateBoard(s, max(1, m.count), m.count > 0, "")
@@ -930,7 +949,7 @@ func (m Model) View() tea.View {
 		lines = append(lines, cell(columns, listWidth)+"│"+cell(m.detailHeader(), detailWidth))
 		page := max(0, m.height-5)
 		for i := 0; i < page; i++ {
-			left := m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), listWidth)
+			left := m.treeContext(m.top+i, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), listWidth))
 			if m.isBoard() {
 				left = m.boardLine(i)
 			}
@@ -945,7 +964,7 @@ func (m Model) View() tea.View {
 	} else {
 		lines = append(lines, cell(columns, m.width))
 		for i := 0; i < max(0, m.height-5); i++ {
-			line := m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), m.width)
+			line := m.treeContext(m.top+i, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), m.width))
 			if m.isBoard() {
 				line = m.boardLine(i)
 			}
@@ -976,7 +995,7 @@ func (m Model) View() tea.View {
 	if m.notice != "" {
 		footer = "warning: " + m.notice + " · " + footer
 	}
-	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" && layout != "board" {
+	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" && layout != "board" && layout != "tree" {
 		footer = layout + " unavailable; list · " + footer
 	}
 	if m.capture.open {
@@ -1062,6 +1081,9 @@ func (m Model) listLine(index int, wide bool) string {
 		return ""
 	}
 	r := m.data.rows[index]
+	if m.isTree() {
+		r.row.Title = m.treeTitle(r)
+	}
 	marker := "  "
 	if r.header != "" {
 		if index == m.selected {
