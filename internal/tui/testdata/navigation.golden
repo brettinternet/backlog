@@ -399,27 +399,27 @@ tasks ✓ synced
 ────────────────────────────────────────────────────────────────────────────────
 is:open group:status · 3 pending · 0 failed · ? help · q quit                   
 == help ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-j/k ↓/↑ · count + move · gg/G/NG · [/]/groups                                   
-enter detail · tab focus/cycle · detail j/k scroll · esc back                   
-s status · </> workflow · p priority · a/A assignee · l labels                  
-m milestone · b blocker · P parent · t title · S/D start/done                   
-Criteria: x/space toggle · dd archive · . repeat · u/ctrl-r undo/redo           
-space mark · V range · ctrl-a mark all · esc clear marks                        
-y + key yank · yb branch name · O open safe URL · ? help                        
-R resync · 1–9 views · gt/gT cycle · q/ctrl-c quit                              
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+Help                                                                            
+> ▏                                                                             
+> Move down / scroll detail [move-down] · j, down                               
+  Move up / scroll detail [move-up] · k, up                                     
+  First row [first] · g g                                                       
+  Last row / count G to row N [last] · G                                        
+  Half page down [half-down] · ctrl+d, pagedown                                 
+  Half page up [half-up] · ctrl+u, pageup                                       
+  Full page down [page-down] · ctrl+f                                           
+  Full page up [page-up] · ctrl+b                                               
+  Previous group / board column [previous-group] · [                            
+  Next group / board column [next-group] · ]                                    
+  Tree parent / board left / focus list [left] · h, left                        
+  Tree child / board right / labels in list [right] · l, right · disabled: edit…
+  Toggle detail [detail] · enter                                                
+  Focus detail / next detail tab [next-detail-tab] · tab                        
+  Focus detail / previous detail tab [previous-detail-tab] · shift+tab          
+  Close detail / clear marks / cancel [cancel] · esc                            
+  Next view [next-view] · g t                                                   
+  Previous view [previous-view] · g T                                           
+  Go to any item (including archives) [go-to] · ctrl+p · disabled: go-to search…
+  Search help [help] · ?                                                        
+  Command palette [palette] · :                                                 
+↑/↓ scroll · type to search · esc back                                          
