@@ -61,7 +61,3 @@ The product sketch and capabilities above describe the target, not this bootstra
 - [Query language](docs/query.md)
 - [TUI and keymap](docs/tui.md)
 - [Development](docs/development.md)
-
-## License
-
-[MIT](LICENSE)
