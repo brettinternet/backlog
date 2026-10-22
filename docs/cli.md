@@ -204,6 +204,46 @@ Move native items into or out of the source's `archive/` directory. Occupied
 targets are conflicts. Explicit ID reads still find archived items; lists and
 next ranking exclude them. The bytes and content version are unchanged.
 
+## Maintenance commands
+
+### `bl init [--prefix P] [--path DIR]`
+
+Initialize a repository with `.config/backlog.yaml` and a native item directory.
+The defaults are prefix `BL` and path `backlog`; `--path` is stored in the
+project config and created relative to the control root unless it is absolute.
+The generated config includes `todo`, `in-progress`, and `done` statuses and
+workflow defaults. Run inside a Git repository. An existing project config is
+never overwritten; this refusal exits 5 and creates no files.
+
+### `bl check [--json] [--fix]`
+
+Validate every active and archived item in configured native sources. Findings
+include `code`, `severity`, `path` (relative to the control root when possible),
+`line`, and `message`; JSON puts them in `data.findings`. Errors exit 5, while
+warnings and informational findings do not. With no findings, JSON returns an
+empty `findings` array.
+
+`--fix` applies only the repairs listed in [format.md](format.md): it renames a
+mismatched filename when the destination is free, repairs supported
+`updated`-only and whole-comment merge/diff3 hunks, and normalizes line endings
+and the final newline. Unsupported conflict hunks remain in place and are
+reported as `merge-conflict`. All repair targets are checked while holding the
+native write lock. Findings are reported after repairs, so unresolved errors
+still produce exit 5.
+
+### `bl renumber FROM TO`
+
+Rename an item and update `parent`, `blocked_by`, `related`, `duplicate_of`, and
+source-qualified references in every active and archived native item. The
+operation preflights every affected file and refuses an existing target ID or
+path. `FROM` may be an ID, `SOURCE:ID`, or a source-relative file path selector.
+For example, when active and archived items share `BL-9`, choose one explicitly
+with `tasks:archive/BL-9.md` (or `tasks:BL-9.md` for the active file). An ID that
+matches multiple items is refused with candidate paths rather than guessed.
+Every reference that resolves to the selected source and old ID is rewritten
+to `TO`. Invalid or conflicted item files prevent renumbering rather than
+allowing an incomplete reference rewrite.
+
 ## Output and source safety
 
 Text list rows are compact source-qualified ID/status/priority/title tables,

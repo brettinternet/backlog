@@ -137,6 +137,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	}
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
+	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
 	_ = root.Walk(func(cmd *urfave.Command) error {
 		cmd.OnUsageError = func(_ context.Context, selected *urfave.Command, err error, _ bool) error {
 			command = commandName(selected)
@@ -199,7 +200,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive":
+	case "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber":
 		return true
 	}
 	return false
