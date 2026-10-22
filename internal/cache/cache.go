@@ -472,6 +472,62 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 	return snapshot, tx.Commit()
 }
 
+// Initial reads at most two cached batches without refreshing or changing the
+// search generation. Only requested paths with matching current file identities
+// are returned. A missing, obsolete or damaged cache simply yields no preview.
+func (s Store) Initial(ctx context.Context, files []string) map[string]model.Item {
+	result := map[string]model.Item{}
+	if _, err := os.Stat(s.Path); err != nil {
+		return result
+	}
+	db, err := sql.Open("sqlite", s.Path)
+	if err != nil {
+		return result
+	}
+	defer db.Close()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return result
+	}
+	defer tx.Rollback()
+	var written string
+	if err = tx.QueryRowContext(ctx, "SELECT build FROM metadata").Scan(&written); err != nil || written != build {
+		return result
+	}
+	wanted := make(map[string]bool, len(files))
+	for _, path := range files {
+		wanted[path] = true
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT data FROM items ORDER BY CAST(path AS INTEGER) LIMIT 2")
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var data []byte
+		var batch []*cachedRecord
+		if err = rows.Scan(&data); err == nil {
+			err = gob.NewDecoder(bytes.NewReader(data)).Decode(&batch)
+		}
+		if err != nil {
+			return nil
+		}
+		for _, r := range batch {
+			if !wanted[r.Path] {
+				continue
+			}
+			identity, err := fileIdentity(r.Path)
+			if err == nil && identity == r.Identity {
+				result[r.Path] = r.Item
+			}
+		}
+	}
+	if rows.Err() != nil {
+		return nil
+	}
+	return result
+}
+
 // Search returns candidate paths from precisely this snapshot's generation.
 // Short strings and NULs cannot safely use the trigram index; nil means fallback.
 func (s Store) Search(ctx context.Context, generation, text string) (map[string]bool, error) {

@@ -6,8 +6,14 @@
 
 Bare `bl` opens the list when stdin and stdout are terminals; `bl tui`
 explicitly requires both. The frame paints a loading state before native
-sources load, then consumes immutable engine projections. Source badges show
-syncing, synced, stale, or error. Untrusted project hooks, actions, or adapters
+sources load, then consumes immutable engine projections. Native startup first
+publishes up to 256 complete items in filename order, using stat-validated cache
+batches when available and parsing changed or uncached files. This partial list
+is navigable and editable while full validation, cache population and search
+indexing continue on the source worker. Missing dependency targets remain unknown;
+readiness, ordering and counts can change when the remaining items arrive. Source
+badges show syncing, partial, synced, or error. A partial list is not a complete
+backlog, and a loading shell is not counted as first usable content. Untrusted project hooks, actions, or adapters
 replace the badge line with a persistent `Untrusted project config · bl trust --show`
 banner; untrusted adapters are not opened. Native sources remain browsable, and
 trust-state reads happen during configuration loading, not on the UI loop.

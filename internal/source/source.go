@@ -46,6 +46,13 @@ type Source interface {
 	Apply(context.Context, model.Mutation) (model.Item, error)
 }
 
+// InitialLoader optionally supplies a bounded, authoritative partial snapshot
+// before Load. It runs only at startup on the source worker, never on the UI
+// loop. Load must still follow, even if the initial read fails.
+type InitialLoader interface {
+	LoadInitial(context.Context) (Delta, error)
+}
+
 // Prepared holds an optimistic result and a version-bound inverse. Native
 // sources derive it from the lossless document, not a reserialized Item.
 type Prepared struct {
