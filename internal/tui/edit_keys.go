@@ -224,8 +224,11 @@ func (m Model) editView() tea.View {
 		}
 		lines = append(lines, footer)
 	} else {
-		lines = append(lines, "Archive selected item?  enter/y confirm · esc/n cancel")
-		if row, ok := m.selectedRow(); ok {
+		if m.visual || m.marks != nil && m.marks.size() > 0 {
+			// editCommand archives every marked and visual-range item, not the cursor row.
+			lines = append(lines, "Archive all marked items?  enter/y confirm · esc/n cancel")
+		} else if row, ok := m.selectedRow(); ok {
+			lines = append(lines, "Archive selected item?  enter/y confirm · esc/n cancel")
 			lines = append(lines, row.Ref.ID+" · "+textutil.Line(row.Title))
 		}
 	}

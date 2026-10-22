@@ -81,6 +81,9 @@ provides the background engine: `Current` reads an immutable snapshot in O(1),
 `Subscribe` delivers only the latest snapshot, and `Mutate`, `Undo`, `Redo`, and
 `Refresh` enqueue bounded requests without source I/O on the caller. Full
 request queues return `busy`; overlapping edits to one item are rejected.
+An edit that expects a version this session's own edit replaced (the display
+has not caught up yet) also returns `busy`, never a recorded conflict; only a
+foreign change produces a conflict with both versions.
 Unsubscribe when a view closes. Close the store outside the UI update loop.
 
 `NewProjector` owns a single latest-wins worker. Pass a snapshot and query to
