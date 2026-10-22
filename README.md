@@ -34,8 +34,8 @@ bin/bl                     # empty TUI shell; ? help, q quit
 task ci
 ```
 
-The tooling, CLI entry point, read-only user settings, and Bubble Tea v2 shell work.
-Task storage, project discovery, queries, and edits are still planned—not implemented.
+The tooling, CLI entry point, project discovery, layered settings, and Bubble Tea v2 shell work.
+Task storage, queries, and edits are still planned—not implemented.
 Bare `bl` prints help when stdin or stdout is not a terminal. `bl tui` requires both.
 
 User settings live at `$XDG_CONFIG_HOME/backlog/config.yaml` (default
@@ -47,12 +47,20 @@ ui:
   highContrast: false
 ```
 
-Only `ui.highContrast` is supported in the bootstrap. Override it with
-`BL_HIGH_CONTRAST=true` or `--high-contrast`; an explicit
-`--high-contrast=false` overrides both. `NO_COLOR=1` disables styling.
-Config inspection never creates files or loads committed project configuration.
-Use `bl -C DIR config show` to inspect the resolved invocation directory; this
-leaves user config/state/cache paths and the process working directory unchanged.
+Configuration layers are built-ins, user settings, `.config/backlog.yaml` at the
+control root, user `projects.<id>` overrides, environment, then flags. Mappings
+merge by key; lists replace. `BL_HIGH_CONTRAST=true` and `--high-contrast` override
+`ui.highContrast`; explicit `--high-contrast=false` wins over both. `NO_COLOR=1`
+disables styling. See the [project schema](docs/schemas/project-config.json) and
+[configuration examples](docs/design.md#5-projects-configuration-and-trust).
+
+`bl -C DIR config show --json` reports discovery, effective settings, per-value
+provenance, and trust boundaries without creating files or changing cwd. Linked
+worktrees share the primary checkout's control root; `root: checkout` opts out.
+Origin URLs become stable project IDs; no origin means a host-local path identity.
+Without project config, Backlog.md and Beads are detected read-only, not loaded as
+writable sources. Privileged project entries remain untrusted and nothing runs
+while loading configuration. Trust grants and diagnostics remain BL-29 work.
 `--json`/`-j` returns a versioned success or error envelope, with structured error
 `details`. Usage errors exit 2; see [the exit-code contract](docs/design.md#7-agent-interface)
 for all stable reasons and codes.

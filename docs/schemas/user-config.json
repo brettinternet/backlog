@@ -1,19 +1,126 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "bl bootstrap user settings",
-  "description": "Initial UI preferences only. Project configuration and the full user schema are planned in BL-3.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "version": {
+      "$ref": "project-config.json#/properties/version"
+    },
+    "root": {
+      "$ref": "project-config.json#/properties/root"
+    },
+    "project": {
+      "$ref": "project-config.json#/properties/project"
+    },
     "ui": {
+      "$ref": "project-config.json#/properties/ui"
+    },
+    "sources": {
+      "$ref": "project-config.json#/properties/sources"
+    },
+    "statuses": {
+      "$ref": "project-config.json#/properties/statuses"
+    },
+    "workflow": {
+      "$ref": "project-config.json#/properties/workflow"
+    },
+    "milestones": {
+      "$ref": "project-config.json#/properties/milestones"
+    },
+    "labels": {
+      "$ref": "project-config.json#/properties/labels"
+    },
+    "ready": {
+      "$ref": "project-config.json#/properties/ready"
+    },
+    "defaults": {
+      "$ref": "project-config.json#/properties/defaults"
+    },
+    "views": {
+      "$ref": "project-config.json#/properties/views"
+    },
+    "coordination": {
+      "$ref": "project-config.json#/properties/coordination"
+    },
+    "hooks": {
+      "$ref": "project-config.json#/properties/hooks"
+    },
+    "actions": {
+      "$ref": "project-config.json#/properties/actions"
+    },
+    "me": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "highContrast": {
-          "type": "boolean",
-          "default": false
+        "default": {
+          "type": "string"
         }
       }
+    },
+    "accounts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "user": {
+              "type": "string"
+            },
+            "credential": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "project-config.json"
+      }
+    },
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "projects"
+        ]
+      }
+    },
+    "defaultWorkspace": {
+      "type": "string"
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
     }
-  }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bl user configuration"
 }

@@ -171,6 +171,13 @@ func TestConfigInvocation(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 5 || stderr != "" || envelope.Error == nil || envelope.Error.Reason != "invalid-config" || !strings.Contains(envelope.Error.Message, paths.ConfigFile) {
 		t.Fatalf("invalid config: %d %q %q: %v", code, out, stderr, err)
 	}
+	if err := os.WriteFile(paths.ConfigFile, []byte("ui:\n  highContast: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr = run("--json", "config", "show")
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 5 || stderr != "" || envelope.Error == nil || envelope.Error.Reason != "invalid-config" || !strings.Contains(envelope.Error.Message, paths.ConfigFile) || !strings.Contains(envelope.Error.Message, "line 2") || !strings.Contains(envelope.Error.Message, "ui.highContast") {
+		t.Fatalf("config error location: %d %q %q: %v", code, out, stderr, err)
+	}
 	t.Setenv("BL_HIGH_CONTRAST", "bad")
 	for _, args := range [][]string{{}, {"--help"}, {"--version"}, {"--json", "version"}, {"help", "version"}} {
 		if code, out, stderr := run(args...); code != 0 || out == "" || stderr != "" {

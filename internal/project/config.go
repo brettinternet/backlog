@@ -1,5 +1,4 @@
-// Package project owns project settings. The bootstrap loads only user UI
-// preferences; discovery, project layers, and trust are implemented separately.
+// Package project owns discovery, identity, and read-only layered configuration.
 package project
 
 import (
@@ -9,6 +8,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -56,52 +58,468 @@ type UIConfig struct {
 }
 
 type Config struct {
-	UI    UIConfig `yaml:"ui" json:"ui"`
-	Paths Paths    `yaml:"-" json:"paths"`
+	Settings         `yaml:",inline"`
+	Paths            Paths                      `yaml:"-" json:"paths"`
+	Discovery        Discovery                  `yaml:"-" json:"discovery"`
+	HostLocal        bool                       `yaml:"-" json:"hostLocal"`
+	Provenance       map[string]Provenance      `yaml:"-" json:"provenance"`
+	Privileged       []Privileged               `yaml:"-" json:"privileged,omitempty"`
+	Me               MeConfig                   `yaml:"-" json:"me"`
+	Accounts         map[string][]AccountConfig `yaml:"-" json:"-"`
+	Workspaces       []WorkspaceConfig          `yaml:"-" json:"workspaces,omitempty"`
+	DefaultWorkspace string                     `yaml:"-" json:"defaultWorkspace,omitempty"`
+	Keys             map[string]string          `yaml:"-" json:"keys,omitempty"`
 }
 
-// Load applies built-ins, the optional user file, and a flag/environment
-// override. Nil means absent; false is an explicit override. It never writes,
-// executes configuration, or reads committed project configuration.
+// Load retains the user-settings entry point for callers without a project.
 func Load(paths Paths, highContrast *bool) (Config, error) {
-	cfg := Config{Paths: paths}
-	file, err := os.Open(paths.ConfigFile)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return Config{}, fmt.Errorf("%s: %w", paths.ConfigFile, err)
-	default:
-		defer file.Close()
-		const maxSize = 1 << 20
-		data, err := io.ReadAll(io.LimitReader(file, maxSize+1))
+	return Resolve(paths, "", highContrast)
+}
+
+// Resolve applies D16 layers without changing cwd or writing any files. A nil
+// flag is absent; false is an explicit override. Lists replace rather than append.
+func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) {
+	cfg := Config{Paths: paths, Provenance: map[string]Provenance{}}
+	effective := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	var defaults yaml.Node
+	_ = yaml.Unmarshal([]byte("version: 1\nroot: primary\nui: {highContrast: false}\nready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}\n"), &defaults)
+	overlay(effective, defaults.Content[0], "", Provenance{Layer: "built-in"}, cfg.Provenance)
+	userNode, err := readConfig(paths.ConfigFile, reflect.TypeFor[UserConfig]())
+	if err != nil {
+		return Config{}, err
+	}
+	var user UserConfig
+	if err := userNode.Decode(&user); err != nil {
+		return Config{}, err
+	}
+	overlaySettings(effective, userNode, Provenance{Layer: "user", File: paths.ConfigFile}, cfg.Provenance)
+	cfg.Me, cfg.Accounts, cfg.Workspaces, cfg.DefaultWorkspace, cfg.Keys = user.Me, user.Accounts, user.Workspaces, user.DefaultWorkspace, user.Keys
+	for _, key := range []string{"me", "workspaces", "defaultWorkspace", "keys"} {
+		if value := field(userNode, key); value != nil {
+			recordOrigin(value, key, Provenance{Layer: "user", File: paths.ConfigFile}, cfg.Provenance)
+		}
+	}
+	if directory != "" {
+		cfg.Discovery, err = Discover(directory)
 		if err != nil {
-			return Config{}, fmt.Errorf("%s: %w", paths.ConfigFile, err)
+			return Config{}, err
 		}
-		if len(data) > maxSize {
-			return Config{}, fmt.Errorf("%s: config exceeds 1 MiB", paths.ConfigFile)
-		}
-		if err := decode(data, &cfg); err != nil {
-			return Config{}, fmt.Errorf("%s: %w", paths.ConfigFile, err)
+		d := &cfg.Discovery
+		if d.CheckoutRoot != "" {
+			// Route first, then load facts only from the selected checkout. The
+			// invoking checkout may override the shared root policy, not its facts.
+			projectFile := filepath.Join(d.ControlRoot, ".config", "backlog.yaml")
+			projectNode, readErr := readConfig(projectFile, reflect.TypeFor[Settings]())
+			if readErr != nil {
+				return Config{}, readErr
+			}
+			checkoutFile := filepath.Join(d.CheckoutRoot, ".config", "backlog.yaml")
+			checkoutNode := projectNode
+			if checkoutFile != projectFile {
+				checkoutNode, err = readConfig(checkoutFile, reflect.TypeFor[Settings]())
+				if err != nil {
+					return Config{}, err
+				}
+			}
+			root := field(effective, "root")
+			rootOrigin := cfg.Provenance["root"]
+			if n := field(projectNode, "root"); n != nil {
+				root = n
+				rootOrigin = Provenance{Layer: "project", File: projectFile, Line: n.Line}
+			}
+			if n := field(checkoutNode, "root"); n != nil {
+				root = n
+				rootOrigin = Provenance{Layer: "project", File: checkoutFile, Line: n.Line}
+			}
+			if root.Value == "checkout" {
+				d.ControlRoot = d.CheckoutRoot
+				projectFile = checkoutFile
+				projectNode = checkoutNode
+			}
+			overlay(effective, projectNode, "", Provenance{Layer: "project", File: projectFile}, cfg.Provenance)
+			replaceField(effective, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "root"}, cloneNode(root))
+			cfg.Provenance["root"] = rootOrigin
+			if n := field(field(effective, "project"), "id"); n == nil || n.Value == "" {
+				id, local, idErr := Identity(*d)
+				if idErr != nil {
+					return Config{}, idErr
+				}
+				cfg.HostLocal = local
+				identity := &yaml.Node{}
+				if err := identity.Encode(ProjectConfig{ID: id}); err != nil {
+					return Config{}, err
+				}
+				overlay(effective, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{{Kind: yaml.ScalarNode, Tag: "!!str", Value: "project"}, identity}}, "", Provenance{Layer: "discovery"}, cfg.Provenance)
+			}
+			id := field(field(effective, "project"), "id").Value
+			if projects := field(userNode, "projects"); projects != nil {
+				if override := field(projects, id); override != nil {
+					overlay(effective, override, "", Provenance{Layer: "user-project", File: paths.ConfigFile}, cfg.Provenance)
+					if field(field(override, "project"), "id") != nil {
+						cfg.HostLocal = false
+					}
+				}
+			}
+			d.Detected = detectSources(d.ControlRoot)
 		}
 	}
-	if highContrast != nil {
-		cfg.UI.HighContrast = *highContrast
+	if highContrast == nil {
+		if raw := os.Getenv("BL_HIGH_CONTRAST"); raw != "" {
+			value, parseErr := strconv.ParseBool(raw)
+			if parseErr != nil {
+				return Config{}, fmt.Errorf("environment: line 1: key BL_HIGH_CONTRAST: must be a boolean (true or false)")
+			}
+			setContrast(effective, value, Provenance{Layer: "environment"}, cfg.Provenance)
+		}
+	} else {
+		setContrast(effective, *highContrast, Provenance{Layer: "flag"}, cfg.Provenance)
 	}
+	if err := effective.Decode(&cfg.Settings); err != nil {
+		return Config{}, err
+	}
+	if err := validateSettings(effective); err != nil {
+		return Config{}, err
+	}
+	cfg.Privileged = privileged(cfg)
 	return cfg, nil
 }
 
-func decode(data []byte, cfg *Config) error {
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
-		return err
+func setContrast(node *yaml.Node, value bool, origin Provenance, provenance map[string]Provenance) {
+	var n yaml.Node
+	_ = yaml.Unmarshal([]byte("ui: {highContrast: "+strconv.FormatBool(value)+"}"), &n)
+	overlay(node, n.Content[0], "", origin, provenance)
+}
+
+func field(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return err
+	for i := 0; i < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
 		}
-		return errors.New("expected a single YAML document")
 	}
 	return nil
+}
+
+func overlaySettings(dst, src *yaml.Node, origin Provenance, provenance map[string]Provenance) {
+	allowed := yamlFields(reflect.TypeFor[Settings]())
+	filtered := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for i := 0; i < len(src.Content); i += 2 {
+		if _, ok := allowed[src.Content[i].Value]; ok {
+			filtered.Content = append(filtered.Content, src.Content[i], src.Content[i+1])
+		}
+	}
+	overlay(dst, filtered, "", origin, provenance)
+}
+
+// Copy nodes before merging so earlier layers remain reusable for checkout opt-out.
+func cloneNode(n *yaml.Node) *yaml.Node {
+	c := *n
+	c.Content = nil
+	for _, child := range n.Content {
+		c.Content = append(c.Content, cloneNode(child))
+	}
+	return &c
+}
+func overlay(dst, src *yaml.Node, prefix string, origin Provenance, provenance map[string]Provenance) {
+	for i := 0; i < len(src.Content); i += 2 {
+		key, value := src.Content[i], src.Content[i+1]
+		path := key.Value
+		if prefix != "" {
+			path = prefix + "." + path
+		}
+		existing := field(dst, key.Value)
+		if value.Kind == yaml.MappingNode {
+			if existing == nil || existing.Kind != yaml.MappingNode {
+				existing = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				replaceField(dst, key, existing)
+			}
+			overlay(existing, value, path, origin, provenance)
+			if len(value.Content) == 0 {
+				p := origin
+				p.Line = key.Line
+				provenance[path] = p
+			}
+		} else {
+			replaceField(dst, key, cloneNode(value))
+			for old := range provenance {
+				if old == path || strings.HasPrefix(old, path+".") || strings.HasPrefix(old, path+"[") {
+					delete(provenance, old)
+				}
+			}
+			recordOrigin(value, path, origin, provenance)
+		}
+	}
+}
+
+func recordOrigin(node *yaml.Node, path string, origin Provenance, provenance map[string]Provenance) {
+	origin.Line = node.Line
+	provenance[path] = origin
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content); i += 2 {
+			recordOrigin(node.Content[i+1], path+"."+node.Content[i].Value, origin, provenance)
+		}
+	}
+	if node.Kind == yaml.SequenceNode {
+		for i, child := range node.Content {
+			recordOrigin(child, fmt.Sprintf("%s[%d]", path, i), origin, provenance)
+		}
+	}
+}
+func replaceField(node, key, value *yaml.Node) {
+	for i := 0; i < len(node.Content); i += 2 {
+		if node.Content[i].Value == key.Value {
+			node.Content[i+1] = value
+			return
+		}
+	}
+	node.Content = append(node.Content, cloneNode(key), value)
+}
+
+func readConfig(path string, typ reflect.Type) (*yaml.Node, error) {
+	empty := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return empty, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: line 1: key $: %w", path, err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > 1<<20 {
+		return nil, fmt.Errorf("%s: line 1: key $: config exceeds 1 MiB", path)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	var doc yaml.Node
+	if err := decoder.Decode(&doc); err != nil {
+		if errors.Is(err, io.EOF) {
+			return empty, nil
+		}
+		return nil, fmt.Errorf("%s: line 1: key $: %w", path, err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s: line %d: key $: expected a single YAML document: %v", path, extra.Line, err)
+	}
+	node := doc.Content[0]
+	if err := validateNode(node, typ, "$"); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := validateSettings(node); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if projects := field(node, "projects"); projects != nil {
+		for i := 1; i < len(projects.Content); i += 2 {
+			if err := validateSettings(projects.Content[i]); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+		}
+	}
+	return node, nil
+}
+
+func yamlFields(typ reflect.Type) map[string]reflect.Type {
+	fields := map[string]reflect.Type{}
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		tag := f.Tag.Get("yaml")
+		name, opts, _ := strings.Cut(tag, ",")
+		if name == "-" {
+			continue
+		}
+		if opts == "inline" {
+			for key, value := range yamlFields(f.Type) {
+				fields[key] = value
+			}
+			continue
+		}
+		if name == "" {
+			name = strings.ToLower(f.Name)
+		}
+		fields[name] = f.Type
+	}
+	return fields
+}
+func validateNode(node *yaml.Node, typ reflect.Type, key string) error {
+	fail := func(message string) error { return fmt.Errorf("line %d: key %s: %s", node.Line, key, message) }
+	if node.Kind == yaml.AliasNode || node.Anchor != "" {
+		return fail("YAML anchors and aliases are not supported")
+	}
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	switch typ.Kind() {
+	case reflect.Struct, reflect.Map:
+		if node.Kind != yaml.MappingNode {
+			return fail("expected a mapping")
+		}
+		seen := map[string]bool{}
+		var fields map[string]reflect.Type
+		if typ.Kind() == reflect.Struct {
+			fields = yamlFields(typ)
+		}
+		for i := 0; i < len(node.Content); i += 2 {
+			k, v := node.Content[i], node.Content[i+1]
+			path := k.Value
+			if key != "$" {
+				path = key + "." + path
+			}
+			if k.Tag != "!!str" {
+				return fmt.Errorf("line %d: key %s: expected a string key", k.Line, path)
+			}
+			if seen[k.Value] {
+				return fmt.Errorf("line %d: key %s: duplicate key", k.Line, path)
+			}
+			seen[k.Value] = true
+			var child reflect.Type
+			if typ.Kind() == reflect.Map {
+				child = typ.Elem()
+			} else {
+				var ok bool
+				child, ok = fields[k.Value]
+				if !ok {
+					return fmt.Errorf("line %d: key %s: unknown field", k.Line, path)
+				}
+			}
+			if err := validateNode(v, child, path); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice:
+		if node.Kind != yaml.SequenceNode {
+			return fail("expected a sequence")
+		}
+		for i, child := range node.Content {
+			if err := validateNode(child, typ.Elem(), fmt.Sprintf("%s[%d]", key, i)); err != nil {
+				return err
+			}
+		}
+	default:
+		tag := "!!str"
+		if typ.Kind() == reflect.Bool {
+			tag = "!!bool"
+		}
+		if typ.Kind() == reflect.Int {
+			tag = "!!int"
+		}
+		if node.Kind != yaml.ScalarNode || node.Tag != tag {
+			return fail("expected " + strings.TrimPrefix(tag, "!!"))
+		}
+		if err := node.Decode(reflect.New(typ).Interface()); err != nil {
+			return fail(err.Error())
+		}
+	}
+	return nil
+}
+func validateSettings(node *yaml.Node) error {
+	fail := func(n *yaml.Node, key, message string) error {
+		return fmt.Errorf("line %d: key %s: %s", n.Line, key, message)
+	}
+	if n := field(node, "version"); n != nil && n.Value != "1" {
+		return fail(n, "version", "must be 1")
+	}
+	if n := field(node, "root"); n != nil && n.Value != "primary" && n.Value != "checkout" {
+		return fail(n, "root", "must be primary or checkout")
+	}
+	for _, group := range []string{"hooks", "actions", "views", "workspaces"} {
+		if list := field(node, group); list != nil {
+			for i, entry := range list.Content {
+				required := []string{"name"}
+				switch group {
+				case "hooks":
+					required = append(required, "on", "run")
+				case "actions":
+					required = append(required, "run")
+				case "workspaces":
+					required = append(required, "projects")
+				}
+				for _, key := range required {
+					if n := field(entry, key); n == nil {
+						return fail(entry, fmt.Sprintf("%s[%d].%s", group, i, key), "required")
+					}
+				}
+				if phase := field(entry, "phase"); phase != nil && phase.Value != "before" && phase.Value != "after" {
+					return fail(phase, "hooks.phase", "must be before or after")
+				}
+			}
+		}
+	}
+	for _, list := range []string{"milestones", "sources", "statuses"} {
+		n := field(node, list)
+		if n == nil {
+			continue
+		}
+		seen := map[string]bool{}
+		id := "key"
+		if list == "sources" {
+			id = "id"
+		}
+		for i, entry := range n.Content {
+			key := field(entry, id)
+			if key == nil || key.Value == "" {
+				return fail(entry, fmt.Sprintf("%s[%d].%s", list, i, id), "required")
+			}
+			if seen[key.Value] {
+				return fail(key, list+"."+id, "duplicate "+key.Value)
+			}
+			seen[key.Value] = true
+			if list == "milestones" || list == "statuses" {
+				if name := field(entry, "name"); name == nil || name.Value == "" {
+					return fail(entry, list+".name", "required")
+				}
+			}
+			if list == "sources" {
+				kind := field(entry, "type")
+				if kind == nil {
+					return fail(entry, "sources.type", "required")
+				}
+				switch kind.Value {
+				case "native", "backlog-md", "beads", "github", "linear", "jira", "external":
+				default:
+					return fail(kind, "sources.type", "unknown source type")
+				}
+			}
+			if list == "statuses" {
+				category := field(entry, "category")
+				if category == nil {
+					return fail(entry, "statuses.category", "required")
+				}
+				switch category.Value {
+				case "backlog", "todo", "active", "done", "canceled":
+				default:
+					return fail(category, "statuses.category", "unknown category")
+				}
+			}
+		}
+	}
+	return nil
+}
+func privileged(cfg Config) []Privileged {
+	var result []Privileged
+	for _, group := range []string{"hooks", "actions", "sources"} {
+		count := len(cfg.Hooks)
+		if group == "actions" {
+			count = len(cfg.Actions)
+		}
+		if group == "sources" {
+			count = len(cfg.Sources)
+		}
+		for i := 0; i < count; i++ {
+			if group == "sources" {
+				s := cfg.Sources[i]
+				if s.Type == "native" || s.Type == "backlog-md" {
+					continue
+				}
+			}
+			key := fmt.Sprintf("%s[%d]", group, i)
+			p := cfg.Provenance[key]
+			result = append(result, Privileged{Key: key, Trusted: p.Layer != "project", Origin: p})
+		}
+	}
+	return result
 }
