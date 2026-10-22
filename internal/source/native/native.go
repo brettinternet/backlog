@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -33,6 +34,8 @@ type Options struct {
 	CommonDir, ProjectID string
 	Statuses             map[string]model.StatusCategory
 	Now                  func() time.Time
+	CacheDir             string                       // empty disables the disposable cache
+	ReadFile             func(string) ([]byte, error) // optional item-read instrumentation
 }
 type Source struct {
 	options Options
@@ -55,6 +58,9 @@ func New(o Options) (*Source, error) {
 			return nil, err
 		}
 		state = filepath.Join(paths.StateDir, "projects", fmt.Sprintf("%x", sha256.Sum256([]byte(o.ProjectID))))
+	}
+	if o.ReadFile == nil {
+		o.ReadFile = os.ReadFile
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -122,7 +128,7 @@ func (s *Source) document(path string) (*format.Document, error) {
 	if !info.Mode().IsRegular() {
 		return nil, source.Refuse("invalid-path", "item is not a regular file")
 	}
-	data, err := os.ReadFile(path)
+	data, err := s.options.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +170,63 @@ func loadFinding(path string, err error) source.Finding {
 	return f
 }
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
+	if s.options.CacheDir == "" {
+		return s.load(ctx, cursor)
+	}
+	store := cache.New(s.options.CacheDir, s.options.ProjectID, s.options.ID, s.options.Path)
+	snapshot, warnings, err := store.Refresh(ctx, func() ([]string, error) { return s.paths(cursor.IncludeArchive) }, func(path string) bool { return cursor.IncludeArchive || filepath.Dir(path) == s.options.Path }, func(path string) (model.Item, error) {
+		doc, e := s.document(path)
+		if e != nil {
+			return model.Item{}, e
+		}
+		return s.item(doc), nil
+	})
+	if err != nil {
+		result, e := s.load(ctx, cursor)
+		result.Findings = append(result.Findings, source.Finding{Code: "cache-unavailable", Severity: "warning", Message: err.Error()})
+		return result, e
+	}
+	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
+	byPath := map[string]model.Ref{}
+	for _, record := range snapshot.Records {
+		e := record.Err
+		if e == nil && len(s.options.Statuses) > 0 {
+			if _, ok := s.options.Statuses[record.Item.Status]; !ok {
+				e = source.Refuse("unknown-status", record.Item.Status)
+			}
+		}
+		if e != nil {
+			result.Findings = append(result.Findings, loadFinding(record.Path, e))
+			result.Coverage = source.Partial
+			continue
+		}
+		item := record.Item
+		item.Category = s.options.Statuses[item.Status]
+		result.Items = append(result.Items, item)
+		byPath[record.Path] = item.Ref
+	}
+	for _, warning := range warnings {
+		result.Findings = append(result.Findings, source.Finding{Code: "cache-rebuilt", Severity: "warning", Message: warning})
+	}
+	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Ref.ID < result.Items[j].Ref.ID })
+	sort.Slice(result.Findings, func(i, j int) bool { return result.Findings[i].Path < result.Findings[j].Path })
+	result.TextSearch = func(ctx context.Context, text string) (map[model.Ref]bool, error) {
+		paths, e := store.Search(ctx, snapshot.Generation, text)
+		if e != nil || paths == nil {
+			return nil, e
+		}
+		matches := map[model.Ref]bool{}
+		for path := range paths {
+			if ref, ok := byPath[path]; ok {
+				matches[ref] = true
+			}
+		}
+		return matches, nil
+	}
+	return result, nil
+}
+
+func (s *Source) load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	result := source.Delta{Coverage: source.Complete, Cursor: source.Cursor{IncludeArchive: cursor.IncludeArchive}}
 	paths, err := s.paths(cursor.IncludeArchive)
 	if err != nil {

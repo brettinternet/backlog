@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"os"
@@ -42,6 +43,40 @@ func readFixture(t *testing.T) string {
 		}
 	}
 	return root
+}
+
+// Cache failures must not turn a valid read command into an unavailable error.
+func TestReadCacheRecovery(t *testing.T) {
+	root := readFixture(t)
+	code, want, stderr := run("-C", root, "ls", "text:ody", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(want, `"id":"BL-012"`) || strings.Contains(want, `"id":"BL-13"`) {
+		t.Fatalf("initial query: %d %s %s", code, want, stderr)
+	}
+	paths, err := filepath.Glob(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "backlog", "projects", "*", "*.sqlite"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("cache databases: %v %v", paths, err)
+	}
+	for _, kind := range []string{"corrupt", "schema"} {
+		if kind == "corrupt" {
+			if err := os.WriteFile(paths[0], []byte("not a database"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			db, err := sql.Open("sqlite", paths[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = db.Exec("PRAGMA user_version=999")
+			_ = db.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		code, out, stderr := run("-C", root, "ls", "text:ody", "--json")
+		if code != 0 || out != want || !strings.Contains(stderr, "warning: rebuilding disposable cache") {
+			t.Fatalf("%s: %d %s %s", kind, code, out, stderr)
+		}
+	}
 }
 
 func TestReadIDs(t *testing.T) {

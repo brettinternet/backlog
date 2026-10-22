@@ -34,6 +34,9 @@ type Snapshot struct {
 	States       map[model.Ref]State
 	Next         []model.Ref
 	Coordination bool
+	// TextMatches holds optional snapshot-bound FTS candidates. Missing entries
+	// use the in-memory evaluator; candidates are always post-filtered.
+	TextMatches map[string]map[model.Ref]bool
 }
 
 // Validate returns all snapshot-dependent errors in input order. TUI callers can
@@ -202,7 +205,10 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 		}
 		return compare(c, v.Op)
 	case "text":
-		return contains(i.Title+"\n"+body(i), text)
+		if matches, ok := s.TextMatches[text]; ok && !matches[i.Ref] {
+			return false
+		}
+		return contains(SearchText(i), text)
 	case "claimed":
 		return s.Coordination && state.Claim == lower
 	case "is":
@@ -342,6 +348,10 @@ func matchID(ref model.Ref, value string) bool {
 	}
 	return strings.TrimLeft(id, "0") == strings.TrimLeft(value, "0")
 }
+
+// SearchText is the exact text: search surface shared with the cache index.
+func SearchText(i model.Item) string { return i.Title + "\n" + body(i) }
+
 func body(i model.Item) string {
 	parts := []string{i.Description, i.Plan, i.Notes, i.Summary}
 	for _, c := range append(slices.Clone(i.Criteria), i.DoD...) {

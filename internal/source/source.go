@@ -29,6 +29,9 @@ type Delta struct {
 	Findings []Finding
 	Coverage Coverage
 	Cursor   Cursor
+	// TextSearch optionally narrows matches for this snapshot. Nil results or
+	// errors require in-memory fallback.
+	TextSearch func(context.Context, string) (map[model.Ref]bool, error)
 }
 type Info struct {
 	ID, Kind, Display string

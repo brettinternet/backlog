@@ -13,6 +13,20 @@ bl show tasks:BL-012 --section criteria --json
 bl next 'label:cli' -n 3 --explain --json
 ```
 
+## Native read cache
+
+`ls` and `next` keep a disposable SQLite WAL cache under
+`$XDG_CACHE_HOME/backlog/projects/<project-id-hash>/` (default
+`~/.cache/backlog/projects/`). Each source and absolute source path has its
+own database and adjacent refresh lock. Unchanged items are validated by size,
+nanosecond mtime, inode, and ctime without opening item files. Changed files
+alone are reparsed; refreshes are serialized across processes.
+
+Corrupt or incompatible caches are quarantined beside the database and rebuilt
+with a warning on stderr. An unavailable cache falls back to native files.
+Removing cache data only costs the next read time; it never removes backlog
+items. `show` and writes read authoritative files directly.
+
 ## `bl import backlog-md [PATH] [--to DIR] [--dry-run]`
 
 Imports Backlog.md files directly into a separate native project. PATH defaults

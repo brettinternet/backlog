@@ -17,12 +17,16 @@ import (
 
 // ReadSnapshot is the read-only composition used by command adapters.
 type ReadSnapshot struct {
-	Query   query.Snapshot
-	Ranking Result
+	Query     query.Snapshot
+	Ranking   Result
+	Warnings  []string
+	searchers []func(context.Context, string) (map[model.Ref]bool, error)
+	ctx       context.Context
 }
 
 func LoadReads(ctx context.Context, cfg project.Config) (ReadSnapshot, error) {
 	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
+	s.ctx = ctx
 	if cfg.Me.Default != "" {
 		s.Query.Me = []string{cfg.Me.Default}
 	}
@@ -37,6 +41,16 @@ func LoadReads(ctx context.Context, cfg project.Config) (ReadSnapshot, error) {
 		}
 		if delta.Coverage != source.Complete {
 			return s, fmt.Errorf("source %s has incomplete coverage: %v", c.ID, delta.Findings)
+		}
+		for _, finding := range delta.Findings {
+			if finding.Severity == "warning" {
+				s.Warnings = append(s.Warnings, finding.Message)
+			}
+		}
+		if delta.TextSearch != nil {
+			s.searchers = append(s.searchers, delta.TextSearch)
+		} else {
+			s.searchers = append(s.searchers, nil)
 		}
 		s.Query.Items = append(s.Query.Items, delta.Items...)
 	}
@@ -60,7 +74,7 @@ func readSource(cfg project.Config, c project.SourceConfig) (*native.Source, err
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(cfg.Discovery.ControlRoot, path)
 	}
-	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses})
+	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses, CacheDir: cfg.Paths.CacheDir})
 }
 
 // ReadDetail resolves shorthand without parsing or ranking the entire backlog.
@@ -100,13 +114,43 @@ func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.
 	return matches, nil
 }
 
-func (s ReadSnapshot) Parse(text string) (query.Query, error) {
+func (s *ReadSnapshot) Parse(text string) (query.Query, error) {
 	q, err := query.Parse(text, query.Options{})
 	if err != nil {
 		return q, err
 	}
 	if errs := q.Validate(s.Query); len(errs) > 0 {
 		return q, errs[0]
+	}
+	s.Query.TextMatches = map[string]map[model.Ref]bool{}
+	for _, term := range q.Terms {
+		if term.Field != "text" {
+			continue
+		}
+		for _, value := range term.Values {
+			if _, ok := s.Query.TextMatches[value.Text]; ok {
+				continue
+			}
+			matches := map[model.Ref]bool{}
+			complete := len(s.searchers) > 0
+			for _, search := range s.searchers {
+				if search == nil {
+					complete = false
+					break
+				}
+				found, e := search(s.ctx, value.Text)
+				if e != nil || found == nil {
+					complete = false
+					break
+				}
+				for ref := range found {
+					matches[ref] = true
+				}
+			}
+			if complete {
+				s.Query.TextMatches[value.Text] = matches
+			}
+		}
 	}
 	return q, nil
 }

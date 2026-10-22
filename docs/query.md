@@ -24,7 +24,7 @@ A leading `-` negates the term. Empty queries match all items. Whitespace separa
 
 Field names, `is:`/`has:` values, categories, statuses, priorities, claim values, and outcomes are case-insensitive. Other exact values (including labels, handles, and IDs) are case-sensitive. `none` is a case-insensitive reserved value for an unset scalar or empty list where listed below. Raw field suffixes match frontmatter keys case-insensitively, like other field names.
 
-Free text is a case-insensitive **literal substring** of the ID or title. `text:` is a case-insensitive literal substring of the title or body: description, criteria, DoD, plan, notes, summary, and comment bodies, joined with newlines. Neither mode tokenizes, stems, interprets wildcards, nor uses a search-engine query grammar. A cached FTS implementation must preserve these exact results.
+Free text is a case-insensitive **literal substring** of the ID or title. `text:` is a case-insensitive literal substring of the title or body: description, criteria, DoD, plan, notes, summary, and comment bodies, joined with newlines. Neither mode tokenizes, stems, interprets wildcards, nor uses a search-engine query grammar. The SQLite FTS5 trigram index narrows `text:` candidates using Go-lowercased text; the evaluator then checks the literal substring. Queries shorter than three Unicode code points, queries containing NUL, and unavailable or stale indexes use the in-memory evaluator. Both paths return the same results.
 
 ## Fields
 

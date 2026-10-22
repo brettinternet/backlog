@@ -64,7 +64,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 		if err != nil {
 			return cfg, snapshot, &Error{Reason: "unavailable", Message: err.Error()}
 		}
-		for _, warning := range cfg.Discovery.Warnings {
+		for _, warning := range append(cfg.Discovery.Warnings, snapshot.Warnings...) {
 			fmt.Fprintf(errOut, "bl: warning: %s\n", textutil.Line(warning))
 		}
 		for _, detected := range cfg.Discovery.Detected {
