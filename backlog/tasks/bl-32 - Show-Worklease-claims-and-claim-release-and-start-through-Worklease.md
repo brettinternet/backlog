@@ -4,7 +4,7 @@ title: Add the coordination seam and Worklease claims
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:51'
+updated_date: '2026-10-22 01:55'
 labels:
   - worklease
   - agents
@@ -15,6 +15,7 @@ dependencies:
   - BL-15
   - BL-16
   - BL-27
+  - BL-28
 references:
   - docs/design.md
   - 'https://github.com/brettinternet/worklease/blob/v1.9.3/docs/claim-model.md'
@@ -62,7 +63,7 @@ Parallel agents need to see and take claims where they pick work (D20, §9). `bl
 - [ ] #3 With a fake Worklease, a failed status change after a successful claim keeps the claim and reports both outcomes
 - [ ] #4 The overlay shows `mine`, `agent@host`, and expired, flips at expiry under an injected clock without polling, and never calls Worklease per row
 - [ ] #5 Engine, readiness, and `next` code depend only on the coordination seam; a fake coordinator drives the same tests with no Worklease present
-- [ ] #6 With `BL_PROVIDER_TESTS=1`, a round trip against Worklease 1.9.3 acquires, lists, and releases, and the docs/automation.md release-on-done hook releases a real claim
+- [ ] #6 With BL_PROVIDER_TESTS=1, a round trip against Worklease 1.9.3 acquires, lists, and releases an isolated claim; the real release-on-done hook round trip is verified separately in BL-30 after hooks exist.
 - [ ] #7 Inside a session that already holds the item claim (a `worklease run --resource` worker), `bl start` skips the acquire and changes status
 <!-- AC:END -->
 
@@ -79,10 +80,10 @@ Parallel agents need to see and take claims where they pick work (D20, §9). `bl
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Read Worklease v1.9.3 CLI/key evidence and build a bounded schema-v2 client. Preserve invoking cwd, session precedence and provider-stable identities; use fixture vectors and a regeneration script instead of per-row key subprocesses.
-2. Implement claim/release and claim-first start as two separately reported outcomes, preserving a successful claim when status fails. Wire engine overlay, expiry scheduling, TUI controls, MCP tools and capability-aware instructions.
-3. Verify contention, unknown outcomes, cwd/session forwarding, polling cancellation and local expiry with fake CLI/clock fixtures. Run task test and task race, then the opt-in real Worklease round trip in an isolated resource namespace with guaranteed release. Update CLI/MCP/instructions docs.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
-
-Note (2026-10-22): this plan predates the D20/D21/D27 redesign of coordination, derived events, results, and chaining. Re-plan against the current description and acceptance criteria before starting.
+1. Implement design.md D20's narrow coordination seam in model/engine: per-item claim state, acquire/release/list outcomes acquired/contended/uncertain/unavailable, and optional stable resource identity. Readiness and next depend on this seam, not Worklease types; do not add a public protocol or a second implementation.
+2. Implement the sole Worklease schema-v2 client using v1.9.3 evidence, bounded subprocesses, invoking cwd and session precedence. Derive provider keys in-process from stable identities and verify fixture vectors; never invoke Worklease per row.
+3. Wire claim/release/start, overlay expiry, TUI controls and MCP. Start uses an already-held claim for the same session without reacquiring; a newly acquired claim survives status failure, with separate outcomes. Emit claim events via BL-28, but do not trigger data-derived readiness events on overlay changes.
+4. Expose resource identity for BL-30/31 without knowing about hook workflows. Release-on-done and agent launch remain documented examples owned by those tasks; no built-in release or launch. Update CLI/MCP/instructions docs.
+5. Verify with a fake coordinator and fake CLI: outcome mapping, session/cwd forwarding, inherited claim, expiry without polling, and retained claim after status failure. Run task test and task race, then the isolated BL_PROVIDER_TESTS=1 acquire/list/release round trip. BL-30 owns the later real release-hook test, so completion here does not require hooks.
+6. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

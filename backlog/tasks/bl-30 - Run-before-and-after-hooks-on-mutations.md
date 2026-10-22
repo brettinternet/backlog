@@ -4,7 +4,7 @@ title: 'Run hooks on events with results, chaining, and checked placeholders'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:51'
+updated_date: '2026-10-22 01:54'
 labels:
   - hooks
   - security
@@ -57,6 +57,7 @@ The §8 hooks: `name`, `on` (any event type), `if` (an item query plus the event
 - [ ] #4 A placeholder value with a leading `-` or a control character, or a missing `{result.KEY}`, produces outcome `refused` and runs nothing; shell metacharacters pass literally
 - [ ] #5 A hook chain that loops stops at depth 3, through both `hook.finished` chaining and `bl` calls inside hooks
 - [ ] #6 A canary test proves hooks receive only the documented variables and no credential variables
+- [ ] #7 With BL_PROVIDER_TESTS=1, the docs/automation.md release-on-done hook releases a real isolated Worklease claim after a done mutation; acquisition and cleanup are recorded. This is the live hook portion transferred from BL-32 AC#6 to avoid a dependency cycle.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -72,10 +73,10 @@ The §8 hooks: `name`, `on` (any event type), `if` (an item query plus the event
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Insert before hooks before any source write/optimistic publish and after hooks only after confirmed success/events. Reuse query changed-field context and the trust gate.
-2. Implement argv-only execution with placeholder validation, a minimal allowlisted environment, stdin context, bounded timeout/concurrency and depth propagation. Keep CLI detached-runner lifecycle/logging explicit so child completion cannot corrupt command stdout or require the parent process.
-3. Verify veto/timeout write-nothing behavior, after-hook responsiveness/logging, credential canaries, depth 4 refusal and literal shell metacharacters. Run task test and task race; document runner/log/error behavior and TUI failure reporting.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
-
-Note (2026-10-22): this plan predates the D20/D21/D27 redesign of coordination, derived events, results, and chaining. Re-plan against the current description and acceptance criteria before starting.
+1. Reuse BL-28's event append/dispatch ownership and BL-6's event-aware predicates. Before hooks apply only to proposed item mutation events, before optimistic publication or writes; readiness and completion events are after-only. Reject invalid phase/event combinations at config validation.
+2. Build one argv-only executor shared with BL-31. Expand argv and cwd with the design.md §8 placeholders, reusing BL-20 branch names and BL-32 resource identity. Validate each expanded value for controls, a leading dash and the 1 KiB limit; missing values refuse execution. Carry originating cwd through chains, with the control root only for sync-originated chains.
+3. Provide the exact §8 allowlisted environment and triggering event JSON on stdin. Capture at most one 8 KiB JSON object from BL_RESULT, otherwise single-object JSON stdout; bound reads/output, refuse malformed/oversized results with a documented outcome and never publish credentials. Propagate cause and depth through both completion chains and nested bl calls.
+4. After hooks execute with bounded concurrency through the detached CLI runner or TUI worker. Emit exactly one hook.finished including outcome, exit code, duration and result, then route it through ordinary subscriptions; events beyond depth 3 trigger no further hooks. Do not retry or run hooks for deduplicated events.
+5. Verify veto/timeout no-write, result precedence/bounds, placeholder refusal, originating-cwd propagation, canary isolation and both recursion paths. Exercise a fake wt -> fake worklease result chain and docs/automation.md examples; run task test and task race. This task owns the real release-on-done hook round trip formerly bundled into BL-32: use BL_PROVIDER_TESTS=1 with isolated claim identity and guaranteed cleanup.
+6. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

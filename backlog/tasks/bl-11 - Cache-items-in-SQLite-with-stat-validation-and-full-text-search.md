@@ -4,7 +4,7 @@ title: Cache items in SQLite with stat validation and full-text search
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 01:56'
 labels:
   - cache
   - perf
@@ -12,12 +12,15 @@ milestone: m-0
 dependencies:
   - BL-4
   - BL-6
+  - BL-7
 references:
   - docs/design.md
 modified_files:
   - internal/cache
   - internal/source/native
   - internal/query
+  - internal/engine
+  - internal/cli
   - go.mod
   - go.sum
 priority: high

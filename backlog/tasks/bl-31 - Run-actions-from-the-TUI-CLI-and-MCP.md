@@ -4,7 +4,7 @@ title: 'Run actions from the TUI, CLI, and MCP'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:50'
+updated_date: '2026-10-22 01:55'
 labels:
   - hooks
   - tui
@@ -66,10 +66,9 @@ Document examples: create a worktree with `wt switch --create {branch}`, start a
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Extend BL-30's executor rather than add another subprocess path. Add when/capability filtering, confirmation and binding-conflict validation, with the same item JSON/environment for CLI, TUI and MCP.
-2. Connect the TUI action menu, command palette and custom keys; reuse BL-21 suspend/resume for attached actions and the detached runner for background actions. Define noninteractive confirmation behavior explicitly and fail closed rather than hang.
-3. Verify identical invocation contexts through all three entry points, plus a PTY suspend/resume and detached log check. Run task test and document safe argv-only Worklease/Herdr/branch examples without running real external actions.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
-
-Note (2026-10-22): this plan predates the D20/D21/D27 redesign of coordination, derived events, results, and chaining. Re-plan against the current description and acceptance criteria before starting.
+1. Reuse BL-30's executor, trust, event context, placeholders/cwd, bounded results and causal depth; add when/capability filtering, confirmation and binding-conflict validation for CLI, TUI and MCP. Define the action-invocation stdin event context consistently in docs/automation.md without adding an undocumented persisted event type.
+2. Wire the action menu/palette/custom keys and reuse BL-21 terminal suspension for attached actions; detached actions use the same runner. Missing resource/result values disable an action with a reason. Noninteractive confirmation must fail closed rather than hang.
+3. Emit one action.finished for each run, carrying outcome/result so ordinary after hooks can chain. Keep Worklease/worktree/agent knowledge out of core execution; those are configured examples, not built-in workflows.
+4. Verify identical invocation stdin/env through all three entry points, PTY suspend/resume, detached completion, disabled placeholders and action.finished -> hook chaining. Run all docs/automation.md examples against fake executables, including the design's work action and agent hook; run task test and task race.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

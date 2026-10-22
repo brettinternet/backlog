@@ -4,7 +4,7 @@ title: Move this repository's backlog onto bl
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 01:54'
 labels:
   - tooling
   - import
@@ -71,7 +71,7 @@ Dogfooding starts as soon as the agent CLI works. After this task, every later t
 1. Treat this as a coordinated provider cutover, not an ordinary task-file edit. First confirm no other task writers/leases are active; snapshot all tasks through the Backlog.md CLI, including this task's current plan/evidence and archived data. Rehearse import/check/full comparison in a temporary repository using the merged foundation binary.
 2. Prepare the native config, wrapper, instructions and dependency removal in the required implementation worktree. The wrapper must build only primary main into a version-keyed Git-common-directory path; a linked worktree must never execute its unmerged binary to mutate shared backlog state.
 3. At cutover, refresh the CLI export and repeat comparison before replacing the provider in the primary checkout. Keep a recoverable old-format copy until checks and the native task loop pass. Use approved Worktrunk delivery/owner handoff for primary changes; do not create a branch in primary or discard concurrent task updates.
-4. Use BL-26 itself for the real loop: keep the same claim, record next eligibility before start, then native start/note/ac/done only after all implementation and task ci checks pass. Update this task's native evidence, AGENTS.md, Taskfiles and tool pins together; demonstrate task backlog:next from a linked worktree. No dependency on bl claim: direct worklease remains valid until BL-32.
+4. Keep BL-26 In Progress through cutover; it cannot be selected by native next while active. After the migrated provider and merged wrapper are usable, select one already-ready task with no dependency on BL-26 and complete it through native next, direct worklease acquire, start, note, ac check and done, with its own claim/worktree/evidence and normal delivery. Do not reset BL-26 or invent a completed fixture task to fake this proof. Record that task's ID and transcript here, then finalize BL-26 after its own task ci and acceptance checks. Demonstrate task backlog:next from a linked worktree; direct Worklease remains the claim path until BL-32.
 5. Stop after successful cutover and reload repository instructions/provider tools before selecting another task. Record native IDs, authoritative path and exact continuation commands so a supervisor still using Backlog.md does not write stale task files.
 6. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

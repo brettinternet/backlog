@@ -4,7 +4,7 @@ title: Claim the next ready item with bl next --claim
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:46'
+updated_date: '2026-10-22 01:55'
 labels:
   - worklease
   - agents
@@ -52,7 +52,7 @@ The §9 `next --claim [--start]` walk: one snapshot, the §6 order, a no-wait ac
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Extend the shared next operation with one ranked snapshot and a bounded no-wait acquire walk. Skip only confirmed contention; uncertain acquire stops immediately and preserves the possible held claim for caller recovery.
+1. Extend the shared next operation against BL-32's typed coordination seam, with one ranked snapshot and a bounded no-wait acquire walk. Never branch on Worklease-specific result types; unavailable and uncertain outcomes must not be treated as contention. Skip only confirmed contention; uncertain acquire stops immediately and preserves the possible held claim for caller recovery.
 2. Expose identical --claim/--start/session semantics in CLI and MCP, with all attempts and separate claim/status outcomes. Caller still owns heartbeat/release; never make a second pass.
 3. Verify contention-first/success-second, uncertainty stop, single-held-claim and concurrent callers using a stateful fake authority. Run task test and optional isolated real-provider checks; update docs/cli.md, docs/mcp.md and embedded workflow guidance.
 4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.

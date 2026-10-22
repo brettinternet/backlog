@@ -4,7 +4,7 @@ title: Record events and stream them with bl events
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:50'
+updated_date: '2026-10-22 01:54'
 labels:
   - events
   - agents
@@ -65,10 +65,9 @@ Other tools coordinate around `bl` through events, not plugins (D18, D27). Hooks
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Add locked, bounded JSONL appends and rotation under XDG state, using the shared mutation-success point so CLI/TUI/MCP do not emit duplicate events.
-2. Persist external-change deduplication by project/source/ref/version across processes. Implement since/follow across rotations with stable event IDs and an explicit streaming JSON contract distinct from one-shot command envelopes.
-3. Verify one event per mutation, eight-process valid appends, resume across rotation and duplicate external observations. Use injected time/observable conditions rather than sleeps; run task test and task race, record follow latency, and freeze the schema/stream format in docs/events.md.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
-
-Note (2026-10-22): this plan predates the D20/D21/D27 redesign of coordination, derived events, results, and chaining. Re-plan against the current description and acceptance criteria before starting.
+1. Define the full design.md §8 event schema, including item mutation/readiness, claim, hook.finished and action.finished, origin, cause and causal depth. BL-28 emits mutation/sync/readiness events; BL-32 emits claims and BL-30/31 emit automation completion events using the same append API.
+2. Implement locked bounded JSONL append/rotation and event identity based on type, ref and producing versions. Serialize snapshot comparison, event proposals and cache publication so competing processes cannot consume a transition before it is logged. The log is the dedupe authority; only the successful appender receives dispatch ownership for BL-30.
+3. Recompute data-derived readiness for all affected graph neighbors, not only reverse blocker edges: parent/container eligibility changes when a child changes. Emit only actual from/to transitions with reasons and never claim-only changes. Handle edits while no process runs on the next load; events --follow owns a watcher.
+4. Implement since/follow continuity across rotation and explicitly document retention/replay limits and streaming JSON. Verify a blocker completion, child/container transition, claim-only suppression, eight-process valid appends and three observers of one external edit. Run task test and task race, measure follow latency and document the dedupe/cause/depth contract in docs/events.md.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
