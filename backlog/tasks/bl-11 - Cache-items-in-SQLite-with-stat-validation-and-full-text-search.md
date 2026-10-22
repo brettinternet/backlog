@@ -1,10 +1,11 @@
 ---
 id: BL-11
 title: Cache items in SQLite with stat validation and full-text search
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:56'
+updated_date: '2026-10-22 05:10'
 labels:
   - cache
   - perf
@@ -49,21 +50,21 @@ The cache must never be needed for correctness (D22). Deleting it only costs tim
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A warm load of an unchanged directory opens no item files (counter assertion) and returns items equal to a cold load
-- [ ] #2 Edits, additions, deletions, renames, and a same-size edit within the same second are all detected
-- [ ] #3 Two processes refreshing at once parse each changed file once, and neither fails with a busy error
-- [ ] #4 A corrupt or schema-mismatched cache is rebuilt and the command succeeds
-- [ ] #5 `text:` queries return the same results through FTS as through the in-memory evaluator
+- [x] #1 A warm load of an unchanged directory opens no item files (counter assertion) and returns items equal to a cold load
+- [x] #2 Edits, additions, deletions, renames, and a same-size edit within the same second are all detected
+- [x] #3 Two processes refreshing at once parse each changed file once, and neither fails with a busy error
+- [x] #4 A corrupt or schema-mismatched cache is rebuilt and the command succeeds
+- [x] #5 `text:` queries return the same results through FTS as through the in-memory evaluator
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task ci passes on the final commit
-- [ ] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
-- [ ] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
-- [ ] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
-- [ ] #5 No test was deleted, skipped, or weakened
-- [ ] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
+- [x] #1 task ci passes on the final commit
+- [x] #2 Every checked acceptance criterion has an AC#N evidence line in Implementation Notes naming the command and its result
+- [x] #3 Substantial changes had an independent verifier pass that returned PASS for every acceptance criterion
+- [x] #4 The diff stays within the task's modified-file list, or Implementation Notes justify the deviation
+- [x] #5 No test was deleted, skipped, or weakened
+- [x] #6 User-visible behavior changes are reflected in README.md or docs/ in the same change
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -74,3 +75,22 @@ The cache must never be needed for correctness (D22). Deleting it only costs tim
 3. Verify warm zero-read counters, filesystem changes (including same-size edits), corrupt recovery, two-process single-flight behavior, and FTS/evaluator parity through task test and task race. Ensure CLI reads actually use the cache without routing source access into handlers.
 4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementation: versioned SQLite WAL snapshots, stat identities, source flock, gob-preserved items, generation-bound FTS trigram candidates with literal post-filtering, and CLI fallback/recovery warnings are implemented. Focused cache and CLI recovery tests pass. Modified-file deviations: internal/source/source.go carries an optional snapshot-bound search capability; docs/cli.md and docs/query.md document cache operation and preserved search semantics. All other implementation paths follow the planned list. Independent verification and full CI remain pending.
+
+AC#1: task cli:test PKG=./internal/source/native -- -run TestCacheWarmAndChanges -count=1 (also exercised by task ci) passed: warm load performs zero item reads and preserves cold items including nested raw fields; active/archive view switching also performs zero reparses.
+AC#2: task cli:test PKG=./internal/source/native -- -run TestCacheWarmAndChanges -count=1 passed: same-size edit with restored same-second timestamp, addition, rename into archive, and deletion match uncached loads.
+AC#3: task cli:test PKG=./internal/source/native -- -run TestCacheSingleFlight -count=1 (also exercised by task ci) passed: two subprocesses succeed with exactly one changed-file parse and no busy errors.
+AC#4: task cli:test PKG="./internal/source/native ./internal/cli" -- -run "TestCacheRecovery|TestReadCacheRecovery" -count=1 (also exercised by task ci) passed: corrupt and incompatible schemas rebuild with warnings, CLI succeeds, and unavailable cache falls back to files.
+AC#5: task cli:test PKG=./internal/source/native -- -run TestCacheTextParity -count=1 (also exercised by task ci) passed: indexed literal substrings, Unicode, punctuation, body text, negation, short-query fallback and stale-generation rejection preserve evaluator results.
+Delivery: implementation committed as 63dc85a (feat(cache): cache native items and index text search) and fast-forward merged into main. task check:staged passed; task ci passed on source commit 63dc85a, including security, compiler/vet/staticcheck, full tests, race and static build/smoke. Independent verifier d52ae295 returned PASS for AC1–AC5 with no concrete defects; targeted final recheck 0265e2b3 returned PASS for AC1–AC3 after sharing cache rows/locks across archive views. LSP diagnostics clean. No tests removed, skipped, or weakened. No push or PR. No remaining blocker; worktree cleanup follows task-record commit.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented disposable stat-validated SQLite WAL caching and FTS5 candidate search without changing literal text semantics. Source commit 63dc85a merged into main. All five acceptance criteria passed focused regression checks and independent verification; task ci passed on the source commit. No push or PR.
+<!-- SECTION:FINAL_SUMMARY:END -->
