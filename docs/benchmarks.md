@@ -85,15 +85,34 @@ CLI RSS 22.41 MiB; 50k p95 12.48 ms and peak CLI RSS 22.47 MiB. The harness's
 unmeasured warm-up builds or validates the persistent filename index; a first
 lookup after index creation or a directory change enumerates item filenames.
 Every `show` still reads and parses its selected item directly from the source.
-Only the `show` row below uses this focused rerun; all other rows retain the
-original full-run measurements.
+Only the `show` row below uses this focused rerun.
+
+BL-47 focused rerun on 2026-10-22 on the same reference host and toolchain:
+
+```sh
+task bench -- -bench 'BenchmarkCLI/10000/(ls|next)$'
+```
+
+The run passed in 48.218 s with 20 measured subprocess samples per operation:
+10k `ls` p95 135.4 ms and peak RSS 204.1 MiB; `next` p95 115.6 ms and peak RSS
+251.1 MiB. Both warm latency budgets pass. The cache now encodes parsed items
+in one gob snapshot stream, amortizing type metadata across items. Each warm
+load still enumerates files and validates every file's stat identity; changed
+items are reparsed and FTS updates remain incremental. When any item changes,
+the snapshot payload is re-encoded. Build identity invalidates older cache
+encodings automatically. Query and ranking semantics are unchanged.
+
+The 10k `ls`/`next` cells below use this rerun. Their 50k cells and all other
+non-`show` rows retain the original full-run measurements. RSS remains above
+budget and the focused run's peaks exceed the old 10k measurements; BL-48 must
+address memory separately. This change does not claim the RSS budget is met.
 
 | Operation | 10k p95 (ms) | 50k p95 (ms) | 10k peak CLI RSS (MiB) | 50k peak CLI RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: |
 | Cold native load | 244.0 | 1,103 | — | — |
 | Warm native load | 288.0 | 1,311 | — | — |
-| `bl ls` | 574.6 | 1,529 | 182.5 | 806.3 |
-| `bl next` | 309.4 | 1,379 | 166.0 | 752.5 |
+| `bl ls` | 135.4 | 1,529 | 204.1 | 806.3 |
+| `bl next` | 115.6 | 1,379 | 251.1 | 752.5 |
 | `bl show BL-1` | 12.30 | 12.48 | 22.41 | 22.47 |
 | Single-field write | 37.84 | 95.25 | 17.27 | 33.98 |
 
@@ -102,9 +121,9 @@ original full-run measurements.
 | Budget | Reference result | Outcome / follow-up |
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms p95 | 10k 12.30 ms; 50k 12.48 ms | Both pass on the D26 reference host |
-| Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 574.6 ms; `next` 309.4 ms | Both miss: [BL-47](../backlog/BL-47.md) |
+| Warm `bl ls` and `bl next`, 10k ≤ 150 ms p95 | `ls` 135.4 ms; `next` 115.6 ms | Both pass ([BL-47](../backlog/BL-47.md)) |
 | Native single-field write ≤ 50 ms p95, excluding hooks and Git | 10k 37.84 ms; 50k 95.25 ms | 10k pass; 50k miss: [BL-50](../backlog/BL-50.md) |
-| Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 182.5 MiB and 806.3 MiB (`ls`) | Both miss: [BL-48](../backlog/BL-48.md); `next` also misses at both sizes |
+| Peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | CLI maxima 251.1 MiB (10k `next`) and 806.3 MiB (50k `ls`) | Both miss: [BL-48](../backlog/BL-48.md); `ls` and `next` miss at both sizes |
 
 Cold/warm native load and 50k `ls`/`next` timings are baselines without separate
 CLI latency thresholds in §11. TUI first paint, navigation, held keys, filter,

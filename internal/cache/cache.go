@@ -320,9 +320,11 @@ func (s Store) Refresh(ctx context.Context, paths func() ([]string, error), cove
 	return Snapshot{}, warnings, err
 }
 
-type row struct {
-	identity string
-	data     []byte
+// One gob stream amortizes type metadata across the snapshot, rather than
+// constructing a decoder and decoding the same model schema for every file.
+type cachedRecord struct {
+	Path, Identity string
+	Item           model.Item
 }
 
 func refresh(ctx context.Context, db *sql.DB, files []string, covered func(string) bool, parse func(string) (model.Item, error)) (Snapshot, error) {
@@ -335,34 +337,27 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 	if err = tx.QueryRowContext(ctx, `SELECT build FROM metadata`).Scan(&written); err != nil {
 		return Snapshot{}, err
 	}
-	if written != build {
+	changed := written != build
+	var records []*cachedRecord
+	if changed {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM items; DELETE FROM search;`); err != nil {
 			return Snapshot{}, err
 		}
-		if _, err = tx.ExecContext(ctx, `UPDATE metadata SET build=?`, build); err != nil {
+	} else {
+		var data []byte
+		err = tx.QueryRowContext(ctx, `SELECT data FROM items WHERE path=''`).Scan(&data)
+		if err != nil {
+			return Snapshot{}, err
+		} else if err = gob.NewDecoder(bytes.NewReader(data)).Decode(&records); err != nil {
 			return Snapshot{}, err
 		}
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT path,identity,data FROM items`)
-	if err != nil {
-		return Snapshot{}, err
+	old := make(map[string]*cachedRecord, len(records))
+	for _, r := range records {
+		old[r.Path] = r
 	}
-	old := map[string]row{}
-	for rows.Next() {
-		var path string
-		var r row
-		if err = rows.Scan(&path, &r.identity, &r.data); err != nil {
-			_ = rows.Close()
-			return Snapshot{}, err
-		}
-		old[path] = r
-	}
-	err = rows.Err()
-	_ = rows.Close()
-	if err != nil {
-		return Snapshot{}, err
-	}
-	snapshot := Snapshot{Generation: rand.Text()}
+	records = make([]*cachedRecord, 0, len(old))
+	snapshot := Snapshot{Generation: rand.Text(), Records: make([]Record, 0, len(files))}
 	for _, path := range files {
 		if err = ctx.Err(); err != nil {
 			return Snapshot{}, err
@@ -370,40 +365,30 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		r, exists := old[path]
 		delete(old, path)
 		identity, e := fileIdentity(path)
+		var item model.Item
+		if exists {
+			item = r.Item
+		}
+		if e == nil && (!exists || r.Identity != identity) {
+			item, e = parse(path)
+			changed = true
+			if e == nil {
+				after, statErr := fileIdentity(path)
+				// Never associate old content with a newer stat identity.
+				if statErr != nil || after != identity {
+					identity = ""
+				}
+			}
+		}
 		if e != nil {
+			changed = true
 			snapshot.Records = append(snapshot.Records, Record{Path: path, Err: e})
+			if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
+				return Snapshot{}, err
+			}
 			continue
 		}
-		var item model.Item
-		if exists && r.identity == identity {
-			if err = gob.NewDecoder(bytes.NewReader(r.data)).Decode(&item); err != nil {
-				return Snapshot{}, err
-			}
-		} else {
-			item, e = parse(path)
-			if e != nil {
-				snapshot.Records = append(snapshot.Records, Record{Path: path, Err: e})
-				if _, err = tx.ExecContext(ctx, `DELETE FROM items WHERE path=?;`, path); err != nil {
-					return Snapshot{}, err
-				}
-				if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?;`, path); err != nil {
-					return Snapshot{}, err
-				}
-				continue
-			}
-			after, e := fileIdentity(path)
-			// If a writer raced the read, publish the parsed item but force reparse on
-			// the next load, never associate old content with a newer stat identity.
-			if e != nil || after != identity {
-				identity = ""
-			}
-			var data bytes.Buffer
-			if err = gob.NewEncoder(&data).Encode(item); err != nil {
-				return Snapshot{}, err
-			}
-			if _, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO items VALUES(?,?,?)`, path, identity, data.Bytes()); err != nil {
-				return Snapshot{}, err
-			}
+		if !exists || r.Identity != identity {
 			if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
 				return Snapshot{}, err
 			}
@@ -411,21 +396,36 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 				return Snapshot{}, err
 			}
 		}
+		if exists && r.Identity == identity {
+			records = append(records, r)
+		} else {
+			records = append(records, &cachedRecord{Path: path, Identity: identity, Item: item})
+		}
 		snapshot.Records = append(snapshot.Records, Record{Path: path, Item: item})
 	}
-	for path := range old {
+	for path, r := range old {
 		// A partial native view must not evict cached archive rows.
 		if !covered(path) {
+			records = append(records, r)
 			continue
 		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM items WHERE path=?`, path); err != nil {
-			return Snapshot{}, err
-		}
+		changed = true
 		if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
 			return Snapshot{}, err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE metadata SET generation=?`, snapshot.Generation); err != nil {
+	if changed {
+		var data bytes.Buffer
+		if err = gob.NewEncoder(&data).Encode(records); err != nil {
+			return Snapshot{}, err
+		}
+		// The empty path is a snapshot, not a file. Build identity invalidates
+		// older per-item encodings before they can reach this decoder.
+		if _, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO items VALUES('','',?)`, data.Bytes()); err != nil {
+			return Snapshot{}, err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE metadata SET generation=?,build=?`, snapshot.Generation, build); err != nil {
 		return Snapshot{}, err
 	}
 	return snapshot, tx.Commit()

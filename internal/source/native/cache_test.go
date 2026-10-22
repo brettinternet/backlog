@@ -105,6 +105,16 @@ func TestCacheWarmAndChanges(t *testing.T) {
 	if got := assertFresh(0); len(got.Items) != 1 || got.Items[0].Ref.ID != "BL-2" {
 		t.Fatal("deletion missed")
 	}
+	// A failed parse must evict the item from the batch snapshot, and repair
+	// must be visible on the next load rather than reusing its previous value.
+	write(t, archive, []byte("invalid item"))
+	partial, err := s.Load(context.Background(), source.Cursor{IncludeArchive: true})
+	if err != nil || partial.Coverage != source.Partial || len(partial.Items) != 0 {
+		t.Fatalf("invalid cached item: %+v err=%v", partial, err)
+	}
+	write(t, archive, fixture(t, "BL-2"))
+	assertFresh(1)
+	assertFresh(0)
 	// A warm item must be interpreted against current configuration, not the
 	// category that was in effect when it was cached.
 	changed, err := native.New(native.Options{ID: "tasks", Prefix: "BL", Path: filepath.Join(root, "backlog"), CommonDir: filepath.Join(root, "common"), ProjectID: "cache-test", CacheDir: filepath.Join(root, "cache"), Statuses: map[string]model.StatusCategory{"todo": model.Active}})
