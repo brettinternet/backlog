@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -65,6 +66,9 @@ func sectionName(s string) string {
 // Parse rejects invalid native structure. Project status and graph validation
 // are deliberately left to the caller. No partial document is returned.
 func Parse(data []byte) (*Document, error) {
+	if line := conflictMarkerLine(data); line > 0 {
+		return nil, fmt.Errorf("merge-conflict: conflict marker at line %d", line)
+	}
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("invalid-value: expected UTF-8")
 	}
@@ -141,39 +145,39 @@ func Parse(data []byte) (*Document, error) {
 		switch key {
 		case "assignees", "labels", "blocked_by", "related", "refs", "files":
 			if f.value.Kind != yaml.SequenceNode {
-				return nil, fmt.Errorf("invalid-value: %s must be a list", key)
+				return nil, fmt.Errorf("invalid-value: %s must be a list at line %d", key, f.value.Line)
 			}
 			for _, n := range f.value.Content {
 				if n.Kind != yaml.ScalarNode || n.Tag != "!!str" {
-					return nil, fmt.Errorf("invalid-value: %s must contain strings", key)
+					return nil, fmt.Errorf("invalid-value: %s must contain strings at line %d", key, n.Line)
 				}
 			}
 		default:
 			if f.value.Kind != yaml.ScalarNode || (f.value.Tag != "!!str" && f.value.Tag != "!!timestamp") {
-				return nil, fmt.Errorf("invalid-value: %s must be a string", key)
+				return nil, fmt.Errorf("invalid-value: %s must be a string at line %d", key, f.value.Line)
 			}
 		}
 	}
 	for _, key := range []string{"id", "title", "status"} {
 		v := d.fields[key].value.Value
 		if strings.TrimSpace(v) == "" || strings.ContainsAny(v, "\r\n") {
-			return nil, fmt.Errorf("invalid-value: %s", key)
+			return nil, fmt.Errorf("invalid-value: %s at line %d", key, d.fields[key].value.Line)
 		}
 	}
 	if !idPattern.MatchString(d.fields["id"].value.Value) {
-		return nil, fmt.Errorf("invalid-value: id")
+		return nil, fmt.Errorf("invalid-value: id at line %d", d.fields["id"].value.Line)
 	}
 	for _, key := range []string{"created", "updated"} {
 		if !validTime(d.fields[key].value.Value) {
-			return nil, fmt.Errorf("invalid-value: %s", key)
+			return nil, fmt.Errorf("invalid-value: %s at line %d", key, d.fields[key].value.Line)
 		}
 	}
 	if f, ok := d.fields["priority"]; ok && f.value.Value != "urgent" && f.value.Value != "high" && f.value.Value != "medium" && f.value.Value != "low" {
-		return nil, fmt.Errorf("invalid-value: priority")
+		return nil, fmt.Errorf("invalid-value: priority at line %d", f.value.Line)
 	}
 	if f, ok := d.fields["due"]; ok {
 		if _, err := time.Parse("2006-01-02", f.value.Value); err != nil {
-			return nil, fmt.Errorf("invalid-value: due")
+			return nil, fmt.Errorf("invalid-value: due at line %d", f.value.Line)
 		}
 	}
 	for _, key := range []string{"parent", "duplicate_of", "blocked_by", "related"} {
@@ -185,7 +189,7 @@ func Parse(data []byte) (*Document, error) {
 			for _, n := range nodes {
 				r := parseRef(n.Value)
 				if !idPattern.MatchString(r.ID) {
-					return nil, fmt.Errorf("invalid-value: %s reference", key)
+					return nil, fmt.Errorf("invalid-value: %s reference at line %d", key, n.Line)
 				}
 			}
 		}
@@ -265,6 +269,67 @@ func (f *fenceState) consume(line string) bool {
 	}
 	return false
 }
+
+// ErrorCode returns the stable finding code prefixed to a Parse error.
+func ErrorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	code, _, ok := strings.Cut(err.Error(), ":")
+	if !ok {
+		return "invalid-frontmatter"
+	}
+	return code
+}
+
+// ErrorLine returns the first source line mentioned by a Parse error, or 1.
+func ErrorLine(err error) int {
+	if err == nil {
+		return 1
+	}
+	for _, pattern := range []*regexp.Regexp{regexp.MustCompile(`(?:at )?line ([0-9]+)`), regexp.MustCompile(`line ([0-9]+):`)} {
+		if match := pattern.FindStringSubmatch(err.Error()); match != nil {
+			if line, parseErr := strconv.Atoi(match[1]); parseErr == nil && line > 0 {
+				return line
+			}
+		}
+	}
+	return 1
+}
+
+type Reference struct {
+	Field string
+	Value string
+	Line  int
+}
+
+// References returns the native ID references and their frontmatter line.
+func (d *Document) References() []Reference {
+	var result []Reference
+	for _, key := range []string{"parent", "blocked_by", "related", "duplicate_of"} {
+		f, ok := d.fields[key]
+		if !ok {
+			continue
+		}
+		nodes := []*yaml.Node{f.value}
+		if f.value.Kind == yaml.SequenceNode {
+			nodes = f.value.Content
+		}
+		for _, node := range nodes {
+			result = append(result, Reference{Field: key, Value: node.Value, Line: max(1, node.Line)})
+		}
+	}
+	return result
+}
+
+// FieldLine returns the line containing a known frontmatter field.
+func (d *Document) FieldLine(key string) int {
+	if f, ok := d.fields[key]; ok {
+		return max(1, f.key.Line)
+	}
+	return 1
+}
+
 func parseRef(s string) model.Ref {
 	source, id, ok := strings.Cut(s, ":")
 	if !ok {
