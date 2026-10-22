@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 05:11'
+updated_date: '2026-10-22 05:53'
 labels:
   - cache
   - perf
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-4
@@ -89,6 +90,8 @@ AC#5: task cli:test PKG=./internal/source/native -- -run TestCacheTextParity -co
 Delivery: implementation committed as 63dc85a (feat(cache): cache native items and index text search) and fast-forward merged into main. task check:staged passed; task ci passed on source commit 63dc85a, including security, compiler/vet/staticcheck, full tests, race and static build/smoke. Independent verifier d52ae295 returned PASS for AC1–AC5 with no concrete defects; targeted final recheck 0265e2b3 returned PASS for AC1–AC3 after sharing cache rows/locks across archive views. LSP diagnostics clean. No tests removed, skipped, or weakened. No push or PR. No remaining blocker; worktree cleanup follows task-record commit.
 
 Cleanup complete: Worktrunk removed .worktrees/bl-11-sqlite-cache and its merged branch; receipt matched this session. Herdr workspace inventory had no workspace for that exact checkout before or after removal. Claim released successfully (revision 6). Main contains source commit 63dc85a and task-record commit 80e5a92. A post-cleanup task ci attempt on main encountered a concurrent, uncommitted internal/engine/read.go archive-query change (LoadReads signature changed and seen undefined); this is not part of BL-11 and was preserved. The committed BL-11 source independently passed task ci on 63dc85a before merge. No BL-11 requirement or cleanup remains.
+
+Review (cb70924): cached rows are now bound to the writing executable (schema 2), so a rebuilt or upgraded bl reparses instead of serving items parsed by an older parser; source enumeration errors no longer discard a healthy cache; damaged caches are deleted rather than accumulating quarantine copies. Regression in TestCacheRecovery; docs/cli.md updated. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

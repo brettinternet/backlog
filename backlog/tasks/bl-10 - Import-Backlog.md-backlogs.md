@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 05:01'
+updated_date: '2026-10-22 05:53'
 labels:
   - import
   - backlog-md
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-8
@@ -87,6 +88,8 @@ AC#5: self-final import/check above: PASS with five milestones m-0 through m-4 a
 Delivery: implementation 673407e merged to main as f2b4a96. task check:staged PASS; task ci PASS on implementation commit and merged main (ci-final.log, ci-merged.log in temp evidence directory). Independent verifier e436ff55 then corrected-scope continuation d899d36c returned PASS for every AC. Scope correction was owner-directed, not a weakened test. No tests deleted/skipped/weakened; source diff stays in declared scope. Removed verified session-owned worktree and branch with wt remove --foreground; post-remove hook completed. No push/PR. BL-46 migration assumption corrected separately per owner clarification.
 
 Owner follow-up: no real external project is a required import/migration target. The Worklease snapshot used above was historical read-only validation evidence, not a production dependency or a future CI prerequisite. Maintained regression coverage uses repository-local synthetic fixtures; no sibling checkout or external project data is required by the importer or test suite.
+
+Review (cb70924): importer now reparses each output item and refuses source text that would change native structure (e.g. a comment line shaped like a native comment header, which split the comment under a forged author). Regression added to TestImportRejectsCollisionsAndNonEmptyDryRunTarget; docs/import.md updated. Re-imported this repository's backlog and Worklease v1.9.3 docs/backlog: both succeed, bl check OK, no body text lost. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
