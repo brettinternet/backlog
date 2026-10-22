@@ -87,7 +87,25 @@ func TestReadIDs(t *testing.T) {
 			t.Fatalf("%s: %d %s %s", id, code, out, stderr)
 		}
 	}
-	code, out, stderr := run("-C", root, "show", "999", "--json")
+	archiveDuplicate := filepath.Join(root, "items", "archive", "BL-12.md")
+	if err := os.MkdirAll(filepath.Dir(archiveDuplicate), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archiveDuplicate, []byte("---\nid: BL-12\ntitle: Duplicate\nstatus: todo\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := run("-C", root, "show", "12", "--json")
+	if code != 2 || stderr != "" || !strings.Contains(out, "active and archived files share it") {
+		t.Fatalf("duplicate: %d %s %s", code, out, stderr)
+	}
+	if err := os.Remove(archiveDuplicate); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr = run("-C", root, "show", "12", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(out, `"id":"BL-012"`) {
+		t.Fatalf("after duplicate removal: %d %s %s", code, out, stderr)
+	}
+	code, out, stderr = run("-C", root, "show", "999", "--json")
 	if code != 3 || stderr != "" || !strings.Contains(out, `"reason":"not-found"`) {
 		t.Fatalf("missing: %d %s %s", code, out, stderr)
 	}

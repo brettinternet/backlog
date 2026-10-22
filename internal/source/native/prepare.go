@@ -14,7 +14,7 @@ func (s *Source) Prepare(ctx context.Context, m model.Mutation) (source.Prepared
 	if err := ctx.Err(); err != nil {
 		return source.Prepared{}, err
 	}
-	path, err := s.locate(m.Ref.ID)
+	path, err := s.locate(ctx, m.Ref.ID)
 	if err != nil {
 		return source.Prepared{}, err
 	}
