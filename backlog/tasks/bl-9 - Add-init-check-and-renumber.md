@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@pi'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 04:16'
+updated_date: '2026-10-22 05:16'
 labels:
   - cli
   - format
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-4
@@ -80,6 +81,8 @@ AC#3: task cli:test PKG="./internal/format ./internal/cli" -- -count=1 passed: r
 AC#4: task cli:test PKG=./internal/cli -- -run TestRenumberRewritesAllReferenceFormsAndRefusesAmbiguityAndCollision -count=1 passed (covered in focused package run and task ci): active/archive, qualified/unqualified references, duplicate selection and target collisions verified.
 AC#5: task cli:test PKG="./internal/format ./internal/cli" -- -count=1 passed: merge/diff3 updated/comment repair, unsupported hunk retention, pre-YAML conflict diagnosis and write refusal verified.
 Independent verifier returned PASS for AC#1–5 after fixing its two concrete comment-repair findings (header newline and diff3 base deletion/edit refusal); no second general review. task check:staged and task ci passed on source commit 1fd4458 and merged implementation 4937370. Concurrent main changes required a merge resolving command registration alongside dynamic JSON value-flag discovery; merged task ci passed. All changes remain in declared modified-file scope; no tests deleted/skipped/weakened; docs/cli.md updated. Owned Worktrunk checkout and branch removed after integration; no push. No remaining blocker.
+
+Review 5e70dec: init no longer writes a host-local project.id; renumber accepts numeric FROM/TO shorthand; check text output sanitized. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

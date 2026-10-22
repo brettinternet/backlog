@@ -7,10 +7,11 @@ status: Done
 assignee:
   - '@pi-01a161b8'
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 03:55'
+updated_date: '2026-10-22 05:16'
 labels:
   - cli
   - agents
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-6
@@ -90,6 +91,8 @@ AC#6: task cli:test PKG=./internal/cli -- -run TestCriterionVersionAndEvidence\|
 AC#7: task cli:test PKG=./internal/cli -- -run TestCriterionVersionAndEvidence\|TestWriteGolden -count=1 (covered by final focused run) PASS: evidence added/replaced/removed, multiple evidence targets exit 2, rm golden retains evidence on surviving criterion, show JSON exposes evidence.
 Independent verifier 4d739a2a-14b9-4aa6-8859-eb4d57014f20 returned PASS for AC#1-7, no concrete defects; report /tmp/bl-8-verification-01a161b8.md. task ci PASS on committed implementation fe71c5d7203883698ba1c8d3187eff4c1d1e8eb8 (security, checks, all tests, race, smoke); task check:staged PASS before commit. No tests deleted, skipped, or weakened.
 Delivery: fe71c5d fast-forward merged into local main; no push. Verified receipt matched session/path/branch, clean checkout, and same-commit integration. wt remove bl-8-write-commands --foreground --format=json removed checkout and branch. Herdr workspace wHZ contained only an idle zsh before removal; post-remove hook closed it; herdr workspace list and wt list confirm no retained task checkout/workspace. No blockers or next resumable work.
+
+Review 5e70dec: new/set expand ID shorthand in parent, blocked_by, related, duplicate_of (previously '<1' was rejected); goldens extended. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

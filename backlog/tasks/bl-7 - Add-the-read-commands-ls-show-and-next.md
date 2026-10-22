@@ -5,10 +5,11 @@ status: Done
 assignee:
   - pi
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 03:46'
+updated_date: '2026-10-22 05:16'
 labels:
   - cli
   - agents
+  - reviewed
 milestone: m-0
 dependencies:
   - BL-4
@@ -84,6 +85,8 @@ AC#4: task cli:test PKG="./internal/cli ./internal/textutil" -- -count=1 passed 
 AC#5: independent verifier read docs/cli.md and docs/design.md section 7 and returned PASS; task ci passed documentation/source checks. Flags and JSON shapes documented, read names frozen.
 AC#6: task cli:test PKG=./internal/cli -- -count=1 passed TestReadJSONGolden: show item.version equals format.Parse(...).Item().Version, the native expected-version value.
 Delivery: 392daad feat(cli): add ls, show, and next fast-forward merged to main; task ci PASS on that committed implementation (security, check, test, race, smoke). Independent verifier edce458b returned PASS for all six ACs, with no concrete defects. No tests deleted, skipped or weakened. Worktrunk receipt matched this session/path/branch; cleanup removed the merged worktree and branch, including its untracked verifier report. No remaining implementation work or blocker; no push performed.
+
+Review 5e70dec: bl ls now adds is:open without an is: term and loads archive/ for is:archived (query.md); show/writes report an active+archived duplicate ID as ambiguous (exit 2), not unavailable; show text timestamps use RFC 3339. task ci PASS.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
