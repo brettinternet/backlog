@@ -4,7 +4,7 @@ title: 'Establish the CLI skeleton, JSON envelope, exit codes, and test isolatio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:13'
 labels:
   - cli
   - tooling
@@ -33,11 +33,11 @@ Every later command, adapter, and test builds on one CLI framework, one JSON env
 
 ## What
 
-- Replace the placeholder in `cmd/bl` with a `urfave/cli/v3` root in `internal/cli`. Global flags: `--json`/`-j` and `-C DIR`.
+- Extend the bootstrap `urfave/cli/v3` root already in `internal/cli` (77dc4ee), preserving its injectable Run entry point, version commands and config inspection. Global flags: `--json`/`-j` and `-C DIR`.
 - `bl version` and `bl --version` print version and commit; `--json` adds the Go version.
 - One envelope type for success and error (§7). A typed error carries a reason, a message, and details. Each reason maps to one exit code 0-7. Usage errors (unknown command or flag, bad arguments) exit 2 and print an error envelope under `--json`.
-- Bare `bl` prints help until BL-16 opens the TUI.
-- `internal/testkit`: a helper that points `HOME` and every `XDG_*` directory at `t.TempDir()` and clears `BL_*` and `WORKLEASE_*`; an injectable clock; and an in-process CLI runner that captures stdout, stderr, and the exit code.
+- Preserve bootstrap behavior: bare `bl` opens the empty TUI on terminals and prints help off-terminal; explicit `bl tui` requires terminals and refuses JSON. BL-16 expands this shell rather than introducing terminal dispatch.
+- Extend the existing `internal/testkit.Isolate` helper, which points `HOME` and every `XDG_*` directory at `t.TempDir()` and clears `BL_*` and `WORKLEASE_*`. Add an injectable clock and a reusable capture helper around the existing in-process CLI runner where needed.
 
 Reuse patterns from Worklease v1.9.3 `internal/output`, `internal/reason`, and `internal/testkit`. Do not copy unused helpers.
 <!-- SECTION:DESCRIPTION:END -->
@@ -48,6 +48,7 @@ Reuse patterns from Worklease v1.9.3 `internal/output`, `internal/reason`, and `
 - [ ] #2 A table test covers every §7 exit code and reason, and the success and error envelope shapes under `--json`
 - [ ] #3 An unknown command or flag exits 2, with usage text normally and an error envelope with reason `usage` under `--json`
 - [ ] #4 A test proves that a CLI run under the testkit isolation helper resolves config, state, and cache directories inside the test's temp dir
+- [ ] #5 The existing terminal/nonterminal dispatch remains intact while -C resolves the requested invocation directory; a value-taking flag argument containing --json is not mistaken for a JSON switch, and error envelopes include structured details.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -63,8 +64,9 @@ Reuse patterns from Worklease v1.9.3 `internal/output`, `internal/reason`, and `
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Inspect cmd/bl/main.go, .taskfiles/cli.yaml, and Worklease v1.9.3 internal/output, internal/reason, and internal/testkit. Preserve the existing buildVersion/buildCommit ldflags contract; introduce only the helpers this CLI uses.
-2. Implement an injectable internal/cli runner with urfave/cli/v3, -C, version, help, one JSON envelope, and typed reason-to-exit mapping. Keep diagnostics off JSON stdout; bare bl remains help until BL-16.
-3. Add testkit isolation before using config/state in tests. Verify success/error serialization, usage failures, every exit mapping, and environment isolation through the runner; run task test, task cli:build, and task smoke, then execute bin/bl --json version and an invalid command.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Start from bootstrap commit 77dc4ee: internal/cli.Run, Envelope/Error, version/config show commands, terminal dispatch and internal/testkit.Isolate already exist. Read their tests and extend them rather than introducing a second runner or replacing the working root. Preserve main.buildVersion/main.buildCommit.
+2. Complete the remaining contract: -C DIR with invoking-directory handling, structured error details, and all design.md §7 reason/exit mappings (including later reasons session-required and claim-held). Extend argument-aware JSON error detection when adding value-taking flags; a flag value containing --json must not change output mode.
+3. Preserve current terminal behavior: bare bl opens the bootstrap TUI on a terminal and prints help off-terminal; explicit tui requires terminals and rejects JSON. Do not restore the obsolete help-only behavior. Add the missing injectable clock and reusable capture helper only where exercised; reuse Isolate without t.Parallel.
+4. Verify existing version/config/TUI dispatch and new CLI contract through focused task cli:test PKG=./internal/cli, then task test, task cli:build and task smoke. Check every exit mapping, JSON details, -C and environment isolation; record bootstrap evidence separately from remaining acceptance.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

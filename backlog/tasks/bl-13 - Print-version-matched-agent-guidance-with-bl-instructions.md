@@ -4,7 +4,7 @@ title: Print version-matched agent guidance with bl instructions
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:13'
 labels:
   - agents
   - docs
@@ -62,8 +62,9 @@ Running it with no topic lists the topics. Keep the text short and imperative.
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Embed concise overview/workflow/query/format/json topics matched to the current CLI. No-topic invocation lists topics and prints the overview; explicit overview prints that topic.
-2. Show the foundation loop using next/start/note/ac/done and JSON; explain that direct worklease acquire/release is the interim claim path. Do not teach bl claim or next --claim as available until BL-32/33 updates this guidance.
-3. Run the documented examples against an isolated temporary project and assert referenced commands/flags exist. Verify unknown-topic exit 2 and topic listing through task test; keep embedded text and docs/cli.md synchronized.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Embed overview/workflow/query/format/json topics for the actual shipped CLI. No topic lists topics and shows overview. Inspect help/command definitions rather than copying a future design command list.
+2. Before BL-32/33, document the unclaimed foundation next/start/note/ac/done operations as such: status changes are not claims, and this is not a safe concurrent-agent loop. Do not recommend independently deriving resource keys or direct Worklease acquisition as a temporary bl protocol. The repository remains on Backlog.md until BL-26, which now waits for BL-33.
+3. BL-32 updates claim/resource/transition guidance and BL-33 replaces the provisional workflow with the stable-session CLI/MCP claimed loop. Make these phase boundaries explicit so early instructions do not imply unavailable commands or coordination guarantees.
+4. Run documented available examples against an isolated project, check topic/unknown-topic behavior and the command/flag drift test through task test. Keep embedded guidance and docs/cli.md matched to installed capabilities.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

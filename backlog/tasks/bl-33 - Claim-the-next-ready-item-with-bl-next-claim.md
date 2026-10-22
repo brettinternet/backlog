@@ -4,7 +4,7 @@ title: Claim the next ready item with bl next --claim
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:55'
+updated_date: '2026-10-22 02:14'
 labels:
   - worklease
   - agents
@@ -20,6 +20,7 @@ modified_files:
   - internal/instructions
   - docs/cli.md
   - docs/mcp.md
+  - internal/engine
 priority: medium
 type: feature
 ordinal: 33000
@@ -45,7 +46,7 @@ The §9 `next --claim [--start]` walk: one snapshot, the §6 order, a no-wait ac
 - [ ] #4 `--start` changes status after the claim and reports the two outcomes separately
 - [ ] #5 Two concurrent `next --claim --start` calls in one checkout with different sessions, one through the CLI and one through MCP, get different items with no error, and each status changes only after its claim (fake Worklease by default; real with `BL_PROVIDER_TESTS=1`)
 - [ ] #6 Without a session, `next --claim` exits 2 with `session-required` and calls no Worklease command; MCP `next` with `claim` and no `session` is refused the same way
-- [ ] #7 When the session's handle holds or is acquiring a claim on an open item, `next --claim` returns it with `resumed: true` and acquires nothing new; a held claim on a closed item fails with `claim-held`
+- [ ] #7 A held open item returns resumed:true with no new acquire. A pending acquire replays the identical retained request and returns resumed:true only after confirmed ownership; still-uncertain replay stops with unknown-outcome and acquires no new candidate. Held closed items fail claim-held; missing items or unresolved session state never fall through to fresh selection.
 - [ ] #8 One session looping `next --claim --start`, then `done`, then `next --claim` claims a second item with no `claim-held`, so the release on done finished before `done` returned
 - [ ] #9 The `bl instructions` workflow topic teaches the claimed loop through both CLI and MCP, and the existing instructions test covers every command and flag it names
 <!-- AC:END -->
@@ -63,8 +64,10 @@ The §9 `next --claim [--start]` walk: one snapshot, the §6 order, a no-wait ac
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Extend the shared next operation against BL-32's typed coordination seam, with one ranked snapshot and a bounded no-wait acquire walk. Never branch on Worklease-specific result types; unavailable and uncertain outcomes must not be treated as contention. Skip only confirmed contention; uncertain acquire stops immediately and preserves the possible held claim for caller recovery.
-2. Expose identical --claim/--start/session semantics in CLI and MCP, with all attempts and separate claim/status outcomes. Check the session's handle before walking: resume a held or pending open item, refuse a closed one. Caller owns heartbeat; release happens on the closed transition (BL-32); never make a second pass.
-3. Verify contention-first/success-second, uncertainty stop, single-held-claim and concurrent callers using a stateful fake authority. Run task test and optional isolated real-provider checks; update docs/cli.md, docs/mcp.md and embedded workflow guidance.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Consume BL-32's typed session inspection/resume contract; do not parse Worklease handle files or introduce another journal. Refuse missing session before any coordinator call. Inspect the same invoking checkout/authority/session that later claim/start/release use.
+2. For verified held ownership of an open item, return that item with resumed:true rather than rerank it away. For pending acquire, invoke exact adapter replay first and return a successful resumed claim only after confirmation. If replay remains uncertain, stop with unknown-outcome and the recovery reference; never claim another item or report a pending grant as confirmed. Closed held items fail claim-held; missing/unresolvable items or unresolved ownership fail closed.
+3. Only an authoritatively usable empty session enters one ranked-snapshot, no-wait candidate walk. Skip confirmed contention only; unavailable/uncertain outcomes stop. Expose attempts, resumed state, and separate claim/status results consistently through CLI/MCP. --start uses the shared active-transition rule and verified request ownership context.
+4. Verify restart after uncertain acquire with a stateful fake, exact replay identity, same-session inspection races, held-open resume, closed refusal and no second pass. Interleave distinct CLI/MCP sessions in one checkout; run next/start/done/next to prove release completed. Run task test and task race, plus opt-in provider checks.
+5. Update docs/cli.md, docs/mcp.md and embedded guidance with one stable distinct session per loop, explicit per-call MCP ownership, heartbeat responsibility and supervisor-owned release exceptions. Never suggest worklease key, status-only claims, or a new session as recovery for the old pending acquisition.
+6. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

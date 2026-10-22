@@ -4,7 +4,7 @@ title: Serve MCP over stdio
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:14'
 labels:
   - mcp
   - agents
@@ -58,8 +58,9 @@ ordinal: 27000
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Expose the already-shipped engine operations through the Go MCP SDK with shared validation/types and reason codes. Keep stdout exclusively for MCP frames; route diagnostics to stderr.
-2. Add instructions as a resource and the foundation tool set only. BL-31/32 own action/claim/release registration; do not advertise unimplemented tools.
-3. Verify tool success/error behavior and CLI-option parity in-process, then initialize/list/call over a subprocess stdio connection. Run task test; document actual tool schemas and pi/Claude setup in docs/mcp.md using current host documentation.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Expose the shipped engine operations through the Go MCP SDK with shared validation/types/reason codes. Keep stdout exclusively for protocol frames. Start with foundation tools and instructions resource; BL-31/32/33 own later action/coordination options.
+2. Make invocation context request-scoped from the outset. Do not capture session, explicit handle or run ownership in a process-global engine/client singleton, and never mutate process environment to select a caller. BL-32 supplies the verified ownership context; BL-33 consumes it for recovery.
+3. Document the staged schemas and the invariant that a long-lived server's WORKLEASE_SESSION_ID, WORKLEASE_HANDLE or WORKLEASE_RUN_ID cannot select another caller's claim. Account configuration can remain server-configured, but invocation ownership cannot leak from the server or a preceding request.
+4. Verify foundation tool success/errors and CLI parity in-process, plus initialize/list/call through subprocess stdio. Use sequential and interleaved invocation-context tests where the implementation exercises context; leave real claim/release isolation tests to BL-32. Run task test and document pi/Claude setup in docs/mcp.md.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

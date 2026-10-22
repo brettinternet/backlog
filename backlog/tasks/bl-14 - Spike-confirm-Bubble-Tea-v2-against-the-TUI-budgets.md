@@ -4,7 +4,7 @@ title: 'Spike: confirm Bubble Tea v2 against the TUI budgets'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:13'
 labels:
   - spike
   - tui
@@ -65,8 +65,8 @@ Record the results and decisions in `docs/spikes/tui-stack.md`. Keep the PTY har
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Read design.md §11 and reuse BL-12 seeded fixtures for 10k/50k measurements. Build only a reusable virtualized prototype and PTY harness, with coalesced navigation and async detail.
-2. Compare the two renderer choices on 1/10/100 KB bodies; measure Update+View, PTY p95, 40Hz held-key release and ten-minute idle CPU/heap/goroutines on the reference host. Record exact commands and dependencies for later agent execution.
-3. Write docs/spikes/tui-stack.md with results and a clear stack/renderer decision; a budget miss needs diagnosis before accepting the stack. Keep reusable harness code, not dead prototype code; run task test and update D3 in the implementation commit if evidence changes it.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Read the existing Bubble Tea v2 shell in internal/tui/model.go and terminal dispatch in internal/cli/root.go from 77dc4ee. It establishes wiring only, not D3 performance acceptance; reuse it and BL-12 fixtures rather than choosing a fresh stack or treating the shell as completed spike evidence.
+2. Build the reusable virtualized list/detail prototype and PTY harness at 10k/50k. Compare renderer choices on 1/10/100 KB bodies and measure Update+View, PTY p95, 40Hz release latency and ten-minute idle CPU/heap/goroutines on the D26 host.
+3. Record exact commands, pinned dependency versions and stack/renderer results in docs/spikes/tui-stack.md. Diagnose budget misses before accepting the stack; keep only code BL-16 reuses, preserve the honest bootstrap UI and update D3 only if the evidence changes its decision. Run task test.
+4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

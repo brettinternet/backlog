@@ -4,7 +4,7 @@ title: 'Discover projects, resolve the control root, and load layered config'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:54'
+updated_date: '2026-10-22 02:13'
 labels:
   - config
   - git
@@ -61,8 +61,9 @@ Every worktree and agent must see one live backlog (D5), each repository needs i
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Read design.md D5, D16, D22 and §5. Implement discovery/control-root resolution directly from Git metadata, then remote normalization and host-local identity; preserve the invoking cwd separately from the control root.
-2. Implement layered config and per-value provenance with actionable file/line/key errors. Load privileged entries as inert data; do not execute helpers, adapters, hooks, or network requests before BL-29 trust enforcement.
-3. Create project/user schemas covering current design.md §8 actions/hooks (cwd, subscriptions, result placeholders, timeout and confirmation), and validate the design examples. Use temporary real Git/worktree fixtures created before clearing PATH to verify no runtime git subprocess; exercise bare fallback, checkout opt-out, precedence, and normalization through task test.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Extend internal/project/config.go and its tests from 77dc4ee. Preserve read-only XDG path resolution, the strict single-document 1 MiB user-file boundary and explicit false overrides for ui.highContrast. Extend the existing docs/schemas/user-config.json instead of adding a competing user schema.
+2. Implement direct Git-metadata discovery/control-root resolution, remote normalization and host-local identity; preserve invoking cwd separately from control root. Expand the same config model to D16 layers and per-value provenance, keeping privileged entries inert until BL-29.
+3. Extend schemas for project config and current §8 hooks/actions. Validate the design examples and retain file/line/key errors, unknown-field rejection and no config writes during inspection. Exercise real temporary Git/worktree fixtures before clearing PATH to prove discovery does not shell out.
+4. Run task cli:test PKG=./internal/project and existing CLI config tests, then task test. Cover old user-file behavior as well as complete precedence, checkout opt-out, bare fallback and remote normalization; update bootstrap-boundary docs to identify what is now implemented.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

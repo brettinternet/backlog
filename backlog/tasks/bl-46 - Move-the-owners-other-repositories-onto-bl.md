@@ -4,7 +4,7 @@ title: Move the owner's other repositories onto bl
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:46'
+updated_date: '2026-10-22 02:14'
 labels:
   - import
   - human
@@ -50,6 +50,7 @@ Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-sour
 - [ ] #1 Each migrated repository passes `bl check`, and a pre- and post-migration comparison shows nothing lost
 - [ ] #2 Each repository's agent workflow runs one full task loop with `bl`
 - [ ] #3 With the updated skills, two agent loops started together in one migrated repository claim different items with no contention or `claim-held` error, and no skill sets status as a claim or calls `worklease key` for a `bl` item
+- [ ] #4 Updated shared skills preserve Backlog.md routing for unmigrated projects while native projects use the bl-owned resource/claim protocol; each migrated repository records which incompatible launchers remain disabled until updated.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -65,8 +66,9 @@ Also update the owner's shared agent skills in `~/.agents/skills` (`backlog-sour
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Wait for the owner to name repositories, order, per-repository approval and the required Git delivery policy. This task does not authorize touching arbitrary sibling repositories.
-2. For each approved repository, inspect its own AGENTS.md and current task writers/claims, export the full provider state and rehearse import/check/comparison in a temporary location before cutover.
-3. Reuse BL-26's safe provider handoff and wrappers, retain a recoverable old-format copy, verify all fields/checks/dependencies and one real task loop, then commit separately in that repository. Record commit IDs, commands and retained backups here; do not push without explicit permission.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Obtain owner approval for target repositories, their order, delivery policy and shared skill paths. Inspect each repository's instructions and actual launchers; approval to migrate a repository is not blanket authority over unrelated repositories or global skills.
+2. Before enabling native loops in each target, update the approved shared skills with provider-aware dispatch: native projects use bl next --claim --start or MCP next with stable distinct sessions and request-scoped ownership, while unmigrated Backlog.md projects retain their existing provider workflow. Do not globally replace all providers with bl.
+3. Use BL-26's already-proven local cutover contract: quiesce writers, export/rehearse/compare, retain a recoverable backup, deliver primary-built wrappers and local instructions, then reload clients. Until a shared skill or launcher is updated and verified, keep it excluded locally rather than permit alternate-key or status-only claims.
+4. Verify two distinct-session loops and one real complete native task loop per migrated repository, including done/release and recovery guidance; verify the same skills still dispatch correctly for an unmigrated Backlog.md fixture. Record evidence and separate commits in each authorized repository and the skills' owning repository, with any deviation from this task's local file scope explained. Do not push without explicit permission.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->

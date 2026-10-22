@@ -4,7 +4,7 @@ title: 'Build the TUI shell: list layout, navigation, header, and footer'
 status: To Do
 assignee: []
 created_date: '2026-10-22 00:50'
-updated_date: '2026-10-22 01:45'
+updated_date: '2026-10-22 02:13'
 labels:
   - tui
 milestone: m-1
@@ -65,8 +65,9 @@ The TUI is the owner's main reason for `bl`. This task builds the frame that eve
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Use the accepted BL-14 stack and BL-15 engine subscriptions. Add terminal-only root dispatch, immediate loading frame, viewport-only rows, source badges and footer; keep non-TTY bare invocation useful rather than entering raw mode.
-2. Implement the in-scope navigation and provisional built-in list tabs, resize/cell widths, sanitization and accessibility. Later tasks own detail contents, saved views, board/tree and editing; do not advertise unfinished actions as operational.
-3. Add a reproducible scripts/tui-snapshot using an owned tmux pane and temporary fixture root. Verify 80x24/160x48, 79-column collapse, Unicode and NO_COLOR with model/PTY output; run task test and opt-in 50k navigation measurements. Reconcile implemented bindings in docs/tui.md.
-4. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and hand off implementation delivery before making dependent work eligible. Do not push or publish without explicit authorization.
+1. Extend internal/tui/model.go and the existing CLI terminal dispatch; do not introduce a second root/TUI entry point. Preserve explicit tui, nonterminal help, JSON refusal, help/quit, NO_COLOR and explicit high-contrast false behavior from 77dc4ee.
+2. Use the accepted BL-14 stack and BL-15 engine subscriptions for immediate loading paint, viewport-only rows, source badges and footer. Add in-scope navigation and provisional tabs, cell-aware resize and sanitization without doing I/O or full projections in Update/View.
+3. Later tasks own detail contents, saved views, board/tree and editing. Keep unavailable actions honest, and replace bootstrap documentation only for implemented features.
+4. Add scripts/tui-snapshot using an owned tmux pane and isolated fixture root. Capture 80x24/160x48 and verify 79-column collapse, Unicode and accessibility; run task test and opt-in 50k navigation measurements, then reconcile docs/tui.md.
+5. Finish with task ci; record one AC#N evidence line per criterion with the actual command/result. Keep unmet checks open, obtain the required independent verification for substantial changes, and deliver the implementation before making dependent work eligible. Do not push or publish without explicit authorization.
 <!-- SECTION:PLAN:END -->
