@@ -1,5 +1,33 @@
 # CLI commands
 
+## Git auto-commit
+
+`git.autoCommit` defaults to `false`. Enable it in user or project config:
+
+```yaml
+git:
+  autoCommit: true
+```
+
+Project-configured auto-commit requires `bl trust`, because Git executes hooks.
+Native item mutations (including `check --fix` and `renumber`) make one
+pathspec-limited commit per CLI command in the control checkout. Multiple items
+share that commit. MCP mutations commit once per request. The subject is
+`docs(backlog): <verb> <ID> <title>`; a multi-item batch uses its last item's
+ID and title. CLI verbs use the command name; TUI and MCP use the mutation
+operation. No fetch, pull, push, or hook bypass occurs.
+
+Unrelated staged and unstaged paths remain untouched. A target path already
+dirty before the first edit, changed externally before commit, or staged during
+the batch causes the batch to skip with a warning. Merge, rebase, cherry-pick,
+detached HEAD, a busy repository, unavailable Git, and failed hooks also warn
+and leave the file write in place. Git commands time out after 30 seconds.
+Skipped or failed batches are not retried automatically. Hooks must not mutate
+the same backlog while its Git commit holds the repository write lock.
+
+Auto-commit does not apply to project initialization, import into a new project,
+user configuration, or remote-provider writes.
+
 `ls`, `show`, and the read-only `next` interface are frozen. All accept global
 `-C DIR` and `--json` (`-j`) before or after the command. Help is plain text.
 JSON uses the [schema-version-1 envelope](design.md#7-agent-interface).
@@ -66,6 +94,17 @@ adapters fail with a fix hint. Backlog.md sources validate their provider config
 and local directory. Network probes are permitted only by `--online`,
 never before trust, and only for installed adapters; the native-only build
 performs no network probes even with that flag.
+
+## `bl adapter check [--timeout 5s] EXEC [ARG...]`
+
+Explicitly execute an external adapter and check protocol negotiation, mandatory
+capabilities, bounded list pages, and a read of the first item when present.
+Use `--` before EXEC when its arguments begin with flags. This command does not
+grant trust to configured sources. Timeout must be positive and at most one
+minute. Success prints `Adapter protocol v1: PASS`; JSON data is
+`{"protocolVersion":1,"valid":true}`. Failures use reason `adapter-check` and a
+safe diagnostic, including invalid frames, protocol versions or capabilities.
+See [external-adapter-protocol.md](external-adapter-protocol.md).
 
 ## `bl instructions [TOPIC]`
 

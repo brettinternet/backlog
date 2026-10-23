@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/source"
@@ -242,6 +243,8 @@ func cycleFindings(graph map[itemKey][]graphEdge, code string) []source.Finding 
 }
 
 func Check(ctx context.Context, sources []*Source, fix bool) ([]source.Finding, error) {
+	ctx, close := autocommit.Ensure(ctx)
+	defer close()
 	if len(sources) == 0 {
 		return nil, source.Refuse("invalid-source", "no native sources configured")
 	}
@@ -259,7 +262,7 @@ func Check(ctx context.Context, sources []*Source, fix bool) ([]source.Finding, 
 		if err != nil {
 			return nil, err
 		}
-		if err := applyChanges(changes); err != nil {
+		if err := commitChanges(ctx, sources[0], "check", changes); err != nil {
 			return nil, err
 		}
 	}
@@ -362,6 +365,24 @@ func stageFile(path string, data []byte, mode os.FileMode) (string, error) {
 		return "", err
 	}
 	return name, nil
+}
+
+func commitChanges(ctx context.Context, s *Source, verb string, changes []fileChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	paths := []string{}
+	for _, change := range changes {
+		paths = append(paths, change.oldPath)
+		if change.oldPath != change.newPath {
+			paths = append(paths, change.newPath)
+		}
+	}
+	doc, err := format.Parse(changes[0].data)
+	if err != nil {
+		return err
+	}
+	return s.commitWrite(ctx, model.Mutation{Op: model.Operation(verb)}, s.item(doc), paths, func() error { return applyChanges(changes) })
 }
 
 func applyChanges(changes []fileChange) error {
@@ -478,6 +499,8 @@ type selectedItem struct {
 }
 
 func Renumber(ctx context.Context, sources []*Source, selector, to string) (RenumberResult, error) {
+	ctx, close := autocommit.Ensure(ctx)
+	defer close()
 	if len(sources) == 0 {
 		return RenumberResult{}, source.Refuse("invalid-source", "no native sources configured")
 	}
@@ -543,7 +566,7 @@ func Renumber(ctx context.Context, sources []*Source, selector, to string) (Renu
 	if err := preflightChanges(changes); err != nil {
 		return RenumberResult{}, err
 	}
-	if err := applyChanges(changes); err != nil {
+	if err := commitChanges(ctx, selectedSource, "renumber", changes); err != nil {
 		return RenumberResult{}, err
 	}
 	return RenumberResult{Source: selectedSource.options.ID, From: from, To: to, Files: len(changes)}, nil

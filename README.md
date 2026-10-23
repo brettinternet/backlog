@@ -1,82 +1,53 @@
 # backlog
 
-`bl` is a fast, keyboard-first terminal backlog for people and coding agents.
+`bl` is a keyboard-first terminal backlog for people and coding agents. Tasks are
+Markdown files in Git; linked worktrees share one live queue.
 
-> [!NOTE]
-> Pre-alpha. The design is settled and implementation is tracked in [`backlog/`](backlog/). Nothing is released yet.
+![TUI demo](docs/demo.gif)
 
-```text
- backlog · project · Next 12  Active 3  Mine 5  All 318  Board          tasks ✓ synced
-  ID     P  Status       Title                                   ⊘   ▣    Claim
-  BL-12  ▲  To Do        Debounce detail rendering while…        ─   ─    ─
-> BL-14  ▲  To Do        Board layout with column moves          1   ─    mine
-  BL-15  ■  In Progress  Go-to-item fuzzy finder                 ─   2/3  agent@mbp
-```
+## Quickstart
 
-- **Instant.** The cached view paints right away and sources sync behind it. Holding `j` through 50,000 items stays smooth.
-- **One TUI.** List, board, and tree layouts, saved views, a detail pane, a fuzzy go-to, and a command palette, all in one program.
-- **Edit without leaving the list.** Single-key pickers, quick-add tokens (`!high @me #tui <BL-7`), `.` to repeat, undo, multi-select, and `$EDITOR` for long text.
-- **Built for agents.** `bl next --claim --start --json`, short verbs, numeric IDs, stdin bodies, and an MCP server.
-- **Git-native files.** One Markdown file per item, named by ID, with minimal diffs. Every worktree shares one live backlog.
-- **Many backends.** Native files, [Backlog.md files](docs/backlog-md.md) and [local Beads issues](docs/beads.md), plus Backlog.md import. GitHub Issues, Linear, Jira Cloud, and external adapters are planned.
-- **Composable.** Hooks, actions, and an event stream connect it to [Worklease](https://github.com/brettinternet/worklease) claims and to any other tool.
-
-## Try the list shell
+Install a binary with the [user guide](docs/guide.md#install), or build from source
+with [Development](docs/development.md#setup). Inside a Git repository, with `bl`
+on PATH:
 
 ```sh
-mise install
-mise exec task -- task init
-task cli:build
-bin/bl --help
-bin/bl --json version
-bin/bl config show
-bin/bl                     # native list; j/k move, gt next view, ? help, q quit
-task ci
+bl init
+bl new 'Ship the first feature !high #release' --ac 'Feature works'
+bl ls
+bl show BL-1 --json
+bl next --explain --json
 ```
 
-Native task storage, CLI queries/edits, caching and the live Bubble Tea v2 list work.
-The list has Next/Active/Mine/All tabs, counts, page/group navigation and folds;
-source loading and projection stay off the input loop. Detail, TUI editing,
-board/tree and saved views remain planned. See [TUI](docs/tui.md) for shipped keys.
-Bare `bl` prints help when stdin or stdout is not a terminal. `bl tui` requires both.
+Run `bl` in a terminal. `j`/`k` move, `enter` opens detail, `gt` switches views,
+`5` opens the board, `/` filters, `n` creates, `?` shows keys, and `q` quits.
+CLI commands return a versioned envelope with `--json`; `bl instructions workflow`
+prints the installed version's agent protocol.
 
-User settings live at `$XDG_CONFIG_HOME/backlog/config.yaml` (default
-`~/.config/backlog/config.yaml`, including on macOS):
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/brettinternet/backlog/main/docs/schemas/user-config.json
-ui:
-  highContrast: false
-```
-
-Configuration layers are built-ins, user settings, `.config/backlog.yaml` at the
-control root, user `projects.<id>` overrides, environment, then flags. Mappings
-merge by key; lists replace. `BL_HIGH_CONTRAST=true` and `--high-contrast` override
-`ui.highContrast`; explicit `--high-contrast=false` wins over both. `NO_COLOR=1`
-disables styling. See the [project schema](docs/schemas/project-config.json) and
-[configuration examples](docs/design.md#5-projects-configuration-and-trust).
-
-`bl -C DIR config show --json` reports discovery, effective settings, per-value
-provenance, and trust boundaries without creating files or changing cwd. Linked
-worktrees share the primary checkout's control root; `root: checkout` opts out.
-Origin URLs become stable project IDs; no origin, or a local-path or `file://` origin, means a host-local path identity.
-Without project config, Backlog.md opens read-only with a configuration prompt;
-Beads is detected but not loaded. Configure a [Backlog.md source](docs/backlog-md.md)
-to enable edits without converting files. Privileged project entries remain untrusted and nothing runs
-while loading configuration. Trust grants and diagnostics remain BL-29 work.
-`--json`/`-j` returns a versioned success or error envelope, with structured error
-`details`. Usage errors exit 2; see [the exit-code contract](docs/design.md#7-agent-interface)
-for all stable reasons and codes.
-
-`bl events --follow --json` watches source edits and streams deduplicated project
-events. Use `--since ID` to resume across rotation; see [events](docs/events.md).
-
-The product sketch above describes the target; only the features noted here are implemented.
+Native files, [direct Backlog.md editing](docs/backlog-md.md), Backlog.md import,
+local Beads, CLI/MCP, the TUI, hooks, actions, and optional Worklease coordination
+are available. Detected Backlog.md projects open read-only until configured. Remote and external source
+adapters are still being implemented; see [remote adapter status](docs/remote.md).
 
 ## Docs
 
-- [Design](docs/design.md): goals, decision register, architecture, budgets, and milestones
+- [User guide](docs/guide.md): install, import, TUI, agents, configuration, automation
+- [Design](docs/design.md): decisions, architecture, budgets, milestones
 - [Native format](docs/format.md)
 - [Query language](docs/query.md)
+- [CLI commands](docs/cli.md)
 - [TUI and keymap](docs/tui.md)
-- [Development](docs/development.md)
+- [Readiness and ranking](docs/readiness.md)
+- [Backlog.md source](docs/backlog-md.md) and [import](docs/import.md)
+- [Beads](docs/beads.md)
+- [Remote adapters](docs/remote.md)
+- [External adapter protocol v1](docs/external-adapter-protocol.md) and [wire schema](docs/external-adapter/v1/schema.json)
+- [MCP](docs/mcp.md)
+- [Events](docs/events.md)
+- [Hooks, actions, and agent handoff](docs/automation.md)
+- [Performance measurements](docs/benchmarks.md)
+- [TUI stack spike](docs/spikes/tui-stack.md)
+- [Development and releases](docs/development.md)
+- [Project config schema](docs/schemas/project-config.json)
+- [User config schema](docs/schemas/user-config.json)
+- [Demo tape](docs/demo.tape) and [recording instructions](docs/guide.md#demo)

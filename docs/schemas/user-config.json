@@ -5,6 +5,9 @@
     "version": {
       "$ref": "project-config.json#/properties/version"
     },
+    "git": {
+      "$ref": "project-config.json#/properties/git"
+    },
     "root": {
       "$ref": "project-config.json#/properties/root"
     },

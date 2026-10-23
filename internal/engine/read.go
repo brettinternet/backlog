@@ -14,6 +14,7 @@ import (
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/backlogmd"
 	"github.com/brettinternet/backlog/internal/source/beads"
+	"github.com/brettinternet/backlog/internal/source/external"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
 
@@ -145,6 +146,9 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			break
 		}
 	}
+	if c.Type == "external" {
+		return external.New(external.Options{ID: c.ID, Run: c.Run, Dir: cfg.Discovery.ControlRoot})
+	}
 	if c.Type != "native" && c.Type != "beads" && c.Type != "backlog-md" {
 		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)
 	}
@@ -162,7 +166,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 	if c.Type == "beads" {
 		return beads.New(beads.Options{ID: c.ID, Path: path, Statuses: statuses})
 	}
-	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses, CacheDir: cfg.Paths.CacheDir})
+	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses, CacheDir: cfg.Paths.CacheDir, AutoCommit: cfg.Git.AutoCommit, ControlRoot: cfg.Discovery.ControlRoot, AutoCommitBlocked: cfg.AutoCommitBlocked()})
 }
 
 // ReadItem reads one source-qualified ref without parsing or ranking the entire backlog.

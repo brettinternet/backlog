@@ -135,6 +135,11 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	if backend == nil {
 		return model.Item{}, source.Refuse("unavailable", "unknown source "+m.Ref.Source)
 	}
+	if initializer, ok := backend.(interface{ Initialize(context.Context) error }); ok {
+		if err := initializer.Initialize(ctx); err != nil {
+			return model.Item{}, err
+		}
+	}
 	if err := validateWrite(cfg, backend.Info().Capabilities, m); err != nil {
 		return model.Item{}, err
 	}

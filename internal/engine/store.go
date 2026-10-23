@@ -18,16 +18,17 @@ import (
 // perform no source I/O or backlog-sized work. Close waits for workers; call it
 // outside a UI callback. Sources must honor context cancellation.
 type Store struct {
-	ctx          context.Context
-	cancel       context.CancelFunc
-	cfg          project.Config
-	capabilities map[string]model.Capabilities
-	current      atomic.Pointer[Snapshot]
-	events       chan func(*storeState)
-	wg           sync.WaitGroup
-	subMu        sync.Mutex
-	subscribers  map[chan *Snapshot]struct{}
-	results      sync.Map // outstanding result channels, completed exactly once
+	ctx            context.Context
+	cancel         context.CancelFunc
+	cfg            project.Config
+	capabilities   map[string]model.Capabilities
+	capabilitiesMu sync.RWMutex
+	current        atomic.Pointer[Snapshot]
+	events         chan func(*storeState)
+	wg             sync.WaitGroup
+	subMu          sync.Mutex
+	subscribers    map[chan *Snapshot]struct{}
+	results        sync.Map // outstanding result channels, completed exactly once
 }
 type sourceWorker struct {
 	backend source.Source
@@ -137,6 +138,8 @@ func (s *Store) Current() *Snapshot { return s.current.Load() }
 // Capabilities returns a source's declared capabilities without touching the
 // source from a caller such as the TUI update loop.
 func (s *Store) Capabilities(sourceID string) model.Capabilities {
+	s.capabilitiesMu.RLock()
+	defer s.capabilitiesMu.RUnlock()
 	capabilities := s.capabilities[sourceID]
 	copy := make(model.Capabilities, len(capabilities))
 	for op, allowed := range capabilities {
@@ -367,6 +370,13 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 	cursor := source.Cursor{}
 	load := func() {
 		delta, err := w.backend.Load(s.ctx, cursor)
+		caps := w.backend.Info().Capabilities
+		s.capabilitiesMu.Lock()
+		s.capabilities[id] = make(model.Capabilities, len(caps))
+		for op, allowed := range caps {
+			s.capabilities[id][op] = allowed
+		}
+		s.capabilitiesMu.Unlock()
 		if err == nil {
 			if delta.Cursor.Value != "" {
 				cursor = delta.Cursor

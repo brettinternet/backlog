@@ -85,7 +85,7 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	cfg := Config{Paths: paths, Provenance: map[string]Provenance{}}
 	effective := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	var defaults yaml.Node
-	_ = yaml.Unmarshal([]byte("version: 1\nroot: primary\nui: {highContrast: false}\nready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}\n"), &defaults)
+	_ = yaml.Unmarshal([]byte("version: 1\nroot: primary\ngit: {autoCommit: false}\nui: {highContrast: false}\nready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}\n"), &defaults)
 	overlay(effective, defaults.Content[0], "", Provenance{Layer: "built-in"}, cfg.Provenance)
 	userNode, err := readConfig(paths.ConfigFile, reflect.TypeFor[UserConfig]())
 	if err != nil {
@@ -576,6 +576,10 @@ func validateSettings(node *yaml.Node) error {
 }
 func privileged(cfg Config) []Privileged {
 	var result []Privileged
+	if cfg.Git.AutoCommit {
+		p := cfg.Provenance["git.autoCommit"]
+		result = append(result, Privileged{Key: "git.autoCommit", Trusted: p.Layer != "project", Origin: p})
+	}
 	for _, group := range []string{"hooks", "actions", "sources"} {
 		count := len(cfg.Hooks)
 		if group == "actions" {

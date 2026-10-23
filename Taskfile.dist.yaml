@@ -82,6 +82,16 @@ tasks:
     deps:
       - task: cli:bench
 
+  docs:test:
+    desc: Run README and guide examples in isolated projects and check doc links
+    cmd: task cli:test PKG=./internal/doctest
+
+  docs:demo:
+    desc: Render the fixture TUI tour (requires VHS, FFmpeg and ttyd)
+    deps:
+      - task: cli:build
+    cmd: mise exec vhs@0.11.0 ffmpeg@8.1.1 -- vhs docs/demo.tape
+
   smoke:
     desc: Exercise help and build metadata without loading user configuration
     deps:

@@ -94,10 +94,13 @@ func TestClonedConfigIsInertUntilTrust(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &cfg); err != nil || code != 0 || len(cfg.Data.Untrusted()) != 0 {
 		t.Fatalf("grant not loaded: %d %s %v", code, out, err)
 	}
-	// Trust grants consent, not availability: adapters not shipped remain unavailable.
+	// Trust permits execution, but an executable without a valid handshake is unavailable.
 	code, out, _ = run("-C", clone, "ls", "--json")
 	if code != 6 || strings.Contains(out, "untrusted") {
 		t.Fatalf("trusted source: %d %s", code, out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("trusted adapter did not execute: %v", err)
 	}
 }
 

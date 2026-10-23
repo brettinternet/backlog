@@ -5,6 +5,13 @@
     "version": {
       "const": 1
     },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autoCommit": { "type": "boolean", "default": false }
+      }
+    },
     "root": {
       "enum": [
         "primary",

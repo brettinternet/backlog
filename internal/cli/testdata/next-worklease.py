@@ -9,8 +9,11 @@ import time
 
 root = pathlib.Path(os.environ["BL_FAKE_ROOT"])
 assert pathlib.Path.cwd().resolve() == root.resolve()
-assert not any(k in os.environ for k in ("WORKLEASE_SESSION_ID", "WORKLEASE_HANDLE", "WORKLEASE_RUN_ID"))
 argv = sys.argv[1:]
+if argv == ["version", "--json"]:
+    print(json.dumps(dict(schemaVersion=2, ok=True, version="1.10.1")))
+    sys.exit(0)
+assert not any(k in os.environ for k in ("WORKLEASE_SESSION_ID", "WORKLEASE_HANDLE", "WORKLEASE_RUN_ID"))
 assert argv[0] == "--json"
 op = argv[1]
 session = argv[argv.index("--session") + 1] if "--session" in argv else None
@@ -80,7 +83,7 @@ elif op == "acquire":
             response.update(ok=False, error=dict(reason="already-claimed", message="held elsewhere", details=dict(holder=holder)))
         else:
             key = argv[argv.index("--work-key") + 1]
-            item = root / "items" / (key.split(":")[1] + ".md")
+            item = root / os.environ.get("BL_FAKE_ITEMS", "items") / (key.split(":")[1] + ".md")
             assert "status: todo" in item.read_text(), "status changed before claim"
             claim = dict(claimId="claim-" + session, resources=[resource], workKey=key, sessionId=session, agentId="agent", authorityId="authority", active=True, expiresAt="2030-01-01T00:00:00Z", pending=os.environ.get("BL_FAKE_PENDING") == "1")
             state["claims"][session] = claim
@@ -88,6 +91,8 @@ elif op == "acquire":
                 unknown()
             else:
                 response.update(claim)
+elif op == "list":
+    response["claims"] = list(state["claims"].values())
 elif op == "release":
     assert claim and argv[argv.index("--if-claim-id") + 1] == claim["claimId"]
     del state["claims"][session]
