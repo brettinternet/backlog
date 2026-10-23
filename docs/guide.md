@@ -97,7 +97,10 @@ Project programs and network sources are inert until `bl trust`; inspect their
 argv and digest before granting consent. Semantic changes require re-trust.
 Credentials belong in environment variables or user credential helpers, never
 project config. `NO_COLOR=1` disables styling; `BL_HIGH_CONTRAST=true` or
-`--high-contrast` selects high contrast. See the [project schema](schemas/project-config.json),
+`--high-contrast` selects high contrast. `git: {autoCommit: true}` commits only
+the files `bl` wrote ([Git auto-commit](cli.md#git-auto-commit)). User-config
+`workspaces` browse several projects together; `W` toggles scope in the TUI and
+`--workspace NAME` selects one for `ls` and `next`. See the [project schema](schemas/project-config.json),
 [user schema](schemas/user-config.json), and [design configuration](design.md#5-projects-configuration-and-trust).
 
 ## Agent loop and Worklease
