@@ -49,6 +49,7 @@ type Comment struct {
 	Author, Body string
 }
 type Item struct {
+	Project                              string // Present in composed workspace views, never written to providers.
 	Ref                                  Ref
 	Title, Type, Status                  string
 	Category                             StatusCategory

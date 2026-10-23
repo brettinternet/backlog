@@ -341,7 +341,12 @@ func eventSnapshot(ctx context.Context, cfg project.Config) ([]eventRecord, map[
 }
 func loadEventSources(ctx context.Context, cfg project.Config, reuse source.Source) (map[string]source.Delta, error) {
 	deltas := map[string]source.Delta{}
-	for _, c := range cfg.Sources {
+	for n, c := range cfg.Sources {
+		// An inert source cannot establish a complete cross-source event snapshot.
+		// Keep trusted sources browsable without interpreting its absence as deletion.
+		if cfg.RequireTrusted(fmt.Sprintf("sources[%d]", n)) != nil {
+			return nil, errIncompleteEvents
+		}
 		var backend source.Source
 		if reuse != nil && reuse.Info().ID == c.ID {
 			backend = reuse

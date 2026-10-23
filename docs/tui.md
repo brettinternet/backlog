@@ -95,6 +95,25 @@ scripts/tui-snapshot --width 160 --height 48 --keys g t g t g t -- bin/bl -C /pa
 The helper owns a private tmux server, waits for a settled render, writes pane
 text to stdout, and shuts down only its own server, including on failure.
 
+## Workspaces
+
+User `workspaces` lists project paths; `defaultWorkspace` selects the workspace outside a repository. Inside a project the TUI loads the first workspace containing it and starts in project scope. `bl --workspace NAME` or `bl tui --workspace NAME` starts in workspace scope. Each project keeps its own sources, statuses, trust and write/claim context; an untrusted source stays inert without hiding trusted native sources.
+
+`W` toggles the invoking project and workspace scopes, keeping the selected item when it is visible in both. The header names the scope. Wide workspace lists add Project and Source columns. Project names use `project.name`, falling back to the final component of the project identity. Internal references use the stable project-qualified source keys in [format.md](format.md); duplicate local source/ID pairs never overwrite one another. Relation resolution and readiness use only the loaded scope. Scope filtering, normalization and projection run on the worker, never on the update loop.
+
+Five-project/50,000-item real-PTY startup on Apple M5 Max / Go 1.27.3:
+
+```sh
+BL_TUI_WORKSPACE_MEASURE=1 task cli:test PKG=./internal/tui -- -run '^TestWorkspaceMeasurements$' -count=1 -v -timeout=6m
+```
+
+| Cache | Shell paint | First usable content | Complete workspace |
+| --- | --- | --- | --- |
+| Cold, one run | 26.50 ms | 91.57 ms | 4.234 s |
+| Warm, five runs, p95 | 27.70 ms | 91.43 ms | 1.034 s |
+
+The deterministic fixture is five independent 10k projects, including colliding source and item IDs. A loading shell does not count as usable content. The harness drives the production store, projector and model in a 120×40 PTY, verifies the source column, and waits for all five sources to report complete coverage. Measurements report latency, not an absolute CI assertion.
+
 ## Engine foundation
 
 The shell uses `OpenProjectStore` to reuse configured native sources.
@@ -266,8 +285,7 @@ on the update loop.
 `:` lists every action, its effective bindings, and any disabled reason. Type to
 fuzzy-search, use arrows to select and enter to run. `?` opens the same searchable
 catalog as read-only help. Esc closes either. Every prefix, including remapped
-prefixes, displays its available continuations. Planned workspace entries remain
-disabled. `!` lists configured actions whose `when` query matches the selected
+prefixes, displays its available continuations. Workspace scope is disabled when no workspace contains the current project. `!` lists configured actions whose `when` query matches the selected
 item; the palette and help include the same matching actions and disabled
 placeholder/trust reasons. Action discovery and preparation run off the update
 loop. `confirm` prompts capture the target item; y/enter runs and n/esc cancels.

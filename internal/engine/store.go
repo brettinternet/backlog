@@ -64,7 +64,7 @@ func OpenProjectStore(ctx context.Context, cfg project.Config) (*Store, error) {
 	registry := source.Registry{}
 	for i, configured := range cfg.Sources {
 		// Keep untrusted adapters inert while allowing the local TUI and trust banner.
-		if cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)) != nil {
+		if cfg.Workspace != nil && !workspaceSourceTrusted(cfg, configured.ID) || cfg.Workspace == nil && cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)) != nil {
 			continue
 		}
 		backend, err := readSource(cfg, configured)
@@ -233,7 +233,8 @@ func (st *storeState) begin(job *editJob) {
 		reject(source.Refuse("busy", "item or history mutation pending"))
 		return
 	}
-	if err := validateWrite(st.store.cfg, w.backend.Info().Capabilities, m); err != nil {
+	cfg, _ := st.store.cfg.SourceProject(m.Ref.Source)
+	if err := validateWrite(cfg, w.backend.Info().Capabilities, m); err != nil {
 		reject(err)
 		return
 	}
@@ -270,7 +271,10 @@ func (st *storeState) begin(job *editJob) {
 		reject(source.Refuse("busy", "source queue is full"))
 		return
 	}
-	preparePreview(st.store.cfg, job)
+	preparePreview(cfg, job)
+	if st.store.cfg.Workspace != nil {
+		job.preview.Project = cfg.Project.ID
+	}
 	st.pending[m.Ref] = true
 	st.historyBusy = job.history != 0
 	n := st.snapshot.fork()
@@ -444,7 +448,13 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 	}
 	var transition TransitionResult
 	ctx := WithTransitionResult(s.ctx, &transition)
-	item, err := coordinatedWrite(ctx, s.cfg, m, func() (model.Item, error) { return w.backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return w.backend.Apply(ctx, m) })
+	var item model.Item
+	var err error
+	if s.cfg.Workspace != nil {
+		item, err = w.backend.Apply(ctx, m)
+	} else {
+		item, err = coordinatedWrite(ctx, s.cfg, m, func() (model.Item, error) { return w.backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return w.backend.Apply(ctx, m) })
+	}
 	if err != nil && transition.Claim != nil {
 		err = source.Refuse(ErrorReason(err), fmt.Sprintf("status %s; claim %s: %s", transition.Status, transition.Claim.Outcome, ErrorMessage(err)))
 	}

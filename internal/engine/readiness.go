@@ -36,6 +36,7 @@ const (
 // No input maps or items are modified. Refs with an empty source are local to
 // the referring item. Claims are ignored unless Coordination is enabled.
 type Input struct {
+	Projects        map[string]project.Config // Per-item policy in a composed workspace.
 	Items           []model.Item
 	Config          project.ReadyConfig
 	Me              []string
@@ -120,6 +121,10 @@ func assess(in Input) (Result, [][]int, [][]int) {
 	}
 	out := Result{Items: make([]Explanation, n), Candidates: []model.Ref{}}
 	for i, item := range in.Items {
+		config, me, coordination := in.Config, in.Me, in.Coordination
+		if p, ok := in.Projects[item.Project]; ok {
+			config, me, coordination = p.Ready, []string{p.Me.Default}, p.Coordination.Worklease != nil
+		}
 		e := Explanation{Ref: item.Ref, Readiness: Ready, Reasons: []Reason{}, Priority: item.Priority, Rank: item.Rank}
 		add := func(code string, refs []model.Ref, values []string) {
 			slices.SortFunc(refs, compareRef)
@@ -134,10 +139,10 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		if in.Archived[item.Ref] {
 			add("archived", nil, nil)
 		}
-		if !slices.Contains(in.Config.Statuses, string(item.Category)) {
+		if !slices.Contains(config.Statuses, string(item.Category)) {
 			add("status", nil, []string{string(item.Category)})
 		}
-		if in.Config.SkipContainers {
+		if config.SkipContainers {
 			open := slices.Clone(missingChildren[i])
 			for _, j := range children[i] {
 				if !closed(in.Items[j]) && !in.Archived[in.Items[j].Ref] {
@@ -154,7 +159,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			target := in.Items[j]
 			if in.Stale[target.Ref] {
 				unknown = append(unknown, target.Ref)
-			} else if !slices.Contains(in.Config.SatisfiedBy, string(target.Category)) {
+			} else if !slices.Contains(config.SatisfiedBy, string(target.Category)) {
 				blockers = append(blockers, target.Ref)
 			}
 		}
@@ -163,7 +168,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		}
 		var labels []string
 		for _, label := range item.Labels {
-			if slices.Contains(in.Config.ExcludeLabels, label) {
+			if slices.Contains(config.ExcludeLabels, label) {
 				labels = append(labels, label)
 			}
 		}
@@ -173,13 +178,13 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		if len(item.Assignees) > 0 {
 			mine := false
 			for _, assignee := range item.Assignees {
-				mine = mine || slices.Contains(in.Me, assignee)
+				mine = mine || slices.Contains(me, assignee)
 			}
 			if !mine {
 				add("assignee", nil, slices.Clone(item.Assignees))
 			}
 		}
-		if in.Coordination {
+		if coordination {
 			switch in.Claims[item.Ref] {
 			case ClaimMine, ClaimNone: // owned by this caller or known free
 			case ClaimOthers:

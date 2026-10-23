@@ -110,7 +110,7 @@ Keep the header fields synchronous; only the body waits.
 | `created` | timestamp | yes | RFC 3339 UTC to the second. Set on create. |
 | `updated` | timestamp | yes | RFC 3339 UTC to the second. Set on every write. |
 
-Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md). An ID reference may name another source as `source:ID`. `bl` preserves it, and readiness treats it as `unknown` unless the reference resolves in the loaded workspace.
+Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md). An ID reference may name another source as `source:ID`. Bare IDs remain local to the referring project/source. In a workspace an explicit `source:ID` resolves only when unique among loaded items; missing or ambiguous targets remain `unknown`. To disambiguate a workspace edge, use `url.QueryEscape(project.id)/source-id:ID`, for example `github.com%2Facme%2Fapp/tasks:BL-1`. This qualified form is preserved in the file and is unknown when its project is outside the loaded scope. Ordinary project files and provider identities are not rewritten just by opening a workspace.
 
 ### IDs
 

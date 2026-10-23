@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 )
 
 type readItem struct {
+	Project  string               `json:"project,omitempty"`
 	Source   string               `json:"source"`
 	ID       string               `json:"id"`
 	Title    string               `json:"title"`
@@ -32,7 +34,7 @@ type readItem struct {
 }
 
 func itemData(i model.Item) readItem {
-	return readItem{i.Ref.Source, i.Ref.ID, i.Title, i.Status, i.Category, i.Priority, i.Version}
+	return readItem{i.Project, i.Ref.Source, i.Ref.ID, i.Title, i.Status, i.Category, i.Priority, i.Version}
 }
 
 type readGroup struct {
@@ -76,12 +78,12 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 	}
 	return []*urfave.Command{
 		{Name: "ls", Usage: "List items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{
-			&urfave.StringFlag{Name: "view", Usage: "Saved view name"}, &urfave.StringFlag{Name: "sort", Usage: "Query sort keys"}, &urfave.StringFlag{Name: "group", Usage: "Query grouping field"}, limitFlag(0),
+			workspaceFlag(), &urfave.StringFlag{Name: "view", Usage: "Saved view name"}, &urfave.StringFlag{Name: "sort", Usage: "Query sort keys"}, &urfave.StringFlag{Name: "group", Usage: "Query grouping field"}, limitFlag(0),
 		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
 			}
-			cfg, err := loadConfig(cmd, *directory)
+			cfg, err := loadBrowseConfig(cmd, *directory, false)
 			if err != nil {
 				return err
 			}
@@ -244,13 +246,16 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "next", Usage: "Rank ready items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Include every included and excluded item with reasons"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim one ready item, resuming this session first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item (requires --claim)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "next", Usage: "Rank ready items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{workspaceFlag(), limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Include every included and excluded item with reasons"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim one ready item, resuming this session first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item (requires --claim)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
 			}
-			cfg, err := loadConfig(cmd, *directory)
+			cfg, err := loadBrowseConfig(cmd, *directory, false)
 			if err != nil {
 				return err
+			}
+			if cfg.Workspace != nil && cmd.Bool("claim") {
+				return &Error{Reason: "usage", Message: "workspace next is read-only; claim from the owning project"}
 			}
 			if cmd.Bool("start") && !cmd.Bool("claim") {
 				return &Error{Reason: "usage", Message: "--start requires --claim"}
@@ -402,7 +407,14 @@ func outputWidth(out io.Writer) int {
 func writeTable(out io.Writer, items []readItem) error {
 	width := outputWidth(out)
 	for _, i := range items {
-		line := fmt.Sprintf("%s:%s  [%s] %s  %s", i.Source, i.ID, i.Status, i.Priority, i.Title)
+		source, prefix := i.Source, ""
+		if i.Project != "" {
+			prefix = filepath.Base(i.Project) + " "
+			if index := strings.LastIndex(source, "/"); index >= 0 {
+				source = source[index+1:]
+			}
+		}
+		line := fmt.Sprintf("%s%s:%s  [%s] %s  %s", prefix, source, i.ID, i.Status, i.Priority, i.Title)
 		if _, err := fmt.Fprintln(out, ansi.Truncate(textutil.Line(line), width, "…")); err != nil {
 			return err
 		}

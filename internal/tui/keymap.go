@@ -43,7 +43,7 @@ func defaultKeymap() []action {
 		{id: "go-to", label: "Go to any item (including archives)", bindings: []string{"ctrl+p"}},
 		{id: "help", label: "Search help", bindings: []string{"?"}},
 		{id: "palette", label: "Command palette", bindings: []string{":"}},
-		{id: "workspace", label: "Toggle project / workspace scope", bindings: []string{"W"}, unavailable: "workspace support is not available in this build"},
+		{id: "workspace", label: "Toggle project / workspace scope", bindings: []string{"W"}},
 		{id: "refresh", label: "Resync sources", canonical: "R", bindings: []string{"R"}},
 		{id: "quit", label: "Back from detail / quit", canonical: "q", bindings: []string{"q"}},
 		{id: "quit-now", label: "Quit", canonical: "ctrl+c", bindings: []string{"ctrl+c"}},
@@ -219,6 +219,17 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
+	m.routeSelectedProject()
+	if a.id == "workspace" {
+		if !m.hasWorkspace() {
+			m.notice = "No workspace configured for this project."
+			return m, nil
+		}
+		m.opts.WorkspaceScope = !m.opts.WorkspaceScope
+		m.marks = newMarkSet()
+		m.project()
+		return m, nil
+	}
 	if strings.HasPrefix(a.id, "action:") {
 		return m.prepareConfiguredAction(strings.TrimPrefix(a.id, "action:"))
 	}
@@ -249,6 +260,9 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 func (m Model) disabledReason(a action) string {
+	if a.id == "workspace" && !m.hasWorkspace() {
+		return "no workspace configured for this project"
+	}
 	if a.unavailable != "" {
 		return a.unavailable
 	}

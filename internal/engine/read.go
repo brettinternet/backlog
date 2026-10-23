@@ -28,6 +28,13 @@ type ReadSnapshot struct {
 // LoadReads loads active items. With archived set, it also loads archive/ on
 // demand (query.md is:archived); those items are marked archived and never ready.
 func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnapshot, error) {
+	if cfg.Workspace != nil {
+		return loadWorkspaceReads(ctx, cfg, archived)
+	}
+	return loadReads(ctx, cfg, archived, false)
+}
+
+func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted bool) (ReadSnapshot, error) {
 	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
 	s.ctx = ctx
 	if cfg.Me.Default != "" {
@@ -41,7 +48,13 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 		}
 		return delta, err
 	}
-	for _, c := range cfg.Sources {
+	for n, c := range cfg.Sources {
+		if skipUntrusted {
+			if err := cfg.RequireTrusted(fmt.Sprintf("sources[%d]", n)); err != nil {
+				s.Warnings = append(s.Warnings, err.Error())
+				continue
+			}
+		}
 		backend, err := readSource(cfg, c)
 		if err != nil {
 			return s, err
@@ -109,6 +122,9 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 }
 
 func readSource(cfg project.Config, c project.SourceConfig) (source.Source, error) {
+	if cfg.Workspace != nil {
+		return openWorkspaceSource(cfg, c.ID)
+	}
 	backend, err := rawSource(cfg, c)
 	if err != nil {
 		return nil, err

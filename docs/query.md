@@ -33,7 +33,7 @@ snapshot, so provider search semantics cannot hide a matching item.
 
 | Field | Values |
 | --- | --- |
-| `id` | Exact ID or numeric shorthand; `id:BL-1,BL-2`. Numeric shorthand matches the last hyphen-separated component, ignoring zero padding. `source:ID` disambiguates a ref. |
+| `id` | Exact ID or numeric shorthand; `id:BL-1,BL-2`. Numeric shorthand matches the last hyphen-separated component, ignoring zero padding. `source:ID` disambiguates a ref. Workspace source values use `url.QueryEscape(project.id)/source-id` (format.md); use that full value in `id:` or `source:` predicates to distinguish identical source/ID pairs across projects. |
 | `status` | Status key or name |
 | `category` | `backlog`, `todo`, `active`, `done`, `canceled` |
 | `priority` | `urgent`, `high`, `medium`, `low`, `none`; ordered, so `priority:>=high` works |

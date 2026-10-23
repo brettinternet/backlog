@@ -58,6 +58,7 @@ type UIConfig struct {
 }
 
 type Config struct {
+	Workspace        *Workspace `yaml:"-" json:"-"`
 	Settings         `yaml:",inline"`
 	SavedViews       []SavedView                `yaml:"-" json:"savedViews,omitempty"`
 	Paths            Paths                      `yaml:"-" json:"paths"`

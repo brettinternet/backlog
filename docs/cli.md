@@ -105,7 +105,9 @@ or absent, including for a dry run; refusal exits 5. The source is never changed
 mapping report; `--json` puts that report in the standard envelope's `data`.
 See [import.md](import.md) for field mappings and skipped content.
 
-## `bl ls [QUERY] [--view V] [--sort S] [--group G] [-n N]`
+## `bl ls [QUERY] [--workspace NAME] [--view V] [--sort S] [--group G] [-n N]`
+
+`--workspace NAME` reads all configured member projects with their own statuses and trust. Workspace item JSON adds `project` (the project identity); `source` is the stable `url.QueryEscape(project.id)/source-id` key. Without this flag, `ls` retains project scope. See [format.md](format.md) for cross-project references.
 
 Lists native items. With no `is:` term in QUERY or the view, `is:open` is
 added, so closed items need `is:closed` (or another `is:` term). Archives are
@@ -178,7 +180,9 @@ The Markdown `sections.criteria` and `sections.dod` include evidence lines.
 from the source. Pass it verbatim to `--if-version` on writes.
 It is not a timestamp or a hash of the JSON rendering.
 
-## `bl next [QUERY] [-n N] [--explain] [--claim [--start]]`
+## `bl next [QUERY] [--workspace NAME] [-n N] [--explain] [--claim [--start]]`
+
+`--workspace NAME` ranks the composed workspace using each item's own project policy. Its item shape matches workspace `ls`. Workspace `next` is read-only: `--claim` is refused; claim/start from the owning project so selection and recovery retain their project control root.
 
 Returns ready candidates in the engine's deterministic ranking. QUERY narrows
 candidates without removing their blockers from readiness evaluation. `-n`

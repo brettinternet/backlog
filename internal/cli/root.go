@@ -102,7 +102,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if !terminal(in) || !terminal(out) {
 			return &Error{Reason: "unavailable", Message: "the TUI requires terminal stdin and stdout; use bl --help"}
 		}
-		cfg, err := loadConfig(cmd, directory)
+		cfg, err := loadBrowseConfig(cmd, directory, true)
 		if err != nil {
 			return err
 		}
@@ -134,15 +134,28 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if len(cfg.Untrusted()) > 0 {
 			trustWarning = "Untrusted project config · bl trust --show"
 		}
+		workspaceScope := cmd.String("workspace") != ""
+		if cfg.Workspace != nil {
+			discovery, _ := project.Discover(directory)
+			workspaceScope = workspaceScope || discovery.CheckoutRoot == ""
+		}
 		app := tui.New(tui.Options{
+			Workspace: &cfg, WorkspaceScope: workspaceScope,
 			Automation:   &cfg,
 			TrustWarning: trustWarning,
 			CreateSource: createSource, DefaultType: cfg.Defaults.Type, DefaultDoD: cfg.Defaults.DOD,
-			ValidateItem: func(item model.Item) error { return engine.ValidateItem(cfg, item) },
+			ValidateItem: func(item model.Item) error {
+				p, _ := cfg.SourceProject(item.Ref.Source)
+				return engine.ValidateItem(p, item)
+			},
 			ResolveRef: func(ctx context.Context, source string, ref model.Ref) (model.Ref, error) {
 				return ResolveRef(ctx, cfg, source, ref)
 			},
-			NativeBytes: func(_ context.Context, item model.Item) ([]byte, error) { return readNativeBytes(cfg, item) },
+			NativeBytes: func(_ context.Context, item model.Item) ([]byte, error) {
+				p, local := cfg.SourceProject(item.Ref.Source)
+				item.Ref.Source = local
+				return readNativeBytes(p, item)
+			},
 			NativeSource: func(id string) bool {
 				for _, s := range cfg.Sources {
 					if s.ID == id {
@@ -193,6 +206,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		Reader:      in, Writer: out, ErrWriter: errOut,
 		ExitErrHandler: func(context.Context, *urfave.Command, error) {},
 		Flags: []urfave.Flag{
+			workspaceFlag(),
 			&urfave.StringFlag{Name: "session", Usage: "Coordination session (BL_SESSION or WORKLEASE_SESSION_ID)"},
 			&urfave.StringFlag{Name: "C", Value: ".", Usage: "Resolve the invocation from directory DIR"},
 			&urfave.BoolFlag{Name: "json", Aliases: []string{"j"}, Usage: "Print a versioned JSON envelope"},
@@ -234,7 +248,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				}
 				return mcp.ServeStreams(ctx, cfg, in, out)
 			}},
-			{Name: "tui", Usage: "Browse the backlog (requires a terminal)", Action: openTUI},
+			{Name: "tui", Usage: "Browse the backlog (requires a terminal)", Flags: []urfave.Flag{workspaceFlag()}, Action: openTUI},
 			{Name: "config", Usage: "Inspect layered project settings",
 				Action: func(_ context.Context, _ *urfave.Command) error {
 					return &Error{Reason: "usage", Message: "use bl config show"}

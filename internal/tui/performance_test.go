@@ -41,7 +41,7 @@ func (m measuredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	next, cmd := m.Model.Update(msg)
 	m.Model = next.(Model)
-	if m.ready != nil && !m.loading && m.data.items > 0 && m.applied == m.request && m.snapshot.Source("tasks").Coverage == "complete" {
+	if m.ready != nil && !m.loading && m.data.items > 0 && m.applied == m.request && m.sourcesComplete() {
 		close(m.ready)
 		m.ready = nil
 	}
@@ -50,7 +50,7 @@ func (m measuredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m measuredModel) View() tea.View {
 	v := m.Model.View()
 	state := "loading"
-	if !m.loading && m.snapshot != nil && m.snapshot.Len() > 0 && m.applied == m.request && m.prepared == m.serial && m.snapshot.Source("tasks").Coverage == "complete" {
+	if !m.loading && m.snapshot != nil && m.snapshot.Len() > 0 && m.applied == m.request && m.prepared == m.serial && m.sourcesComplete() {
 		state = "ready"
 	}
 	// Replace the header rather than append a row, preserving viewport size.
@@ -63,6 +63,18 @@ func (m measuredModel) View() tea.View {
 	lines[0] = fmt.Sprintf("measure %s query=%q cursor=%06d applied=%d soak=%t content=%t", state, query, m.selected, m.prepared, m.done, content)
 	v.Content = strings.Join(lines, "\n")
 	return v
+}
+
+func (m measuredModel) sourcesComplete() bool {
+	if m.snapshot == nil {
+		return false
+	}
+	for _, id := range m.opts.Sources {
+		if m.snapshot.Source(id).Coverage != "complete" {
+			return false
+		}
+	}
+	return true
 }
 
 func TestProductionPerformanceChild(t *testing.T) {
@@ -80,6 +92,12 @@ func TestProductionPerformanceChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if name := os.Getenv("BL_TUI_PERF_WORKSPACE"); name != "" {
+		cfg, err = project.OpenWorkspace(cfg, name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	store, err := engine.OpenProjectStore(ctx, cfg)
@@ -91,7 +109,11 @@ func TestProductionPerformanceChild(t *testing.T) {
 	defer projector.Close()
 	snapshots, unsub := store.Subscribe()
 	defer unsub()
-	m := New(Options{Context: ctx, Store: store, Projector: projector, Sources: []string{"tasks"}, Project: cfg.Project.ID, Statuses: cfg.Statuses, Read: func(ctx context.Context, ref model.Ref) (model.Item, error) { return engine.ReadItem(ctx, cfg, ref) }})
+	var sources []string
+	for _, c := range cfg.Sources {
+		sources = append(sources, c.ID)
+	}
+	m := New(Options{Workspace: &cfg, WorkspaceScope: cfg.Workspace != nil, Context: ctx, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID, Statuses: cfg.Statuses, Read: func(ctx context.Context, ref model.Ref) (model.Item, error) { return engine.ReadItem(ctx, cfg, ref) }})
 	m.Bind(snapshots)
 	ready := make(chan struct{})
 	program := tea.NewProgram(measuredModel{Model: m, ready: ready}, tea.WithFPS(120))
@@ -201,6 +223,64 @@ func TestProductionSoak(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("production post-soak key-to-PTY=%s", latency)
+}
+
+// Opt-in real-terminal workspace startup measurement; no absolute timing gate.
+func TestWorkspaceMeasurements(t *testing.T) {
+	if os.Getenv("BL_TUI_WORKSPACE_MEASURE") != "1" {
+		return
+	}
+	testkit.Isolate(t)
+	base := t.TempDir()
+	var roots []string
+	for n := range 5 {
+		root := filepath.Join(base, fmt.Sprintf("project-%d", n))
+		if err := fixtures.Generate(root, 10000, uint64(n+1)); err != nil {
+			t.Fatal(err)
+		}
+		roots = append(roots, strconv.Quote(root))
+	}
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.ConfigFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.ConfigFile, []byte("workspaces: [{name: measure, projects: ["+strings.Join(roots, ",")+"]}]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BL_TUI_PERF_WORKSPACE", "measure")
+	cache := filepath.Join(t.TempDir(), "cache")
+	root := filepath.Join(base, "project-0")
+	var paints, contents, complete []time.Duration
+	for sample := range 6 {
+		child, start := performanceChild(t, root, cache, "", "")
+		if err := child.WaitFor("measure ", 5*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		paint := time.Since(start)
+		if err := child.WaitFor("content=true", 5*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		content := time.Since(start)
+		perfReady(t, child)
+		full := time.Since(start)
+		if err := child.WaitFor("Source", time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if sample == 0 {
+			t.Logf("5 projects / 50000 items cold: shell=%s first-content=%s complete=%s", paint, content, full)
+		} else {
+			paints = append(paints, paint)
+			contents = append(contents, content)
+			complete = append(complete, full)
+		}
+		if err := child.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("5 projects / 50000 items warm n=5 p95: shell=%s first-content=%s complete=%s", percentile(paints), percentile(contents), percentile(complete))
 }
 
 func TestProductionMeasurements(t *testing.T) {

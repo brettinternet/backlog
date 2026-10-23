@@ -20,6 +20,8 @@ import (
 )
 
 type Options struct {
+	Workspace                               *project.Config
+	WorkspaceScope                          bool
 	Automation                              *project.Config
 	HighContrast, NoColor                   bool
 	Project                                 string
@@ -88,6 +90,7 @@ type foldState struct {
 }
 
 type Model struct {
+	baseContext              context.Context
 	claimExpiry              time.Time
 	claimTimerAt             time.Time
 	width, height            int
@@ -177,7 +180,7 @@ func New(opts Options) Model {
 			style = style.Foreground(lipgloss.Color("6"))
 		}
 	}
-	model := Model{width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil, query: viewQueries[0], marks: newMarkSet()}
+	model := Model{baseContext: opts.Context, width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil, query: viewQueries[0], marks: newMarkSet()}
 	if opts.Read != nil {
 		theme := "color"
 		if opts.NoColor {
@@ -287,6 +290,7 @@ func (m Model) detailWidth() int {
 	return max(1, m.width)
 }
 func (m *Model) scheduleDetail() tea.Cmd {
+	m.routeSelectedProject()
 	m.detailGeneration++
 	row, ok := m.selectedRow()
 	m.detailIdentity = identityFor(row, ok)
@@ -415,6 +419,15 @@ func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, groupe
 }
 func (m *Model) project() {
 	if m.snapshot != nil && m.opts.Projector != nil {
+		if m.hasWorkspace() {
+			text, field, prefix := m.query, "", ""
+			if m.editor.open {
+				text = m.editor.text
+				field, prefix, _, _ = m.editor.completion()
+			}
+			m.request = m.opts.Projector.RequestScope(m.snapshot, text, m.scopeProject(), field, prefix, false)
+			return
+		}
 		if m.editor.open {
 			field, prefix, _, _ := m.editor.completion()
 			m.request = m.opts.Projector.RequestEditor(m.snapshot, m.editor.text, field, prefix)
@@ -1048,7 +1061,11 @@ func (m Model) View() tea.View {
 			tabs[i] = "[" + name + "]"
 		}
 	}
-	header := "backlog · " + textutil.Line(m.opts.Project) + " · " + strings.Join(tabs, "  ")
+	scope := m.opts.Project
+	if m.hasWorkspace() && m.opts.WorkspaceScope {
+		scope = m.opts.Workspace.Workspace.Name
+	}
+	header := "backlog · " + textutil.Line(scope) + " · " + strings.Join(tabs, "  ")
 	badges := m.badges
 	if m.opts.TrustWarning != "" {
 		badges = m.opts.TrustWarning
@@ -1068,6 +1085,9 @@ func (m Model) View() tea.View {
 	}
 	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
 		columns = "  " + strings.Join(custom, "  ")
+	}
+	if m.hasWorkspace() && m.opts.WorkspaceScope && listWidth >= 80 {
+		columns = "  " + cell("Project", 18) + " " + cell("Source", 12) + " " + strings.TrimPrefix(columns, "  ")
 	}
 	if m.isBoard() {
 		columns = m.boardLine(-1)
@@ -1229,6 +1249,9 @@ func (m Model) listLine(index int, wide bool) string {
 	}
 	if r.row.Error != "" {
 		state = "! "
+	}
+	if m.hasWorkspace() && m.opts.WorkspaceScope && wide {
+		marker += cell(textutil.Line(r.row.Project), 18) + " " + cell(textutil.Line(r.row.Source), 12) + " "
 	}
 	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
 		values := make([]string, 0, len(custom))

@@ -6,10 +6,12 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/format"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -43,6 +45,49 @@ func readFixture(t *testing.T) string {
 		}
 	}
 	return root
+}
+
+// Workspace flags must select the composed read path, not silently ignore the
+// requested workspace or send a workspace-wide claim to the anchor project.
+func TestWorkspaceReadFlags(t *testing.T) {
+	root := readFixture(t)
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.ConfigFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.ConfigFile, []byte("workspaces: [{name: mine, projects: ["+strconv.Quote(root)+"]}]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"ls", "next"} {
+		code, out, stderr := run("-C", root, command, "--workspace", "mine", "--json")
+		if code != 0 || stderr != "" || !strings.Contains(out, `"project":`) || !strings.Contains(out, `/tasks"`) {
+			t.Fatalf("%s workspace: %d %s %s", command, code, out, stderr)
+		}
+		code, out, _ = run("-C", root, command, "--workspace", "missing", "--json")
+		if code == 0 || !strings.Contains(out, `"reason":"invalid-config"`) {
+			t.Fatalf("missing workspace: %d %s", code, out)
+		}
+	}
+	code, out, _ := run("-C", root, "next", "--workspace", "mine", "--claim", "--json")
+	if code != 2 || !strings.Contains(out, "workspace next is read-only") {
+		t.Fatalf("unsafe workspace claim: %d %s", code, out)
+	}
+	// A coordinated workspace must advertise claim-query support, rather than
+	// reject a valid predicate merely because the composed snapshot omitted it.
+	enableCoordination(t, root)
+	bin := t.TempDir()
+	put(t, filepath.Join(bin, "worklease"), "#!/bin/sh\nprintf '%s\\n' '{\"schemaVersion\":2,\"ok\":true,\"claims\":[]}'\n")
+	if err := os.Chmod(filepath.Join(bin, "worklease"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	code, out, stderr := run("-C", root, "ls", "claimed:none", "--workspace", "mine", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(out, `"id":"BL-012"`) {
+		t.Fatalf("workspace claim query: %d %s %s", code, out, stderr)
+	}
 }
 
 // Cache failures must not turn a valid read command into an unavailable error.

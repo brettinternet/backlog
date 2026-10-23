@@ -44,6 +44,12 @@ func (m *Model) beginCapture(child bool) {
 	if !child && source == "" {
 		capable := []string{}
 		for _, id := range m.opts.Sources {
+			if m.hasWorkspace() && !m.opts.WorkspaceScope {
+				p, _ := m.opts.Workspace.SourceProject(id)
+				if p.Project.ID != m.scopeProject() {
+					continue
+				}
+			}
 			if m.opts.Store.Capabilities(id).Allows(model.Create) {
 				capable = append(capable, id)
 			}
@@ -64,6 +70,7 @@ func (m *Model) beginCapture(child bool) {
 		m.notice = "Disabled: source does not support creation."
 		return
 	}
+	m.routeSourceProject(source)
 	m.capture = captureState{open: true, child: child, source: source}
 	m.notice = ""
 }
@@ -293,6 +300,7 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 			c.cursor = (c.cursor + len(c.sources) - 1) % len(c.sources)
 		case "enter":
 			c.source = c.sources[c.cursor]
+			m.routeSourceProject(c.source)
 			c.choosing = false
 			c.cursor = 0
 		}

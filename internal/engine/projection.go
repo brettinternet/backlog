@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 // Row is prepared off the UI loop. Rendering only needs viewport-sized work.
 type Row struct {
+	Project, Source                           string
 	Claim                                     string
 	Ref                                       model.Ref
 	Version, Title, Status, Type, Milestone   string
@@ -54,6 +56,7 @@ type Projection struct {
 	Ungrouped           bool
 }
 type projectionRequest struct {
+	project       string
 	id            uint64
 	refreshClaims bool
 	snapshot      *Snapshot
@@ -99,7 +102,12 @@ func (p *Projector) RequestEditor(snapshot *Snapshot, text, field, prefix string
 func (p *Projector) RefreshClaims(snapshot *Snapshot, text string) uint64 {
 	return p.request(snapshot, text, false, "", "", true)
 }
-func (p *Projector) request(snapshot *Snapshot, text string, complete bool, field, prefix string, refreshClaims bool) uint64 {
+
+// RequestScope keeps source/project filtering on the projection worker.
+func (p *Projector) RequestScope(snapshot *Snapshot, text, project, field, prefix string, refresh bool) uint64 {
+	return p.request(snapshot, text, field != "", field, prefix, refresh, project)
+}
+func (p *Projector) request(snapshot *Snapshot, text string, complete bool, field, prefix string, refreshClaims bool, scope ...string) uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.active != nil {
@@ -112,7 +120,11 @@ func (p *Projector) request(snapshot *Snapshot, text string, complete bool, fiel
 	case <-p.results:
 	default:
 	}
-	latest(p.requests, projectionRequest{id: p.serial, snapshot: snapshot, text: text, ctx: ctx, complete: complete, field: field, prefix: prefix, refreshClaims: refreshClaims})
+	project := ""
+	if len(scope) > 0 {
+		project = scope[0]
+	}
+	latest(p.requests, projectionRequest{project: project, id: p.serial, snapshot: snapshot, text: text, ctx: ctx, complete: complete, field: field, prefix: prefix, refreshClaims: refreshClaims})
 	return p.serial
 }
 func (p *Projector) Results() <-chan Projection { return p.results }
@@ -227,6 +239,8 @@ func readinessReason(e Explanation) string {
 func (p *Projector) run() {
 	defer close(p.done)
 	var cached *Snapshot
+	var workspaceOriginal, workspaceView *Snapshot
+	var workspaceScope string
 	var claims []model.ClaimInfo
 	var claimsLoaded bool
 	var claimExpiry time.Time
@@ -241,8 +255,15 @@ func (p *Projector) run() {
 			return
 		case req := <-p.requests:
 			result := Projection{Request: req.id, Generation: req.snapshot.Generation}
+			if p.cfg.Workspace != nil {
+				if workspaceOriginal != req.snapshot || workspaceScope != req.project {
+					workspaceOriginal, workspaceScope = req.snapshot, req.project
+					workspaceView = workspaceSnapshot(p.cfg, req.snapshot, req.project)
+				}
+				req.snapshot = workspaceView
+			}
 			coordinator, caller := Coordination(req.ctx)
-			coordination := p.cfg.Coordination.Worklease != nil
+			coordination := p.cfg.Workspace == nil && p.cfg.Coordination.Worklease != nil
 			now := p.now()
 			refresh := coordination && (!claimsLoaded || req.refreshClaims)
 			if refresh {
@@ -254,7 +275,7 @@ func (p *Projector) run() {
 				}
 			}
 			expired := !claimExpiry.IsZero() && !claimExpiry.After(now)
-			if cached != req.snapshot || refresh || expired {
+			if cached != req.snapshot || refresh || expired || p.cfg.Workspace != nil && req.refreshClaims {
 				// A canceled rebuild must not leave the old cache key pointing at a
 				// partially replaced base when the user switches back to that snapshot.
 				cached = nil
@@ -313,6 +334,24 @@ func (p *Projector) run() {
 					base.States[ref] = state
 				}
 				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates})
+				if p.cfg.Workspace != nil {
+					var warnings []string
+					ranking, claimStates, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs)
+					for _, project := range p.cfg.Workspace.Projects {
+						base.Coordination = base.Coordination || project.Coordination.Worklease != nil
+					}
+					if len(warnings) > 0 {
+						result.Warning = fmt.Errorf("%s", strings.Join(warnings, "; "))
+					}
+					for ref, claim := range claimStates {
+						state := base.States[ref]
+						state.Claim = string(claim)
+						if claim == ClaimMine {
+							state.Claim = "me"
+						}
+						base.States[ref] = state
+					}
+				}
 				if req.ctx.Err() != nil {
 					continue
 				}
@@ -391,7 +430,16 @@ func (p *Projector) run() {
 							if r.edit.Remote != nil {
 								remoteVersion = r.edit.Remote.Version
 							}
+							projectConfig, localSource := p.cfg.SourceProject(i.Ref.Source)
+							projectName := i.Project
+							if projectName != "" {
+								projectName = projectConfig.Project.Name
+								if projectName == "" {
+									projectName = filepath.Base(i.Project)
+								}
+							}
 							row := Row{
+								Project: projectName, Source: localSource,
 								Claim: claimLabels[i.Ref], Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
 								Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
 								Category: i.Category, Priority: i.Priority,

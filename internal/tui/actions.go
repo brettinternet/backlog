@@ -38,6 +38,9 @@ func (m Model) openConfiguredActions() (tea.Model, tea.Cmd) {
 func (m Model) loadConfiguredActions() tea.Cmd {
 	row, ok := m.selectedRow()
 	cfg, ctx, serial := m.opts.Automation, m.opts.Context, m.actionCatalogSerial
+	if m.hasWorkspace() {
+		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
+	}
 	return func() tea.Msg {
 		if cfg == nil {
 			return actionChoicesMsg{serial: serial, err: fmt.Errorf("no actions configured")}
@@ -76,6 +79,9 @@ func (m Model) prepareConfiguredAction(name string) (tea.Model, tea.Cmd) {
 	if !ok || m.opts.Automation == nil {
 		m.notice = "Select an item with configured actions."
 		return m, nil
+	}
+	if m.hasWorkspace() {
+		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
 	}
 	return m.prepareConfiguredActionForID(name, row.Ref.Source+":"+row.Ref.ID)
 }
