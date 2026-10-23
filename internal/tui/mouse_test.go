@@ -138,7 +138,7 @@ func TestMouseClicksEditDrawnTarget(t *testing.T) {
 	row, _ := m.selectedRow()
 	m.detailOpen, m.detailFocus, m.detailTab = true, true, tabCriteria
 	m.detailIdentity, m.detailShownRef, m.detailShownTab = identityFor(row, true), row.Ref, tabCriteria
-	m.detailLines, m.detailCriteria = criteriaLines(item, m.theme, m.detailWidth()-2*detailPad)
+	m.detailLines, m.detailEntries = criteriaLines(item, m.theme, m.detailWidth()-2*detailPad)
 	click("beta", "\u2610")
 	if got := itemFrom(t, backend, "BL-1").Criteria; got[0].Checked || !got[1].Checked || got[2].Checked {
 		t.Fatalf("criteria after clicking the second box: %+v", got)

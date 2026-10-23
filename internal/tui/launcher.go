@@ -249,6 +249,7 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 		if row.item != nil {
 			item := *row.item
 			m.goToSelection = &item
+			m.detailHistory = nil
 			m.detailOpen = true
 			m.detailFocus = true
 			return m, m.scheduleDetail()

@@ -138,7 +138,7 @@ func (m *Model) toggleCriterion() tea.Cmd {
 		m.notice = "The selected item is no longer available."
 		return nil
 	}
-	section, index := criterionAt(item, m.criteriaCursor)
+	section, index := criterionAt(item, m.entryCursor)
 	if index < 0 {
 		m.notice = "No criterion is selected."
 		return nil
@@ -160,11 +160,23 @@ func (m Model) criterionCount() int {
 	return len(item.Criteria) + len(item.DoD)
 }
 
-func (m *Model) keepCriterionVisible() {
-	if m.detailTab != tabCriteria || m.criteriaCursor < 0 || m.criteriaCursor >= len(m.detailCriteria) {
+// entryCount is the number of entries the tab's cursor moves over, if it has
+// one.
+func (m Model) entryCount() (int, bool) {
+	switch m.detailTab {
+	case tabCriteria:
+		return m.criterionCount(), true
+	case tabRelations:
+		return len(m.detailTargets), true
+	}
+	return 0, false
+}
+
+func (m *Model) keepEntryVisible() {
+	if _, ok := m.entryCount(); !ok || m.entryCursor < 0 || m.entryCursor >= len(m.detailEntries) {
 		return
 	}
-	line, visible := m.detailCriteria[m.criteriaCursor], m.detailVisible()
+	line, visible := m.detailEntries[m.entryCursor], m.detailVisible()
 	if line < m.detailScroll {
 		m.detailScroll = line
 	} else if line >= m.detailScroll+visible {

@@ -62,7 +62,8 @@ type detailResult struct {
 	generation uint64
 	identity   detailIdentity
 	lines      []string
-	criteria   []int // line index of each criterion, for the Criteria cursor
+	entries    []int             // line index of each criterion or relation, for the tab's cursor
+	targets    []engine.Relation // the relation each Relations entry opens
 	truncated  bool
 	err        string
 }
@@ -100,7 +101,8 @@ type itemKey struct {
 }
 type rendered struct {
 	lines     []string
-	criteria  []int
+	entries   []int
+	targets   []engine.Relation
 	truncated bool
 	size      int
 }
@@ -315,7 +317,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	dependency := detailDependency(request.row, request.tab)
 	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: request.theme.key(), Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
 	if value, ok := worker.cache.render(key); ok {
-		result.lines, result.criteria, result.truncated = value.lines, value.criteria, value.truncated
+		result.lines, result.entries, result.targets, result.truncated = value.lines, value.entries, value.targets, value.truncated
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
@@ -347,7 +349,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	key.Version = version
 	if value, ok := worker.cache.render(key); ok {
 		result.identity.Version = version
-		result.lines, result.criteria, result.truncated = value.lines, value.criteria, value.truncated
+		result.lines, result.entries, result.targets, result.truncated = value.lines, value.entries, value.targets, value.truncated
 		return result
 	}
 	page, err := detailPage(ctx, item, request, worker.render)
@@ -359,7 +361,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		page.lines = []string{request.theme.muted.render("Nothing here yet.")}
 	}
 	result.identity.Version = version
-	result.lines, result.criteria, result.truncated = page.lines, page.criteria, page.truncated
+	result.lines, result.entries, result.targets, result.truncated = page.lines, page.entries, page.targets, page.truncated
 	worker.cache.putRender(key, page)
 	return result
 }
@@ -421,7 +423,7 @@ func detailPage(ctx context.Context, item model.Item, request detailRequest, ren
 		}
 		body.write(item.Description)
 	case tabCriteria:
-		page.lines, page.criteria = criteriaLines(item, t, width)
+		page.lines, page.entries = criteriaLines(item, t, width)
 	case tabNotes:
 		for _, section := range []struct{ name, text string }{{"Plan", item.Plan}, {"Notes", item.Notes}, {"Summary", item.Summary}} {
 			if section.text == "" {
@@ -451,7 +453,7 @@ func detailPage(ctx context.Context, item model.Item, request detailRequest, ren
 			body.write("\n\n")
 		}
 	case tabRelations:
-		page.lines = relationLines(item, request.row, statusNames(request.statuses), t, width)
+		page.lines, page.entries, page.targets = relationLines(request.row, statusNames(request.statuses), t, width)
 	}
 	page.truncated = body.full
 	if text := body.builder.String(); text != "" {
@@ -615,13 +617,16 @@ func criteriaLines(item model.Item, t theme, width int) ([]string, []int) {
 }
 
 // relationLines draws the dependency flow (blockers → item → blocked) and the
-// hierarchy, each relation with live status from the projection.
-func relationLines(item model.Item, row engine.Row, names map[string]string, t theme, width int) []string {
+// hierarchy, each relation with live status from the projection. Each relation
+// is one line, an entry the cursor can open.
+func relationLines(row engine.Row, names map[string]string, t theme, width int) ([]string, []int, []engine.Relation) {
 	byKind := map[string][]engine.Relation{}
 	for _, r := range row.Relations {
 		byKind[r.Kind] = append(byKind[r.Kind], r)
 	}
 	var lines []string
+	var entries []int
+	var targets []engine.Relation
 	entry := func(r engine.Relation, connector string) string {
 		icon := t.categoryIcon(r.Category)
 		status := r.Status
@@ -649,6 +654,7 @@ func relationLines(item model.Item, row engine.Row, names map[string]string, t t
 			if i == len(relations)-1 {
 				connector = "└─"
 			}
+			entries, targets = append(entries, len(lines)), append(targets, r)
 			lines = append(lines, entry(r, connector))
 		}
 	}
@@ -696,26 +702,18 @@ func relationLines(item model.Item, row engine.Row, names map[string]string, t t
 		summary := "  " + t.muted.render(strconv.Itoa(done)+"/"+strconv.Itoa(len(children))) + "  " + progress(t, done, len(children), 10)
 		group("Children", children, summary)
 	}
-	var related []string
-	for _, r := range item.Related {
-		related = append(related, textutil.Line(r.ID))
-	}
-	if item.DuplicateOf != nil {
-		if len(lines) > 0 {
-			lines = append(lines, "")
+	for _, kind := range []struct{ key, label string }{{"duplicate of", "Duplicate of"}, {"related", "Related"}} {
+		if relations := byKind[kind.key]; len(relations) > 0 {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			group(kind.label, relations, "")
 		}
-		lines = append(lines, t.bold.render("Duplicate of")+"  "+t.muted.render(textutil.Line(item.DuplicateOf.ID)))
-	}
-	if len(related) > 0 {
-		if len(lines) > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, t.bold.render("Related")+"  "+t.muted.render(strings.Join(related, "  ")))
 	}
 	if len(lines) == 0 {
 		lines = []string{t.muted.render("No relations.")}
 	}
-	return lines
+	return lines, entries, targets
 }
 
 func milestoneName(key string, milestones []project.Milestone) string {

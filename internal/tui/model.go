@@ -12,6 +12,7 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -138,12 +139,13 @@ type Model struct {
 	detailSubmitted          uint64 // the last generation sent to the worker
 	detailTruncated          bool
 	detailLines              []string // the last body, kept while the next loads
-	detailCriteria           []int    // detailLines index of each criterion
+	detailEntries            []int    // detailLines index of each criterion or relation
+	detailTargets            []engine.Relation
 	detailShownRef           model.Ref
 	detailShownTab           detailTab
 	detailError              string
 	detailScroll             int
-	criteriaCursor           int
+	entryCursor              int
 	detailGeneration         uint64
 	detailIdentity           detailIdentity
 	detailWorker             *detailWorker
@@ -173,6 +175,8 @@ type Model struct {
 	goToSession              uint64
 	goToWorker               *goToWorker
 	goToSelection            *engine.Row
+	detailHistory            []detailStop // items followed from, oldest first
+	catalog                  *engine.Catalog
 	mouse                    mouseState
 }
 
@@ -666,6 +670,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.failure = ""
+		m.catalog = msg.Catalog
 		m.groups = msg.Groups
 		m.ungrouped = msg.Ungrouped
 		m.serial++
@@ -720,14 +725,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailLoading = false
 			m.detailError = result.err
 			m.detailLines = result.lines
-			m.detailCriteria = result.criteria
+			m.detailEntries, m.detailTargets = result.entries, result.targets
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
 			if !same {
 				m.detailScroll = 0
 			}
 			m.scrollDetail(0)
-			m.keepCriterionVisible()
+			m.keepEntryVisible()
 		}
 		return m, m.waitDetail()
 	case pickerChoicesMsg:
@@ -987,9 +992,17 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, m.scheduleDetail()
 			}
 			return m, nil
-		case "q", "enter":
+		case "enter":
+			if m.detailTab == tabRelations && len(m.detailTargets) > 0 {
+				return m, m.followRelation()
+			}
 			m.closeDetail()
 			return m, nil
+		case "q":
+			m.closeDetail()
+			return m, nil
+		case "backspace":
+			return m, m.followBack()
 		case "tab":
 			return m, m.switchDetailTab((m.detailTab + 1) % detailTab(len(detailTabNames)))
 		case "shift+tab":
@@ -1005,18 +1018,18 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, m.toggleCriterion()
 			}
 		case "j", "down":
-			if m.detailTab == tabCriteria {
-				if count := m.criterionCount(); count > 0 {
-					m.criteriaCursor = min(count-1, m.criteriaCursor+1)
-					m.keepCriterionVisible()
+			if count, ok := m.entryCount(); ok {
+				if count > 0 {
+					m.entryCursor = min(count-1, m.entryCursor+1)
+					m.keepEntryVisible()
 				}
 				return m, nil
 			}
 			m.scrollDetail(1)
 		case "k", "up":
-			if m.detailTab == tabCriteria {
-				m.criteriaCursor = max(0, m.criteriaCursor-1)
-				m.keepCriterionVisible()
+			if _, ok := m.entryCount(); ok {
+				m.entryCursor = max(0, m.entryCursor-1)
+				m.keepEntryVisible()
 				return m, nil
 			}
 			m.scrollDetail(-1)
@@ -1032,13 +1045,13 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			if m.prefix == "g" {
 				m.prefix = ""
 				m.detailScroll = 0
-				m.criteriaCursor = 0
+				m.entryCursor = 0
 			} else {
 				m.prefix = "g"
 			}
 		case "G":
 			m.scrollDetail(len(m.detailLines))
-			m.criteriaCursor = max(0, len(m.detailCriteria)-1)
+			m.entryCursor = max(0, len(m.detailEntries)-1)
 		}
 		return m, nil
 	}
@@ -1201,9 +1214,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 func (m *Model) switchDetailTab(tab detailTab) tea.Cmd {
 	m.detailTab = tab
 	m.detailExpanded = false
-	if tab == tabCriteria {
-		m.criteriaCursor = 0
-	}
+	m.entryCursor = 0
 	return m.showDetail()
 }
 
@@ -1227,7 +1238,8 @@ func (m *Model) closeDetail() {
 	m.detailGeneration++
 	m.detailLoading = false
 	m.detailLines = nil
-	m.detailCriteria = nil
+	m.detailEntries, m.detailTargets = nil, nil
+	m.detailHistory = nil
 	m.detailTruncated = false
 }
 
@@ -1257,6 +1269,74 @@ func (m *Model) stepItem(forward bool) tea.Cmd {
 	}
 	return nil
 }
+
+// detailStop is an item detail followed a relation from: a go-to or followed
+// row, or nil for the list selection.
+type detailStop struct {
+	row    *engine.Row
+	cursor int
+}
+
+// followRelation opens the relation under the cursor as go-to does, keeping the
+// view and list selection, and remembers the item for followBack. The catalog
+// prepares the target's row from the item alone (D14).
+func (m *Model) followRelation() tea.Cmd {
+	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailTargets) {
+		return nil
+	}
+	target := m.detailTargets[m.entryCursor]
+	var row engine.Row
+	ok := false
+	if m.catalog != nil {
+		row, ok = m.catalog.Row(target.Ref)
+	}
+	if !ok {
+		m.notice = textutil.Line(target.Ref.ID) + " can't open: " + m.unloadedReason(target.Ref) + "."
+		return nil
+	}
+	if m.goToSelection == nil {
+		m.detailHistory = nil // a chain starts at the list selection
+	}
+	m.detailHistory = append(m.detailHistory, detailStop{row: m.goToSelection, cursor: m.entryCursor})
+	m.goToSelection = &row
+	m.entryCursor = 0
+	return m.showDetail()
+}
+
+// followBack returns to the item a relation was followed from.
+func (m *Model) followBack() tea.Cmd {
+	if m.goToSelection == nil || len(m.detailHistory) == 0 {
+		m.detailHistory = nil
+		m.notice = "No previous item."
+		return nil
+	}
+	stop := m.detailHistory[len(m.detailHistory)-1]
+	m.detailHistory = m.detailHistory[:len(m.detailHistory)-1]
+	m.goToSelection = stop.row
+	m.entryCursor = stop.cursor
+	return m.showDetail()
+}
+
+// unloadedReason says why a relation's target isn't in the snapshot.
+func (m Model) unloadedReason(ref model.Ref) string {
+	if m.catalog == nil || m.snapshot == nil {
+		return "items are still loading"
+	}
+	state := m.snapshot.Source(ref.Source)
+	name := textutil.Line(ref.Source)
+	switch {
+	case state.Error != "":
+		return name + " failed to load"
+	case state.Coverage == "":
+		return name + " isn't a configured source"
+	case state.Initial || state.Coverage == source.Unknown:
+		return name + " is still loading"
+	case state.Coverage == source.Partial:
+		return name + " isn't fully loaded"
+	}
+	return "it isn't in " + name
+}
+
 func identityForSelected(m Model) detailIdentity {
 	row, ok := m.selectedRow()
 	return identityFor(row, ok)

@@ -73,6 +73,7 @@ type Projection struct {
 	Warning             error
 	Completions         []query.Candidate
 	Ungrouped           bool
+	Catalog             *Catalog
 }
 type projectionRequest struct {
 	project       string
@@ -173,10 +174,10 @@ func ReverseRelations(ctx context.Context, snapshot *Snapshot) (map[model.Ref][]
 
 // RelationRows prepares canonical detail relations using a shared reverse index.
 func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy map[model.Ref][]model.Ref) []Relation {
-	if len(item.BlockedBy) == 0 && len(item.Blocks) == 0 && len(item.Children) == 0 && item.Parent == nil && len(blockingBy[item.Ref]) == 0 && len(childrenBy[item.Ref]) == 0 {
+	if len(item.BlockedBy) == 0 && len(item.Blocks) == 0 && len(item.Children) == 0 && len(item.Related) == 0 && item.Parent == nil && item.DuplicateOf == nil && len(blockingBy[item.Ref]) == 0 && len(childrenBy[item.Ref]) == 0 {
 		return nil
 	}
-	rows := make([]Relation, 0, len(item.BlockedBy)+len(item.Blocks)+len(item.Children)+2)
+	rows := make([]Relation, 0, len(item.BlockedBy)+len(item.Blocks)+len(item.Children)+len(item.Related)+2)
 	appendRelations := func(kind string, refs []model.Ref) {
 		refs = slices.Clone(refs)
 		for index := range refs {
@@ -202,7 +203,53 @@ func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy ma
 		appendRelations("parent", []model.Ref{*item.Parent})
 	}
 	appendRelations("children", append(slices.Clone(item.Children), childrenBy[item.Ref]...))
+	if item.DuplicateOf != nil {
+		appendRelations("duplicate of", []model.Ref{*item.DuplicateOf})
+	}
+	appendRelations("related", item.Related)
 	return rows
+}
+
+// Catalog prepares the row of any item in one snapshot in time proportional to
+// the item, so the UI can open an item outside its list without a scan (D14).
+type Catalog struct {
+	snapshot               *Snapshot
+	blockingBy, childrenBy map[model.Ref][]model.Ref
+	explanations           map[model.Ref]Explanation
+}
+
+func (c *Catalog) Row(ref model.Ref) (Row, bool) {
+	r := c.snapshot.records[ref]
+	if r == nil {
+		return Row{}, false
+	}
+	return newRow(*r.item, r, c.explanations[ref], RelationRows(*r.item, c.snapshot, c.blockingBy, c.childrenBy)), true
+}
+
+// newRow sets the fields every row has; projections add project, claim and
+// list counts.
+func newRow(i model.Item, r *record, explanation Explanation, relations []Relation) Row {
+	localVersion, remoteVersion := "", ""
+	if r.edit.Local != nil {
+		localVersion = r.edit.Local.Version
+	}
+	if r.edit.Remote != nil {
+		remoteVersion = r.edit.Remote.Version
+	}
+	reason := readinessReason(explanation)
+	row := Row{
+		Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
+		Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
+		Updated: i.Updated, Category: i.Category, Priority: i.Priority,
+		Assignees: i.Assignees, Labels: i.Labels, Pending: r.edit.Pending,
+		Error: r.edit.Error, ErrorLocalVersion: localVersion,
+		ErrorRemoteVersion: remoteVersion, Readiness: explanation.Readiness,
+		ReadinessReason:  reason,
+		ReadinessVersion: string(explanation.Readiness) + "\x00" + reason,
+		Relations:        relations, RelationVersion: RelationVersion(relations),
+	}
+	row.SetCounts(i)
+	return row
 }
 
 // RelationVersion fingerprints the prepared relations for detail-cache invalidation.
@@ -252,6 +299,7 @@ func (p *Projector) run() {
 	var base query.Snapshot
 	var explanations map[model.Ref]Explanation
 	var blockingBy, childrenBy map[model.Ref][]model.Ref
+	var catalog *Catalog
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -381,7 +429,9 @@ func (p *Projector) run() {
 					explanations[e.Ref] = e
 				}
 				cached = req.snapshot
+				catalog = &Catalog{snapshot: req.snapshot, blockingBy: blockingBy, childrenBy: childrenBy, explanations: explanations}
 			}
+			result.Catalog = catalog
 			base.Now = now
 			result.NextClaimExpiry = claimExpiry
 			if claimErr != nil {
@@ -432,16 +482,7 @@ func (p *Projector) run() {
 								break
 							}
 							r := req.snapshot.records[i.Ref]
-							explanation := explanations[i.Ref]
-							reason := readinessReason(explanation)
 							relations := RelationRows(i, req.snapshot, blockingBy, childrenBy)
-							localVersion, remoteVersion := "", ""
-							if r.edit.Local != nil {
-								localVersion = r.edit.Local.Version
-							}
-							if r.edit.Remote != nil {
-								remoteVersion = r.edit.Remote.Version
-							}
 							projectConfig, localSource := p.cfg.SourceProject(i.Ref.Source)
 							projectName := i.Project
 							if projectName != "" {
@@ -450,19 +491,8 @@ func (p *Projector) run() {
 									projectName = filepath.Base(i.Project)
 								}
 							}
-							row := Row{
-								Project: projectName, Source: localSource,
-								Claim: claimLabels[i.Ref], Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
-								Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
-								Updated: i.Updated, Category: i.Category, Priority: i.Priority,
-								Assignees: i.Assignees, Labels: i.Labels, Pending: r.edit.Pending,
-								Error: r.edit.Error, ErrorLocalVersion: localVersion,
-								ErrorRemoteVersion: remoteVersion, Readiness: explanation.Readiness,
-								ReadinessReason:  reason,
-								ReadinessVersion: string(explanation.Readiness) + "\x00" + reason,
-								Relations:        relations, RelationVersion: RelationVersion(relations),
-							}
-							row.SetCounts(i)
+							row := newRow(i, r, explanations[i.Ref], relations)
+							row.Project, row.Source, row.Claim = projectName, localSource, claimLabels[i.Ref]
 							closed := func(ref model.Ref) bool {
 								r := req.snapshot.records[normalizedRef(ref, i.Ref)]
 								return r != nil && !r.stale && (r.item.Category == model.Done || r.item.Category == model.Canceled)

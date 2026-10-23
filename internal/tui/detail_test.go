@@ -366,6 +366,113 @@ func TestDetailExternalRelations(t *testing.T) {
 	}
 }
 
+// Following a relation must open the target with its own inbound relations,
+// leave the list alone, refuse a target outside the snapshot, and unwind.
+func TestDetailFollowRelations(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ref := func(id string) model.Ref { return model.Ref{Source: "tasks", ID: id} }
+	parent := ref("BL-2")
+	backend := &detailSource{items: []model.Item{
+		{Ref: ref("BL-1"), Version: "v1", Title: "Owner", Status: "todo", Category: model.Todo, BlockedBy: []model.Ref{ref("BL-2")}, Related: []model.Ref{ref("BL-9")}},
+		{Ref: ref("BL-2"), Version: "v1", Title: "Blocker", Status: "done", Category: model.Done},
+		{Ref: ref("BL-3"), Version: "v1", Title: "Child", Status: "done", Category: model.Done, Parent: &parent},
+	}}
+	cfg := project.Config{Settings: project.Settings{Ready: project.ReadyConfig{Statuses: []string{"todo"}, SatisfiedBy: []string{"done"}}, Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}, {Key: "done", Category: "done"}}}}
+	store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
+	defer store.Close()
+	projector := engine.NewProjector(ctx, cfg)
+	defer projector.Close()
+	ch, unsub := store.Subscribe()
+	defer unsub()
+	m := New(Options{Context: ctx, NoColor: true, Read: func(ctx context.Context, ref model.Ref) (model.Item, error) { return backend.Read(ctx, ref.ID) }, Render: func(body string, _ int) (string, error) { return body, nil }})
+	m.width = 120
+	for m.catalog == nil {
+		select {
+		case <-ctx.Done():
+			t.Fatal("projection timed out")
+		case snapshot := <-ch:
+			if snapshot.Len() < 3 {
+				continue
+			}
+			projector.Request(snapshot, "is:open")
+			p := <-projector.Results()
+			m.snapshot, m.catalog = snapshot, p.Catalog
+			m.data = prepareGroupedRows(p.Groups, nil, false, "", nil)
+		}
+	}
+	if len(m.data.rows) != 1 || m.data.rows[0].row.Ref != ref("BL-1") {
+		t.Fatalf("list: %+v", m.data.rows)
+	}
+	m.detailTab = tabRelations
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	cursorAt := func(id string) {
+		t.Helper()
+		for i, target := range m.detailTargets {
+			if target.Ref == ref(id) {
+				for m.entryCursor < i {
+					m, _ = detailKey(m, 'j', 0)
+				}
+				for m.entryCursor > i {
+					m, _ = detailKey(m, 'k', 0)
+				}
+				return
+			}
+		}
+		t.Fatalf("no entry for %s in %+v", id, m.detailTargets)
+	}
+	shown := func(id string) {
+		t.Helper()
+		if row, ok := m.selectedRow(); !ok || row.Ref != ref(id) || m.detailIdentity.Ref != ref(id) || !strings.Contains(detailHeader(m), id) {
+			t.Fatalf("detail shows %+v, want %s", m.detailIdentity.Ref, id)
+		}
+		if m.selected != 0 || m.view != 0 || m.detailTab != tabRelations {
+			t.Fatalf("list or view changed: selected %d view %d tab %d", m.selected, m.view, m.detailTab)
+		}
+	}
+
+	cursorAt("BL-9")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m.goToSelection != nil || !m.detailOpen || m.notice != "BL-9 can't open: it isn't in tasks." {
+		t.Fatalf("missing target: notice %q", m.notice)
+	}
+	if !strings.Contains(strings.Join(m.detailLines, "\n"), "? BL-9") {
+		t.Fatal("missing target is not marked")
+	}
+	cursorAt("BL-2")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	shown("BL-2")
+	cursorAt("BL-3") // an inbound parent link, so the catalog prepared BL-2's reverse relations
+	if !strings.Contains(strings.Join(m.detailLines, "\n"), "BL-1  Owner") {
+		t.Fatal("followed item lost its inbound blocking relation")
+	}
+
+	// A double-click follows, as it opens a list row.
+	y := m.detailBodyTop() + 1 + m.detailEntries[m.entryCursor] - m.detailScroll
+	for range 2 {
+		next, _ := m.Update(tea.MouseClickMsg{X: m.width - 10, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+	}
+	m = settleDetail(t, m)
+	shown("BL-3")
+
+	for _, want := range []string{"BL-2", "BL-1"} {
+		m, _ = detailKey(m, tea.KeyBackspace, 0)
+		m = settleDetail(t, m)
+		shown(want)
+	}
+	if m.goToSelection != nil || m.detailTargets[m.entryCursor].Ref != ref("BL-2") {
+		t.Fatal("back did not end at the original selection and entry")
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	if m.notice != "No previous item." {
+		t.Fatalf("back past the start: %q", m.notice)
+	}
+}
+
 // detailHeader is the plain text of the detail pane's ID, status and title rows.
 func detailHeader(m Model) string {
 	return ansi.Strip(strings.Join(m.detailPane(m.detailWidth(), 2), "\n"))

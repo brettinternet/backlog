@@ -48,6 +48,7 @@ func defaultKeymap() []action {
 		{group: "Detail", id: "detail", label: "Toggle detail", canonical: "enter", bindings: []string{"enter"}},
 		{id: "next-detail-tab", label: "Next tab", canonical: "tab", bindings: []string{"tab"}},
 		{id: "previous-detail-tab", label: "Previous tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
+		{id: "back", label: "Back to previous item", canonical: "backspace", bindings: []string{"backspace"}},
 		{id: "split-left", label: "Shrink list", canonical: "ctrl+left", bindings: []string{"ctrl+left"}},
 		{id: "split-right", label: "Grow list", canonical: "ctrl+right", bindings: []string{"ctrl+right"}},
 		{group: "Views", id: "next-view", label: "Next view", canonical: "g t", bindings: []string{"g t"}},
@@ -346,11 +347,14 @@ func (m Model) disabledReason(a action) string {
 	if (a.id == "undo" || a.id == "redo") && m.opts.Store == nil {
 		return "session history is unavailable"
 	}
+	if a.id == "back" && (!m.detailFocus || m.goToSelection == nil || len(m.detailHistory) == 0) {
+		return "no previous item"
+	}
 	if a.id == "criterion" && (!m.detailFocus || m.detailTab != tabCriteria) {
 		return "open the Criteria tab"
 	}
 	if m.detailFocus {
-		if slices.Contains([]string{"move-down", "move-up", "next-item", "previous-item", "first", "last", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
+		if slices.Contains([]string{"move-down", "move-up", "next-item", "previous-item", "first", "last", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "back", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
 			return ""
 		}
 		if a.id == "milestone" {

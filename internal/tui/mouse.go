@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -135,6 +136,8 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 		case m.detailTab == tabCriteria && p.Y-1 >= m.detailBodyTop():
 			return m, m.clickCriterion(x, m.detailScroll+p.Y-1-m.detailBodyTop())
+		case m.detailTab == tabRelations && p.Y-1 >= m.detailBodyTop():
+			return m, m.clickRelation(p.X, p.Y, m.detailScroll+p.Y-1-m.detailBodyTop())
 		}
 		return m, nil
 	}
@@ -324,7 +327,7 @@ func (m *Model) clickCriterion(x, line int) tea.Cmd {
 		return nil
 	}
 	found := -1
-	for i, start := range m.detailCriteria {
+	for i, start := range m.detailEntries {
 		if start <= line {
 			found = i
 		}
@@ -333,14 +336,35 @@ func (m *Model) clickCriterion(x, line int) tea.Cmd {
 		return nil
 	}
 	// A criterion spans its wrapped text and evidence, up to a blank line.
-	for i := m.detailCriteria[found] + 1; i <= line; i++ {
+	for i := m.detailEntries[found] + 1; i <= line; i++ {
 		if i >= len(m.detailLines) || m.detailLines[i] == "" {
 			return nil
 		}
 	}
-	m.criteriaCursor = found
-	if line == m.detailCriteria[found] && x >= 1 && x <= 3 { // the box at x 2, or a cell beside it
+	m.entryCursor = found
+	if line == m.detailEntries[found] && x >= 1 && x <= 3 { // the box at x 2, or a cell beside it
 		return m.toggleCriterion()
+	}
+	return nil
+}
+
+// clickRelation selects the relation drawn on a detail line; a double-click
+// follows it, as a double-click opens a list row. x and y are the screen cell.
+func (m *Model) clickRelation(x, y, line int) tea.Cmd {
+	if !m.detailCurrent() {
+		return nil
+	}
+	found := slices.Index(m.detailEntries, line)
+	if found < 0 || found >= len(m.detailTargets) {
+		return nil
+	}
+	m.entryCursor = found
+	ref, now := m.detailTargets[found].Ref, m.now()
+	double := ref == m.mouse.lastRef && x == m.mouse.lastX && y == m.mouse.lastY && now.Sub(m.mouse.lastClick) >= 0 && now.Sub(m.mouse.lastClick) <= 400*time.Millisecond
+	m.mouse.lastClick, m.mouse.lastRef, m.mouse.lastX, m.mouse.lastY = now, ref, x, y
+	if double {
+		m.mouse.lastRef = model.Ref{}
+		return m.followRelation()
 	}
 	return nil
 }

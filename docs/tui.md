@@ -152,9 +152,10 @@ the focused column.
 
 `enter`, `l`, or `right` opens detail (`enter` on a group header folds it). In
 detail, `j`/`k` and page keys scroll, `tab`/`shift-tab` change tabs, `m` shows
-more of a long body, and `enter`, `esc`, or `q` close. `J`/`K` select the next or
-previous item from either pane. At split widths, `h` returns to the list without
-closing detail; a second `h` closes it.
+more of a long body, and `enter`, `esc`, or `q` close (`enter` follows a
+relation in Relations). `J`/`K` select the next or previous item from either
+pane. At split widths, `h` returns to the list without closing detail; a second
+`h` closes it.
 
 `ctrl-p` opens go-to: fuzzy search over every ID and title, including closed and
 archived items (up to 100 matches). `enter` opens detail without changing the
@@ -176,7 +177,14 @@ loading shows.
 | Criteria | Acceptance criteria and definition of done, with progress |
 | Notes | Plan, notes, summary |
 | Comments | Comments |
-| Relations | Blockers → item → what it blocks, then parent, children with progress, related, duplicates, each with live status |
+| Relations | Blockers → item → what it blocks, then parent, children with progress, duplicate of, related, each with live status |
+
+In Criteria and Relations, `j`/`k` move a cursor over the entries. In
+Relations, `enter` opens the entry's item in detail, as go-to does: the view and
+list selection stay. `backspace` returns to the previous item, back through
+every jump to the original selection. A target that isn't loaded shows `?`,
+and following it says why: its source isn't configured, failed, or is still
+loading, or the item isn't in it.
 
 Bodies render up to 32 KiB; `m` raises the limit to 128 KiB. An indicator shows
 when content is still cut off.
@@ -333,9 +341,10 @@ Click a row to select it; double-click (within 400 ms) to open it. Clicking a
 group header folds or unfolds it. Click tabs to switch. Clicking a board column
 header focuses it; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
-to toggle it. Click the query in the status bar to edit it there. The wheel
-moves three rows, or scrolls detail under the pointer; a sideways swipe moves one
-board column. Drag the divider to resize.
+to toggle it. Click a relation to select it; double-click to open it. Click the
+query in the status bar to edit it there. The wheel moves three rows, or scrolls
+detail under the pointer; a sideways swipe moves one board column. Drag the
+divider to resize.
 
 In the palette, pickers, and completion, the wheel moves the highlight and a
 click picks a row, or toggles it in a multi-select. Clicking the query being
@@ -392,6 +401,7 @@ keys:
 | `detail` | `enter` | Toggle detail |
 | `next-detail-tab` | `tab` | Next tab |
 | `previous-detail-tab` | `shift+tab` | Previous tab |
+| `back` | `backspace` | Back to previous item |
 | `split-left` | `ctrl+left` | Shrink list |
 | `split-right` | `ctrl+right` | Grow list |
 | `next-view` | `g t` | Next view |
