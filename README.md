@@ -41,7 +41,7 @@ The Jira adapter is still being implemented; see [remote adapter status](docs/re
 - [Readiness and ranking](docs/readiness.md)
 - [Backlog.md source](docs/backlog-md.md) and [import](docs/import.md)
 - [Beads](docs/beads.md)
-- [Remote adapters](docs/remote.md)
+- [Remote adapters](docs/remote.md) and [OAuth qualification](docs/oauth.md) (planned, not shipped)
 - [GitHub setup](docs/github.md) and [live verification](docs/github-verification.md)
 - [Linear setup](docs/linear.md) and [live verification](docs/linear-verification.md)
 - [External adapter protocol v1](docs/external-adapter-protocol.md) and [wire schema](docs/external-adapter/v1/schema.json)
