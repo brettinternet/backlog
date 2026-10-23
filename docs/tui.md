@@ -193,8 +193,8 @@ when content is still cut off.
 
 ## Filtering, sorting, grouping
 
-`/` edits the query live. `up`/`down` highlight a candidate; an unfinished word
-highlights the first. `tab` inserts the highlighted candidate, or the first.
+`/` edits the query live, after a space so typing starts a new clause.
+`up`/`down` highlight a candidate; an unfinished word highlights the first. `tab` inserts the highlighted candidate, or the first.
 `enter` inserts the highlighted candidate, then applies the query if it parses;
 a field name stays open for its value. `esc` restores the previous query.
 Syntax errors show a byte position and keep the last valid rows; unknown values

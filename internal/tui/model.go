@@ -960,7 +960,12 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	if !m.detailFocus {
 		switch s {
 		case "/":
-			m.editQuery(m.query)
+			// A trailing space starts a new clause instead of extending the last.
+			text := m.query
+			if text != "" {
+				text += " "
+			}
+			m.editQuery(text)
 			return m, nil
 		case "f", "o", "z":
 			m.prefix = s

@@ -307,7 +307,7 @@ func (m *Model) acceptQuery() {
 		}
 		return
 	}
-	m.query = e.text
+	m.query = strings.TrimSpace(e.text)
 	m.editor = queryEditor{}
 	m.queryError = ""
 	m.serial++

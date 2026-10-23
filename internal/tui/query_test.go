@@ -138,6 +138,17 @@ func TestQueryEditor(t *testing.T) {
 	if m.editor.open || m.query != "status:todo" || len(m.data.rows) != 12 {
 		t.Fatalf("apply: %+v", m.editor)
 	}
+	// `/` opens with a trailing space for a new clause; applying it unchanged
+	// neither inserts a candidate nor keeps the space.
+	m = queryKey(m, "/")
+	if m.editor.text != "status:todo " {
+		t.Fatalf("new clause: %q", m.editor.text)
+	}
+	m = settleQuery(t, m)
+	m = queryKey(m, "enter")
+	if m.editor.open || m.query != "status:todo" {
+		t.Fatalf("unchanged apply: %q", m.query)
+	}
 	m = queryKey(m, "/")
 	m = queryKey(m, "ctrl+u")
 	m = queryType(m, `label:"two`)
