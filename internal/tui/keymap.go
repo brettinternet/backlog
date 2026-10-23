@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -73,7 +74,7 @@ func defaultKeymap() []action {
 		{id: "redo", label: "Redo", canonical: "ctrl+r", bindings: []string{"ctrl+r"}},
 		{id: "new", label: "Quick-add", canonical: "n", bindings: []string{"n"}},
 		{id: "new-child", label: "Quick-add child", canonical: "N", bindings: []string{"N"}},
-		{id: "actions", label: "Actions menu", bindings: []string{"!"}, unavailable: "configured actions await BL-30"},
+		{id: "actions", label: "Actions menu", bindings: []string{"!"}},
 		{id: "yank-id", label: "Copy ID", canonical: "y y", bindings: []string{"y y"}},
 		{id: "yank-title", label: "Copy title", canonical: "y t", bindings: []string{"y t"}},
 		{id: "yank-branch", label: "Copy branch name", canonical: "y b", bindings: []string{"y b"}},
@@ -105,9 +106,19 @@ func defaultKeymap() []action {
 
 // ValidateKeys is called before starting the program, so conflicting or unknown
 // bindings fail startup rather than silently shadowing another action.
-func ValidateKeys(overrides map[string]string) error { _, err := buildKeymap(overrides); return err }
-func buildKeymap(overrides map[string]string) ([]action, error) {
+func ValidateKeys(overrides map[string]string, configured ...project.ActionConfig) error {
+	_, err := buildKeymap(overrides, configured...)
+	return err
+}
+func buildKeymap(overrides map[string]string, configured ...project.ActionConfig) ([]action, error) {
 	actions := defaultKeymap()
+	for _, configured := range configured {
+		a := action{id: "action:" + configured.Name, label: configured.Name}
+		if configured.Key != "" {
+			a.bindings = []string{configured.Key}
+		}
+		actions = append(actions, a)
+	}
 	known := map[string]bool{}
 	for i := range actions {
 		a := &actions[i]
@@ -208,6 +219,9 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
+	if strings.HasPrefix(a.id, "action:") {
+		return m.prepareConfiguredAction(strings.TrimPrefix(a.id, "action:"))
+	}
 	if a.unavailable != "" {
 		m.notice = "Disabled: " + a.unavailable
 		return m, nil
@@ -217,6 +231,8 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch a.id {
+	case "actions":
+		return m.openConfiguredActions()
 	case "go-to":
 		return m.openGoTo()
 	case "help", "palette":

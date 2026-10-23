@@ -26,5 +26,22 @@ func hooksCommand(directory *string) *urfave.Command {
 			}
 			return nil
 		},
+	}, {
+		Name: "action", Usage: "Execute a prepared detached action", ArgsUsage: "HANDOFF",
+		Action: func(ctx context.Context, cmd *urfave.Command) error {
+			if cmd.Args().Len() != 1 {
+				return writeUsage("hooks action requires a handoff")
+			}
+			invocation, err := hooks.ReadActionInvocation(cmd.Args().First())
+			if err != nil {
+				return err
+			}
+			cfg, err := loadConfig(cmd, *directory)
+			if err != nil {
+				return err
+			}
+			_, err = hooks.RunAction(ctx, cfg, invocation, nil, nil)
+			return err
+		},
 	}}}
 }

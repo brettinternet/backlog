@@ -1,0 +1,160 @@
+package hooks
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
+)
+
+// ActionInvocation is an unlogged invocation context, not a new event type.
+// It is preserved when handing a detached action to the private runner.
+type ActionInvocation struct {
+	Name  string `json:"name"`
+	Event Event  `json:"event"`
+	CWD   string `json:"cwd"`
+}
+
+type ActionResult struct {
+	Event    Event  `json:"event"`
+	Detached bool   `json:"detached,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+func actionConfig(cfg project.Config, name string) (project.ActionConfig, error) {
+	for i, action := range cfg.Actions {
+		if action.Name == name {
+			if err := cfg.RequireTrusted(fmt.Sprintf("actions[%d]", i)); err != nil {
+				return action, source.Refuse("unavailable", err.Error())
+			}
+			return action, nil
+		}
+	}
+	return project.ActionConfig{}, source.Refuse("not-found", "unknown action: "+name)
+}
+
+// CheckAction shares the executor's expansion and value checks without I/O.
+func CheckAction(cfg project.Config, invocation ActionInvocation) error {
+	action, err := actionConfig(cfg, invocation.Name)
+	if err != nil {
+		return err
+	}
+	if invocation.Event.Depth < 0 || invocation.Event.Depth > 3 {
+		return source.Refuse("rejected", "action causal depth exceeds 3")
+	}
+	if len(action.Run) == 0 || action.Run[0] == "" {
+		return source.Refuse("rejected", "action run is empty")
+	}
+	for _, value := range append(append([]string(nil), action.Run...), action.CWD) {
+		if _, err := expand(value, cfg, invocation.Event); err != nil {
+			return source.Refuse("rejected", err.Error())
+		}
+	}
+	return nil
+}
+
+// RunAction is the sole execution path for CLI, MCP and TUI actions. Terminal
+// output can be forwarded by an attached caller; stdin is always context JSON.
+func RunAction(ctx context.Context, cfg project.Config, invocation ActionInvocation, out, errOut io.Writer) (ActionResult, error) {
+	action, err := actionConfig(cfg, invocation.Name)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	result := execution{outcome: "refused", exitCode: -1}
+	if err := CheckAction(cfg, invocation); err != nil {
+		result.message = err.Error()
+	} else {
+		result = executeWithOutput(ctx, cfg, project.HookConfig{Name: action.Name, Run: action.Run, CWD: action.CWD}, invocation.Event, invocation.CWD, true, out, errOut)
+	}
+	event := invocation.Event
+	finished := Event{Type: "action.finished", Project: event.Project, Source: event.Source,
+		Ref: event.Ref, Resource: event.Resource, Item: event.Item, Actor: event.Actor,
+		Origin: "action", Cause: stringPointer(event.ID), Depth: event.Depth + 1,
+		Name: action.Name, Outcome: result.outcome, ExitCode: intPointer(result.exitCode),
+		Duration: result.duration, Result: result.result, Versions: []string{event.ID, action.Name}}
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultTimeout)
+	defer cancel()
+	var appended []Event
+	err = New(cfg.Paths.StateDir, cfg.Project.ID).Update(finishCtx, func(tx *Transaction) error {
+		_, err := tx.Append(finished)
+		appended = tx.Appended()
+		return err
+	})
+	if err != nil {
+		return ActionResult{}, err
+	}
+	if len(appended) > 0 {
+		finished = appended[0]
+		if err := StartRunner(cfg, appended, invocation.CWD); err != nil {
+			return ActionResult{Event: finished, Message: result.message}, err
+		}
+	}
+	return ActionResult{Event: finished, Message: result.message}, nil
+}
+
+// StartAction hands the already prepared context to a detached bl process.
+func StartAction(cfg project.Config, invocation ActionInvocation) (ActionResult, error) {
+	if err := CheckAction(cfg, invocation); err != nil {
+		return ActionResult{}, err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return ActionResult{}, err
+	}
+	file, err := os.CreateTemp("", "bl-action-*.json")
+	if err != nil {
+		return ActionResult{}, err
+	}
+	path := file.Name()
+	if err = json.NewEncoder(file).Encode(invocation); err != nil {
+		file.Close()
+		os.Remove(path)
+		return ActionResult{}, err
+	}
+	if err = file.Close(); err != nil {
+		os.Remove(path)
+		return ActionResult{}, err
+	}
+	cmd := exec.Command(executable, "-C", invocation.CWD, "hooks", "action", path)
+	cmd.Dir = invocation.CWD
+	if err = cmd.Start(); err != nil {
+		os.Remove(path)
+		return ActionResult{}, err
+	}
+	if err = cmd.Process.Release(); err != nil {
+		return ActionResult{}, err
+	}
+	return ActionResult{Detached: true}, nil
+}
+
+// ReadActionInvocation consumes the private runner handoff, bounded independently
+// of the task's description size, and always removes its temporary file.
+func ReadActionInvocation(path string) (ActionInvocation, error) {
+	var invocation ActionInvocation
+	clean := filepath.Clean(path)
+	if filepath.Dir(clean) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(clean), "bl-action-") || !strings.HasSuffix(clean, ".json") {
+		return invocation, fmt.Errorf("invalid action handoff path")
+	}
+	defer os.Remove(clean)
+	file, err := os.Open(path)
+	if err != nil {
+		return invocation, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(io.LimitReader(file, 8<<20))
+	if err := decoder.Decode(&invocation); err != nil {
+		return invocation, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return invocation, fmt.Errorf("invalid action handoff")
+	}
+	return invocation, nil
+}

@@ -20,6 +20,7 @@ import (
 )
 
 type Options struct {
+	Automation                              *project.Config
 	HighContrast, NoColor                   bool
 	Project                                 string
 	Store                                   *engine.Store
@@ -140,6 +141,9 @@ type Model struct {
 	visualAnchor             int
 	lastEdit                 *editAction
 	archiveConfirm           bool
+	actionConfirm            *engine.ActionChoice
+	actionSerial             uint64
+	actionCatalogSerial      uint64
 	capture                  captureState
 	longEdit                 longEditState
 	board                    boardState
@@ -185,7 +189,11 @@ func New(opts Options) Model {
 	}
 	model.initViews()
 	model.notice = opts.Warning
-	model.keymap, model.keyError = buildKeymap(opts.Keys)
+	var configured []project.ActionConfig
+	if opts.Automation != nil {
+		configured = opts.Automation.Actions
+	}
+	model.keymap, model.keyError = buildKeymap(opts.Keys, configured...)
 	if opts.GoToItems != nil {
 		model.goToWorker = newGoToWorker(opts.Context, opts.GoToItems)
 	}
@@ -581,6 +589,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.picker.cursor = msg.cursor
 		}
 		return m, nil
+	case actionChoicesMsg:
+		return m.receiveActionChoices(msg)
+	case actionPreparedMsg:
+		return m.receiveActionPrepared(msg)
+	case actionFinishedMsg:
+		if msg.err != nil {
+			m.notice = "Action: " + boundedLine(msg.err.Error())
+		} else {
+			m.notice = msg.message
+		}
+		return m, nil
 	case editPreparedMsg:
 		return m.editorPrepared(msg)
 	case editFinishedMsg:
@@ -595,9 +614,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = msg.err
 		return m, nil
 	case tea.KeyPressMsg:
+		// Any new input supersedes action preparation still running on a worker.
+		// In particular, Enter in a newer modal must never confirm an older action.
+		m.actionSerial++
 		s := msg.String()
-		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.save.open || m.editor.open) {
+		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.editor.open) {
 			return m, tea.Quit
+		}
+		if m.actionConfirm != nil {
+			switch s {
+			case "y", "enter":
+				choice := *m.actionConfirm
+				m.actionConfirm = nil
+				return m, m.runConfiguredAction(choice)
+			case "n", "esc":
+				m.actionConfirm = nil
+			}
+			return m, nil
 		}
 		if m.launcher.open {
 			return m.updateLauncher(s, msg.Text)
@@ -1122,6 +1155,9 @@ func (m Model) View() tea.View {
 	}
 	if m.count > 0 {
 		footer += " · " + strconv.Itoa(m.count) + m.prefix
+	}
+	if m.actionConfirm != nil {
+		footer = "Run " + textutil.Line(m.actionConfirm.Name) + " on " + textutil.Line(m.actionConfirm.Invocation.Event.Ref) + "? y/enter · n/esc"
 	}
 	lines = append(lines, cell(footer, m.width))
 	if len(lines) > m.height {

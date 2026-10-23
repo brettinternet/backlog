@@ -367,7 +367,7 @@ bl instructions [TOPIC] | bl mcp
 ```yaml
 actions:
   - name: work
-    key: x
+    key: ctrl+x
     when: "is:ready"
     run: [wt, switch, --create, "{branch}", --base, main, --no-cd, --format=json]
 hooks:

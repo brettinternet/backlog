@@ -260,8 +260,13 @@ on the update loop.
 `:` lists every action, its effective bindings, and any disabled reason. Type to
 fuzzy-search, use arrows to select and enter to run. `?` opens the same searchable
 catalog as read-only help. Esc closes either. Every prefix, including remapped
-prefixes, displays its available continuations. Planned workspace, coordination,
-and configured-action entries remain explicitly disabled until their tasks ship.
+prefixes, displays its available continuations. Planned workspace entries remain
+disabled. `!` lists configured actions whose `when` query matches the selected
+item; the palette and help include the same matching actions and disabled
+placeholder/trust reasons. Action discovery and preparation run off the update
+loop. `confirm` prompts capture the target item; y/enter runs and n/esc cancels.
+Attached actions suspend and restore the terminal; detached actions return at once.
+Configured keys share collision validation and use stable IDs `action:NAME`.
 
 User config maps stable action IDs to one key sequence; an empty value unbinds
 an action. An override replaces all aliases. Unknown actions, invalid key names,

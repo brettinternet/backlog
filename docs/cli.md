@@ -45,9 +45,9 @@ config are always trusted. Grants never launch anything by themselves.
 
 Untrusted programs and network sources remain inert on every interface. The TUI
 shows a persistent trust banner and can still browse local native sources.
-This build does not ship hooks, actions, or remote/external adapters: trust does
-not install them, and configured non-native sources remain unavailable.
-Future runners must call `Config.RequireTrusted` before executing declarations.
+Hooks and actions enforce `Config.RequireTrusted` before execution. This build
+does not ship remote/external adapters; configured non-native sources remain
+unavailable.
 
 `bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
 `control-root`, `cache`, `worklease`, and `sources`. Each check has `name`,
@@ -270,7 +270,8 @@ log. Finite JSON uses `data.events`; follow mode emits one envelope with
 is an error. Follow mode watches sources without a TUI. See [events.md](events.md)
 for event types, filters, dedupe, retention, and causal depth.
 
-Coordination, hook/action execution, and Git auto-commit are not yet implemented.
+Git auto-commit is not yet implemented. Coordination and automation follow the
+contracts below and in [automation.md](automation.md).
 
 ### `bl note ID TEXT|-` and `bl comment ID TEXT|- [--author AUTHOR]`
 
@@ -312,6 +313,18 @@ Successful changed saves return the new version; unchanged buffers are not writt
 Move native items into or out of the source's `archive/` directory. Occupied
 targets are conflicts. Explicit ID reads still find archived items; lists and
 next ranking exclude them. The bytes and content version are unchanged.
+
+## `bl action NAME ID [--yes]`
+
+Run a trusted configured action for one matching item. `when` and placeholder
+validation are shared with the TUI and MCP `action` tool (`name`, `id`, optional
+`confirm`). `confirm: true` requires interactive acknowledgement or `--yes`;
+noninteractive requests without acknowledgement refuse without launching.
+JSON success data contains `event` (the `action.finished` event), optional
+`message`, and `detached: true` when a background runner accepted the invocation
+instead of waiting for completion. Failed runs return a rejection; the event log
+retains the outcome and result. See [automation.md](automation.md) for stdin,
+environment, chaining, and example commands.
 
 ## Maintenance commands
 

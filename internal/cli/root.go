@@ -106,7 +106,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err != nil {
 			return err
 		}
-		if err := tui.ValidateKeys(cfg.Keys); err != nil {
+		if err := tui.ValidateKeys(cfg.Keys, cfg.Actions...); err != nil {
 			return &Error{Reason: "invalid-config", Message: err.Error()}
 		}
 		defer tui.ConfigureRuntime()()
@@ -135,6 +135,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			trustWarning = "Untrusted project config · bl trust --show"
 		}
 		app := tui.New(tui.Options{
+			Automation:   &cfg,
 			TrustWarning: trustWarning,
 			CreateSource: createSource, DefaultType: cfg.Defaults.Type, DefaultDoD: cfg.Defaults.DOD,
 			ValidateItem: func(item model.Item) error { return engine.ValidateItem(cfg, item) },
@@ -245,7 +246,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	root.Commands = append(root.Commands, claimCommands(&directory, out)...)
 	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
 	root.Commands = append(root.Commands, eventsCommand(&directory, out))
-	root.Commands = append(root.Commands, hooksCommand(&directory))
+	root.Commands = append(root.Commands, hooksCommand(&directory), actionCommand(&directory, in, out, errOut))
 	root.Commands = append(root.Commands, instructionsCommand(out))
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
@@ -341,7 +342,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "claim", "release", "events", "run", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
+	case "claim", "release", "events", "run", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
 		return true
 	}
 	return false

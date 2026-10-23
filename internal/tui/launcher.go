@@ -16,6 +16,7 @@ type GoToItem = engine.Row
 
 type launcherRow struct {
 	label, binding, reason string
+	actionRef              string
 	action                 action
 	item                   *GoToItem
 }
@@ -160,10 +161,19 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	m.inputSerial++
 	rows := make([]launcherRow, 0, len(m.keymap))
 	for _, a := range m.keymap {
+		if strings.HasPrefix(a.id, "action:") {
+			continue
+		}
 		rows = append(rows, launcherRow{label: a.label + " [" + a.id + "]", binding: strings.Join(a.bindings, ", "), reason: m.disabledReason(a), action: a})
 	}
 	m.launcher = launcherState{open: true, help: help, rows: rows, all: rows}
 	m.showHelp = help
+	if m.opts.Automation != nil && len(m.opts.Automation.Actions) > 0 {
+		m.launcherSerial++
+		m.actionCatalogSerial++
+		m.launcher.loading = true
+		return m, m.loadConfiguredActions()
+	}
 	return m, nil
 }
 func (m Model) filterLauncher() tea.Cmd {
@@ -222,6 +232,9 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 			m.detailOpen = true
 			m.detailFocus = true
 			return m, m.scheduleDetail()
+		}
+		if row.actionRef != "" {
+			return m.prepareConfiguredActionForID(strings.TrimPrefix(row.action.id, "action:"), row.actionRef)
 		}
 		return m.executeAction(row.action)
 	case "backspace":

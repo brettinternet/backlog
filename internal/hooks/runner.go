@@ -225,6 +225,10 @@ type execution struct {
 }
 
 func execute(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool) execution {
+	return executeWithOutput(ctx, cfg, hook, event, cwd, captureResult, nil, nil)
+}
+
+func executeWithOutput(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool, out, errOut io.Writer) execution {
 	argv := make([]string, len(hook.Run))
 	for i, arg := range hook.Run {
 		expanded, err := expand(arg, cfg, event)
@@ -283,6 +287,12 @@ func execute(ctx context.Context, cfg project.Config, hook project.HookConfig, e
 	cmd.Stdin = bytes.NewReader(data)
 	var stdout, stderr limitedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if out != nil {
+		cmd.Stdout = io.MultiWriter(&stdout, out)
+	}
+	if errOut != nil {
+		cmd.Stderr = io.MultiWriter(&stderr, errOut)
+	}
 	cmd.Env = hookEnvironment(cfg, event, resultPath)
 	started := time.Now()
 	err = cmd.Run()
@@ -325,6 +335,9 @@ func hookEnvironment(cfg project.Config, event Event, resultPath string) []strin
 		"BL_PROJECT_ID": event.Project, "BL_ROOT": cfg.Discovery.ControlRoot,
 		"BL_BRANCH": "", "BL_EVENT_ID": event.ID, "BL_HOOK_DEPTH": strconv.Itoa(event.Depth),
 		"BL_RESULT": resultPath}
+	if event.Name != "" && event.Type == "" {
+		values["BL_EVENT_ORIGIN"] = "action"
+	}
 	item := eventItem(event)
 	if item.Ref.ID != "" {
 		values["BL_ITEM_ID"] = item.Ref.ID

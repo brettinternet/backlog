@@ -45,6 +45,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "criteria", Description: "Change acceptance criteria on one backlog item."}, s.criteria)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "action", Description: "Run a configured action on one item. Set confirm to acknowledge confirmation."}, s.action)
 	s.server.AddResource(&mcp.Resource{URI: InstructionsURI, Name: "bl instructions", Description: "Version-matched bl agent instructions", MIMEType: "text/markdown"}, s.instructions)
 	return s
 }

@@ -1,4 +1,32 @@
-# Hooks and agent handoff
+# Actions, hooks, and agent handoff
+
+## Actions
+
+Run `bl action NAME ID` or MCP `action` with `name` and `id`. In the TUI,
+`!` lists matching actions; `:` and `?` also include them. `when` uses the shared
+item query, including readiness. Missing or unsafe placeholders disable an action
+with the reason. Project actions require `bl trust`, just like hooks.
+
+`confirm: true` prompts in the TUI and interactive CLI. Noninteractive CLI callers
+must pass `--yes`; MCP callers must set `confirm: true`. Refusal never launches
+the program. A non-detached TUI action releases and restores the terminal;
+`detach: true` hands the prepared invocation to a background runner immediately.
+All three adapters use the same hook executor, minimal environment, JSON stdin,
+30-second execution limit and bounded result capture.
+
+Action stdin is an **unlogged invocation context** with the event fields, a fresh
+`id`, `name`, empty `type`, `origin: action`, item, resource when available, cause
+and depth. It is not an extra persisted event type. The action environment also
+includes `BL_EVENT_ORIGIN=action` so nested `bl` writes retain their origin.
+Each execution appends one `action.finished` with outcome, exit code, duration,
+and result, then dispatches matching after hooks. Each explicit invocation has a
+new identity even when the item version is unchanged. Runs beyond causal depth 3
+are refused. Cancellation still records the completed execution.
+
+Action keys share the TUI keymap: exact and prefix conflicts fail startup. Use
+`action:NAME` in user `keys` overrides to remap or unbind a configured action.
+
+## Hooks
 
 Hooks subscribe to appended events. Committed project hooks stay inert until the
 configuration is trusted with `bl trust`; user-configured hooks are trusted.
@@ -48,14 +76,13 @@ hooks:
     run: [tell, notify, "Ready: {id}"]
 ```
 
-The agent handoff hook chains after the `work` action. BL-31 supplies action
-execution; this hook consumes its `action.finished` event and the JSON result
-from `wt --format=json`:
+The agent handoff hook chains after the `work` action and consumes its
+`action.finished` event and JSON result from `wt --format=json`:
 
 ```yaml
 actions:
   - name: work
-    key: x
+    key: ctrl+x
     when: "is:ready"
     run: [wt, switch, --create, "{branch}", --base, main, --no-cd, --format=json]
 hooks:
@@ -105,9 +132,9 @@ not built-in `bl` behavior. Obtain the exact `resource` from `bl show --json`;
 never substitute Worklease's host-local `backlog-md` key for a native item.
 For runner integrations, the resource is the `{resource}` placeholder and
 `BL_RESOURCE` value. Item/claim events carry the provider-neutral `resource`.
-Hook execution is covered above; action execution is delivered separately.
+Both hooks and actions use the executor described above.
 
-Illustrative action argv:
+Independent worktree, agent, and Herdr workspace actions:
 
 ```yaml
 actions:
@@ -115,6 +142,8 @@ actions:
     run: [wt, switch, --create, "{branch}", --base, main, --no-cd, --format=json]
   - name: agent
     run: [worklease, run, --detach, --name, "{id}", --ref, "{ref}", --resource, "{resource}", --, pi, -p, "Implement {id}"]
+  - name: workspace
+    run: [herdr, workspace, create, --cwd, "{root}", --label, "{id}", --no-focus]
 ```
 
 A worker inherits a session and run identifier from its supervisor. `bl` verifies
