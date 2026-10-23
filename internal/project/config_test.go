@@ -11,6 +11,31 @@ import (
 	"github.com/brettinternet/backlog/internal/testkit"
 )
 
+// Local overrides must merge maps, replace lists, and settle identity before
+// selecting user-project overrides; provenance must still identify local values.
+func TestLocalConfigLayering(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
+	put(t, project.ProjectFile(root), "project: {id: shared, name: shared}\nlabels: [shared]\nready: {statuses: [todo], satisfiedBy: [done]}\n")
+	put(t, project.LocalFile(root), "project: {id: private, name: local}\nlabels: [local]\nready: {statuses: [active]}\n")
+	put(t, paths.ConfigFile, "projects:\n  private:\n    project: {name: user-project}\n")
+	cfg, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Project.ID != "private" || cfg.Project.Name != "user-project" || strings.Join(cfg.Labels, ",") != "local" || strings.Join(cfg.Ready.Statuses, ",") != "active" || strings.Join(cfg.Ready.SatisfiedBy, ",") != "done" {
+		t.Fatalf("wrong layer ordering or merge: %+v", cfg.Settings)
+	}
+	p := cfg.Provenance["labels[0]"]
+	if p.Layer != "local" || p.File != project.LocalFile(root) || p.Line != 2 {
+		t.Fatalf("local provenance: %+v", p)
+	}
+	if cfg.Provenance["project.name"].Layer != "user-project" {
+		t.Fatal("local config displaced user-project overrides")
+	}
+}
+
 func TestUserConfig(t *testing.T) {
 	home := testkit.Isolate(t)
 	paths, err := project.UserPaths()
@@ -83,7 +108,7 @@ func TestLayerPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectFile := filepath.Join(root, ".config", "backlog.yaml")
+	projectFile := filepath.Join(root, "backlog.yaml")
 	userBase := "ui: {highContrast: true}\n"
 	put(t, paths.ConfigFile, userBase+"projects:\n  github.com/acme/app:\n    ui: {highContrast: true}\n")
 	put(t, projectFile, "ui: {highContrast: false}\n")
@@ -119,7 +144,7 @@ func TestCatalogsAndTrustBoundary(t *testing.T) {
 	root := repo(t)
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
 	put(t, paths.ConfigFile, "accounts: {github: [{credential: [helper, private-token]}]}\n")
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), `version: 1
+	put(t, filepath.Join(root, "backlog.yaml"), `version: 1
 milestones: [{key: m-1, name: First, description: Work, archived: true}]
 labels: [bug, feature]
 sources: [{id: tasks, type: native, path: backlog}, {id: eng, type: linear, team: ENG}]
@@ -142,7 +167,7 @@ actions: [{name: work, run: [must-not-run]}]
 		}
 	}
 	put(t, paths.ConfigFile, "sources: [{id: private, type: external, run: [helper]}]\nhooks: [{name: user, on: item.updated, run: [helper]}]\n")
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), "{}\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "{}\n")
 	cfg, err = project.Resolve(paths, root, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +204,7 @@ func TestOAuthOptInIsUserOnlyAndExclusive(t *testing.T) {
 		t.Fatalf("OAuth/helper combination accepted: %v", err)
 	}
 	root := repo(t)
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), "accounts: {linear: [{name: work, user: immutable-user, oauth: true}]}\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "accounts: {linear: [{name: work, user: immutable-user, oauth: true}]}\n")
 	put(t, paths.ConfigFile, "{}\n")
 	if _, err = project.Resolve(paths, root, nil); err == nil || !strings.Contains(err.Error(), "accounts") {
 		t.Fatalf("project-scoped OAuth account accepted: %v", err)

@@ -25,7 +25,8 @@ replace `credential`; ambient Jira credentials are never selected. The adapter
 verifies the active principal on reads and immediately before writes. Tokens
 and their Basic-auth encoding stay inside the shared memory/redaction boundary.
 
-In project config:
+In root `backlog.yaml` (or private `backlog.local.yaml`, using the same schema
+and requiring the same `bl trust` approval):
 
 ```yaml
 sources:

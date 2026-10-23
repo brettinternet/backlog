@@ -1,4 +1,5 @@
 {
+  "description": "Repository settings for root backlog.yaml and optional backlog.local.yaml. Local overlays project before user projects.<id>; both require trust for privileged entries. Accounts belong in user config.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

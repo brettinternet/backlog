@@ -38,7 +38,7 @@ func TestWorkspaceIsolationAndReadiness(t *testing.T) {
 		if n == 1 {
 			config = strings.Replace(config, "prefix: BL}]", "prefix: BL}, {id: inert, type: external, run: [must-not-run]}]", 1)
 		}
-		write(filepath.Join(root, ".config", "backlog.yaml"), config)
+		write(filepath.Join(root, "backlog.yaml"), config)
 		edge := ""
 		if n == 0 {
 			edge = "blocked_by: [upstream:BL-1]\n"

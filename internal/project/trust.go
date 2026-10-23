@@ -19,21 +19,21 @@ func (cfg Config) TrustDigest() (string, error) {
 		Actions []ActionConfig `json:"actions"`
 		Sources []SourceConfig `json:"sources"`
 	}{}
-	if cfg.Git.AutoCommit && cfg.Provenance["git.autoCommit"].Layer == "project" {
+	if cfg.Git.AutoCommit && untrustedLayer(cfg.Provenance["git.autoCommit"].Layer) {
 		subset.Git = &cfg.Git
 	}
 	for i, hook := range cfg.Hooks {
-		if cfg.Provenance[fmt.Sprintf("hooks[%d]", i)].Layer == "project" {
+		if untrustedLayer(cfg.Provenance[fmt.Sprintf("hooks[%d]", i)].Layer) {
 			subset.Hooks = append(subset.Hooks, hook)
 		}
 	}
 	for i, action := range cfg.Actions {
-		if cfg.Provenance[fmt.Sprintf("actions[%d]", i)].Layer == "project" {
+		if untrustedLayer(cfg.Provenance[fmt.Sprintf("actions[%d]", i)].Layer) {
 			subset.Actions = append(subset.Actions, action)
 		}
 	}
 	for i, source := range cfg.Sources {
-		if cfg.Provenance[fmt.Sprintf("sources[%d]", i)].Layer == "project" && source.Type != "native" && source.Type != "backlog-md" {
+		if untrustedLayer(cfg.Provenance[fmt.Sprintf("sources[%d]", i)].Layer) && source.Type != "native" && source.Type != "backlog-md" {
 			subset.Sources = append(subset.Sources, source)
 		}
 	}

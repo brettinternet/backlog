@@ -1,4 +1,5 @@
 {
+  "description": "User settings in XDG_CONFIG_HOME/backlog/config.yaml. Project overrides apply after backlog.yaml and backlog.local.yaml settle project identity.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

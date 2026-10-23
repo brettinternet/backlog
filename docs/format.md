@@ -1,6 +1,6 @@
 # Native format v1
 
-**Status:** Frozen v1. Any incompatible change needs a new `version` in `.config/backlog.yaml` and a migration in `bl check --fix`.
+**Status:** Frozen v1. Any incompatible change needs a new `version` in `backlog.yaml` and a migration in `bl check --fix`.
 
 The native format is plain Markdown with YAML frontmatter, and it is designed for Git:
 
@@ -12,7 +12,8 @@ The native format is plain Markdown with YAML frontmatter, and it is designed fo
 ## Layout
 
 ```text
-.config/backlog.yaml     project config (design.md §5); its presence marks a bl project
+backlog.yaml             shared project config (design.md §5)
+backlog.local.yaml       optional private overrides; either config marks a bl project
 backlog/                 source `path` (default `backlog`)
   BL-1.md
   BL-2.md

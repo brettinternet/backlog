@@ -3,7 +3,7 @@
 ## Setup
 
 Use immutable UUIDs for the organization, team, optional project, viewer, and
-states, never names or display IDs. Project config (`.config/backlog.yaml`):
+states, never names or display IDs. Project config (`backlog.yaml`):
 
 ```yaml
 sources:

@@ -104,7 +104,7 @@ func TestMigrationRehearsal(t *testing.T) {
 		t.Fatalf("relationships lost: %+v", relationship)
 	}
 	var cfg project.Settings
-	if err := yaml.Unmarshal([]byte(readFile(t, filepath.Join(root, "native/.config/backlog.yaml"))), &cfg); err != nil {
+	if err := yaml.Unmarshal([]byte(readFile(t, filepath.Join(root, "native/backlog.yaml"))), &cfg); err != nil {
 		t.Fatal(err)
 	}
 	var oldFields map[string]any
@@ -172,7 +172,7 @@ func TestMigrationRehearsal(t *testing.T) {
 	if strings.Contains(readFile(t, filepath.Join(root, "restored/backlog/tasks/task-1.md")), "Synthetic native loop verified") {
 		t.Fatal("rollback mixed providers")
 	}
-	if _, err := os.Stat(filepath.Join(root, "restored/.config/backlog.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, "restored/backlog.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("unmigrated provider was replaced: %v", err)
 	}
 }

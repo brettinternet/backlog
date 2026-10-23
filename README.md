@@ -24,6 +24,11 @@ bl show BL-1 --json
 bl next --explain --json
 ```
 
+`bl init` writes root `backlog.yaml`. Optional `backlog.local.yaml` overrides it
+before user per-project settings; ignore this private file. Both use the
+[project schema](docs/schemas/project-config.json) and share the same trust
+boundary. See [configuration](docs/guide.md#configuration).
+
 Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
 `?` lists every key, `q` quits. Every command accepts `--json`, and
 `bl instructions workflow` prints the agent loop for the installed version.

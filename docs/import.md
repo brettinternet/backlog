@@ -15,7 +15,7 @@ native project. The source is never changed.
 Output:
 
 ```text
-DIR/.config/backlog.yaml
+DIR/backlog.yaml
 DIR/backlog/<ID>.md
 DIR/backlog/archive/<ID>.md
 ```
@@ -165,7 +165,7 @@ override globally or edit shared skills. In the rehearsal, `legacy` and later
 `restored` stand for that route.
 
 ```sh
-printf '\ncoordination:\n  worklease: {}\n' >> native/.config/backlog.yaml
+printf '\ncoordination:\n  worklease: {}\n' >> native/backlog.yaml
 bl -C native instructions workflow
 bl -C native next --claim --start --session rehearsal-single --json > selected.json
 bl -C native heartbeat --session rehearsal-single --json

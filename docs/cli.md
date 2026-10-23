@@ -365,7 +365,7 @@ error. See [Events](events.md).
 
 ### `bl init [--prefix P] [--path DIR]`
 
-Creates `.config/backlog.yaml` and the item directory (default prefix `BL`, path
+Creates `backlog.yaml` and the item directory (default prefix `BL`, path
 `backlog`, relative to the control root). The config declares `draft`, `todo`,
 `in-progress`, and `done` with a matching workflow. `project.id` is written only
 when it comes from a shared `origin` remote. Run inside Git. An existing config
@@ -386,14 +386,19 @@ the effective non-secret settings plus `directory`, `paths`, `discovery`,
 `hostLocal`, `provenance`, and `privileged`:
 
 ```json
-{"ui":{"highContrast":false},"provenance":{"ui.highContrast":{"layer":"project","file":"/repo/.config/backlog.yaml","line":4}},"privileged":[{"key":"hooks[0]","trusted":false,"origin":{"layer":"project","file":"/repo/.config/backlog.yaml","line":8}}]}
+{"ui":{"highContrast":false},"provenance":{"ui.highContrast":{"layer":"project","file":"/repo/backlog.yaml","line":4}},"privileged":[{"key":"hooks[0]","trusted":false,"origin":{"layer":"project","file":"/repo/backlog.yaml","line":8}}]}
 ```
 
-Provenance layers are `built-in`, `discovery`, `user`, `project`,
+Provenance layers are `built-in`, `discovery`, `user`, `project`, `local`,
 `user-project`, `environment`, and `flag`. Implicit defaults (such as
 `milestones[0].archived: false`) are `built-in`. `privileged` lists hooks,
 actions, and program or network sources with their trust state. Credentials are
-never printed.
+never printed. `backlog.yaml` is overlaid by `backlog.local.yaml`, then user
+`projects.<id>` overrides. Both repository files use the project schema and
+control-root routing; `root: checkout` selects the invoking checkout. Each local
+value reports layer `local`, its file, and line. Either file marks a project.
+Legacy `.config/backlog.yaml` is rejected with
+`git mv .config/backlog.yaml backlog.yaml`.
 
 ### `bl trust [--show]`
 
@@ -403,7 +408,7 @@ without granting anything. `bl trust` records consent under
 `digest`, `granted`, `entries`, and any `hooks`, `actions`, and `sources`.
 
 Consent covers the control-root path, project ID, and every field of the
-project's privileged declarations (argv, cwd, conditions, subscriptions,
+project's effective shared and local privileged declarations (argv, cwd, conditions, subscriptions,
 timeouts). Key order, comments, and other settings don't affect it. User config
 is always trusted. Trusting runs nothing.
 
@@ -417,18 +422,22 @@ pass  config        Configuration is valid
 pass  trust         All effective privileged declarations are trusted
 warn  control-root  Default branch is unknown (control checkout: master)
                     Fix: Set the local origin/HEAD symbolic ref to the repository's default branch
+skip  local-config  No backlog.local.yaml
 pass  cache         Configured native caches are healthy or not yet created
 pass  worklease     Worklease 1.10.1 (schema v2)
 pass  sources       Sources are configured; no network checks requested
 ```
 
-Six checks: `config`, `trust`, `control-root`, `cache`, `worklease`, `sources`.
+Seven checks: `config`, `trust`, `control-root`, `local-config`, `cache`, `worklease`, `sources`.
 Each has a `status` (`pass`, `warn`, `fail`, `skip`), `message`, and `fix`. JSON
 `data.checks` lists all of them. Any failure exits 5 (`rejected`); warnings
 alone exit 0. Invalid config fails `config` and skips the checks that need it.
 
 - `control-root` compares the branch with local `origin/HEAD`, then
   `init.defaultBranch`, then `main`/`master`. It never fetches.
+- `local-config` warns when `backlog.local.yaml` is tracked or not ignored.
+  Keep it untracked and ignore `/backlog.local.yaml`; `bl` never writes it or
+  edits `.gitignore`, and auto-commit cannot include it.
 - `cache` reads existing caches without repairing them.
 - `worklease` needs `version --json` to report schema v2 and version 1.10.1 or
   later. A missing binary warns, or fails when coordination is configured.

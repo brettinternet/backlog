@@ -73,7 +73,7 @@ func TestSaveViewPreservesConfig(t *testing.T) {
 func TestSavedViewCatalogOrder(t *testing.T) {
 	t.Parallel()
 	root := repo(t)
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), "project: {id: example}\nviews: [{name: Shared, query: 'is:open'}]\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "project: {id: example}\nviews: [{name: Shared, query: 'is:open'}]\n")
 	user := filepath.Join(t.TempDir(), "config.yaml")
 	put(t, user, "views: [{name: Shared, query: 'is:ready'}]\nprojects:\n  example:\n    views: [{name: Private}]\n")
 	cfg, err := project.Resolve(project.Paths{ConfigFile: user}, root, nil)

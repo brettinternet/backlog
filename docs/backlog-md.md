@@ -4,7 +4,7 @@
 To convert to the native format instead, [import](import.md).
 
 ```yaml
-# .config/backlog.yaml
+# backlog.yaml
 version: 1
 sources:
   - {id: tasks, type: backlog-md, path: backlog}

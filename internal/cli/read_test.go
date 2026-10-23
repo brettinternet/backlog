@@ -31,7 +31,7 @@ func readFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	config := "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\nviews: [{name: Open, query: 'is:open', sort: id, group: status}]\n"
-	if err := os.WriteFile(filepath.Join(root, ".config", "backlog.yaml"), []byte(config), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "backlog.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for id, body := range map[string]string{
@@ -154,7 +154,7 @@ func TestReadIDs(t *testing.T) {
 	if code != 3 || stderr != "" || !strings.Contains(out, `"reason":"not-found"`) {
 		t.Fatalf("missing: %d %s %s", code, out, stderr)
 	}
-	configPath := filepath.Join(root, ".config", "backlog.yaml")
+	configPath := filepath.Join(root, "backlog.yaml")
 	config, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)

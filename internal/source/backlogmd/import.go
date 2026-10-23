@@ -269,7 +269,7 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	if err != nil {
 		return report, fmt.Errorf("encode native project config: %w", err)
 	}
-	configPath := filepath.Join(".config", "backlog.yaml")
+	configPath := "backlog.yaml"
 	plan.files[configPath] = configBytes
 	report.Configuration = configMappings(source, statuses, milestoneConfig, ready, prefix, settings)
 	if value, exists := source.config["default_status"]; exists {
@@ -1565,7 +1565,7 @@ func milestoneFileReport(milestone milestoneInput, output project.Milestone) Fil
 	for _, unknown := range milestone.doc.body.unknown {
 		mappings = append(mappings, FieldMapping{Source: "body:" + unknown.heading, Output: "milestones[].description", Original: milestone.doc.body.originals["unknown:"+unknown.heading], Value: "## " + unknown.heading + "\n\n" + unknown.content})
 	}
-	return FileReport{SourcePath: milestone.sourcePath, OutputPath: filepath.ToSlash(filepath.Join(".config", "backlog.yaml")), Kind: "milestone", ID: milestone.id, Mappings: mappings}
+	return FileReport{SourcePath: milestone.sourcePath, OutputPath: "backlog.yaml", Kind: "milestone", ID: milestone.id, Mappings: mappings}
 }
 
 func makeMilestones(inputs []milestoneInput, report *Report) ([]project.Milestone, map[string]string, map[string]string, error) {

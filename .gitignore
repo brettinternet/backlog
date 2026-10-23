@@ -4,6 +4,9 @@
 mise.local.toml
 mise.*.local.toml
 
+# Private project overrides
+/backlog.local.yaml
+
 # Local Git worktrees
 /.worktrees/
 

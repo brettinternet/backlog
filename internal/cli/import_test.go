@@ -45,7 +45,7 @@ func TestImportDryRunAndDestinationRefusal(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("check: %d %s %s", code, out, stderr)
 	}
-	if config := get(t, filepath.Join(target, ".config", "backlog.yaml")); !strings.Contains(config, "key: draft") {
+	if config := get(t, filepath.Join(target, "backlog.yaml")); !strings.Contains(config, "key: draft") {
 		t.Fatalf("a source without drafts lost the draft status:\n%s", config)
 	}
 	before := get(t, filepath.Join(target, "backlog", "TASK-01.2.md"))
@@ -81,7 +81,7 @@ func TestBacklogMDDetectionAndSectionEdit(t *testing.T) {
 	if code == 0 || get(t, path) != original {
 		t.Fatalf("detected write: %d %s", code, out)
 	}
-	put(t, filepath.Join(root, ".config/backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: backlog}]\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: backlog}]\n")
 	editor := filepath.Join(root, "editor")
 	put(t, editor, "#!/bin/sh\nprintf 'Changed body.\\n' > \"$1\"\n")
 	if err := os.Chmod(editor, 0700); err != nil {

@@ -39,7 +39,7 @@ func viewConfig(t *testing.T) project.Config {
 	if err := os.WriteFile(filepath.Join(root, ".git", "config"), []byte("[core]\n bare = false\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".config", "backlog.yaml"), []byte("project: {id: fixture}\nviews: [{name: Shared, query: 'is:open', layout: tree, columns: [id, title]}]\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "backlog.yaml"), []byte("project: {id: fixture}\nviews: [{name: Shared, query: 'is:open', layout: tree, columns: [id, title]}]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	paths, err := project.UserPaths()
@@ -62,7 +62,7 @@ func viewOptions(cfg project.Config) Options {
 	return Options{NoColor: true, Views: cfg.SavedViews, SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
 		path, scope := cfg.Paths.ConfigFile, "user"
 		if shared {
-			path = filepath.Join(cfg.Discovery.ControlRoot, ".config", "backlog.yaml")
+			path = filepath.Join(cfg.Discovery.ControlRoot, "backlog.yaml")
 			scope = "project"
 		}
 		err := project.SaveView(path, !shared, v)

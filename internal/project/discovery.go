@@ -25,6 +25,17 @@ type Discovery struct {
 	Detected     []DetectedSource `json:"detected,omitempty"`
 }
 
+// ProjectFile and LocalFile are the shared and private repository layers.
+func ProjectFile(root string) string { return filepath.Join(root, "backlog.yaml") }
+func LocalFile(root string) string   { return filepath.Join(root, "backlog.local.yaml") }
+
+func rejectLegacyConfig(root string) error {
+	if isFile(filepath.Join(root, ".config", "backlog.yaml")) {
+		return fmt.Errorf("%s: legacy project config; run git mv .config/backlog.yaml backlog.yaml", root)
+	}
+	return nil
+}
+
 // Discover reads Git's on-disk layout, including linked worktrees, without
 // starting git. Paths are absolute and symlinks are resolved once at entry.
 func Discover(directory string) (Discovery, error) {
@@ -38,6 +49,9 @@ func Discover(directory string) (Discovery, error) {
 	}
 	d := Discovery{Directory: absolute}
 	for root := absolute; ; root = filepath.Dir(root) {
+		if err := rejectLegacyConfig(root); err != nil {
+			return d, err
+		}
 		marker := filepath.Join(root, ".git")
 		info, statErr := os.Stat(marker)
 		if statErr == nil {
@@ -65,6 +79,10 @@ func Discover(directory string) (Discovery, error) {
 			d.CheckoutRoot = root
 			d.GitDir = root
 			break
+		}
+		if isFile(ProjectFile(root)) || isFile(LocalFile(root)) {
+			d.CheckoutRoot, d.ControlRoot = root, root
+			return d, nil
 		}
 		if parent := filepath.Dir(root); parent == root {
 			return d, nil
@@ -98,6 +116,9 @@ func Discover(directory string) (Discovery, error) {
 			d.Warnings = append(d.Warnings, "no primary worktree; using invoking checkout as control root")
 		}
 	}
+	if err := rejectLegacyConfig(d.ControlRoot); err != nil {
+		return d, err
+	}
 	d.Detected = detectSources(d.ControlRoot)
 	return d, nil
 }
@@ -110,7 +131,7 @@ func resolvePath(base, path string) string {
 func isFile(path string) bool { info, err := os.Stat(path); return err == nil && !info.IsDir() }
 func isDir(path string) bool  { info, err := os.Stat(path); return err == nil && info.IsDir() }
 func detectSources(root string) []DetectedSource {
-	if root == "" || isFile(filepath.Join(root, ".config", "backlog.yaml")) {
+	if root == "" || isFile(ProjectFile(root)) || isFile(LocalFile(root)) {
 		return nil
 	}
 	var result []DetectedSource
@@ -185,7 +206,7 @@ func Identity(d Discovery) (string, bool, error) {
 		if origin != "" && !localRemote(origin) {
 			id, err := NormalizeRemote(origin)
 			if err != nil {
-				return "", false, fmt.Errorf("remote.origin.url: %w; set project.id in .config/backlog.yaml", err)
+				return "", false, fmt.Errorf("remote.origin.url: %w; set project.id in backlog.yaml", err)
 			}
 			return id, false, nil
 		}

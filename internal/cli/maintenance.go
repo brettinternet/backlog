@@ -145,7 +145,7 @@ func initialize(directory, prefix, sourcePath string) (initResult, error) {
 		return initResult{}, &Error{Reason: "invalid-config", Message: "bl init requires a Git repository"}
 	}
 	root := discovery.ControlRoot
-	configPath := filepath.Join(root, ".config", "backlog.yaml")
+	configPath := filepath.Join(root, "backlog.yaml")
 	if _, err := os.Lstat(configPath); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return initResult{}, &Error{Reason: "rejected", Message: "refusing to overwrite existing project config: " + configPath}
 	}

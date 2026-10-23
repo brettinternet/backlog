@@ -29,7 +29,7 @@ func writeFixture(t *testing.T) string {
 		}
 	}
 	put(t, filepath.Join(root, ".git/config"), "[core]\n bare = false\n")
-	put(t, filepath.Join(root, ".config/backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\ndefaults: {type: task, dod: [Run checks]}\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\ndefaults: {type: task, dod: [Run checks]}\n")
 	input := get(t, "testdata/write-input.md")
 	put(t, filepath.Join(root, "items/BL-012.md"), input)
 	return root
@@ -92,9 +92,9 @@ func TestAutoCommitCLI(t *testing.T) {
 	}
 	git("add", "items/BL-012.md")
 	git("commit", "-m", "baseline")
-	configPath := filepath.Join(root, ".config/backlog.yaml")
+	configPath := filepath.Join(root, "backlog.yaml")
 	put(t, configPath, get(t, configPath)+"git: {autoCommit: true}\n")
-	git("add", ".config/backlog.yaml")
+	git("add", "backlog.yaml")
 	git("commit", "-m", "enable")
 	head = git("rev-parse", "HEAD")
 	code, out, warnings := writeRun(root, "", "set", "12", "title=Untrusted write")

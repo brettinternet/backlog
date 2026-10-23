@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/project"
@@ -16,7 +17,7 @@ func TestTrustDigestAndInvalidation(t *testing.T) {
 	t.Parallel()
 	root := repo(t)
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml"), StateDir: t.TempDir()}
-	file := filepath.Join(root, ".config", "backlog.yaml")
+	file := filepath.Join(root, "backlog.yaml")
 	put(t, file, "project: {id: example/app}\nhooks: [{name: notify, on: item.updated, run: [notify]}]\nactions: [{name: work, run: [work]}]\nsources: [{id: remote, type: linear, team: ENG}]\n")
 	resolve := func(t *testing.T) project.Config {
 		t.Helper()
@@ -90,6 +91,44 @@ func TestTrustDigestAndInvalidation(t *testing.T) {
 	}
 }
 
+// A private file is still repository-controlled: hooks, actions, network
+// sources and auto-commit must remain inert and changes must revoke consent.
+func TestLocalConfigTrust(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml"), StateDir: t.TempDir()}
+	local := project.LocalFile(root)
+	contents := "project: {id: private}\ngit: {autoCommit: true}\nhooks: [{name: local, on: item.updated, run: [notify]}]\nactions: [{name: local, run: [notify]}]\nsources: [{id: remote, type: github, repo: owner/repo}]\n"
+	put(t, local, contents)
+	cfg, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Untrusted()) != 4 || cfg.RequireTrusted("hooks[0]") == nil || cfg.AutoCommitBlocked() == "" {
+		t.Fatalf("local file bypassed trust: %+v", cfg.Privileged)
+	}
+	digest, err := cfg.TrustDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.GrantTrust(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = project.Resolve(paths, root, nil)
+	if err != nil || len(cfg.Untrusted()) != 0 {
+		t.Fatalf("local grant not retained: %+v %v", cfg.Privileged, err)
+	}
+	put(t, local, strings.Replace(contents, "run: [notify]", "run: [changed]", 1))
+	cfg, err = project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := cfg.TrustDigest()
+	if err != nil || changed == digest || len(cfg.Untrusted()) != 4 {
+		t.Fatalf("local hook change retained trust: %s %v %+v", changed, err, cfg.Privileged)
+	}
+}
+
 // A copied grant must not authorize another clone with the same project ID;
 // damaged state must not break read-only configuration inspection or grant trust.
 func TestTrustRootBindingAndDamagedState(t *testing.T) {
@@ -97,7 +136,7 @@ func TestTrustRootBindingAndDamagedState(t *testing.T) {
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml"), StateDir: t.TempDir()}
 	roots := []string{repo(t), repo(t)}
 	for _, root := range roots {
-		put(t, filepath.Join(root, ".config", "backlog.yaml"), "project: {id: same/project}\nactions: [{name: work, run: [must-not-run]}]\n")
+		put(t, filepath.Join(root, "backlog.yaml"), "project: {id: same/project}\nactions: [{name: work, run: [must-not-run]}]\n")
 	}
 	cfg, err := project.Resolve(paths, roots[0], nil)
 	if err != nil {
@@ -150,7 +189,7 @@ func TestTrustUserLayering(t *testing.T) {
 	t.Parallel()
 	root := repo(t)
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml"), StateDir: t.TempDir()}
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), "project: {id: example/app}\nhooks: [{name: project, on: item.updated, run: [project]}]\nactions: [{name: project, run: [project]}]\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "project: {id: example/app}\nhooks: [{name: project, on: item.updated, run: [project]}]\nactions: [{name: project, run: [project]}]\n")
 	put(t, paths.ConfigFile, "sources: [{id: private, type: external, run: [user]}]\nprojects:\n  example/app:\n    hooks: [{name: private, on: item.updated, run: [user]}]\n")
 	cfg, err := project.Resolve(paths, root, nil)
 	if err != nil {

@@ -57,7 +57,7 @@ func TestDesignConfigSchemas(t *testing.T) {
 		put(t, path, example)
 		if i == 0 {
 			root := repo(t)
-			put(t, filepath.Join(root, ".config", "backlog.yaml"), example)
+			put(t, filepath.Join(root, "backlog.yaml"), example)
 			if _, err := project.Resolve(project.Paths{ConfigFile: filepath.Join(t.TempDir(), "absent.yaml")}, root, nil); err != nil {
 				t.Fatal(err)
 			}
