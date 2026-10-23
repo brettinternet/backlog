@@ -40,7 +40,7 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 		}
 	}
 	m := shellFixture(10)
-	m.keymap, m.keyError = buildKeymap(map[string]string{"move-down": "M", "first": "v v"})
+	m.keymap, m.keyError = buildKeymap(map[string]string{"move-down": "Z", "first": "v v"})
 	if m.keyError != nil {
 		t.Fatal(m.keyError)
 	}
@@ -48,7 +48,7 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 	if m.selected != 0 {
 		t.Fatal("old key still active")
 	}
-	m = send(m, "M")
+	m = send(m, "Z")
 	if m.selected != 1 {
 		t.Fatal("override not applied")
 	}
@@ -111,7 +111,7 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 		}
 	}
 	// Exercise physical sequence and palette, not just the shared executor.
-	direct := send(m, "M")
+	direct := send(m, "Z")
 	next, _ = m.openActions(false)
 	palette = next.(Model)
 	for i, r := range palette.launcher.rows {
@@ -132,5 +132,18 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 	help = next.(Model)
 	if len(help.launcher.rows) == 0 || !strings.Contains(help.launcher.rows[0].label, "Markdown") {
 		t.Fatal("help is not searchable")
+	}
+}
+
+// Catches Emacs alt+> silently doing nothing in terminals that encode an
+// Alt-shifted symbol as modifyOtherKeys (alt+shift+>) or kitty (alt+shift+.).
+func TestAltShiftedKeys(t *testing.T) {
+	t.Parallel()
+	m := shellFixture(10)
+	for _, key := range []tea.KeyPressMsg{{Code: '>', Mod: tea.ModAlt}, {Code: '>', Mod: tea.ModAlt | tea.ModShift}, {Code: '.', Mod: tea.ModAlt | tea.ModShift}} {
+		next, _ := m.Update(key)
+		if got := next.(Model); got.selected != len(got.data.rows)-1 {
+			t.Fatalf("%s did not reach the last row", key.Keystroke())
+		}
 	}
 }

@@ -88,11 +88,14 @@ Run `bl` (or `bl tui`) in a terminal.
 | Mark; repeat; undo; redo | `space`, `.`, `u`, `ctrl-r` |
 | Quit | `q` or `ctrl-c` |
 
-Built-in views are Next, Active, Mine, Open, and Board. `T` and `B` switch the
-current view to a tree or board. The filter bar uses the same
-[query language](query.md) as the CLI. Edits apply at once and show `●` until
-the source confirms; failures and conflicts stay visible. See [TUI](tui.md) for
-the full keymap.
+Emacs keys work too: `ctrl-n`, `ctrl-v`/`alt-v`, `alt-<`/`alt->`, `ctrl-g`,
+and `alt-x`.
+
+Built-in views are Next, Active, Mine, Open, and Board; Board hides drafts until
+`fb`. `T` and `B` switch the current view to a tree or board. The filter bar
+uses the same [query language](query.md) as the CLI. Edits apply at once and
+show `●` until the source confirms; failures and conflicts stay visible. See
+[TUI](tui.md) for the full keymap.
 
 Off a terminal, bare `bl` prints help and `bl tui` fails.
 

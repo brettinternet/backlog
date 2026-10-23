@@ -152,8 +152,8 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 	commands := []*urfave.Command{}
 	// Criteria are prose, so a comma must not split one --ac into several.
 	commands = append(commands, &urfave.Command{Name: "new", Usage: "Create an item", ArgsUsage: "TITLE [TOKENS...]", Description: newHelp, DisableSliceFlagSeparator: true, Flags: append([]urfave.Flag{
-		&urfave.StringFlag{Name: "status", Usage: "Create in status `KEY`, such as draft"},
-		&urfave.StringFlag{Name: "body", Usage: "Set the description to `TEXT`; - reads stdin"},
+		&urfave.StringFlag{Name: "status", Aliases: []string{"s"}, Usage: "Create in status `KEY`, such as draft"},
+		&urfave.StringFlag{Name: "body", Aliases: []string{"b"}, Usage: "Set the description to `TEXT`; - reads stdin"},
 		&urfave.StringSliceFlag{Name: "ac", Usage: "Add the acceptance criterion `TEXT`"},
 		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (required with several sources)"},
 	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
@@ -334,7 +334,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return batch(ctx, cmd, cfg, args[:1], []model.Mutation{m})
 		}})
 	}
-	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria", ArgsUsage: "ID (check|uncheck N... | add TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Usage: "Record `TEXT` as evidence when checking one criterion"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria", ArgsUsage: "ID (check|uncheck N... | add TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Aliases: []string{"e"}, Usage: "Record `TEXT` as evidence when checking one criterion"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		args := cmd.Args().Slice()
 		if len(args) < 3 {
 			return writeUsage("ac requires ID, check|uncheck|add|rm, and text or index")
@@ -377,7 +377,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		return batch(ctx, cmd, cfg, args[:1], changes)
 	}})
-	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Aliases: []string{"s"}, Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() != 1 {
 			return writeUsage("edit requires exactly one ID")
 		}

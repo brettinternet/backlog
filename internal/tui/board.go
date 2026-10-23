@@ -36,21 +36,32 @@ func (m Model) boardStatusGroup() bool {
 	return q.Group == "status" || q.Group == "" || q.Group == "none"
 }
 
-// boardShowsEmpty reports whether empty declared columns are shown: a status
-// or category predicate means the query, not the workflow, picks columns.
-func boardShowsEmpty(q query.Query) bool {
+// boardEmpty reports which declared statuses keep a column without cards. A
+// status or category term means the query, not the workflow, picks columns,
+// but a negated one, like the Board tab's -category:backlog, hides only the
+// columns it excludes. Empty closed columns are omitted: an open-only board
+// would otherwise always end in empty Done and Canceled columns.
+func boardEmpty(q query.Query, statuses []project.StatusConfig) func(project.StatusConfig) bool {
+	var excluded query.Query
 	for _, term := range q.Terms {
-		if term.Field == "status" || term.Field == "category" {
-			return false
+		if term.Field != "status" && term.Field != "category" {
+			continue
 		}
+		if !term.Negated {
+			return func(project.StatusConfig) bool { return false }
+		}
+		excluded.Terms = append(excluded.Terms, term)
 	}
-	return true
+	snapshot := query.Snapshot{Settings: project.Settings{Statuses: statuses}}
+	return func(s project.StatusConfig) bool {
+		category := model.StatusCategory(s.Category)
+		return category != model.Done && category != model.Canceled && excluded.Match(model.Item{Status: s.Key, Category: category}, snapshot, nil)
+	}
 }
 
-// boardGroups orders status columns by workflow. Empty closed columns are
-// omitted: an open-only board would otherwise always end in empty Done and
-// Canceled columns.
-func boardGroups(groups []engine.RowGroup, statuses []project.StatusConfig, status, showEmpty bool) []engine.RowGroup {
+// boardGroups orders status columns by workflow, followed by undeclared
+// statuses. Declared statuses without cards appear only where empty allows.
+func boardGroups(groups []engine.RowGroup, statuses []project.StatusConfig, status bool, empty func(project.StatusConfig) bool) []engine.RowGroup {
 	if !status {
 		return groups
 	}
@@ -62,8 +73,7 @@ func boardGroups(groups []engine.RowGroup, statuses []project.StatusConfig, stat
 	}
 	result := make([]engine.RowGroup, 0, len(byValue)+len(statuses))
 	for _, s := range statuses {
-		closed := s.Category == string(model.Done) || s.Category == string(model.Canceled)
-		if rows := byValue[s.Key]; len(rows) > 0 || showEmpty && !closed {
+		if rows := byValue[s.Key]; len(rows) > 0 || empty(s) {
 			result = append(result, engine.RowGroup{Value: s.Key, Rows: rows})
 		}
 		delete(byValue, s.Key)
@@ -166,6 +176,9 @@ func (m *Model) navigateBoard(key string, n int, counted bool, prefix string) bo
 		if counted {
 			m.selected = start + n
 		}
+	case key == "H" || key == "M" || key == "L":
+		top := m.board.positions[m.data.rows[start].value].top
+		m.selected = start + 1 + top + screenOffset(key, min(m.boardPage(), end-start-1-top), n)
 	case key == "ctrl+d":
 		m.selected += max(1, m.boardPage()/2) * n
 	case key == "ctrl+u":

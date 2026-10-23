@@ -17,7 +17,7 @@ type mouseState struct {
 // Mouse routing reuses the renderer's geometry (tab spans, column layout,
 // board columns), so hit-testing cannot drift from what is drawn.
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.editor.open || m.save.open || m.archiveConfirm || m.actionConfirm != nil {
+	if m.modalOpen() {
 		return m, nil
 	}
 	p := msg.Mouse()
