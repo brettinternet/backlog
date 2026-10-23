@@ -294,9 +294,15 @@ func executeWithOutput(ctx context.Context, cfg project.Config, hook project.Hoo
 		cmd.Stderr = io.MultiWriter(&stderr, errOut)
 	}
 	cmd.Env = hookEnvironment(cfg, event, resultPath)
+	// A backgrounded grandchild can hold the output pipes open after the hook
+	// exits or is killed; bound that wait so a hook cannot outlive its timeout.
+	cmd.WaitDelay = time.Second
 	started := time.Now()
 	err = cmd.Run()
 	elapsed := time.Since(started)
+	if errors.Is(err, exec.ErrWaitDelay) && hookCtx.Err() == nil {
+		err = nil // the hook itself exited 0; only its leftover child held output
+	}
 	result := execution{outcome: "ok", exitCode: 0, duration: elapsed, stdout: stdout.Bytes(), stderr: stderr.Bytes()}
 	if err != nil {
 		result.outcome = "failed"

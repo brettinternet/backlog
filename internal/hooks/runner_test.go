@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettinternet/backlog/internal/cli"
 	"github.com/brettinternet/backlog/internal/hooks"
@@ -225,6 +226,22 @@ func TestUntrustedHooksAreInert(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) || len(finishedEvents(t, trusted)) != 0 {
 		t.Fatalf("hooks ran beyond causal depth 3: %v", err)
+	}
+}
+
+// A backgrounded child inherits the hook's output pipes; without a bounded wait
+// a before hook that exits at once would still block the write for its lifetime.
+func TestBeforeHookIgnoresBackgroundedChildOutput(t *testing.T) {
+	root := t.TempDir()
+	program := filepath.Join(root, "program")
+	executable(t, program, "#!/bin/sh\nsleep 30 &\nexit 0\n")
+	cfg := runnerConfig(t, project.HookConfig{Name: "before", On: "item.updated", Phase: "before", Run: []string{program}, Timeout: "10s"})
+	started := time.Now()
+	if err := hooks.Before(context.Background(), cfg, automationEvent("event-background", "item.updated"), root); err != nil {
+		t.Fatalf("successful hook vetoed: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("before hook waited %v for a backgrounded child", elapsed)
 	}
 }
 

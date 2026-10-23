@@ -34,7 +34,9 @@ Hooks run argv directly, never through a shell. A `before` hook can veto only
 `item.created`, `item.updated`, and `item.archived` mutations. It receives the
 proposed event as JSON on stdin; a nonzero exit or timeout rejects the write
 with exit 5 and the hook's first stderr line. `before` hooks run in declaration
-order, and the first failure wins.
+order, and the first failure wins. A hook ends when its process exits: `bl` stops
+reading output that a backgrounded child still holds open one second later, and
+the child keeps running.
 
 `after` hooks are handed to a detached `bl` runner by the process that appended
 the event. Hooks for one event run concurrently with a bound of four. Chain
