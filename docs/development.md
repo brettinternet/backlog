@@ -90,6 +90,44 @@ The pinned Go in `mise.toml` is the only supported toolchain. The `go.mod` direc
 
 To upgrade tools, run `task setup:upgrade`, review the `mise.toml` diff, and run `task ci`.
 
+## Releases
+
+`task release:snapshot` builds nonpublishing archives in `dist/` for Darwin and
+Linux, arm64 and amd64. Each contains a static `bl` with version and full commit
+metadata; `checksums.txt` records SHA-256 hashes. `task release:test` exercises
+the fail-closed CI gate and installer against local fixtures. It also runs in
+`task ci`. No sibling repositories or release credentials are needed locally.
+
+The tag-triggered release workflow checks the latest main-push `CI` run for the
+exact tag commit before building and again immediately before publishing. Missing,
+pending, failed, wrong-commit, fork, and pull-request runs cannot authorize a
+release. It generates notes with git-cliff and publishes the four archives and
+checksums. If CI has not finished, rerun the release workflow after CI passes.
+
+Owner checklist:
+
+- [ ] Merge the intended release commit to `main` and wait for its CI to pass.
+- [ ] Run `task ci`, `task release:snapshot`, and `task release:test` locally.
+- [ ] Choose an unused `vMAJOR.MINOR.PATCH` tag (optional `-PRERELEASE` suffix),
+  create it on that exact commit, and explicitly push the tag to trigger release.
+- [ ] Inspect the GitHub release notes, four archives, and checksums; verify
+  `bl version` reports the intended version and commit after installation.
+- [ ] Optionally update the Homebrew tap with the published archive URLs and
+  checksums. This is a separate owner action, not part of this pipeline.
+
+Install a published release (requires curl, tar, and sha256sum or shasum):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/brettinternet/backlog/main/install.sh -o /tmp/bl-install.sh
+sh /tmp/bl-install.sh
+```
+
+The installer verifies the selected archive's SHA-256 before extraction or
+replacement. Defaults: latest release, `$HOME/.local/bin`. Set `BL_VERSION=v1.2.3`
+and/or `BL_INSTALL_DIR` to override. `BL_RELEASE_BASE_URL` selects a trusted release
+mirror using GitHub's `latest/download` and `download/TAG` layout; checksums protect
+against corruption, not a compromised mirror. Add the install directory to PATH.
+
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/). `scripts/check-commit-message` enforces them:
