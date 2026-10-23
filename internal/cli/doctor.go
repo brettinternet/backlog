@@ -273,6 +273,11 @@ func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
 		c.Fix = "Install Worklease >= 1.10.1 with schema v2 support"
 	} else {
 		c.Message = "Worklease " + version.Version + " (schema v2)"
+		if cfg.Coordination.Worklease != nil {
+			if conflict := worklease.New(cfg).HostLocalConflict(ctx); conflict != "" {
+				c.Status, c.Message, c.Fix = "fail", conflict, "Set project.id in backlog.yaml, or select a local Worklease profile"
+			}
+		}
 	}
 	return c
 }

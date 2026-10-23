@@ -395,6 +395,7 @@ func TestHostLocalClaimRefusedWithRemoteProfile(t *testing.T) {
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	script := `#!/bin/sh
+[ "$1" = version ] && { printf '%s\n' '{"schemaVersion":2,"ok":true,"version":"1.10.1"}'; exit 0; }
 case "$2" in
 profile) printf '%s\n' '{"schemaVersion":2,"ok":true,"profile":{"name":"team","endpoint":"https://authority.example:8443"}}';;
 handle) printf '%s\n' '{"schemaVersion":2,"ok":false,"error":{"reason":"handle-malformed","message":"handle is missing"}}';exit 2;;
@@ -410,14 +411,27 @@ esac
 	called := filepath.Join(t.TempDir(), "called")
 	t.Setenv("BL_FAKE_CALLED", called)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	for _, args := range [][]string{{"claim", "12"}, {"next", "--claim", "--start"}} {
+	for _, args := range [][]string{{"claim", "12"}, {"next", "--claim", "--start"}, {"start", "12", "--session", "s"}} {
 		code, out, _ := writeRun(root, "", args...)
-		if code != 5 || !strings.Contains(out, `"reason":"invalid-config"`) || !strings.Contains(out, "host-local") {
+		if code != 6 || !strings.Contains(out, `"reason":"unavailable"`) || !strings.Contains(out, "host-local") {
 			t.Fatalf("%v: %d %s", args, code, out)
 		}
 	}
 	if _, err := os.Stat(called); err == nil {
 		t.Fatal("host-local key reached the remote authority")
+	}
+	if code, out, _ := writeRun(root, "", "show", "12", "--json"); code != 0 || !strings.Contains(out, `"status":"todo"`) {
+		t.Fatalf("refused transition wrote: %d %s", code, out)
+	}
+	code, out, _ := writeRun(root, "", "doctor", "--json")
+	if code != 5 || !strings.Contains(out, `"name":"worklease","status":"fail","message":"project ID`) {
+		t.Fatalf("doctor: %d %s", code, out)
+	}
+	// Heartbeat and release are never refused, so existing claims can be cleaned up.
+	for _, args := range [][]string{{"heartbeat", "--session", "s"}, {"release", "12", "--session", "s"}} {
+		if _, out, _ := writeRun(root, "", args...); strings.Contains(out, "host-local") {
+			t.Fatalf("%v: %s", args, out)
+		}
 	}
 }
 
@@ -664,7 +678,10 @@ func TestProviderRemoteAuthority(t *testing.T) {
 	enableCoordination(t, local)
 	hostA.use(t)
 	code, out, _ = writeRun(local, "", "claim", "12", "--session", "local")
-	if code != 5 || !strings.Contains(out, "host-local") {
+	if code != 6 || !strings.Contains(out, "host-local") {
 		t.Fatalf("host-local claim with remote profile: %d %s", code, out)
+	}
+	if code, out, _ = writeRun(local, "", "doctor", "--json"); code != 5 || !strings.Contains(out, `"name":"worklease","status":"fail","message":"project ID`) {
+		t.Fatalf("doctor with host-local ID and remote profile: %d %s", code, out)
 	}
 }

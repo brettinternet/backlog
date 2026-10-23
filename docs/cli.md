@@ -287,8 +287,9 @@ bl next --claim --start --session loop-a --json
 
 Every clone must share the project ID, which defaults to the `origin` remote.
 Without one, the ID is host-local and other hosts would derive different keys,
-so `bl` refuses claims through a remote profile (exit 5, `invalid-config`). Set
-`project.id` in `backlog.yaml` or add `origin`.
+so `bl` refuses to acquire through a remote profile (exit 6, `unavailable`)
+before writing, and `bl doctor` fails its `worklease` check. Heartbeat and
+release still work. Set `project.id` in `backlog.yaml` or add `origin`.
 
 ### Claimed selection
 

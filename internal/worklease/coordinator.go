@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/model"
@@ -19,6 +20,12 @@ import (
 type Coordinator struct {
 	Config project.Config
 	Now    func() time.Time
+
+	profile struct {
+		sync.Mutex
+		known, builtin bool
+		name           string
+	}
 }
 
 func New(cfg project.Config) *Coordinator                    { return &Coordinator{Config: cfg, Now: time.Now} }
@@ -267,7 +274,7 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 	if err != nil {
 		return failure(envelope{}, err)
 	}
-	if refused := c.refuseHostLocal(ctx, caller, item); refused != nil {
+	if refused := c.refuseHostLocal(ctx, item); refused != nil {
 		return *refused
 	}
 	v, err := c.call(ctx, caller, "acquire", "--resource", key, "--wait", "0s", "--work-key", item.Ref.Source+":"+item.Ref.ID)
@@ -285,20 +292,36 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 
 // refuseHostLocal stops a host-local project key from reaching a remote
 // authority, where other hosts derive different keys and never contend.
-func (c *Coordinator) refuseHostLocal(ctx context.Context, caller model.CallerContext, item model.Item) *model.ClaimResult {
-	if !c.Config.HostLocal || !projectScoped(c.Config, item) {
+func (c *Coordinator) refuseHostLocal(ctx context.Context, item model.Item) *model.ClaimResult {
+	if !projectScoped(c.Config, item) {
 		return nil
 	}
-	v, err := c.call(ctx, caller, "profile", "show")
-	if err != nil || !v.OK || v.Profile == nil {
-		r := failure(v, err)
-		r.Message = "cannot determine whether the selected Worklease authority is remote; no claim attempted"
-		return &r
+	if message := c.HostLocalConflict(ctx); message != "" {
+		return &model.ClaimResult{Outcome: model.ClaimUnavailable, Reason: "unavailable", Message: message}
 	}
-	if v.Profile.Builtin {
-		return nil
+	return nil
+}
+
+// HostLocalConflict explains why acquiring must fail, or returns "" when it
+// may proceed. Only host-local project IDs ask Worklease for the selected
+// profile, once per process; an unreadable answer counts as remote.
+func (c *Coordinator) HostLocalConflict(ctx context.Context) string {
+	if !c.Config.HostLocal {
+		return ""
 	}
-	return &model.ClaimResult{Outcome: model.ClaimUnavailable, Reason: "invalid-config", Message: "project ID " + c.Config.Project.ID + " is host-local, so claims through remote Worklease profile " + v.Profile.Name + " would not contend with other hosts; set project.id or an origin remote"}
+	c.profile.Lock()
+	defer c.profile.Unlock()
+	if !c.profile.known {
+		v, err := c.call(ctx, model.CallerContext{}, "profile", "show")
+		if err != nil || !v.OK || v.Profile == nil {
+			return "cannot determine whether the selected Worklease authority is remote, and project ID " + c.Config.Project.ID + " is host-local; set project.id or an origin remote"
+		}
+		c.profile.known, c.profile.name, c.profile.builtin = true, v.Profile.Name, v.Profile.Builtin
+	}
+	if c.profile.builtin {
+		return ""
+	}
+	return "project ID " + c.Config.Project.ID + " is host-local, so claims through remote Worklease profile " + c.profile.name + " would not contend with other hosts; set project.id or an origin remote"
 }
 
 func (c *Coordinator) Release(ctx context.Context, caller model.CallerContext, item model.Item, expectedClaimID string) model.ClaimResult {
