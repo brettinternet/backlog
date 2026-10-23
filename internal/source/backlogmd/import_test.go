@@ -56,7 +56,7 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 	if !reflectStringSlicesEqual(preview.OutputPaths, report.OutputPaths) {
 		t.Fatal("dry-run and real import plans differ")
 	}
-	configBytes, err := os.ReadFile(filepath.Join(target, ".config", "backlog.yaml"))
+	configBytes, err := os.ReadFile(filepath.Join(target, "backlog.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

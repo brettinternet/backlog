@@ -105,13 +105,17 @@ Off a terminal, bare `bl` prints help and `bl tui` fails.
 | --- | --- |
 | Built-in defaults | |
 | User config | `~/.config/backlog/config.yaml` (`$XDG_CONFIG_HOME`, also on macOS) |
-| Project config | `.config/backlog.yaml` at the control root |
+| Project config | `backlog.yaml` at the control root |
+| Private project config | `backlog.local.yaml` at the control root |
 | User per-project overrides | `projects.<project-id>` in user config |
 | Environment | `BL_HIGH_CONTRAST=true` |
 | Flags | `--high-contrast` |
 
 Mappings merge; lists replace. Linked worktrees use the primary checkout's
-backlog unless project config sets `root: checkout`.
+backlog and both config files. Routing reads primary shared, primary local,
+invoking shared, then invoking local; `root: checkout` loads that checkout's
+files. Either file marks a project. Legacy `.config/backlog.yaml` is rejected;
+run `git mv .config/backlog.yaml backlog.yaml`.
 
 ```sh
 bl config show --json
@@ -122,10 +126,14 @@ bl doctor --json
 `config show` prints each effective value and where it came from. `doctor`
 checks local health; add `--online` to allow network probes.
 
-Project hooks, actions, adapters, and network sources do nothing until you run
+Hooks, actions, adapters, network sources, and `git.autoCommit` from either
+project file do nothing until you run
 `bl trust`. Inspect `bl trust --show` first. Changing them requires trusting
 again. Keep credentials in user config or the environment, never in project
-config.
+config. `backlog.local.yaml` uses the project schema, not user accounts.
+Ignore `/backlog.local.yaml`; `doctor` warns if it is tracked or not ignored.
+`bl` never writes this file or edits `.gitignore`. Repo files settle `project.id`
+before looking up user `projects.<id>` overrides.
 
 Other settings:
 
@@ -151,7 +159,7 @@ The guide's doc test appends this to the fresh project and uses a fake
 authority. Don't append a duplicate key to a configured project.
 
 ```sh
-printf '\ncoordination: {worklease: {}}\n' >> .config/backlog.yaml
+printf '\ncoordination: {worklease: {}}\n' >> backlog.yaml
 export BL_SESSION=guide-loop
 bl next --claim --start --session "$BL_SESSION" --json
 bl show BL-1 --json

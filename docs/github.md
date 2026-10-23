@@ -2,7 +2,7 @@
 
 ## Setup
 
-Project config (`.config/backlog.yaml`):
+Project config (`backlog.yaml`):
 
 ```yaml
 sources:

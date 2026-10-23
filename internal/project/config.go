@@ -114,42 +114,46 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 		if d.CheckoutRoot != "" {
 			// Route first, then load facts only from the selected checkout. The
 			// invoking checkout may override the shared root policy, not its facts.
-			projectFile := filepath.Join(d.ControlRoot, ".config", "backlog.yaml")
-			projectNode, readErr := readConfig(projectFile, reflect.TypeFor[Settings]())
-			if readErr != nil {
-				return Config{}, readErr
+			type repoLayer struct {
+				file, layer string
+				node        *yaml.Node
 			}
-			checkoutFile := filepath.Join(d.CheckoutRoot, ".config", "backlog.yaml")
-			checkoutNode := projectNode
-			if checkoutFile != projectFile {
-				checkoutNode, err = readConfig(checkoutFile, reflect.TypeFor[Settings]())
-				if err != nil {
-					return Config{}, err
-				}
+			var layers []repoLayer
+			roots := []string{d.ControlRoot}
+			if d.CheckoutRoot != d.ControlRoot {
+				roots = append(roots, d.CheckoutRoot)
 			}
 			root := field(effective, "root")
 			rootOrigin := cfg.Provenance["root"]
-			if n := field(projectNode, "root"); n != nil {
-				root = n
-				rootOrigin = Provenance{Layer: "project", File: projectFile, Line: n.Line}
-			}
-			if n := field(checkoutNode, "root"); n != nil {
-				root = n
-				rootOrigin = Provenance{Layer: "project", File: checkoutFile, Line: n.Line}
+			for _, directory := range roots {
+				for _, entry := range []repoLayer{{file: ProjectFile(directory), layer: "project"}, {file: LocalFile(directory), layer: "local"}} {
+					entry.node, err = readConfig(entry.file, reflect.TypeFor[Settings]())
+					if err != nil {
+						return Config{}, err
+					}
+					layers = append(layers, entry)
+					if n := field(entry.node, "root"); n != nil {
+						root = n
+						rootOrigin = Provenance{Layer: entry.layer, File: entry.file, Line: n.Line}
+					}
+				}
 			}
 			if root.Value == "checkout" {
 				d.ControlRoot = d.CheckoutRoot
-				projectFile = checkoutFile
-				projectNode = checkoutNode
 			}
-			if views := field(projectNode, "views"); views != nil {
-				var entries []ViewConfig
-				if err := views.Decode(&entries); err != nil {
-					return Config{}, err
+			for _, entry := range layers {
+				if filepath.Dir(entry.file) != d.ControlRoot {
+					continue
 				}
-				cfg.SavedViews = appendViews(cfg.SavedViews, "project", entries)
+				if views := field(entry.node, "views"); views != nil {
+					var entries []ViewConfig
+					if err := views.Decode(&entries); err != nil {
+						return Config{}, err
+					}
+					cfg.SavedViews = appendViews(cfg.SavedViews, entry.layer, entries)
+				}
+				overlay(effective, entry.node, "", Provenance{Layer: entry.layer, File: entry.file}, cfg.Provenance)
 			}
-			overlay(effective, projectNode, "", Provenance{Layer: "project", File: projectFile}, cfg.Provenance)
 			replaceField(effective, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "root"}, cloneNode(root))
 			cfg.Provenance["root"] = rootOrigin
 			if n := field(field(effective, "project"), "id"); n == nil || n.Value == "" {
@@ -604,11 +608,15 @@ func validateSettings(node *yaml.Node) error {
 	}
 	return nil
 }
+
+// Repository files never grant authority, even when intended to be private.
+func untrustedLayer(layer string) bool { return layer == "project" || layer == "local" }
+
 func privileged(cfg Config) []Privileged {
 	var result []Privileged
 	if cfg.Git.AutoCommit {
 		p := cfg.Provenance["git.autoCommit"]
-		result = append(result, Privileged{Key: "git.autoCommit", Trusted: p.Layer != "project", Origin: p})
+		result = append(result, Privileged{Key: "git.autoCommit", Trusted: !untrustedLayer(p.Layer), Origin: p})
 	}
 	for _, group := range []string{"hooks", "actions", "sources"} {
 		count := len(cfg.Hooks)
@@ -627,7 +635,7 @@ func privileged(cfg Config) []Privileged {
 			}
 			key := fmt.Sprintf("%s[%d]", group, i)
 			p := cfg.Provenance[key]
-			result = append(result, Privileged{Key: key, Trusted: p.Layer != "project", Origin: p})
+			result = append(result, Privileged{Key: key, Trusted: !untrustedLayer(p.Layer), Origin: p})
 		}
 	}
 	return result

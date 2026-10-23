@@ -128,6 +128,7 @@ func TestInvocationDirectory(t *testing.T) {
 
 func TestConfigInvocation(t *testing.T) {
 	home := testkit.Isolate(t)
+	t.Chdir(home)
 	paths, err := project.UserPaths()
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +192,7 @@ func TestConfigInvocation(t *testing.T) {
 }
 
 func TestOAuthCommandsRequireOptInAndInteraction(t *testing.T) {
-	testkit.Isolate(t)
+	t.Chdir(testkit.Isolate(t))
 	paths, err := project.UserPaths()
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +239,7 @@ func TestMCPUsesRunStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := "version: 1\nproject: {id: test}\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\nready: {statuses: [todo], satisfiedBy: [done]}\n"
-	if err := os.WriteFile(filepath.Join(root, ".config", "backlog.yaml"), []byte(config), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "backlog.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

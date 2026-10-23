@@ -78,6 +78,7 @@ func TestOAuthCLIAuthLifecycleHelper(t *testing.T) {
 	if os.Getenv("BL_OAUTH_CLI_CHILD") != "1" {
 		return
 	}
+	t.Chdir(t.TempDir())
 	provider := &cliTestOAuthProvider{}
 	if err := oauth.RegisterDefault(provider); err != nil {
 		t.Fatal(err)
@@ -392,7 +393,7 @@ func TestOAuthCanariesStayOutOfPublicAndAutomationSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectConfigPath := filepath.Join(root, ".config", "backlog.yaml")
+	projectConfigPath := filepath.Join(root, "backlog.yaml")
 	if err = os.MkdirAll(filepath.Dir(projectConfigPath), 0o700); err != nil {
 		t.Fatal(err)
 	}

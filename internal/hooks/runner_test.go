@@ -372,7 +372,7 @@ func TestHookAndNestedBLChainsStopAtDepthThree(t *testing.T) {
 		}
 	}
 	putFile(t, filepath.Join(root, ".git", "config"), "[core]\n bare = false\n")
-	putFile(t, filepath.Join(root, ".config", "backlog.yaml"), "version: 1\nproject: {id: example/project}\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}]\n")
+	putFile(t, filepath.Join(root, "backlog.yaml"), "version: 1\nproject: {id: example/project}\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}]\n")
 	putFile(t, filepath.Join(root, "items", "BL-12.md"), "---\nid: BL-12\ntitle: Hook depth item\nstatus: todo\npriority: low\ncreated: 2026-01-01T00:00:00Z\nupdated: 2026-01-01T00:00:00Z\n---\nDescription.\n")
 	binary := mustExecutable(t)
 	cfg := runnerConfig(t,

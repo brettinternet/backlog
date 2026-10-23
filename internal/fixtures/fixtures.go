@@ -31,7 +31,7 @@ func Generate(root string, count int, seed uint64) error {
 	for _, status := range []string{"backlog", "todo", "active", "done", "canceled"} {
 		config += fmt.Sprintf("  - {key: %s, name: %s, category: %s}\n", status, status, status)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".config", "backlog.yaml"), []byte(config), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "backlog.yaml"), []byte(config), 0644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(root, ".git", "config"), []byte("[core]\n bare = false\n"), 0644); err != nil {

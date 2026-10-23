@@ -84,12 +84,70 @@ func TestDiscoverWorktrees(t *testing.T) {
 		}
 	}
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "missing.yaml")}
-	put(t, filepath.Join(linked, ".config", "backlog.yaml"), "root: checkout\nproject: {name: linked}\n")
+	put(t, filepath.Join(linked, "backlog.yaml"), "root: checkout\nproject: {name: linked}\n")
 	cfg, err := project.Resolve(paths, sub, nil)
 	if err != nil || cfg.Discovery.ControlRoot != linked || cfg.Project.Name != "linked" {
 		t.Fatalf("checkout opt-out: %+v %v", cfg, err)
 	}
 }
+
+// All worktrees must share the primary local file unless the invoking
+// checkout explicitly opts out; a local-only project must be discoverable.
+func TestLocalConfigWorktreeRouting(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	linked := filepath.Join(t.TempDir(), "linked")
+	git(t, root, "worktree", "add", "-b", "linked", linked)
+	linked, err := filepath.EvalSymlinks(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
+	put(t, project.ProjectFile(root), "project: {name: primary}\n")
+	put(t, project.LocalFile(root), "labels: [primary-local]\n")
+	put(t, project.ProjectFile(linked), "project: {name: checkout}\n")
+	put(t, project.LocalFile(linked), "labels: [checkout-local]\n")
+	check := func(wantRoot, name, label string) {
+		t.Helper()
+		cfg, err := project.Resolve(paths, linked, nil)
+		if err != nil || cfg.Discovery.ControlRoot != wantRoot || cfg.Project.Name != name || strings.Join(cfg.Labels, ",") != label {
+			t.Fatalf("routing: root=%s config=%+v err=%v", cfg.Discovery.ControlRoot, cfg.Settings, err)
+		}
+	}
+	check(root, "primary", "primary-local")
+	put(t, project.ProjectFile(linked), "root: checkout\nproject: {name: checkout}\n")
+	check(linked, "checkout", "checkout-local")
+	put(t, project.LocalFile(linked), "root: primary\nlabels: [checkout-local]\n")
+	check(root, "primary", "primary-local")
+	put(t, project.ProjectFile(linked), "project: {name: checkout}\n")
+	put(t, project.LocalFile(linked), "root: checkout\nlabels: [checkout-local]\n")
+	check(linked, "checkout", "checkout-local")
+
+	for _, onlyLocal := range []string{repo(t), t.TempDir()} {
+		put(t, project.LocalFile(onlyLocal), "project: {id: local-only}\n")
+		cfg, err := project.Resolve(paths, onlyLocal, nil)
+		if err != nil || cfg.Project.ID != "local-only" {
+			t.Fatalf("local-only project not discovered: %+v %v", cfg, err)
+		}
+	}
+}
+
+// Legacy config must fail even alongside new config or from a linked checkout.
+func TestLegacyConfigRejected(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	linked := filepath.Join(t.TempDir(), "linked")
+	git(t, root, "worktree", "add", "-b", "linked", linked)
+	put(t, project.ProjectFile(root), "{}\n")
+	put(t, filepath.Join(root, ".config", "backlog.yaml"), "{}\n")
+	for _, directory := range []string{root, linked} {
+		_, err := project.Discover(directory)
+		if err == nil || !strings.Contains(err.Error(), "git mv .config/backlog.yaml backlog.yaml") {
+			t.Fatalf("legacy path accepted from %s: %v", directory, err)
+		}
+	}
+}
+
 func TestRemoteIdentity(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ remote, want string }{
@@ -147,7 +205,7 @@ func TestDetectLegacySources(t *testing.T) {
 	if err != nil || len(d.Detected) != 3 {
 		t.Fatalf("legacy: %+v %v", d, err)
 	}
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), "version: 1\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\n")
 	d, err = project.Discover(root)
 	if err != nil || len(d.Detected) != 0 {
 		t.Fatalf("explicit: %+v %v", d, err)
@@ -180,7 +238,7 @@ func TestBacklogMDReadOnlyDiscoveryAndCatalog(t *testing.T) {
 	if err != nil || len(settings.Milestones) != 2 {
 		t.Fatalf("directory resolution: %+v %v", settings, err)
 	}
-	put(t, filepath.Join(root, ".config", "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: work}]\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: work}]\n")
 	cfg, err = project.Resolve(paths, root, nil)
 	if err != nil || cfg.ReadOnlySources["tasks"] || len(cfg.Discovery.Detected) != 0 {
 		t.Fatalf("explicit source: %+v %v", cfg, err)

@@ -58,7 +58,7 @@ func TestInitCreatesValidProjectAndRefusesOverwrite(t *testing.T) {
 	if code != 0 || stderr != "" || !strings.Contains(output, `"command":"init"`) {
 		t.Fatalf("init: %d %s %s", code, output, stderr)
 	}
-	configPath := filepath.Join(root, ".config", "backlog.yaml")
+	configPath := filepath.Join(root, "backlog.yaml")
 	before, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestRenumberRewritesAllReferenceFormsAndRefusesAmbiguityAndCollision(t *tes
 	if err := os.MkdirAll(filepath.Join(root, "items", "archive"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(root, ".config", "backlog.yaml")
+	configPath := filepath.Join(root, "backlog.yaml")
 	config := strings.Replace(get(t, configPath), "sources: [{id: tasks, type: native, path: items, prefix: BL}]", "sources: [{id: tasks, type: native, path: items, prefix: BL}, {id: other, type: native, path: other, prefix: GH}]", 1)
 	put(t, configPath, config)
 	if err := os.MkdirAll(filepath.Join(root, "other"), 0700); err != nil {

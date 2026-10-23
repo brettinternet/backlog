@@ -27,7 +27,7 @@ func TestStdioSubprocessInitializeListCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := "version: 1\nproject: {id: test}\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\nready: {statuses: [todo], satisfiedBy: [done]}\n"
-	if err := os.WriteFile(filepath.Join(root, ".config", "backlog.yaml"), []byte(config), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "backlog.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(t.TempDir(), "bl")

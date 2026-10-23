@@ -32,7 +32,7 @@ func record() error {
 	if err := fixtures.Generate(project, 48, 1); err != nil {
 		return err
 	}
-	config := filepath.Join(project, ".config", "backlog.yaml")
+	config := filepath.Join(project, "backlog.yaml")
 	file, err := os.OpenFile(config, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err

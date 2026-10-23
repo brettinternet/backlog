@@ -152,7 +152,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if len(cfg.Untrusted()) > 0 {
 			trustWarning = "Untrusted project config · bl trust --show"
 		} else if len(cfg.Discovery.Detected) > 0 {
-			trustWarning = "Read-only · configure sources in .config/backlog.yaml"
+			trustWarning = "Read-only · configure sources in backlog.yaml"
 		}
 		workspaceScope := cmd.String("workspace") != ""
 		if cfg.Workspace != nil {
@@ -193,7 +193,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 					if cfg.Discovery.ControlRoot == "" {
 						return project.SavedView{}, fmt.Errorf("project config requires a repository")
 					}
-					path, scope = filepath.Join(cfg.Discovery.ControlRoot, ".config", "backlog.yaml"), "project"
+					path, scope = filepath.Join(cfg.Discovery.ControlRoot, "backlog.yaml"), "project"
 				}
 				err := project.SaveView(path, !shared, v)
 				return project.SavedView{ID: scope + ":" + v.Name, ViewConfig: v}, err

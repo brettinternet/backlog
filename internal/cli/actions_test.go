@@ -66,7 +66,7 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 		{Name: "detached", Key: "ctrl+e", Detach: true, Run: []string{"/bin/sh", "-c", `printf started > "$BL_ROOT/started"; read line < "$BL_ROOT/gate"; printf finished > "$BL_ROOT/finished"`}},
 	}
 	data, _ := yaml.Marshal(cfg.Settings)
-	put(t, filepath.Join(root, ".config/backlog.yaml"), string(data))
+	put(t, filepath.Join(root, "backlog.yaml"), string(data))
 	actionOK(t, root, "trust")
 	cfg = eventConfig(t, root)
 	choices, err := engine.ActionChoices(context.Background(), cfg, "12")
@@ -242,7 +242,7 @@ func exerciseActionExamples(t *testing.T, root, binary string) {
 		cfg.Actions, cfg.Hooks = declarations.Actions, declarations.Hooks
 		cfg.Coordination.Worklease = &struct{}{}
 		data, _ := yaml.Marshal(cfg.Settings)
-		put(t, filepath.Join(root, ".config/backlog.yaml"), string(data))
+		put(t, filepath.Join(root, "backlog.yaml"), string(data))
 		actionOK(t, root, "trust")
 		for _, action := range cfg.Actions {
 			output, err := exec.Command(binary, "-C", root, "--json", "action", action.Name, "12", "--yes").CombinedOutput()

@@ -26,7 +26,7 @@ func TestCLIAndTUIQuickAddParity(t *testing.T) {
 	line := "Parity !high @agent #fresh :feature ^99 <12 <404 <other:7 ~m-2"
 	// Existing numeric 12 must retain its imported padding; missing 99 and
 	// 404 use the configured prefix, and the qualified ref stays cross-source.
-	put(t, filepath.Join(root, ".config/backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: other, type: native, path: other, prefix: EXT}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\ndefaults: {type: task, dod: [Run checks]}\n")
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: other, type: native, path: other, prefix: EXT}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\ndefaults: {type: task, dod: [Run checks]}\n")
 	writeOK(t, root, "", "new", "--source", "other", "Other fixture")
 	writeOK(t, root, "", append([]string{"new", "--source", "tasks"}, strings.Fields(line)...)...)
 	dir := filepath.Join(root, "items")

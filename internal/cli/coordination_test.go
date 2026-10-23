@@ -16,7 +16,7 @@ import (
 
 func enableCoordination(t *testing.T, root string) {
 	t.Helper()
-	path := filepath.Join(root, ".config/backlog.yaml")
+	path := filepath.Join(root, "backlog.yaml")
 	put(t, path, get(t, path)+"coordination: {worklease: {}}\n")
 	t.Setenv("BL_SESSION", "loop")
 }

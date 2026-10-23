@@ -239,7 +239,7 @@ func (cfg *Config) resolveBacklogMD() error {
 			cfg.Sources = append(cfg.Sources, SourceConfig{ID: "tasks", Type: "backlog-md", Path: detected.Path})
 			cfg.ReadOnlySources = map[string]bool{"tasks": true}
 			cfg.Provenance["sources[0]"] = Provenance{Layer: "discovery", File: detected.Path}
-			cfg.Discovery.Warnings = append(cfg.Discovery.Warnings, "Backlog.md is read-only; configure a backlog-md source in .config/backlog.yaml to enable editing")
+			cfg.Discovery.Warnings = append(cfg.Discovery.Warnings, "Backlog.md is read-only; configure a backlog-md source in backlog.yaml to enable editing")
 			break
 		}
 	}

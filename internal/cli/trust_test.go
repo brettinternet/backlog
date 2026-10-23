@@ -46,10 +46,10 @@ func TestClonedConfigIsInertUntilTrust(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(original, ".config", "backlog.yaml"), data, 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(original, "backlog.yaml"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	git(original, "add", ".config/backlog.yaml")
+	git(original, "add", "backlog.yaml")
 	git(original, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	git(home, "clone", "--quiet", original, clone)
 	// Keep the actual provider out of the test. Version probes are local only.
@@ -125,6 +125,48 @@ func fakeWorklease(t *testing.T) {
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+// Private configuration must not silently leak through Git: ignored files
+// are safe only when untracked, including force-added files matching ignores.
+func TestDoctorLocalConfigGitSafety(t *testing.T) {
+	testkit.Isolate(t)
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, data)
+		}
+	}
+	git("init", "-b", "main")
+	put(t, project.LocalFile(root), "project: {id: private}\n")
+	check := func(want string) {
+		t.Helper()
+		_, out, _ := run("-C", root, "--json", "doctor")
+		var result struct {
+			Data struct {
+				Checks []struct{ Name, Status string }
+			}
+		}
+		if err := json.Unmarshal([]byte(out), &result); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range result.Data.Checks {
+			if c.Name == "local-config" {
+				if c.Status != want {
+					t.Fatalf("local config: want %s: %s", want, out)
+				}
+				return
+			}
+		}
+		t.Fatalf("missing local-config check: %s", out)
+	}
+	check("warn")
+	put(t, filepath.Join(root, ".gitignore"), "/backlog.local.yaml\n")
+	check("pass")
+	git("add", "--force", "backlog.local.yaml")
+	check("warn")
+}
+
 func assertDoctor(t *testing.T, code int, out string, failed bool) {
 	t.Helper()
 	var result struct {
@@ -139,7 +181,7 @@ func assertDoctor(t *testing.T, code int, out string, failed bool) {
 	if result.OK == failed || (failed && code != 5) || (!failed && code != 0) {
 		t.Fatalf("doctor status: %d %s", code, out)
 	}
-	want := []string{"config", "trust", "control-root", "cache", "worklease", "sources"}
+	want := []string{"config", "trust", "control-root", "local-config", "cache", "worklease", "sources"}
 	if len(result.Data.Checks) != len(want) {
 		t.Fatalf("missing checks: %s", out)
 	}
@@ -167,7 +209,7 @@ func TestDoctorReportsCorruptCacheAndInvalidConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "items"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(root, ".config", "backlog.yaml")
+	configPath := filepath.Join(root, "backlog.yaml")
 	if err := os.WriteFile(configPath, []byte("sources: [{id: tasks, type: native, path: items, prefix: BL}]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}

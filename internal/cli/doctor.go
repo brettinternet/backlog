@@ -88,11 +88,11 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
 			if configErr != nil {
 				checks[0] = doctorCheck{"config", "fail", configErr.Error(), "Correct the reported configuration key or YAML syntax"}
-				for _, name := range []string{"trust", "control-root", "cache", "worklease", "sources"} {
+				for _, name := range []string{"trust", "control-root", "local-config", "cache", "worklease", "sources"} {
 					checks = append(checks, doctorCheck{name, "skip", "Configuration could not be loaded", "Fix configuration and rerun bl doctor"})
 				}
 			} else {
-				checks = append(checks, trustCheck(cfg), branchCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
+				checks = append(checks, trustCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
 			}
 			data := doctorData{Checks: checks}
 			failed := false
@@ -173,6 +173,28 @@ func branchCheck(ctx context.Context, cfg project.Config) doctorCheck {
 		c.Status = "warn"
 		c.Message = "Control checkout is on " + branch + ", not " + expected
 		c.Fix = "Check out " + expected + " in " + cfg.Discovery.ControlRoot
+	}
+	return c
+}
+
+// Check both index and ignore rules: a tracked file can also match an ignore rule.
+func localConfigCheck(ctx context.Context, cfg project.Config) doctorCheck {
+	c := doctorCheck{"local-config", "pass", "backlog.local.yaml is untracked and ignored", "No action needed"}
+	if _, err := os.Lstat(project.LocalFile(cfg.Discovery.ControlRoot)); errors.Is(err, os.ErrNotExist) {
+		c.Status, c.Message = "skip", "No backlog.local.yaml"
+		return c
+	}
+	git := func(args ...string) error {
+		runCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		return exec.CommandContext(runCtx, "git", append([]string{"-C", cfg.Discovery.ControlRoot}, args...)...).Run()
+	}
+	tracked := git("ls-files", "--error-unmatch", "--", "backlog.local.yaml") == nil
+	ignored := git("check-ignore", "--quiet", "--no-index", "--", "backlog.local.yaml") == nil
+	if tracked || !ignored {
+		c.Status = "warn"
+		c.Message = "backlog.local.yaml is tracked or not ignored"
+		c.Fix = "Keep backlog.local.yaml untracked and add /backlog.local.yaml to .gitignore; bl never edits ignore rules"
 	}
 	return c
 }
@@ -260,7 +282,7 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 	if len(cfg.Sources) == 0 {
 		c.Status = "fail"
 		c.Message = "No sources configured"
-		c.Fix = "Configure sources in .config/backlog.yaml or run bl init"
+		c.Fix = "Configure sources in backlog.yaml or run bl init"
 		return c
 	}
 	for i, s := range cfg.Sources {
