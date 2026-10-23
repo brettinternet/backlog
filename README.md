@@ -4,6 +4,8 @@
 
 <h1 align="center">backlog</h1>
 
+[![CI](https://github.com/brettinternet/backlog/actions/workflows/ci.yaml/badge.svg)](https://github.com/brettinternet/backlog/actions/workflows/ci.yaml)
+
 `bl` is a keyboard-first terminal backlog for people and coding agents. Tasks are
 Markdown files in Git, and every worktree of a repository shares one live queue.
 
