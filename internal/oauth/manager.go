@@ -11,6 +11,8 @@ import (
 // Manager coordinates the provider contract with its owner-private Store. Cache
 // purging is performed by principal hash after local logout, even if remote
 // revocation is unsupported or fails.
+const expirySkew = time.Minute
+
 type Manager struct {
 	store     Store
 	cacheDir  string
@@ -185,11 +187,13 @@ func (m *Manager) Resolve(ctx context.Context, account Account, verify func(cont
 			}
 			return nil
 		}
-		if !current.ValidationPending && (current.ExpiresAt.IsZero() || current.ExpiresAt.After(m.now())) {
+		// Refresh slightly early so a token is not handed out to expire mid-request.
+		usable := current.ExpiresAt.IsZero() || current.ExpiresAt.After(m.now().Add(expirySkew))
+		if !current.ValidationPending && usable {
 			result = currentTokens
 			return current, false, nil
 		}
-		if current.ValidationPending && (current.ExpiresAt.IsZero() || current.ExpiresAt.After(m.now())) {
+		if current.ValidationPending && usable {
 			if err := validate(currentTokens); err != nil {
 				return current, false, err
 			}

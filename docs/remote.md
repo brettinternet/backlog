@@ -88,7 +88,7 @@ provider-settings revocation step. No OAuth endpoint/client can be configured by
 a user, and an unavailable provider never falls back to helper/environment
 credentials. OAuth tokens live in the owner-private XDG state store (0700
 folders, 0600 fsynced records), are never in the disposable cache, and refresh is
-serialized per account across processes. The provider principal and scopes are
+serialized per account across processes, starting one minute before expiry. The provider principal and scopes are
 verified after login and each rotation; capabilities are rediscovered after
 consent changes. Existing helper/environment accounts remain memory-only.
 
