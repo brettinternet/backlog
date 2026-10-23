@@ -96,6 +96,9 @@ type Tokens struct {
 	AccessToken  string    `json:"-"`
 	RefreshToken string    `json:"-"`
 	ExpiresAt    time.Time `json:"-"`
+	// GrantedScopes is populated from a provider token response when no scope
+	// introspection endpoint exists. It is persisted with the rotated pair.
+	GrantedScopes []string `json:"-"`
 }
 
 func (Tokens) String() string   { return "[REDACTED]" }
@@ -161,7 +164,7 @@ func validProviderID(id string) bool {
 var defaultRegistry = struct {
 	sync.RWMutex
 	providers Registry
-}{providers: Registry{}}
+}{providers: Registry{"linear": newLinearProvider()}}
 
 // RegisterDefault registers one provider implementation compiled into bl.
 func RegisterDefault(provider Provider) error {

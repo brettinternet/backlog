@@ -215,7 +215,7 @@ func (s *Source) resolveField(ctx context.Context, c remote.Credential, m model.
 func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m.Ref.Source != s.o.ID || !s.Info().Capabilities.Allows(m.Op) {
+	if m.Ref.Source != s.o.ID || !s.o.AllowWrites || (m.Op != model.Set && m.Op != model.AppendComment) {
 		return model.Item{}, source.Refuse("rejected", "Linear write capability unavailable")
 	}
 	text := m.Comment.Body
@@ -231,6 +231,9 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return model.Item{}, err
+	}
+	if !s.Info().Capabilities.Allows(m.Op) {
+		return model.Item{}, source.Refuse("rejected", "Linear write scope required")
 	}
 	if !s.active {
 		return model.Item{}, source.Refuse("rejected", "active Linear principal required")

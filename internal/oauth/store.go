@@ -34,6 +34,7 @@ type storedRecord struct {
 	RefreshToken      string    `json:"refreshToken,omitempty"`
 	ExpiresAt         time.Time `json:"expiresAt,omitempty"`
 	Scopes            []string  `json:"scopes"`
+	GrantedScopes     []string  `json:"grantedScopes,omitempty"`
 	ValidationPending bool      `json:"validationPending,omitempty"`
 }
 
@@ -229,7 +230,7 @@ func recordFor(account Account, principal Principal, tokens Tokens) storedRecord
 		Version: storeVersion, Provider: account.Provider, Account: account.Name,
 		Host: account.Host, User: account.User, PrincipalID: principal.ID,
 		AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken,
-		ExpiresAt: tokens.ExpiresAt, Scopes: ScopeSet(principal.Scopes), ValidationPending: true,
+		ExpiresAt: tokens.ExpiresAt, Scopes: ScopeSet(principal.Scopes), GrantedScopes: tokens.GrantedScopes, ValidationPending: true,
 	}
 }
 
@@ -238,5 +239,5 @@ func recordMatches(account Account, record *storedRecord) bool {
 }
 
 func tokensFrom(record *storedRecord) Tokens {
-	return Tokens{AccessToken: record.AccessToken, RefreshToken: record.RefreshToken, ExpiresAt: record.ExpiresAt}
+	return Tokens{AccessToken: record.AccessToken, RefreshToken: record.RefreshToken, ExpiresAt: record.ExpiresAt, GrantedScopes: record.GrantedScopes}
 }

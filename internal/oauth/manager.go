@@ -71,7 +71,7 @@ func (m *Manager) Login(ctx context.Context, account Account, interaction Intera
 			return current, false, Failure(CodeProviderDown, time.Time{})
 		}
 		m.register(tokens)
-		principal, err := provider.Verify(ctx, account, tokens.AccessToken)
+		principal, err := verifyGrant(ctx, provider, account, tokens)
 		if err != nil {
 			return current, false, safeError(err)
 		}
@@ -121,7 +121,7 @@ func (m *Manager) EnableWrites(ctx context.Context, account Account, interaction
 			return current, false, Failure(CodeProviderDown, time.Time{})
 		}
 		m.register(tokens)
-		principal, err := provider.Verify(ctx, account, tokens.AccessToken)
+		principal, err := verifyGrant(ctx, provider, account, tokens)
 		if err != nil {
 			return current, false, safeError(err)
 		}
@@ -165,7 +165,7 @@ func (m *Manager) Resolve(ctx context.Context, account Account, verify func(cont
 		currentTokens := tokensFrom(current)
 		m.register(currentTokens)
 		validate := func(tokens Tokens) error {
-			principal, err := provider.Verify(ctx, account, tokens.AccessToken)
+			principal, err := verifyGrant(ctx, provider, account, tokens)
 			if err != nil {
 				return safeError(err)
 			}
@@ -190,6 +190,13 @@ func (m *Manager) Resolve(ctx context.Context, account Account, verify func(cont
 		// Refresh slightly early so a token is not handed out to expire mid-request.
 		usable := current.ExpiresAt.IsZero() || current.ExpiresAt.After(m.now().Add(expirySkew))
 		if !current.ValidationPending && usable {
+			principalID, err := verify(ctx, currentTokens)
+			if err != nil {
+				return current, false, safeError(err)
+			}
+			if principalID != account.User {
+				return current, false, Failure(CodePrincipalMismatch, time.Time{})
+			}
 			result = currentTokens
 			return current, false, nil
 		}
@@ -222,6 +229,7 @@ func (m *Manager) Resolve(ctx context.Context, account Account, verify func(cont
 		}
 		next.AccessToken, next.RefreshToken, next.ExpiresAt = rotated.AccessToken, rotated.RefreshToken, rotated.ExpiresAt
 		next.ValidationPending = true
+		next.GrantedScopes = rotated.GrantedScopes
 		m.register(rotated)
 		if err := persist(&next); err != nil {
 			return current, false, err
@@ -292,6 +300,16 @@ func (m *Manager) Logout(ctx context.Context, account Account) (LogoutResult, er
 		result.Warning = revokeDiagnostic
 	}
 	return result, nil
+}
+
+// verifyGrant combines live identity verification with scopes returned by the
+// provider's token endpoint, retaining scope evidence across process restarts.
+func verifyGrant(ctx context.Context, provider Provider, account Account, tokens Tokens) (Principal, error) {
+	principal, err := provider.Verify(ctx, account, tokens.AccessToken)
+	if tokens.GrantedScopes != nil {
+		principal.Scopes = ScopeSet(tokens.GrantedScopes)
+	}
+	return principal, err
 }
 
 func interactive(interaction Interaction) bool {

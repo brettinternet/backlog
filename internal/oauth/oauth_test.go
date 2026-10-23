@@ -194,14 +194,14 @@ func (p fakeProvider) Authorize(ctx context.Context, _ Account, scopes []string,
 	if err := p.post(ctx, "/authorize", map[string]any{"scopes": scopes}, &response); err != nil {
 		return Tokens{}, err
 	}
-	return Tokens(response), nil
+	return Tokens{AccessToken: response.AccessToken, RefreshToken: response.RefreshToken, ExpiresAt: response.ExpiresAt}, nil
 }
 func (p fakeProvider) Refresh(ctx context.Context, _ Account, tokens Tokens) (Tokens, error) {
 	var response wireTokens
 	if err := p.post(ctx, "/refresh", map[string]string{"refresh_token": tokens.RefreshToken}, &response); err != nil {
 		return Tokens{}, err
 	}
-	return Tokens(response), nil
+	return Tokens{AccessToken: response.AccessToken, RefreshToken: response.RefreshToken, ExpiresAt: response.ExpiresAt}, nil
 }
 func (p fakeProvider) Verify(ctx context.Context, _ Account, token string) (Principal, error) {
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, p.server+"/verify", nil)

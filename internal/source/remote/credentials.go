@@ -66,7 +66,25 @@ func (s *Secrets) Redact(text string) string {
 // be reflected by a verifier or provider response.
 func (s *Secrets) Register(value string) { s.add(value) }
 
-type Credential struct{ token string }
+type Credential struct {
+	token  string
+	oauth  bool
+	scopes []string
+}
+
+// HasScope preserves helper behavior; OAuth permissions come only from the
+// actual token response stored by the shared manager.
+func (c Credential) HasScope(scope string) bool {
+	if !c.oauth {
+		return true
+	}
+	for _, granted := range c.scopes {
+		if granted == scope {
+			return true
+		}
+	}
+	return false
+}
 
 func (Credential) String() string   { return "[REDACTED]" }
 func (Credential) GoString() string { return "[REDACTED]" }
@@ -95,7 +113,7 @@ func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig
 		}
 		tokens, err := h.OAuth.Resolve(ctx, oauth.Account{Provider: account.Provider, Name: account.Name, Host: account.Host, User: account.User, OptIn: account.OAuth}, func(ctx context.Context, tokens oauth.Tokens) (string, error) {
 			h.Secrets.add(tokens.AccessToken)
-			credential := Credential{token: tokens.AccessToken}
+			credential := Credential{token: tokens.AccessToken, oauth: true, scopes: tokens.GrantedScopes}
 			principal, verifyErr := verify(ctx, credential)
 			if verifyErr != nil {
 				var limited ScheduleDiagnostic
@@ -108,7 +126,7 @@ func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig
 		if err != nil {
 			return Credential{}, err
 		}
-		return Credential{token: tokens.AccessToken}, nil
+		return Credential{token: tokens.AccessToken, oauth: true, scopes: tokens.GrantedScopes}, nil
 	}
 	if (len(account.Credential) == 0) == (account.Env == "") {
 		return fail("one helper or environment variable required")

@@ -51,7 +51,9 @@ func TestOAuthDiagnosticVisibleInTUI(t *testing.T) {
 		}
 		next, _ := m.Update(msg)
 		m = next.(Model)
-		if store.Current().Source("remote").Error != "" {
+		// Assert against the snapshot delivered to the UI, not a newer store
+		// snapshot that may have arrived between receiving and rendering msg.
+		if m.snapshot.Source("remote").Error != "" {
 			if !strings.Contains(m.View().Content, "sso-required") {
 				t.Fatalf("OAuth code not shown in TUI: %s", m.View().Content)
 			}
