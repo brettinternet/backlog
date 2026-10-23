@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -197,7 +198,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				err := project.SaveView(path, !shared, v)
 				return project.SavedView{ID: scope + ":" + v.Name, ViewConfig: v}, err
 			},
-			Context: session, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID,
+			Context: session, Store: store, Projector: projector, Sources: sources, Project: cmp.Or(cfg.Project.Name, cfg.Project.ID),
 			Statuses: cfg.Statuses, Workflow: cfg.Workflow, Labels: cfg.Labels, Milestones: cfg.Milestones, Me: cfg.Me.Default,
 			Read: func(readCtx context.Context, ref model.Ref) (model.Item, error) {
 				return engine.ReadItem(readCtx, cfg, ref)
@@ -224,16 +225,15 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	}
 	root := &urfave.Command{
 		Name: "bl", Usage: "A terminal backlog for people and coding agents",
-		Description: "Read items with ls, show, and next.\nWithout a command, open the TUI on a terminal; otherwise print help.",
-		Reader:      in, Writer: out, ErrWriter: errOut,
+		Reader: in, Writer: out, ErrWriter: errOut,
 		ExitErrHandler: func(context.Context, *urfave.Command, error) {},
 		Flags: []urfave.Flag{
-			workspaceFlag(),
-			&urfave.StringFlag{Name: "session", Usage: "Coordination session (BL_SESSION or WORKLEASE_SESSION_ID)"},
-			&urfave.StringFlag{Name: "C", Value: ".", Usage: "Resolve the invocation from directory DIR"},
+			&urfave.StringFlag{Name: "workspace", Usage: "Read the configured workspace `NAME` (ls, next, and the TUI)"},
+			&urfave.StringFlag{Name: "session", Usage: "Coordinate as session `ID` (default: $BL_SESSION, then $WORKLEASE_SESSION_ID)"},
+			&urfave.StringFlag{Name: "C", Value: ".", HideDefault: true, Usage: "Run as if bl started in `DIR`"},
 			&urfave.BoolFlag{Name: "json", Aliases: []string{"j"}, Usage: "Print a versioned JSON envelope"},
-			&urfave.BoolFlag{Name: "version", Aliases: []string{"v"}, Usage: "Print version and commit"},
-			&urfave.BoolFlag{Name: "high-contrast", Usage: "Use bold and underline instead of color (env: BL_HIGH_CONTRAST)"},
+			&urfave.BoolFlag{Name: "version", Aliases: []string{"v"}, Usage: "Print the version"},
+			&urfave.BoolFlag{Name: "high-contrast", Usage: "Use bold and underline instead of faint text (env: BL_HIGH_CONTRAST)"},
 		},
 		Before: func(_ context.Context, cmd *urfave.Command) (context.Context, error) {
 			requested := cmd.String("C")
@@ -261,34 +261,32 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			}
 			return openTUI(ctx, cmd)
 		},
-		Commands: []*urfave.Command{
-			{Name: "version", Usage: "Print build information", Action: version},
-			{Name: "mcp", Usage: "Serve MCP tools over stdio", Action: func(ctx context.Context, cmd *urfave.Command) error {
-				cfg, err := loadConfig(cmd, directory)
-				if err != nil {
-					return err
-				}
-				return mcp.ServeStreams(ctx, cfg, in, out)
-			}},
-			{Name: "tui", Usage: "Browse the backlog (requires a terminal)", Flags: []urfave.Flag{workspaceFlag()}, Action: openTUI},
-			{Name: "config", Usage: "Inspect layered project settings",
-				Action: func(_ context.Context, _ *urfave.Command) error {
-					return &Error{Reason: "usage", Message: "use bl config show"}
-				},
-				Commands: []*urfave.Command{{Name: "show", Usage: "Show effective settings, provenance, discovery, and XDG paths without creating files", Action: showConfig}},
-			},
-		},
 	}
-	root.Commands = append(root.Commands, authCommands(&directory, in, out, errOut))
+	// Help lists item commands in this order, then each category by name.
+	root.Commands = append(readCommands(&directory, out, errOut), writeCommands(&directory, in, out, errOut)...)
+	root.Commands = append(root.Commands,
+		&urfave.Command{Name: "tui", Usage: "Open the TUI (the default on a terminal)", Action: openTUI},
+		&urfave.Command{Name: "version", Usage: "Print the version", Hidden: true, Action: version},
+		helpCommand(),
+		eventsCommand(&directory, out), actionCommand(&directory, in, out, errOut),
+		&urfave.Command{Name: "mcp", Usage: "Serve MCP tools over stdio", Category: categoryAutomation, Action: func(ctx context.Context, cmd *urfave.Command) error {
+			cfg, err := loadConfig(cmd, directory)
+			if err != nil {
+				return err
+			}
+			return mcp.ServeStreams(ctx, cfg, in, out)
+		}},
+		instructionsCommand(out), adapterCommand(&directory, out), hooksCommand(&directory),
+	)
 	root.Commands = append(root.Commands, claimCommands(&directory, out)...)
-	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
-	root.Commands = append(root.Commands, eventsCommand(&directory, out))
-	root.Commands = append(root.Commands, hooksCommand(&directory), actionCommand(&directory, in, out, errOut))
-	root.Commands = append(root.Commands, instructionsCommand(out), adapterCommand(&directory, out))
-	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
-	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, importCommands(&directory, out)...)
+	root.Commands = append(root.Commands, &urfave.Command{
+		Name: "config", Usage: "Inspect project settings", Category: categoryProject, Action: groupHelp("use bl config show"),
+		Commands: []*urfave.Command{{Name: "show", Usage: "Show effective settings and where they come from", Action: showConfig}},
+	})
+	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
+	root.Commands = append(root.Commands, authCommands(&directory, in, out, errOut))
 	valueFlags := map[string]bool{}
 	_ = root.Walk(func(cmd *urfave.Command) error {
 		for _, flag := range cmd.Flags {
@@ -306,8 +304,15 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if action != nil {
 			cmd.Action = func(ctx context.Context, selected *urfave.Command) error {
 				command = commandName(selected)
-				if selected.Args().Present() && !acceptsArguments(selected.Name) {
-					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
+				if selected.Args().Present() && !acceptsArguments(command) {
+					message := "unexpected argument %q"
+					if selected == root {
+						message = "unknown command %q"
+					}
+					return &Error{Reason: "usage", Message: fmt.Sprintf(message, selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
+				}
+				if command == "help" {
+					return action(ctx, selected)
 				}
 				if selected.Name != "mcp" && selected.Name != "version" && selected.Name != "instructions" {
 					if cfg, err := loadConfig(selected, directory); err == nil {
@@ -351,7 +356,11 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		} else {
 			fmt.Fprintf(errOut, "bl: %s\n", textutil.Line(failure.Message))
 			if failure.Reason == "usage" {
-				fmt.Fprintln(errOut, "Run bl --help for usage.")
+				help := "bl --help"
+				if command != "" && command != "bl" && command != "help" {
+					help = "bl " + command + " --help"
+				}
+				fmt.Fprintln(errOut, "Run "+help+" for usage.")
 			}
 		}
 		return failure.ExitCode()
@@ -389,9 +398,11 @@ func terminal(stream any) bool {
 	return ok && term.IsTerminal(file.Fd())
 }
 
-func acceptsArguments(name string) bool {
-	switch name {
-	case "check", "claim", "release", "events", "run", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md", "login", "logout":
+// acceptsArguments takes the full command path, since names like check repeat.
+func acceptsArguments(command string) bool {
+	switch command {
+	case "help", "claim", "release", "events", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
+		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth login", "auth logout":
 		return true
 	}
 	return false

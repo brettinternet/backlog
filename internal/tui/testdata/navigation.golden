@@ -1,283 +1,281 @@
 == down ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  ▾ To Do (20)                                                                  
-  BL-1         ▲  To Do          1   2/3     修正 🚀 selection                  
-> BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+  ▾ · To Do  20                                                                 
+   ▲   BL-1     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+▌  ▲   BL-2  ●  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                            ● 3  ! 3    2/60 
 == up ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-> ▾ To Do (20)                                                                  
-  BL-1         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+▌ ▾ · To Do  20                                                                 
+   ▲   BL-1     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-2  ●  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                            ● 3  ! 3    1/60 
 == count ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  ▾ To Do (20)                                                                  
-  BL-1         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-> BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+  ▾ · To Do  20                                                                 
+   ▲   BL-1     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-2  ●  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+▌  ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                            ● 3  ! 3    5/60 
 == first ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-> ▾ To Do (20)                                                                  
-  BL-1         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+▌ ▾ · To Do  20                                                                 
+   ▲   BL-1     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-2  ●  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                            ● 3  ! 3    1/60 
 == last ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  BL-42        ▲  Done           1   2/3     ● 修正 🚀 selection                
-  BL-43        ▲  Done           1   2/3     ! 修正 🚀 selection                
-  BL-44        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-45        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-46        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-47        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-48        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-49        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-50        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-51        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-52        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-53        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-54        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-55        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-56        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-57        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-58        ▲  Done           1   2/3     修正 🚀 selection                  
-  BL-59        ▲  Done           1   2/3     修正 🚀 selection                  
-> BL-60        ▲  Done           1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+  ▾ · Done  20                                                                  
+   ▲   BL-41    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-42 ●  · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-43 !  · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-44    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-45    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-46    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-47    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-48    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-49    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-50    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-51    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-52    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-53    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-54    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-55    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-56    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-57    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-58    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-59    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+▌  ▲   BL-60    · Done    修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                           ● 3  ! 3    60/60 
 == numbered ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-19        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-20        ▲  To Do          1   2/3     修正 🚀 selection                  
-  ▾ Active (20)                                                                 
-  BL-21        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-22        ▲  Active         1   2/3     ● 修正 🚀 selection                
-> BL-23        ▲  Active         1   2/3     ! 修正 🚀 selection                
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+  ▾ · Active  20                                                                
+   ▲   BL-21    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-22 ●  · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+▌  ▲   BL-23 !  · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                           ● 3  ! 3    23/60 
 == half ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  ▾ To Do (20)                                                                  
-  BL-1         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-> BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+  ▾ · To Do  20                                                                 
+   ▲   BL-1     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-2  ●  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+▌  ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                           ● 3  ! 3    10/60 
 == full ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-> BL-19        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-20        ▲  To Do          1   2/3     修正 🚀 selection                  
-  ▾ Active (20)                                                                 
-  BL-21        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-22        ▲  Active         1   2/3     ● 修正 🚀 selection                
-  BL-23        ▲  Active         1   2/3     ! 修正 🚀 selection                
-  BL-24        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-25        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-26        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-27        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-28        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-29        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-30        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-31        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-32        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-33        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-34        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-35        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-36        ▲  Active         1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+▌ ▾ · Active  20                                                                
+   ▲   BL-21    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-22 ●  · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-23 !  · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-24    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-25    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-26    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-27    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-28    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-29    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-30    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-31    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-32    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-33    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-34    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-35    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-36    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-37    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-38    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-39    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-40    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                           ● 3  ! 3    21/60 
 == groups ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-> ▾ Active (20)                                                                 
-  BL-21        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-22        ▲  Active         1   2/3     ● 修正 🚀 selection                
-  BL-23        ▲  Active         1   2/3     ! 修正 🚀 selection                
-  BL-24        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-25        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-26        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-27        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-28        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-29        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-30        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-31        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-32        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-33        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-34        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-35        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-36        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-37        ▲  Active         1   2/3     修正 🚀 selection                  
-  BL-38        ▲  Active         1   2/3     修正 🚀 selection                  
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+▌ ▾ · Active  20                                                                
+   ▲   BL-21    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-22 ●  · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-23 !  · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-24    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-25    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-26    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-27    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-28    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-29    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-30    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-31    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-32    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-33    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-34    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-35    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-36    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-37    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-38    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-39    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-40    · Active  修正 🚀 selection                         ⊘ 1    ▣ 2/3
+ is:ready sort:next                                           ● 3  ! 3    21/60 
 == fold ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-19        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-20        ▲  To Do          1   2/3     修正 🚀 selection                  
-> ▸ Active (20)                                                                 
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status   Title                                        ⊘        ▣
+   ▲   BL-1     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-2  ●  · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+▌ ▸ · Active  20                                                                
+ is:ready sort:next                                           ● 3  ! 3    21/60 
 == unfold ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                
-  BL-4         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-5         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-6         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-7         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-8         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-9         ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-10        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-11        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-12        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-13        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-14        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-15        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-16        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-17        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-18        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-19        ▲  To Do          1   2/3     修正 🚀 selection                  
-  BL-20        ▲  To Do          1   2/3     修正 🚀 selection                  
-> ▾ Active (20)                                                                 
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit        
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID       Status    Title                                       ⊘        ▣
+   ▲   BL-1     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-2  ●  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-3  !  · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-4     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-5     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-6     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-7     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-8     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-9     · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-10    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-11    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-12    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-13    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-14    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-15    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-16    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-17    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-18    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-19    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+   ▲   BL-20    · To Do   修正 🚀 selection                         ⊘ 1    ▣ 2/3
+▌ ▾ · Active  20                                                                
+ is:ready sort:next                                           ● 3  ! 3    21/60 
 == view 1 ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-⠋ Loading…                                                                      
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+       ID      Status    Title                                        ⊘        ▣
                                                                                 
                                                                                 
                                                                                 
@@ -288,6 +286,7 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
+                                    Loading…                                    
                                                                                 
                                                                                 
                                                                                 
@@ -296,13 +295,12 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 0 failed · ? help · q quit        
+                                                                                
+                                                                                
+ is:ready sort:next                                                  ● 3  ↻ 1/6 
 == view 2 ==
-backlog · fixture · Next  [Active]  Mine  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-⠋ Loading…                                                                      
+ fixture   Next  [Active]  Mine   Open   Board                          ✓ tasks 
+       ID      Status    Title                                        ⊘        ▣
                                                                                 
                                                                                 
                                                                                 
@@ -313,6 +311,7 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
+                                    Loading…                                    
                                                                                 
                                                                                 
                                                                                 
@@ -321,13 +320,12 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-category:active group:status · 3 pending · 0 failed · ? help · q quit           
+                                                                                
+                                                                                
+ category:active group:status                                        ● 3  ↻ 1/6 
 == view 3 ==
-backlog · fixture · Next  Active  [Mine]  All  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-⠋ Loading…                                                                      
+ fixture   Next   Active  [Mine]  Open   Board                          ✓ tasks 
+       ID      Status    Title                                        ⊘        ▣
                                                                                 
                                                                                 
                                                                                 
@@ -338,6 +336,7 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
+                                    Loading…                                    
                                                                                 
                                                                                 
                                                                                 
@@ -346,13 +345,12 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-assignee:me group:status · 3 pending · 0 failed · ? help · q quit               
+                                                                                
+                                                                                
+ assignee:me is:open group:status                                    ● 3  ↻ 1/6 
 == view 4 ==
-backlog · fixture · Next  Active  Mine  [All]  Board                            
-tasks ✓ synced                                                                  
-  ID           P  Status         ⊘   ▣       Title                              
-⠋ Loading…                                                                      
+ fixture   Next   Active   Mine  [Open]  Board                          ✓ tasks 
+       ID      Status    Title                                        ⊘        ▣
                                                                                 
                                                                                 
                                                                                 
@@ -363,6 +361,7 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
+                                    Loading…                                    
                                                                                 
                                                                                 
                                                                                 
@@ -371,13 +370,11 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-is:open group:status · 3 pending · 0 failed · ? help · q quit                   
+                                                                                
+                                                                                
+ is:open group:status                                                ● 3  ↻ 1/6 
 == view 5 ==
-backlog · fixture · Next  Active  Mine  All  [Board]                            
-tasks ✓ synced                                                                  
-                                                                                
-⠋ Loading…                                                                      
+ fixture   Next   Active   Mine   Open  [Board]                         ✓ tasks 
                                                                                 
                                                                                 
                                                                                 
@@ -389,6 +386,7 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
+                                    Loading…                                    
                                                                                 
                                                                                 
                                                                                 
@@ -396,30 +394,32 @@ tasks ✓ synced
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-is:open group:status · 3 pending · 0 failed · ? help · q quit                   
+                                                                                
+                                                                                
+                                                                                
+ is:open group:status                                                ● 3  ↻ 1/6 
 == help ==
-Help                                                                            
-> ▏                                                                             
-> Move down / scroll detail [move-down] · j, down                               
-  Move up / scroll detail [move-up] · k, up                                     
-  First row [first] · g g                                                       
-  Last row / count G to row N [last] · G                                        
-  Half page down [half-down] · ctrl+d, pagedown                                 
-  Half page up [half-up] · ctrl+u, pageup                                       
-  Full page down [page-down] · ctrl+f                                           
-  Full page up [page-up] · ctrl+b                                               
-  Previous group / board column [previous-group] · [                            
-  Next group / board column [next-group] · ]                                    
-  Tree parent / board left / focus list [left] · h, left                        
-  Tree child / board right / labels in list [right] · l, right · disabled: edit…
-  Toggle detail [detail] · enter                                                
-  Focus detail / next detail tab [next-detail-tab] · tab                        
-  Focus detail / previous detail tab [previous-detail-tab] · shift+tab          
-  Close detail / clear marks / cancel [cancel] · esc                            
-  Next view [next-view] · g t                                                   
-  Previous view [previous-view] · g T                                           
-  Go to any item (including archives) [go-to] · ctrl+p · disabled: go-to search…
-  Search help [help] · ?                                                        
-  Command palette [palette] · :                                                 
-↑/↓ scroll · type to search · esc back                                          
+ fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
+ Keys  › ▏                                                                      
+                                                                                
+  Navigate                               Copy                                   
+  j ↓          Move down                 yy           Copy ID                   
+  k ↑          Move up                   yt           Copy title                
+  J            Next item                 yb           Copy branch               
+  K            Previous item             yu           Copy URL                  
+  gg home      First row                 ym           Copy Markdown link        
+  G end        Last row, or row N                                               
+  ctrl+d pgdn  Half page down            General                                
+  ctrl+u pgup  Half page up              ?            Help                      
+  ctrl+f       Page down                 :            Commands                  
+  ctrl+b       Page up                   q            Quit / back               
+  [            Previous group            ctrl+c       Quit now                  
+  ]            Next group                                                       
+  h ←          Back / parent / left      Filter                                 
+  l →          Open / child / right      fs           Status                    
+  ctrl+p       Go to item                fp           Priority                  
+                                         fa           Assignee                  
+  Detail                                 fl           Label                     
+  enter        Toggle detail             ft           Type                      
+                                                                             ↓  
+ is:ready sort:next                                            ● 3  ! 3    5/60 

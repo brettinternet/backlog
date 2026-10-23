@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 	urfave "github.com/urfave/cli/v3"
 
@@ -77,11 +74,14 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 		return snapshot, nil
 	}
 	limitFlag := func(n int) urfave.Flag {
-		return &urfave.IntFlag{Name: "n", Value: n, Usage: "Maximum items (0 means all)"}
+		return &urfave.IntFlag{Name: "n", Value: n, HideDefault: n == 0, Usage: "Print at most `N` items; 0 prints all"}
 	}
 	return []*urfave.Command{
-		{Name: "ls", Usage: "List items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{
-			workspaceFlag(), &urfave.StringFlag{Name: "view", Usage: "Saved view name"}, &urfave.StringFlag{Name: "sort", Usage: "Query sort keys"}, &urfave.StringFlag{Name: "group", Usage: "Query grouping field"}, limitFlag(0),
+		{Name: "ls", Usage: "List items", ArgsUsage: "[QUERY]", Description: lsHelp, Flags: []urfave.Flag{
+			&urfave.StringFlag{Name: "view", Usage: "Apply the saved view `NAME`"},
+			&urfave.StringFlag{Name: "sort", Usage: "Sort by comma-separated `KEYS`; prefix - to reverse"},
+			&urfave.StringFlag{Name: "group", Usage: "Group by `FIELD`"},
+			limitFlag(0),
 		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
@@ -167,19 +167,35 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if cmd.Bool("json") {
 				return success(out, "ls", data)
 			}
-			for _, g := range data.Groups {
+			if len(items) == 0 {
+				return writeEmpty(out, "No items.")
+			}
+			all := make([][]readItem, len(data.Groups))
+			for n, g := range data.Groups {
+				all[n] = g.Items
+			}
+			table := newItemTable(out, cfg, all...)
+			for n, g := range data.Groups {
 				if q.Group != "" && q.Group != "none" {
-					if err := writeLine(out, g.Value); err != nil {
+					value := g.Value
+					if value == "" {
+						value = "none"
+					}
+					header := table.p.paint("1", textutil.Line(value)) + fmt.Sprintf(" (%d)", len(g.Items))
+					if n > 0 {
+						header = "\n" + header
+					}
+					if _, err := fmt.Fprintln(out, header); err != nil {
 						return err
 					}
 				}
-				if err := writeTable(out, g.Items); err != nil {
+				if err := table.writeAll(g.Items); err != nil {
 					return err
 				}
 			}
 			return nil
 		}},
-		{Name: "show", Usage: "Show one item", ArgsUsage: "ID", Flags: []urfave.Flag{&urfave.StringFlag{Name: "section", Usage: "description, criteria, dod, plan, notes, summary, or comments"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "show", Usage: "Show an item", ArgsUsage: "ID", Flags: []urfave.Flag{&urfave.StringFlag{Name: "section", Usage: "Print only section `NAME`: description, criteria, dod, plan, notes, summary, or comments"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 1 {
 				return &Error{Reason: "usage", Message: "show requires exactly one ID"}
 			}
@@ -230,29 +246,9 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if section != "" {
 				return writeLine(out, sections[section])
 			}
-			if err := writeLine(out, i.Ref.Source+":"+i.Ref.ID+"  "+i.Title+" ["+i.Status+"]"); err != nil {
-				return err
-			}
-			metadata := itemMetadata(i)
-			for _, name := range strings.Fields("type rank assignees labels milestone due parent children blockedBy blocks related duplicateOf refs files created updated url") {
-				value := metadata[name]
-				if t, ok := value.(time.Time); ok {
-					value = t.Format(time.RFC3339)
-				}
-				if err := writeLine(out, fmt.Sprintf("%s: %v", name, value)); err != nil {
-					return err
-				}
-			}
-			for _, name := range strings.Fields("description criteria dod plan notes summary comments") {
-				if sections[name] != "" {
-					if err := writeLine(out, "\n## "+name+"\n"+sections[name]); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
+			return writeShow(out, cfg, i, sections)
 		}},
-		{Name: "next", Usage: "Rank ready items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{workspaceFlag(), limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Include every included and excluded item with reasons"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim one ready item, resuming this session first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item (requires --claim)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "next", Usage: "Rank ready items", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Explain every included and excluded item"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim the top ready item for --session, resuming its claim first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
 			}
@@ -278,7 +274,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				if cmd.Bool("json") {
 					return success(out, "next", data)
 				}
-				return writeNext(out, data)
+				return writeNext(out, cfg, data)
 			}
 			s, err := load(ctx, cfg, false)
 			if err != nil {
@@ -316,25 +312,9 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if cmd.Bool("json") {
 				return success(out, "next", data)
 			}
-			return writeNext(out, data)
+			return writeNext(out, cfg, data)
 		}},
 	}
-}
-
-func writeNext(out io.Writer, data nextData) error {
-	if err := writeTable(out, data.Items); err != nil {
-		return err
-	}
-	for _, e := range data.Explanations {
-		codes := []string{}
-		for _, r := range e.Reasons {
-			codes = append(codes, r.Code)
-		}
-		if err := writeLine(out, e.Ref.Source+":"+e.Ref.ID+"  "+e.Text()+" ["+strings.Join(codes, ", ")+"]"); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func itemMetadata(i model.Item) map[string]any {
@@ -409,21 +389,4 @@ func outputWidth(out io.Writer) int {
 		}
 	}
 	return 80
-}
-func writeTable(out io.Writer, items []readItem) error {
-	width := outputWidth(out)
-	for _, i := range items {
-		source, prefix := i.Source, ""
-		if i.Project != "" {
-			prefix = filepath.Base(i.Project) + " "
-			if index := strings.LastIndex(source, "/"); index >= 0 {
-				source = source[index+1:]
-			}
-		}
-		line := fmt.Sprintf("%s%s:%s  [%s] %s  %s", prefix, source, i.ID, i.Status, i.Priority, i.Title)
-		if _, err := fmt.Fprintln(out, ansi.Truncate(textutil.Line(line), width, "…")); err != nil {
-			return err
-		}
-	}
-	return nil
 }

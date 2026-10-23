@@ -11,7 +11,7 @@ import (
 
 func instructionsCommand(out io.Writer) *urfave.Command {
 	return &urfave.Command{
-		Name: "instructions", Usage: "Print version-matched agent guidance", ArgsUsage: "[TOPIC]",
+		Name: "instructions", Usage: "Print agent guidance for this version", ArgsUsage: "[TOPIC]", Category: categoryAutomation,
 		Action: func(_ context.Context, cmd *urfave.Command) error {
 			topic := cmd.Args().First()
 			if topic == "" {

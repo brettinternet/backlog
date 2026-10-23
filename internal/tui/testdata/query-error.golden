@@ -1,11 +1,9 @@
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-                                                                                
-  ID           P  Status         ⊘   ▣       Title                              
-> BL-1         ▲  todo           ─   ─       Task 1 修正                        
-  BL-10        ▲  todo           ─   ─       Task 10 修正                       
-  BL-11        ▲  todo           ─   ─       Task 11 修正                       
-  BL-12        ▲  todo           ─   ─       Task 12 修正                       
-                                                                                
+ fixture  [Next]  Active   Mine   Open   Board                                  
+       ID       Status  Title                                            Updated
+▌  ▲   BL-1     ○ todo  Task 1 修正  #two words  #a,b                           
+   ▲   BL-10    ○ todo  Task 10 修正  #two words  #a,b                          
+   ▲   BL-11    ○ todo  Task 11 修正  #two words  #a,b                          
+   ▲   BL-12    ○ todo  Task 12 修正  #two words  #a,b                          
                                                                                 
                                                                                 
                                                                                 
@@ -16,9 +14,11 @@ backlog · fixture · [Next]  Active  Mine  All  Board
                                                                                 
                                                                                 
                                                                                 
-tab complete · ↑/↓ choose · enter apply · esc restore                           
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-! unknown field "lable" at 7; did you mean "label"? · / Task 1 lable:tui▏       
+                                                                                
+                                                                                
+                                                                                
+ ! unknown field "lable" at 7; did you mean "label"?                            
+ / Task 1 lable:tui▏                                                        1/4 

@@ -31,7 +31,7 @@ Right
 Sleep 2s
 Type "?"
 Sleep 2s
-Type "workflow"
+Type "status"
 Sleep 2s
 Escape
 Hide

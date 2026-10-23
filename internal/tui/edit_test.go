@@ -405,7 +405,7 @@ func TestEditKeysMutateFakeSource(t *testing.T) {
 				t.Fatalf("assignees %v", item.Assignees)
 			}
 		}},
-		{"label picker", editItemForTest, []string{"l", "new-jacket", "enter"}, func(t *testing.T, item model.Item) {
+		{"label picker", editItemForTest, []string{"#", "new-jacket", "enter"}, func(t *testing.T, item model.Item) {
 			if !slices.Contains(item.Labels, "new-jacket") {
 				t.Fatalf("labels %v", item.Labels)
 			}
@@ -438,7 +438,7 @@ func TestEditKeysMutateFakeSource(t *testing.T) {
 			i := editItemForTest()
 			i.Labels = []string{"configured"}
 			return i
-		}, []string{"l", "space", "enter"}, func(t *testing.T, item model.Item) {
+		}, []string{"#", "space", "enter"}, func(t *testing.T, item model.Item) {
 			if len(item.Labels) != 0 {
 				t.Fatalf("labels not removed: %v", item.Labels)
 			}
@@ -661,7 +661,7 @@ func TestLabelAndMilestonePickerCatalogs(t *testing.T) {
 			{Key: "m-archived", Name: "Archived", Archived: true},
 		},
 	})
-	m = editPress(m, "l")
+	m = editPress(m, "#")
 	if len(m.picker.choices) < 4 || m.picker.choices[0].value != "configured-b" || m.picker.choices[1].value != "configured-a" {
 		t.Fatalf("configured labels do not lead the picker: %+v", m.picker.choices)
 	}

@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,7 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/query"
-	"github.com/brettinternet/backlog/internal/textutil"
 )
 
 type captureState struct {
@@ -146,13 +145,52 @@ func captureValue(item model.Item, name string) string {
 	case "summary":
 		return strings.ReplaceAll(item.Summary, "\n", `\n`)
 	case "criteria":
-		b, _ := json.Marshal(item.Criteria)
-		return string(b)
+		return checklistValue(item.Criteria)
 	case "dod":
-		b, _ := json.Marshal(item.DoD)
-		return string(b)
+		return checklistValue(item.DoD)
 	}
 	return ""
+}
+
+// checklistValue writes criteria as task-list lines joined by a literal \n,
+// the form's line break, with evidence on an indented line as in item files.
+func checklistValue(criteria []model.Criterion) string {
+	lines := make([]string, 0, len(criteria))
+	for _, c := range criteria {
+		mark := " "
+		if c.Checked {
+			mark = "x"
+		}
+		lines = append(lines, "- ["+mark+"] "+c.Text)
+		if c.Evidence != "" {
+			lines = append(lines, "  Evidence: "+c.Evidence)
+		}
+	}
+	return strings.Join(lines, `\n`)
+}
+
+var checklistLine = regexp.MustCompile(`^[-*] \[([ xX])\] ?(.*)$`)
+
+// parseChecklist reads checklistValue's form. A line without a checkbox is
+// an unchecked entry, so plain lines need no markup.
+func parseChecklist(value string) []model.Criterion {
+	var criteria []model.Criterion
+	for _, line := range strings.Split(value, `\n`) {
+		trimmed := strings.TrimSpace(line)
+		if evidence, ok := strings.CutPrefix(trimmed, "Evidence:"); ok && len(criteria) > 0 && trimmed != line {
+			criteria[len(criteria)-1].Evidence = strings.TrimSpace(evidence)
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		if m := checklistLine.FindStringSubmatch(trimmed); m != nil {
+			criteria = append(criteria, model.Criterion{Text: strings.TrimSpace(m[2]), Checked: m[1] != " "})
+			continue
+		}
+		criteria = append(criteria, model.Criterion{Text: trimmed})
+	}
+	return criteria
 }
 func refValues(refs []model.Ref, source string) string {
 	values := make([]string, len(refs))
@@ -235,17 +273,9 @@ func captureItem(fields []captureField, source string) (model.Item, error) {
 		case "summary":
 			item.Summary = strings.ReplaceAll(f.value, `\n`, "\n")
 		case "criteria":
-			if v != "" {
-				if err := json.Unmarshal([]byte(v), &item.Criteria); err != nil {
-					return item, fmt.Errorf("criteria: %w", err)
-				}
-			}
+			item.Criteria = parseChecklist(v)
 		case "dod":
-			if v != "" {
-				if err := json.Unmarshal([]byte(v), &item.DoD); err != nil {
-					return item, fmt.Errorf("dod: %w", err)
-				}
-			}
+			item.DoD = parseChecklist(v)
 		}
 	}
 	if item.Title == "" {
@@ -253,8 +283,18 @@ func captureItem(fields []captureField, source string) (model.Item, error) {
 	}
 	return item, nil
 }
-func (m *Model) expandCapture() {
+
+// expandCapture moves quick-add into the full form. Tab may open the form
+// before a title is typed (untitled); its title field takes the title there.
+func (m *Model) expandCapture(untitled bool) {
 	item, err := query.QuickAdd(m.capture.line, m.opts.Me)
+	if err != nil && untitled {
+		// Only a missing title fails if a placeholder title alone parses.
+		if parsed, retry := query.QuickAdd("x "+m.capture.line, m.opts.Me); retry == nil && parsed.Title == "x" {
+			item, err = parsed, nil
+			item.Title = ""
+		}
+	}
 	if err != nil {
 		m.capture.errorText = err.Error()
 		return
@@ -315,7 +355,7 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		return nil
 	case "tab":
 		if !c.full {
-			m.expandCapture()
+			m.expandCapture(true)
 		} else {
 			c.cursor = (c.cursor + 1) % len(c.fields)
 		}
@@ -337,7 +377,7 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		return nil
 	case "enter", "ctrl+s":
 		if !c.full {
-			m.expandCapture()
+			m.expandCapture(false)
 			if c.errorText != "" {
 				return nil
 			}
@@ -542,57 +582,4 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		c.errorText = ""
 	}
 	return nil
-}
-func (m Model) captureFormView() tea.View {
-	c := m.capture
-	lines := []string{"backlog · " + textutil.Line(m.opts.Project)}
-	if c.choosing {
-		lines = append(lines, "Create source · up/down select · enter continue · esc cancel")
-		for i, id := range c.sources {
-			marker := "  "
-			if i == c.cursor {
-				marker = "> "
-			}
-			lines = append(lines, marker+textutil.Line(id))
-		}
-	} else if !c.full {
-		lines = append(lines, "Quick-add · tab full form · enter create · esc cancel", "> "+textutil.Line(c.line))
-		item, err := query.QuickAdd(c.line, m.opts.Me)
-		if err != nil {
-			item, err = query.QuickAdd("Captured "+c.line, m.opts.Me)
-		}
-		if err == nil {
-			lines = append(lines, "chips: "+textutil.Line(fmt.Sprintf("priority %s · @%s · #%s · parent %s · blockers %s · ~%s · :%s", item.Priority, strings.Join(item.Assignees, ","), strings.Join(item.Labels, ","), captureValue(item, "parent"), refValues(item.BlockedBy, c.source), item.Milestone, item.Type)))
-		}
-	} else {
-		label := "Create item"
-		if c.version != "" {
-			label = "Edit item"
-		}
-		lines = append(lines, label+" · tab/shift-tab fields · enter save · esc cancel")
-		start := max(0, c.cursor-max(1, m.height-6))
-		end := min(len(c.fields), start+max(1, m.height-5))
-		for i := start; i < end; i++ {
-			prefix := "  "
-			if i == c.cursor {
-				prefix = "> "
-			}
-			lines = append(lines, prefix+c.fields[i].name+": "+textutil.Line(c.fields[i].value))
-		}
-	}
-	if c.errorText != "" {
-		lines = append(lines, "! "+textutil.Line(c.errorText))
-	}
-	for len(lines) < m.height {
-		lines = append(lines, "")
-	}
-	for i := range lines {
-		lines[i] = cell(lines[i], m.width)
-	}
-	if len(lines) > m.height {
-		lines = slices.Clone(lines[:m.height])
-	}
-	v := tea.NewView(strings.Join(lines, "\n"))
-	v.AltScreen = true
-	return v
 }

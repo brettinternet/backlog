@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
-	"github.com/brettinternet/backlog/internal/textutil"
 )
 
 type longEditState struct {
@@ -374,20 +373,4 @@ func (m *Model) updateLongEdit(key string) tea.Cmd {
 		}
 	}
 	return nil
-}
-func (m Model) longEditView() tea.View {
-	message := "Item changed while editing · y keep yours · t keep theirs · r reopen with both · esc keep theirs"
-	if m.longEdit.choice == "invalid" {
-		message = "Invalid edit: " + textutil.Line(m.notice) + " · r reopen · d discard"
-	}
-	lines := []string{"backlog · " + textutil.Line(m.opts.Project), message}
-	for len(lines) < m.height {
-		lines = append(lines, "")
-	}
-	for i := range lines {
-		lines[i] = cell(lines[i], m.width)
-	}
-	v := tea.NewView(strings.Join(lines, "\n"))
-	v.AltScreen = true
-	return v
 }

@@ -14,7 +14,7 @@ import (
 )
 
 func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfave.Command {
-	return &urfave.Command{Name: "action", Usage: "Run a configured action on one item", ArgsUsage: "NAME ID", Flags: []urfave.Flag{&urfave.BoolFlag{Name: "yes", Usage: "Confirm this action without prompting"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+	return &urfave.Command{Name: "action", Usage: "Run a configured action on an item", ArgsUsage: "NAME ID", Category: categoryAutomation, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Skip the confirmation prompt"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() != 2 {
 			return writeUsage("action requires NAME ID")
 		}

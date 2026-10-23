@@ -1,18 +1,17 @@
-backlog · fixture · [Next]  Active  Mine  All  Board                                                                                                            
-tasks ✓ synced                                                                                                                                                  
-  ID           P  Status         ⊘   ▣       Title                                                                                                              
-> ▾ To Do (3)                                                                                                                                                   
-  BL-1         ▲  To Do          1   2/3     safe 修正 🚀                                                                                                       
-  BL-2         ▲  To Do          1   2/3     ● 修正 🚀 selection                                                                                                
-  BL-3         ▲  To Do          1   2/3     ! 修正 🚀 selection                                                                                                
-  ▾ Active (3)                                                                                                                                                  
-  BL-4         ▲  Active         1   2/3     修正 🚀 selection                                                                                                  
-  BL-5         ▲  Active         1   2/3     ● 修正 🚀 selection                                                                                                
-  BL-6         ▲  Active         1   2/3     ! 修正 🚀 selection                                                                                                
-  ▾ Done (3)                                                                                                                                                    
-  BL-7         ▲  Done           1   2/3     修正 🚀 selection                                                                                                  
-  BL-8         ▲  Done           1   2/3     ● 修正 🚀 selection                                                                                                
-  BL-9         ▲  Done           1   2/3     ! 修正 🚀 selection                                                                                                
+ fixture  [Next]  Active   Mine   Open   Board                                                                                                          ✓ tasks 
+       ID      Status    Title                                                                                                               ⊘        ▣  Updated
+▌ ▾ · To Do  3                                                                                                                                                  
+   ▲   BL-1    · To Do   safe 修正 🚀                                                                                                      ⊘ 1    ▣ 2/3         
+   ▲   BL-2 ●  · To Do   修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+   ▲   BL-3 !  · To Do   修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+  ▾ · Active  3                                                                                                                                                 
+   ▲   BL-4    · Active  修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+   ▲   BL-5 ●  · Active  修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+   ▲   BL-6 !  · Active  修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+  ▾ · Done  3                                                                                                                                                   
+   ▲   BL-7    · Done    修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+   ▲   BL-8 ●  · Done    修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
+   ▲   BL-9 !  · Done    修正 🚀 selection                                                                                                 ⊘ 1    ▣ 2/3         
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
@@ -20,5 +19,6 @@ tasks ✓ synced
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-is:ready sort:next group:status · 3 pending · 3 failed · ? help · q quit                                                                                        
+                                                                                                                                                                
+                                                                                                                                                                
+ is:ready sort:next                                                                                                                             ● 3  ! 3    1/9 

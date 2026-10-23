@@ -17,89 +17,108 @@ import (
 // A binding is a space-separated sequence of Bubble Tea key names.
 type action struct {
 	id, label, canonical, unavailable string
+	group                             string // starts a help section
 	bindings                          []string
 }
 
 func defaultKeymap() []action {
+	// Order is the help and palette order; group starts a help section.
 	actions := []action{
-		{id: "move-down", label: "Move down / scroll detail", canonical: "j", bindings: []string{"j", "down"}},
-		{id: "move-up", label: "Move up / scroll detail", canonical: "k", bindings: []string{"k", "up"}},
-		{id: "first", label: "First row", canonical: "g g", bindings: []string{"g g"}},
-		{id: "last", label: "Last row / count G to row N", canonical: "G", bindings: []string{"G"}},
+		{group: "Navigate", id: "move-down", label: "Move down", canonical: "j", bindings: []string{"j", "down"}},
+		{id: "move-up", label: "Move up", canonical: "k", bindings: []string{"k", "up"}},
+		{id: "next-item", label: "Next item", canonical: "J", bindings: []string{"J"}},
+		{id: "previous-item", label: "Previous item", canonical: "K", bindings: []string{"K"}},
+		{id: "first", label: "First row", canonical: "g g", bindings: []string{"g g", "home"}},
+		{id: "last", label: "Last row, or row N", canonical: "G", bindings: []string{"G", "end"}},
 		{id: "half-down", label: "Half page down", canonical: "ctrl+d", bindings: []string{"ctrl+d", "pagedown"}},
 		{id: "half-up", label: "Half page up", canonical: "ctrl+u", bindings: []string{"ctrl+u", "pageup"}},
-		{id: "page-down", label: "Full page down", canonical: "ctrl+f", bindings: []string{"ctrl+f"}},
-		{id: "page-up", label: "Full page up", canonical: "ctrl+b", bindings: []string{"ctrl+b"}},
-		{id: "previous-group", label: "Previous group / board column", canonical: "[", bindings: []string{"["}},
-		{id: "next-group", label: "Next group / board column", canonical: "]", bindings: []string{"]"}},
-		{id: "left", label: "Tree parent / board left / focus list", canonical: "h", bindings: []string{"h", "left"}},
-		{id: "right", label: "Tree child / board right / labels in list", canonical: "l", bindings: []string{"l", "right"}},
-		{id: "detail", label: "Toggle detail", canonical: "enter", bindings: []string{"enter"}},
-		{id: "next-detail-tab", label: "Focus detail / next detail tab", canonical: "tab", bindings: []string{"tab"}},
-		{id: "previous-detail-tab", label: "Focus detail / previous detail tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
-		{id: "cancel", label: "Close detail / clear marks / cancel", canonical: "esc", bindings: []string{"esc"}},
-		{id: "next-view", label: "Next view", canonical: "g t", bindings: []string{"g t"}},
+		{id: "page-down", label: "Page down", canonical: "ctrl+f", bindings: []string{"ctrl+f"}},
+		{id: "page-up", label: "Page up", canonical: "ctrl+b", bindings: []string{"ctrl+b"}},
+		{id: "previous-group", label: "Previous group", canonical: "[", bindings: []string{"["}},
+		{id: "next-group", label: "Next group", canonical: "]", bindings: []string{"]"}},
+		{id: "left", label: "Back / parent / left", canonical: "h", bindings: []string{"h", "left"}},
+		{id: "right", label: "Open / child / right", canonical: "l", bindings: []string{"l", "right"}},
+		{id: "go-to", label: "Go to item", bindings: []string{"ctrl+p"}},
+		{group: "Detail", id: "detail", label: "Toggle detail", canonical: "enter", bindings: []string{"enter"}},
+		{id: "next-detail-tab", label: "Next tab", canonical: "tab", bindings: []string{"tab"}},
+		{id: "previous-detail-tab", label: "Previous tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
+		{id: "split-left", label: "Shrink list", canonical: "ctrl+left", bindings: []string{"ctrl+left"}},
+		{id: "split-right", label: "Grow list", canonical: "ctrl+right", bindings: []string{"ctrl+right"}},
+		{group: "Views", id: "next-view", label: "Next view", canonical: "g t", bindings: []string{"g t"}},
 		{id: "previous-view", label: "Previous view", canonical: "g T", bindings: []string{"g T"}},
-		{id: "go-to", label: "Go to any item (including archives)", bindings: []string{"ctrl+p"}},
-		{id: "help", label: "Search help", bindings: []string{"?"}},
-		{id: "palette", label: "Command palette", bindings: []string{":"}},
-		{id: "workspace", label: "Toggle project / workspace scope", bindings: []string{"W"}},
-		{id: "refresh", label: "Resync sources", canonical: "R", bindings: []string{"R"}},
-		{id: "quit", label: "Back from detail / quit", canonical: "q", bindings: []string{"q"}},
-		{id: "quit-now", label: "Quit", canonical: "ctrl+c", bindings: []string{"ctrl+c"}},
+		{id: "board", label: "Board layout", canonical: "B", bindings: []string{"B"}},
+		{id: "tree", label: "Tree layout", canonical: "T", bindings: []string{"T"}},
 		{id: "query", label: "Edit query", canonical: "/", bindings: []string{"/"}},
-		{id: "clear-filter", label: "Clear filter", canonical: "F", bindings: []string{"F"}},
+		{id: "clear-filter", label: "Clear filters", canonical: "F", bindings: []string{"F"}},
 		{id: "save-view", label: "Save view", canonical: "ctrl+s", bindings: []string{"ctrl+s"}},
-		{id: "status", label: "Status picker", canonical: "s", bindings: []string{"s"}},
-		{id: "previous-status", label: "Previous workflow status", canonical: "<", bindings: []string{"<"}},
-		{id: "next-status", label: "Next workflow status", canonical: ">", bindings: []string{">"}},
-		{id: "priority", label: "Priority picker", canonical: "p", bindings: []string{"p"}},
-		{id: "assignees", label: "Assignee picker", canonical: "a", bindings: []string{"a"}},
-		{id: "assign-me", label: "Toggle assigning yourself", canonical: "A", bindings: []string{"A"}},
-		{id: "milestone", label: "Milestone picker / expand detail body", canonical: "m", bindings: []string{"m"}},
-		{id: "blocker", label: "Blocker editor", canonical: "b", bindings: []string{"b"}},
-		{id: "parent", label: "Parent picker", canonical: "P", bindings: []string{"P"}},
+		{id: "workspace", label: "Toggle workspace", bindings: []string{"W"}},
+		{id: "refresh", label: "Resync sources", canonical: "R", bindings: []string{"R"}},
+		{group: "Edit", id: "status", label: "Status…", canonical: "s", bindings: []string{"s"}},
+		{id: "previous-status", label: "Previous status", canonical: "<", bindings: []string{"<"}},
+		{id: "next-status", label: "Next status", canonical: ">", bindings: []string{">"}},
+		{id: "start", label: "Start", canonical: "S", bindings: []string{"S"}},
+		{id: "done", label: "Done", canonical: "D", bindings: []string{"D"}},
+		{id: "priority", label: "Priority…", canonical: "p", bindings: []string{"p"}},
+		{id: "assignees", label: "Assignees…", canonical: "a", bindings: []string{"a"}},
+		{id: "assign-me", label: "Assign me", canonical: "A", bindings: []string{"A"}},
+		{id: "labels", label: "Labels…", canonical: "#", bindings: []string{"#"}},
+		{id: "milestone", label: "Milestone… / more", canonical: "m", bindings: []string{"m"}},
+		{id: "blocker", label: "Blockers…", canonical: "b", bindings: []string{"b"}},
+		{id: "parent", label: "Parent…", canonical: "P", bindings: []string{"P"}},
 		{id: "title", label: "Edit title", canonical: "t", bindings: []string{"t"}},
-		{id: "description", label: "Edit description in editor", canonical: "e", bindings: []string{"e"}},
-		{id: "edit", label: "Edit whole item", canonical: "E", bindings: []string{"E"}},
-		{id: "comment", label: "Add comment", canonical: "c", bindings: []string{"c"}},
-		{id: "note", label: "Append note", canonical: "i", bindings: []string{"i"}},
-		{id: "criterion", label: "Toggle criterion (Criteria tab)", canonical: "x", bindings: []string{"x"}},
-		{id: "start", label: "Start item", canonical: "S", bindings: []string{"S"}},
-		{id: "done", label: "Finish item", canonical: "D", bindings: []string{"D"}},
+		{id: "description", label: "Edit description", canonical: "e", bindings: []string{"e"}},
+		{id: "edit", label: "Edit all fields", canonical: "E", bindings: []string{"E"}},
+		{id: "comment", label: "Comment", canonical: "c", bindings: []string{"c"}},
+		{id: "note", label: "Add note", canonical: "i", bindings: []string{"i"}},
+		{id: "criterion", label: "Toggle criterion", canonical: "x", bindings: []string{"x"}},
 		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
-		{id: "archive", label: "Archive (confirm)", canonical: "d d", bindings: []string{"d d"}},
-		{id: "repeat", label: "Repeat last edit", canonical: ".", bindings: []string{"."}},
+		{id: "archive", label: "Archive", canonical: "d d", bindings: []string{"d d"}},
+		{id: "new", label: "New item", canonical: "n", bindings: []string{"n"}},
+		{id: "new-child", label: "New child", canonical: "N", bindings: []string{"N"}},
+		{id: "repeat", label: "Repeat edit", canonical: ".", bindings: []string{"."}},
 		{id: "undo", label: "Undo", canonical: "u", bindings: []string{"u"}},
 		{id: "redo", label: "Redo", canonical: "ctrl+r", bindings: []string{"ctrl+r"}},
-		{id: "new", label: "Quick-add", canonical: "n", bindings: []string{"n"}},
-		{id: "new-child", label: "Quick-add child", canonical: "N", bindings: []string{"N"}},
-		{id: "actions", label: "Actions menu", bindings: []string{"!"}},
-		{id: "yank-id", label: "Copy ID", canonical: "y y", bindings: []string{"y y"}},
+		{id: "actions", label: "Actions…", bindings: []string{"!"}},
+		{id: "open-url", label: "Open URL", canonical: "O", bindings: []string{"O"}},
+		{group: "Select", id: "mark", label: "Mark", canonical: "space", bindings: []string{"space"}},
+		{id: "visual", label: "Visual range", canonical: "V", bindings: []string{"V"}},
+		{id: "mark-all", label: "Mark all", canonical: "ctrl+a", bindings: []string{"ctrl+a"}},
+		{id: "cancel", label: "Cancel / clear", canonical: "esc", bindings: []string{"esc"}},
+		{group: "Copy", id: "yank-id", label: "Copy ID", canonical: "y y", bindings: []string{"y y"}},
 		{id: "yank-title", label: "Copy title", canonical: "y t", bindings: []string{"y t"}},
-		{id: "yank-branch", label: "Copy branch name", canonical: "y b", bindings: []string{"y b"}},
+		{id: "yank-branch", label: "Copy branch", canonical: "y b", bindings: []string{"y b"}},
 		{id: "yank-url", label: "Copy URL", canonical: "y u", bindings: []string{"y u"}},
 		{id: "yank-markdown", label: "Copy Markdown link", canonical: "y m", bindings: []string{"y m"}},
-		{id: "open-url", label: "Open safe provider URL", canonical: "O", bindings: []string{"O"}},
-		{id: "mark", label: "Mark item / toggle criterion", canonical: "space", bindings: []string{"space"}},
-		{id: "visual", label: "Visual range", canonical: "V", bindings: []string{"V"}},
-		{id: "mark-all", label: "Mark current view", canonical: "ctrl+a", bindings: []string{"ctrl+a"}},
-		{id: "split-left", label: "Shrink list pane", canonical: "ctrl+left", bindings: []string{"ctrl+left"}},
-		{id: "split-right", label: "Grow list pane", canonical: "ctrl+right", bindings: []string{"ctrl+right"}},
+		{group: "General", id: "help", label: "Help", bindings: []string{"?"}},
+		{id: "palette", label: "Commands", bindings: []string{":"}},
+		{id: "quit", label: "Quit / back", canonical: "q", bindings: []string{"q"}},
+		{id: "quit-now", label: "Quit now", canonical: "ctrl+c", bindings: []string{"ctrl+c"}},
 	}
 	for _, prefix := range []string{"f", "o", "z"} {
-		for _, b := range queryMenus[prefix] {
-			id := map[string]string{"f": "filter", "o": "sort", "z": "group"}[prefix] + "-" + b.value
-			if b.value == "" {
+		name := prefixNames[prefix]
+		for i, b := range queryMenus[prefix] {
+			id, label := strings.ToLower(name)+"-"+b.value, name+": "+b.label
+			switch {
+			case b.value == "":
 				id = "filter-clear"
+			case prefix == "z" && zCommand(b.value):
+				id, label = b.value, b.label
 			}
 			sequence := prefix + " " + b.key
-			actions = append(actions, action{id: id, label: map[string]string{"f": "Filter: ", "o": "Sort: ", "z": "Group: "}[prefix] + b.label, canonical: sequence, bindings: []string{sequence}})
+			a := action{id: id, label: label, canonical: sequence, bindings: []string{sequence}}
+			if i == 0 {
+				a.group = name
+			}
+			actions = append(actions, a)
 		}
 	}
 	for i := 1; i <= 9; i++ {
 		key := fmt.Sprint(i)
-		actions = append(actions, action{id: "view-" + key, label: "Jump to view " + key, canonical: key, bindings: []string{key}})
+		a := action{id: "view-" + key, label: "View " + key, canonical: key, bindings: []string{key}}
+		if i == 1 {
+			a.group = "Jump"
+		}
+		actions = append(actions, a)
 	}
 	return actions
 }
@@ -114,6 +133,9 @@ func buildKeymap(overrides map[string]string, configured ...project.ActionConfig
 	actions := defaultKeymap()
 	for _, configured := range configured {
 		a := action{id: "action:" + configured.Name, label: configured.Name}
+		if !strings.HasPrefix(actions[len(actions)-1].id, "action:") {
+			a.group = "Actions"
+		}
 		if configured.Key != "" {
 			a.bindings = []string{configured.Key}
 		}
@@ -297,7 +319,7 @@ func (m Model) disabledReason(a action) string {
 		return "open the Criteria tab"
 	}
 	if m.detailFocus {
-		if slices.Contains([]string{"move-down", "move-up", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
+		if slices.Contains([]string{"move-down", "move-up", "next-item", "previous-item", "first", "last", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
 			return ""
 		}
 		if a.id == "milestone" {
@@ -315,10 +337,7 @@ func (m Model) disabledReason(a action) string {
 		}
 		return "focus the list first"
 	}
-	kind := map[string]pickerKind{"status": pickerStatus, "priority": pickerPriority, "assignees": pickerAssignees, "assign-me": pickerAssignees, "milestone": pickerMilestone, "blocker": pickerBlocker, "parent": pickerParent, "title": pickerTitle}
-	if a.id == "right" && !m.isBoard() && !m.isTree() {
-		kind[a.id] = pickerLabels
-	}
+	kind := map[string]pickerKind{"status": pickerStatus, "priority": pickerPriority, "assignees": pickerAssignees, "assign-me": pickerAssignees, "labels": pickerLabels, "milestone": pickerMilestone, "blocker": pickerBlocker, "parent": pickerParent, "title": pickerTitle}
 	if picker, ok := kind[a.id]; ok {
 		row, found := m.selectedRow()
 		if !found {
@@ -383,19 +402,4 @@ func (m Model) disabledReason(a action) string {
 		}
 	}
 	return ""
-}
-
-func (m Model) prefixLines() []string {
-	if m.keyPrefix == "" {
-		return nil
-	}
-	lines := []string{m.keyPrefix + " · esc cancel"}
-	for _, a := range m.keymap {
-		for _, binding := range a.bindings {
-			if suffix, ok := strings.CutPrefix(binding, m.keyPrefix+" "); ok {
-				lines = append(lines, suffix+"  "+a.label)
-			}
-		}
-	}
-	return lines
 }

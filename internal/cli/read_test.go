@@ -343,4 +343,17 @@ func TestReadTerminalSafety(t *testing.T) {
 			t.Fatalf("wide table: %q", line)
 		}
 	}
+	// Native files reject unknown priorities, but Backlog.md keeps them raw.
+	md := t.TempDir()
+	for _, dir := range []string{".git", "backlog/tasks"} {
+		if err := os.MkdirAll(filepath.Join(md, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(t, filepath.Join(md, ".git/config"), "[core]\n bare = false\n")
+	put(t, filepath.Join(md, "backlog/config.yml"), "project_name: Fixture\nstatuses: [To Do, Done]\n")
+	put(t, filepath.Join(md, "backlog/tasks/task-1 - Unsafe.md"), "---\nid: TASK-1\ntitle: Unsafe\nstatus: To Do\npriority: \"high\\e]0;hidden-title\\a\"\ncreated_date: 2026-10-21 12:00\n---\n")
+	if code, out, _ := run("-C", md, "ls"); code != 0 || strings.ContainsAny(out, "\x1b\a") || strings.Contains(out, "hidden-title") || !strings.Contains(out, "high") {
+		t.Fatalf("unsafe priority: %d %q", code, out)
+	}
 }

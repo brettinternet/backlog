@@ -32,7 +32,7 @@ type doctorData struct {
 
 func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 	return []*urfave.Command{
-		{Name: "trust", Usage: "Trust the current project's privileged declarations", Flags: []urfave.Flag{&urfave.BoolFlag{Name: "show", Usage: "Inspect the digest and declarations without granting trust"}}, Action: func(_ context.Context, cmd *urfave.Command) error {
+		{Name: "trust", Usage: "Trust this project's hooks, actions, and adapters", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "show", Usage: "Show what trust covers without granting it"}}, Action: func(_ context.Context, cmd *urfave.Command) error {
 			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
 				return err
@@ -83,7 +83,7 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "doctor", Usage: "Diagnose config, trust, control root, cache, coordination and sources", Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Allow network source checks (only installed adapters can probe)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "doctor", Usage: "Diagnose configuration, trust, cache, coordination, and sources", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, configErr := loadConfig(cmd, *directory)
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
 			if configErr != nil {
@@ -100,10 +100,8 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 				failed = failed || c.Status == "fail"
 			}
 			if !cmd.Bool("json") {
-				for _, c := range checks {
-					if err := writeLine(out, fmt.Sprintf("%s: %s — %s\n  Fix: %s", c.Name, c.Status, c.Message, c.Fix)); err != nil {
-						return err
-					}
+				if err := writeDoctor(out, checks); err != nil {
+					return err
 				}
 			}
 			if failed {

@@ -18,7 +18,7 @@ func TestUnsupportedEditKeysOnlyShowReason(t *testing.T) {
 		{name: "priority", keys: []string{"p"}},
 		{name: "assignees", keys: []string{"a"}},
 		{name: "self assignment", keys: []string{"A"}},
-		{name: "labels", keys: []string{"l"}},
+		{name: "labels", keys: []string{"#"}},
 		{name: "milestone", keys: []string{"m"}},
 		{name: "blocker", keys: []string{"b"}},
 		{name: "parent", keys: []string{"P"}},

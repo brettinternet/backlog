@@ -24,7 +24,7 @@ func TestQuickAddExpandsToSameItem(t *testing.T) {
 	}
 	m := New(Options{Me: "alice", Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}})
 	m.capture = captureState{open: true, line: line, source: "tasks"}
-	m.expandCapture()
+	m.expandCapture(false)
 	if m.capture.errorText != "" {
 		t.Fatal(m.capture.errorText)
 	}
@@ -37,8 +37,8 @@ func TestQuickAddExpandsToSameItem(t *testing.T) {
 	}
 }
 
-// A form must preserve all writable fields and reject malformed criteria before
-// issuing any engine mutation.
+// A form must preserve all writable fields and keep an invalid item in the form
+// without issuing any engine mutation.
 func TestFullFormFieldsAndInlineValidation(t *testing.T) {
 	t.Parallel()
 	item := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}, Title: "Title", Status: "todo", Type: "feature", Priority: model.High, Rank: "a", Assignees: []string{"alice"}, Labels: []string{"tui"}, Milestone: "m-2", Due: "2026-12-01", Parent: &model.Ref{ID: "BL-2"}, BlockedBy: []model.Ref{{ID: "BL-3"}}, Related: []model.Ref{{ID: "BL-4"}}, DuplicateOf: &model.Ref{ID: "BL-5"}, Refs: []string{"ref"}, Files: []string{"file"}, Description: "A\nB", Criteria: []model.Criterion{{Text: "works"}}, DoD: []model.Criterion{{Text: "done", Checked: true}}, Plan: "plan", Notes: "notes", Summary: "summary"}
@@ -61,12 +61,12 @@ func TestFullFormFieldsAndInlineValidation(t *testing.T) {
 	m := New(Options{Store: store, Context: ctx})
 	m.capture = captureState{open: true, full: true, source: "tasks", fields: c.fields}
 	for i := range m.capture.fields {
-		if m.capture.fields[i].name == "criteria" {
-			m.capture.fields[i].value = "not json"
+		if m.capture.fields[i].name == "title" {
+			m.capture.fields[i].value = " "
 		}
 	}
 	m.updateCapture("enter")
-	if !strings.Contains(m.capture.errorText, "criteria") || len(backend.applied()) != 0 {
+	if !strings.Contains(m.capture.errorText, "title") || len(backend.applied()) != 0 {
 		t.Fatalf("validation failed: %s", m.capture.errorText)
 	}
 }
@@ -107,7 +107,7 @@ func TestBacklogMDUnsupportedChoices(t *testing.T) {
 	}
 	m.updateCapture("enter")
 	m.capture.line = "New task"
-	m.expandCapture()
+	m.expandCapture(false)
 	for _, field := range m.capture.fields {
 		if field.name == "rank" {
 			t.Fatal("unsupported rank creation was offered")

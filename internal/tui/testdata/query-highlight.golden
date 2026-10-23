@@ -1,10 +1,8 @@
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-                                                                                
-  ID           P  Status         ⊘   ▣       Title                              
-> BL-1         ▲  todo           ─   ─       Task 1 [1;4;4m修[m[1;4;4m正[m                        
-  BL-2         ▲  todo           ─   ─       Task 2 [1;4;4m修[m[1;4;4m正[m                        
-  BL-3         ▲  todo           ─   ─       Task 3 [1;4;4m修[m[1;4;4m正[m                        
-                                                                                
+ [1;94mfixture[22;39m  [1;7m Next [22;27m  Active   Mine   Open   Board                                  
+       ID      Status  Title                                             Updated
+[7m[94m▌[39m  [93m▲ [39m  BL-1    ○ todo  [1mTask 1 [1;4m修正[22;24m[1m[22m  #two words  #a,b                            [27m
+   [93m▲ [39m  BL-2    ○ todo  Task 2 [1;4m修正[22;24m  #two words  #a,b                            
+   [93m▲ [39m  BL-3    ○ todo  Task 3 [1;4m修正[22;24m  #two words  #a,b                            
                                                                                 
                                                                                 
                                                                                 
@@ -20,5 +18,7 @@ backlog · fixture · [Next]  Active  Mine  All  Board
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-修正 · 0 pending · 0 failed · ? help · q quit                                   
+                                                                                
+                                                                                
+                                                                                
+ 修正                                                                       1/3 

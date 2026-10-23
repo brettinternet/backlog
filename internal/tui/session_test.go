@@ -91,7 +91,7 @@ func TestExternalTimeoutErrorBadge(t *testing.T) {
 		}
 		next, _ := m.Update(msg)
 		m = next.(Model)
-		if store.Current().Source("adapter").Error != "" && strings.Contains(m.View().Content, "adapter ! error:") {
+		if store.Current().Source("adapter").Error != "" && strings.Contains(m.View().Content, "! adapter:") {
 			break
 		}
 	}
@@ -160,7 +160,7 @@ func TestShellLiveRefresh(t *testing.T) {
 	}
 	load("loaded 1")
 	fmt.Fprintf(&transcript, "== loaded ==\n%s\n", m.View().Content)
-	if !strings.Contains(m.View().Content, "tasks ✓ synced") {
+	if !strings.Contains(m.View().Content, "✓ tasks") {
 		t.Fatal("badge not updated")
 	}
 	m = send(m, "R")
@@ -243,7 +243,7 @@ func TestRemoteWarmPaintAndSourceIsolation(t *testing.T) {
 	if store.Current().Source("remote").Coverage == source.Complete {
 		t.Fatal("cached rows presented as synced while network is blocked")
 	}
-	if !strings.Contains(m.View().Content, "tasks ✓ synced") {
+	if !strings.Contains(m.View().Content, "✓ tasks") {
 		t.Fatal("fast source update delayed by slow source")
 	}
 }

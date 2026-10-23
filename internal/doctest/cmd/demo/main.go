@@ -45,7 +45,7 @@ func record() error {
 	if closeErr != nil {
 		return closeErr
 	}
-	cmd := exec.Command(binary, "-C", project, "--high-contrast", "tui")
+	cmd := exec.Command(binary, "-C", project, "tui")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	for _, entry := range os.Environ() {
 		key := strings.SplitN(entry, "=", 2)[0]

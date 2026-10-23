@@ -62,7 +62,7 @@ func TestNativeCaptureCreateAndEditAllFields(t *testing.T) {
 		"assignees": "bob", "labels": "review", "milestone": "m-2", "due": "2026-12-02",
 		"parent": "BL-10", "blocked_by": "BL-11", "related": "BL-12", "duplicate_of": "BL-13",
 		"refs": "new-ref", "files": "new-file", "description": `Edited\nbody`,
-		"criteria": `[{"text":"changed","checked":true}]`, "dod": `[{"text":"verified"}]`,
+		"criteria": `- [x] changed\n  Evidence: ran it`, "dod": `verified`,
 		"plan": "next plan", "notes": "next notes", "summary": "next summary",
 	}
 	for i := range m.capture.fields {

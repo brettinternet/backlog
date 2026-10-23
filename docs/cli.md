@@ -29,10 +29,17 @@ Auto-commit does not apply to project initialization, import into a new project,
 user configuration, or remote-provider writes.
 
 `ls`, `show`, and the read-only `next` interface are frozen. All accept global
-`-C DIR` and `--json` (`-j`) before or after the command. Help is plain text.
+`-C DIR` and `--json` (`-j`) before or after the command.
 JSON uses the [schema-version-1 envelope](design.md#7-agent-interface).
 The write commands below are also frozen. Coordination is optional; GitHub is
 available with [provider-specific write semantics](github.md).
+
+Help is plain text. `bl --help` lists the item commands first, then the
+Automation, Coordination, and Project groups. `bl COMMAND --help` (or
+`bl help COMMAND`) shows a command's arguments, options, and examples. A command
+group run without a subcommand (`config`, `import`, `adapter`, `auth`) prints
+its help, or exits 2 under `--json`. A usage error prints the problem and
+`Run bl COMMAND --help for usage.` on stderr.
 
 ```sh
 bl ls 'is:open priority:>=high' --sort priority,id --group status -n 20
@@ -82,6 +89,8 @@ credential helpers; actual reads verify credentials and provider bindings.
 `bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
 `control-root`, `cache`, `worklease`, and `sources`. Each check has `name`,
 `status` (`pass`, `warn`, `fail`, or `skip`), `message`, and a nonempty `fix` hint.
+Human output aligns one status, name, and message line per check, and prints
+the fix under each check that did not pass.
 JSON `data.checks` contains every check, including on failure (`ok: false`,
 `error.reason: rejected`, exit 5). Invalid config yields a failed config check
 and skipped dependent checks. Any failed check exits 5; warnings alone exit 0.
@@ -217,6 +226,9 @@ and an archived file also exits 2; select one with `bl renumber`'s path form. A 
 (`not-found`). Explicit lookups can find archived items. Detail reads parse only
 the matched files, not every item, and do not compute readiness/ranking.
 
+Text output prints the ID and title, then each set field with an aligned label,
+then each nonempty section under its native heading.
+
 `--section` accepts `description`, `criteria`, `dod`, `plan`, `notes`, `summary`,
 or `comments`. A missing section is an empty string. Invalid names exit 2.
 Text section output prints only that section. JSON still carries item metadata.
@@ -284,6 +296,11 @@ Explanations preserve the [engine's reason codes](readiness.md) and optional
 limit has an additional `query` or `limit` reason. These do not change its
 readiness. On an empty snapshot, `explanations` is omitted.
 
+Text output lists the selected items, then one line per explanation: the ID,
+its readiness, its priority and unblock impact, and each reason with the refs
+or values it names (`blocker: BL-12`). Explanation lines wrap rather than
+truncate.
+
 ### Claimed selection
 
 ```sh
@@ -337,7 +354,9 @@ local batches are atomic per item, not across items. GitHub accepts one field
 assignment per command and refuses multi-field batches. If any ID fails, the envelope has
 `ok: false`, retains `data.outcomes`, and uses the first failed ID's error and
 exit code. Multiple IDs with `--if-version` exit 2 before writing any item.
-Text output reports each outcome too.
+Text output prints each written item as a list row. With several IDs, each
+failed ID prints `ID: message` in input order, and stderr repeats the first
+failure.
 
 ### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--source SOURCE]`
 
@@ -375,7 +394,7 @@ IDs and timestamps are not writable fields.
 
 Set status to `workflow.start` or `workflow.done`, respectively. Missing workflow
 configuration is rejected, not guessed. Each takes exactly one ID.
-`bl events [--follow] [--json] [--since ID] [QUERY]` reads the project event
+`bl events [--follow|-f] [--json] [--since ID] [QUERY]` reads the project event
 log. Finite JSON uses `data.events`; follow mode emits one envelope with
 `data.event` per line. The cursor is exclusive across rotation; an unknown cursor
 is an error. Follow mode watches sources without a TUI. See [events.md](events.md)
@@ -425,7 +444,7 @@ Move native items into or out of the source's `archive/` directory. Occupied
 targets are conflicts. Explicit ID reads still find archived items; lists and
 next ranking exclude them. The bytes and content version are unchanged.
 
-## `bl action NAME ID [--yes]`
+## `bl action NAME ID [--yes|-y]`
 
 Run a trusted configured action for one matching item. `when` and placeholder
 validation are shared with the TUI and MCP `action` tool (`name`, `id`, optional
@@ -482,11 +501,21 @@ allowing an incomplete reference rewrite.
 
 ## Output and source safety
 
-Text list rows are compact source-qualified ID/status/priority/title tables,
-truncated to terminal cell width (80 columns off-terminal), including Unicode
-wide characters. Bodies retain newlines and tabs. Text output strips CSI,
-OSC, DCS and other terminal escape sequences and unsafe control characters;
-table cells also flatten tabs and newlines. JSON preserves original strings.
+Text list rows align ID, status, priority, and title columns across the
+output; the priority column is dropped when no row has one. IDs are bare unless
+the project has several sources (`source:ID`) or the read spans a workspace
+(`project source:ID`). Rows truncate to terminal cell width (80 columns
+off-terminal), including Unicode wide characters. Grouped `ls` prints a
+`value (count)` header before each group, with `none` for items without a
+value. An empty result prints `No items.` (`No ready items.` for `next`) only
+on a terminal, so piped output stays empty.
+
+On a terminal, status, priority, readiness, and doctor results use the
+terminal's own colors: active is yellow, done green, urgent bold red, and high
+yellow. `NO_COLOR`, `TERM=dumb`, and piped output print no escape sequences.
+Bodies retain newlines and tabs. Text output strips CSI, OSC, DCS and other
+terminal escape sequences and unsafe control characters; table cells also
+flatten tabs and newlines. JSON preserves original strings.
 
 Read commands do not execute hooks. With coordination enabled, list/next load one
 bulk Worklease claim overlay; show derives its resource in-process.
@@ -521,7 +550,9 @@ holding a different item exits 4 (`claim-held`), not contention. Missing session
 exits 2. `release` changes only the caller's exact single-resource claim; an
 absent or unrelated claim reports `not-held`. `heartbeat` reports `expiresAt`.
 A verified live run reports `run-managed` without acquiring, renewing, or
-releasing anything. Invalid run evidence exits 4 (`run-mismatch`).
+releasing anything. Invalid run evidence exits 4 (`run-mismatch`). Text output
+prints the item ID (except for `heartbeat`), the outcome, and the local expiry
+time when known: `BL-12 acquired until 2030-01-01 00:00:00`.
 
 Representative contention and release envelopes (opaque identities abbreviated):
 

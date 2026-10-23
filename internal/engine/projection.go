@@ -23,6 +23,7 @@ type Row struct {
 	Ref                                       model.Ref
 	Version, Title, Status, Type, Milestone   string
 	Due, URL                                  string
+	Updated                                   time.Time
 	Category                                  model.StatusCategory
 	Priority                                  model.Priority
 	Assignees, Labels                         []string
@@ -40,6 +41,7 @@ type Relation struct {
 	Kind          string
 	Ref           model.Ref
 	Title, Status string
+	Category      model.StatusCategory
 	Version       string
 }
 type RowGroup struct {
@@ -177,6 +179,7 @@ func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy ma
 			if target != nil {
 				relation.Title = target.item.Title
 				relation.Status = target.item.Status
+				relation.Category = target.item.Category
 				relation.Version = target.item.Version
 			}
 			rows = append(rows, relation)
@@ -198,7 +201,7 @@ func RelationVersion(relations []Relation) string {
 	}
 	hash := fnv.New64a()
 	for _, relation := range relations {
-		for _, value := range []string{relation.Kind, relation.Ref.Source, relation.Ref.ID, relation.Title, relation.Status, relation.Version} {
+		for _, value := range []string{relation.Kind, relation.Ref.Source, relation.Ref.ID, relation.Title, relation.Status, string(relation.Category), relation.Version} {
 			_, _ = hash.Write([]byte(value))
 			_, _ = hash.Write([]byte{0})
 		}
@@ -215,20 +218,9 @@ func readinessReason(e Explanation) string {
 	}
 	parts := make([]string, 0, len(e.Reasons))
 	for _, reason := range e.Reasons {
-		if reason.Code == "candidate" {
-			continue
+		if reason.Code != "candidate" {
+			parts = append(parts, reason.text())
 		}
-		text := reason.Code
-		if len(reason.Refs) > 0 {
-			ids := make([]string, len(reason.Refs))
-			for i, ref := range reason.Refs {
-				ids[i] = ref.ID
-			}
-			text += ": " + strings.Join(ids, ", ")
-		} else if len(reason.Values) > 0 {
-			text += ": " + strings.Join(reason.Values, ", ")
-		}
-		parts = append(parts, text)
 	}
 	if len(parts) == 0 {
 		return "no readiness explanation available"
@@ -442,7 +434,7 @@ func (p *Projector) run() {
 								Project: projectName, Source: localSource,
 								Claim: claimLabels[i.Ref], Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
 								Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
-								Category: i.Category, Priority: i.Priority,
+								Updated: i.Updated, Category: i.Category, Priority: i.Priority,
 								Assignees: i.Assignees, Labels: i.Labels, Pending: r.edit.Pending,
 								Error: r.edit.Error, ErrorLocalVersion: localVersion,
 								ErrorRemoteVersion: remoteVersion, Readiness: explanation.Readiness,
@@ -459,10 +451,13 @@ func (p *Projector) run() {
 									row.OpenBlockers++
 								}
 							}
-							row.ChildrenTotal = len(i.Children)
-							for _, ref := range i.Children {
-								if closed(ref) {
-									row.ChildrenDone++
+							// Children include reverse parent links, matching the Relations tab.
+							for _, relation := range relations {
+								if relation.Kind == "children" {
+									row.ChildrenTotal++
+									if closed(relation.Ref) {
+										row.ChildrenDone++
+									}
 								}
 							}
 							group.Rows = append(group.Rows, row)

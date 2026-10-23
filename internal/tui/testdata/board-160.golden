@@ -1,12 +1,12 @@
-backlog · fixture · Next  Active  Mine  All  [Board]                                                                                                            
-tasks ✓ synced                                                                                                                                                  
-> To Do (3)                            │  Empty (0)                            │  Active (3)                           │  Done (3)                              
-> BL-1 修正 🚀 selection               │  ─                                    │  BL-4 修正 🚀 selection               │  BL-7 修正 🚀 selection                
-  BL-2 ● 修正 🚀 selection             │                                       │  BL-5 ● 修正 🚀 selection             │  BL-8 ● 修正 🚀 selection              
-  BL-3 ! 修正 🚀 selection             │                                       │  BL-6 ! 修正 🚀 selection             │  BL-9 ! 修正 🚀 selection              
-                                       │                                       │                                       │                                        
-                                       │                                       │                                       │                                        
-                                       │                                       │                                       │                                        
-                                       │                                       │                                       │                                        
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-is:open group:status · 3 pending · 3 failed · ? help · q quit                                                                                                   
+ fixture   Next   Active   Mine   Open  [Board]                                                                                                         ✓ tasks 
+ · To Do  3                              · Empty  0                              · Active  3                             · Done  3                              
+▌  ▲ BL-1                         ⊘ 1      No items                                ▲ BL-4                         ⊘ 1      ▲ BL-7                         ⊘ 1   
+▌  修正 🚀 selection                                                               修正 🚀 selection                       修正 🚀 selection                    
+   ▲ BL-2 ●                       ⊘ 1                                              ▲ BL-5 ●                       ⊘ 1      ▲ BL-8 ●                       ⊘ 1   
+   修正 🚀 selection                                                               修正 🚀 selection                       修正 🚀 selection                    
+   ▲ BL-3 !                       ⊘ 1                                              ▲ BL-6 !                       ⊘ 1      ▲ BL-9 !                       ⊘ 1   
+   修正 🚀 selection                                                               修正 🚀 selection                       修正 🚀 selection                    
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+ is:open group:status                                                                                                                           ● 3  ! 3    1/9 

@@ -16,9 +16,9 @@ import (
 
 func authCommands(directory *string, in io.Reader, out, errOut io.Writer) *urfave.Command {
 	login := &urfave.Command{
-		Name: "login", Usage: "Interactively authorize a user-configured OAuth account",
+		Name: "login", Usage: "Authorize an OAuth account from user config",
 		ArgsUsage: "PROVIDER ACCOUNT",
-		Flags:     []urfave.Flag{&urfave.BoolFlag{Name: "write", Usage: "explicitly request provider write scopes after read-only login"}},
+		Flags:     []urfave.Flag{&urfave.BoolFlag{Name: "write", Usage: "Also request provider write scopes"}},
 		Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 2 {
 				return &Error{Reason: "usage", Message: "usage: bl auth login PROVIDER ACCOUNT [--write]"}
@@ -52,7 +52,7 @@ func authCommands(directory *string, in io.Reader, out, errOut io.Writer) *urfav
 		},
 	}
 	logout := &urfave.Command{
-		Name: "logout", Usage: "Delete a user account's stored OAuth tokens",
+		Name: "logout", Usage: "Delete an account's stored OAuth tokens",
 		ArgsUsage: "PROVIDER ACCOUNT",
 		Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 2 {
@@ -86,10 +86,8 @@ func authCommands(directory *string, in io.Reader, out, errOut io.Writer) *urfav
 		},
 	}
 	return &urfave.Command{
-		Name: "auth", Usage: "Manage explicitly opted-in user OAuth accounts",
-		Action: func(_ context.Context, _ *urfave.Command) error {
-			return &Error{Reason: "usage", Message: "use bl auth login or bl auth logout"}
-		},
+		Name: "auth", Usage: "Manage OAuth accounts from user config", Category: categoryProject,
+		Action:   groupHelp("use bl auth login or bl auth logout"),
 		Commands: []*urfave.Command{login, logout},
 	}
 }

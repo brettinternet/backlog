@@ -220,11 +220,11 @@ func TestExplanationText(t *testing.T) {
 		in.Items = append(in.Items, b)
 	}
 	e := explanation(engine.Evaluate(in), "BL-1")
-	if got := e.Text(); got != "high · rank a3 · unblocks 4 (BL-9, BL-12, +2)" {
+	if got := e.Text(); got != "high · unblocks 4 (BL-9, BL-12, +2)" {
 		t.Fatal(got)
 	}
 	in.Items[0].BlockedBy = []model.Ref{ref("BL-99")}
-	if got := explanation(engine.Evaluate(in), "BL-1").Text(); got != "high · rank a3 · unblocks 4 (BL-9, BL-12, +2) · unknown: blocker-unknown" {
+	if got := explanation(engine.Evaluate(in), "BL-1").Text(); got != "high · unblocks 4 (BL-9, BL-12, +2) · blocker-unknown: BL-99" {
 		t.Fatal(got)
 	}
 }

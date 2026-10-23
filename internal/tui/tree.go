@@ -2,12 +2,10 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 )
@@ -150,10 +148,12 @@ func prepareTreeItems(groups []engine.RowGroup, items []model.Item, snapshot *en
 	type entry struct {
 		ref           model.Ref
 		depth, parent int
+		prefix        string // ancestor continuation guide; see extendGuide
+		last          bool   // last included sibling
 	}
 	pending := make([]entry, 0, len(roots))
 	for i := len(roots) - 1; i >= 0; i-- {
-		pending = append(pending, entry{roots[i], 0, -1})
+		pending = append(pending, entry{ref: roots[i], parent: -1})
 	}
 	p := prepared{}
 	for len(pending) > 0 {
@@ -174,8 +174,13 @@ func prepareTreeItems(groups []engine.RowGroup, items []model.Item, snapshot *en
 			}
 		}
 		index := len(p.rows)
-		p.rows = append(p.rows, screenRow{row: row, value: key, depth: e.depth, parent: e.parent, branch: hasChildren, collapsed: folded, context: !matches[e.ref]})
+		guide, childPrefix := "", ""
+		if e.depth > 0 {
+			guide = e.prefix + map[bool]string{false: "T", true: "L"}[e.last]
+			childPrefix = extendGuide(e.prefix, e.last)
+		}
 		p.items++
+		p.rows = append(p.rows, screenRow{row: row, value: key, guide: guide, ordinal: p.items, depth: e.depth, parent: e.parent, branch: hasChildren, collapsed: folded, context: !matches[e.ref]})
 		if row.Pending {
 			p.pending++
 		}
@@ -187,8 +192,12 @@ func prepareTreeItems(groups []engine.RowGroup, items []model.Item, snapshot *en
 		}
 		if hasChildren && !folded {
 			kids := children[e.ref]
+			last := true
 			for i := len(kids) - 1; i >= 0; i-- {
-				pending = append(pending, entry{kids[i], e.depth + 1, index})
+				if include[kids[i]] {
+					pending = append(pending, entry{ref: kids[i], depth: e.depth + 1, parent: index, prefix: childPrefix, last: last})
+					last = false
+				}
 			}
 		}
 	}
@@ -229,34 +238,62 @@ func (m *Model) navigateTree(key string) tea.Cmd {
 	}
 	return nil
 }
-func (m Model) treeTitle(r screenRow) string {
-	glyph := "  "
-	if r.branch {
-		glyph = "▾ "
-		if r.collapsed {
-			glyph = "▸ "
+
+// maxGuide caps stored guide levels, so a deep chain costs O(rows), not
+// O(rows x depth). Deeper levels collapse into a leading ellipsis.
+const maxGuide = 24
+
+// extendGuide appends one ancestor level: c draws a continuing branch line and
+// s leaves space below a last child. A leading < marks trimmed levels.
+func extendGuide(prefix string, last bool) string {
+	level := "c"
+	if last {
+		level = "s"
+	}
+	s := prefix + level
+	if len(s) > maxGuide {
+		s = "<" + s[len(s)-maxGuide+1:]
+	}
+	return s
+}
+
+// treePrefix draws connectors two cells per level (T and L are the row's own
+// branch), capped to a quarter of width, followed by the fold glyph.
+func (m Model) treePrefix(r screenRow, width int) string {
+	t := m.theme
+	guide := r.guide
+	if limit := max(1, width/8); len(guide) > limit {
+		guide = "<" + guide[len(guide)-limit+1:]
+	}
+	var b strings.Builder
+	for i := 0; i < len(guide); i++ {
+		switch guide[i] {
+		case '<':
+			b.WriteString("… ")
+		case 'c':
+			b.WriteString("│ ")
+		case 's':
+			b.WriteString("  ")
+		case 'T':
+			b.WriteString("├─")
+		case 'L':
+			b.WriteString("└─")
 		}
 	}
-	// Indentation is capped by viewport width, never hierarchy depth.
-	prefix := strings.Repeat(" ", min(r.depth, max(0, m.width/4))*2) + glyph
+	lines := t.faint.render(b.String())
+	switch {
+	case r.branch && r.collapsed:
+		lines += t.muted.render("▸")
+	case r.branch:
+		lines += t.muted.render("▾")
+	case r.depth > 0:
+		lines += t.faint.render("─")
+	default:
+		lines += " "
+	}
+	lines += " "
 	if r.context {
-		prefix += "· "
+		lines += t.muted.render("· ")
 	}
-	progress := ""
-	if r.row.ChildrenTotal > 0 {
-		progress = fmt.Sprintf(" ▣ %d/%d", r.row.ChildrenDone, r.row.ChildrenTotal)
-	}
-	return prefix + r.row.Title + progress
-}
-func (m Model) treeContext(index int, line string) string {
-	if !m.isTree() || index < 0 || index >= len(m.data.rows) || !m.data.rows[index].context || m.opts.NoColor {
-		return line
-	}
-	style := lipgloss.NewStyle()
-	if m.opts.HighContrast {
-		style = style.Underline(true)
-	} else {
-		style = style.Faint(true)
-	}
-	return style.Render(line)
+	return lines
 }

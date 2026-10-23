@@ -21,20 +21,29 @@ publishes up to 256 complete items in filename order, using stat-validated cache
 batches when available and parsing changed or uncached files. This partial list
 is navigable and editable while full validation, cache population and search
 indexing continue on the source worker. Missing dependency targets remain unknown;
-readiness, ordering and counts can change when the remaining items arrive. Source
-badges show syncing, partial, synced, or error. A partial list is not a complete
+readiness, ordering and counts can change when the remaining items arrive. Header
+badges show each source as synced `✓`, syncing `↻`, partial `~`, or error `!`.
+A partial list is not a complete
 backlog, and a loading shell is not counted as first usable content. Untrusted project hooks, actions, or adapters
-replace the badge line with a persistent `Untrusted project config · bl trust --show`
-banner; untrusted adapters are not opened. Native sources remain browsable, and
+replace the badges with a persistent `⚠ Untrusted project config · bl trust --show`
+warning; untrusted adapters are not opened. Native sources remain browsable, and
 trust-state reads happen during configuration loading, not on the UI loop.
-Rows show ID, priority, raw status, open
-blockers, child progress, title and pending/failed glyphs. When the list (or
-the list pane beside detail) is narrower than 80 columns, only ID, title and
-edit glyphs remain. The list shows loading, not "No matching items.", while a
-source syncs or a newer result is pending. The footer reports the active query and
-pending/failed counts in that projection, including folded rows.
+Rows show priority, ID, status, title with its labels, open blockers, child
+progress, assignee, and age since the last update. Column widths come from the
+prepared rows, never from the update loop. As a pane narrows, secondary columns
+drop so the title keeps at least two-fifths of the width: age first, then
+assignee, child progress, blockers, claim, and finally the status name, leaving
+its icon. Grouping by status shows only the icon. The list shows loading, not
+"No matching items.", while a source syncs or a newer result is pending.
 
-Next, Active, Mine and All are built-in list tabs, grouped by status. `j`/`k`
+The status bar shows the active query, or the input, prompt or error that
+replaces it. A notice replaces the query until the next key. On the right are a
+pending prefix or count, marks, pending `●` and failed `!` edit counts in that
+projection (including folded rows), `↻` while results are in flight, and the
+cursor position.
+
+Next, Active, Mine, Open and Board are built-in tabs. Next ranks ready items
+without groups; Active, Mine and Open group by status. `j`/`k`
 and arrows move by display row (including group headers); counts, `gg`, `G`,
 `NG`, half/full pages, `[`/`]` group jumps and `za` folding work. `gt`/`gT`
 cycle tabs. Live refreshes keep folds and keep the cursor on the same item or
@@ -42,16 +51,21 @@ group header. Each tab retains its query, folds and stable-item selection;
 reordered rows keep the same item, and a missing item falls back to the first row.
 A digit waits 350 ms to distinguish `1`–`9` view shortcuts from count-prefixed
 motions; unavailable numbers do nothing. `gt`/`gT` reach every saved tab. `R`
-requests a background refresh. `?` toggles help. `NO_COLOR` disables styling;
+requests a background refresh. `?` toggles help. The palette follows the
+terminal's light or dark background, and neutral shades are mixed from its own
+foreground and background colors. `NO_COLOR` disables styling;
 `--high-contrast` uses bold and underline, never faint text. All external text
 is sanitized and widths use terminal cells.
 
-`enter` toggles detail. At 120 columns or more it opens beside the list; below
-120 columns it replaces the list. `tab` focuses the detail pane or advances its
-tabs, and `shift-tab` moves to the previous tab. In detail focus, `j`/`k` and
-page keys scroll, `m` expands a capped body, and `esc`/`q` close the pane.
+`enter`, `l` or `right` opens detail from a list (`enter` on a group header
+folds it). At 120 columns or more it opens beside the list; below 120 columns
+it replaces the list. `tab` focuses the detail pane or advances its tabs, and
+`shift-tab` moves to the previous tab. In detail focus, `j`/`k` and page keys
+scroll, `m` expands a capped body, and `enter`, `esc` or `q` close the pane.
+`J`/`K` select the next or previous item from the list or the detail pane.
 At split widths, `h`/`left` returns focus to the list without closing detail,
-so held navigation keeps the header current while postponing body work.
+so held navigation keeps the header current while postponing body work; a
+second `h` closes it.
 The detail header follows selection immediately. Full item content, including
 comments, is read only after selection settles for 50 ms; a single bounded
 worker renders Markdown off the update loop and keeps a bounded version/width/
@@ -163,7 +177,7 @@ the 150 ms filesystem-event budget applies to directory-signaled changes.
 watchers and workers stop on context cancellation. Source coverage is explicit:
 a partial or failed refresh never proves deletion. Remote warm starts publish at
 most 256 cached rows before waiting for the network, with unknown coverage.
-Cached rows remain visible in All, but stale items are not ready in Next and a
+Cached rows remain visible in Open, but stale items are not ready in Next and a
 stale done blocker cannot satisfy a dependency. Fresh rows replace stale rows
 even when their provider version is unchanged. Remote source workers poll once
 per minute; `R` requests an earlier refresh. Quota errors remain visible while
@@ -181,40 +195,51 @@ the account scheduler refuses requests before its retry deadline.
 ## Layout
 
 ```text
- backlog · project · Next 12  Active 3  Mine 5  All 318  Board          tasks ✓ synced
-  ID     P  Status       Title                                   ⊘   ▣    Claim
-  BL-12  ▲  To Do        Debounce detail rendering while…        ─   ─    ─
-> BL-14  ▲  To Do        Board layout with column moves          1   ─    mine
-  BL-15  ■  In Progress  Go-to-item fuzzy finder                 ─   2/3  agent@mbp
-──────────────────────────────────────────────────────────────────────────────────
- is:ready sort:next                                      2 pending · ? help · : cmd
+ backlog   Next   Active   Mine   Open   Board                                  ✓ tasks
+       ID          Title                                       ⊘        ▣  Assignee  Updated
+▌ ▾ ○ To Do  3
+   ▲   BL-30    ○  Run hooks on events with results, chaini…   ⊘ 3                         1h
+   ■   BL-24 ●  ○  Add go-to, the command palette  #tui        ⊘ 1           @brett        3h
+   ▼   BL-41    ○  Sync Jira Cloud issues  #jira                                          12h
+  ▾ ◐ In Progress  1
+   ▲   BL-53    ◐  Add opt-in OAuth login for remote sources         ▣ 1/5  brett         1d
+ is:open group:status                                                                  1/4
 ```
 
-At 120 columns or more, the detail pane opens beside the list. Below that, it replaces the list. Below 80 columns, secondary columns hide. The header shows one badge per source (synced, syncing ⠋, stale, error). The footer shows the active query, pending and failed edits, and hints.
+The header holds the tabs and source badges, then the column header marks the
+sort column with an arrow. The status bar is the last line. At 120 columns or
+more, the detail pane opens beside the list; below that, it replaces the list.
+Pickers, quick-add and which-key menus open as sheets above the status bar;
+the palette, go-to and the full form open as centered panels; help fills the
+body.
 
-| Row glyph | Meaning |
+| Glyph | Meaning |
 | --- | --- |
 | `▲▲` `▲` `■` `▼` | Priority: urgent, high, medium, low |
+| `◌` `○` `◐` `✓` `✕` | Status category: backlog, todo, active, done, canceled |
 | `⊘ N` | N open blockers |
 | `▣ a/b` | Child progress |
 | Claim column | Worklease holder: `mine`, `agent@host`, or `expired` |
-| `●` before the title | Pending local edit |
-| `!` before the title | Failed or conflicted edit; open the item for detail |
+| `●` after the ID | Pending local edit |
+| `!` after the ID | Failed or conflicted edit; open the item for detail |
+| `•` in the gutter | Marked item |
 
 ## Views and layouts
 
-The built-in tabs are Next (`is:ready`, sort `next`), Active (`category:active`),
-Mine (`assignee:me`), and All open. They precede project `views`, user `views`,
+The built-in tabs are Next (`is:ready sort:next`), Active (`category:active`),
+Mine (`assignee:me is:open`), and Open (`is:open`); all but Next group by
+status. They precede project `views`, user `views`,
 and user `projects.<project-id>.views`, each in declaration order. Same-named
 views in different layers remain separate tabs; names within a layer must be
 unique. This additive tab catalog does not change D16's list-replacement rule
-for effective configuration. The built-in Board tab follows All and shows open
-items grouped by status.
+for effective configuration. The built-in Board tab follows Open and shows open
+items grouped by status, without the closed columns its query cannot fill.
 
 A view has `name`, `query`, optional `sort`, `group`, `layout`, and `columns`.
 Explicit sort/group fields override query directives. Columns may be `id`,
-`priority`, `status`, `blockers`, `children`, and `title`, in display order;
-without columns the standard list is used. Below 80 columns, ID/title remain.
+`priority`, `status`, `blockers`, `children`, `claim`, `assignee`, `updated`,
+and `title`, in display order; without columns the standard list is used.
+Narrow panes drop secondary columns in the standard order.
 Set `layout: tree` on a saved view to show the hierarchy instead of query groups.
 
 `ctrl-s` opens a name prompt, initially using the current name. `ctrl-u` clears
@@ -266,14 +291,16 @@ Indentation is capped by viewport width for very deep trees. Hierarchy building,
 ancestor closure, progress and flattening run off-loop; navigation uses prepared
 parent indices and rendering visits only the viewport.
 
-The detail pane has these tabs:
+The detail pane starts with the item's ID, status, priority and title, then
+these tabs, with counts where they apply:
 
-- **Overview:** fields, plus readiness and why
-- **Description**
-- **Criteria:** criteria and definition of done
-- **Plan/Notes**
+- **Overview:** set fields, readiness and why, and the description
+- **Criteria:** acceptance criteria and definition of done, with progress
+- **Notes:** plan, notes and summary
 - **Comments**
-- **Relations:** blockers, blocking, parent, children, each with live status
+- **Relations:** a dependency flow from blockers through the item to what it
+  blocks, then parent, children with progress, related items and duplicates,
+  each with live status
 
 Markdown renders asynchronously and is cached. While the selection moves, the header fields update at once and the body updates once the selection settles. Bodies are capped at 32 KiB by default; `m` expands the cap to 128 KiB, and an indicator remains if content is still truncated.
 
@@ -311,6 +338,8 @@ conflicting action IDs and bindings. Swap bindings by overriding both actions:
 keys:
   move-down: J
   move-up: K
+  next-item: j
+  previous-item: k
   first: v v
   workspace: ''
 ```
@@ -318,108 +347,118 @@ keys:
 <!-- keymap:start -->
 | Action ID | Keys | Action |
 | --- | --- | --- |
-| `move-down` | `j`, `down` | Move down / scroll detail |
-| `move-up` | `k`, `up` | Move up / scroll detail |
-| `first` | `g g` | First row |
-| `last` | `G` | Last row / count G to row N |
+| `move-down` | `j`, `down` | Move down |
+| `move-up` | `k`, `up` | Move up |
+| `next-item` | `J` | Next item |
+| `previous-item` | `K` | Previous item |
+| `first` | `g g`, `home` | First row |
+| `last` | `G`, `end` | Last row, or row N |
 | `half-down` | `ctrl+d`, `pagedown` | Half page down |
 | `half-up` | `ctrl+u`, `pageup` | Half page up |
-| `page-down` | `ctrl+f` | Full page down |
-| `page-up` | `ctrl+b` | Full page up |
-| `previous-group` | `[` | Previous group / board column |
-| `next-group` | `]` | Next group / board column |
-| `left` | `h`, `left` | Tree parent / board left / focus list |
-| `right` | `l`, `right` | Tree child / board right / labels in list |
+| `page-down` | `ctrl+f` | Page down |
+| `page-up` | `ctrl+b` | Page up |
+| `previous-group` | `[` | Previous group |
+| `next-group` | `]` | Next group |
+| `left` | `h`, `left` | Back / parent / left |
+| `right` | `l`, `right` | Open / child / right |
+| `go-to` | `ctrl+p` | Go to item |
 | `detail` | `enter` | Toggle detail |
-| `next-detail-tab` | `tab` | Focus detail / next detail tab |
-| `previous-detail-tab` | `shift+tab` | Focus detail / previous detail tab |
-| `cancel` | `esc` | Close detail / clear marks / cancel |
+| `next-detail-tab` | `tab` | Next tab |
+| `previous-detail-tab` | `shift+tab` | Previous tab |
+| `split-left` | `ctrl+left` | Shrink list |
+| `split-right` | `ctrl+right` | Grow list |
 | `next-view` | `g t` | Next view |
 | `previous-view` | `g T` | Previous view |
-| `go-to` | `ctrl+p` | Go to any item (including archives) |
-| `help` | `?` | Search help |
-| `palette` | `:` | Command palette |
-| `workspace` | `W` | Toggle project / workspace scope |
-| `refresh` | `R` | Resync sources |
-| `quit` | `q` | Back from detail / quit |
-| `quit-now` | `ctrl+c` | Quit |
+| `board` | `B` | Board layout |
+| `tree` | `T` | Tree layout |
 | `query` | `/` | Edit query |
-| `clear-filter` | `F` | Clear filter |
+| `clear-filter` | `F` | Clear filters |
 | `save-view` | `ctrl+s` | Save view |
-| `status` | `s` | Status picker |
-| `previous-status` | `<` | Previous workflow status |
-| `next-status` | `>` | Next workflow status |
-| `priority` | `p` | Priority picker |
-| `assignees` | `a` | Assignee picker |
-| `assign-me` | `A` | Toggle assigning yourself |
-| `milestone` | `m` | Milestone picker / expand detail body |
-| `blocker` | `b` | Blocker editor |
-| `parent` | `P` | Parent picker |
+| `workspace` | `W` | Toggle workspace |
+| `refresh` | `R` | Resync sources |
+| `status` | `s` | Status… |
+| `previous-status` | `<` | Previous status |
+| `next-status` | `>` | Next status |
+| `start` | `S` | Start |
+| `done` | `D` | Done |
+| `priority` | `p` | Priority… |
+| `assignees` | `a` | Assignees… |
+| `assign-me` | `A` | Assign me |
+| `labels` | `#` | Labels… |
+| `milestone` | `m` | Milestone… / more |
+| `blocker` | `b` | Blockers… |
+| `parent` | `P` | Parent… |
 | `title` | `t` | Edit title |
-| `description` | `e` | Edit description in editor |
-| `edit` | `E` | Edit whole item |
-| `comment` | `c` | Add comment |
-| `note` | `i` | Append note |
-| `criterion` | `x` | Toggle criterion (Criteria tab) |
-| `start` | `S` | Start item |
-| `done` | `D` | Finish item |
+| `description` | `e` | Edit description |
+| `edit` | `E` | Edit all fields |
+| `comment` | `c` | Comment |
+| `note` | `i` | Add note |
+| `criterion` | `x` | Toggle criterion |
 | `claim` | `C` | Claim / release |
-| `archive` | `d d` | Archive (confirm) |
-| `repeat` | `.` | Repeat last edit |
+| `archive` | `d d` | Archive |
+| `new` | `n` | New item |
+| `new-child` | `N` | New child |
+| `repeat` | `.` | Repeat edit |
 | `undo` | `u` | Undo |
 | `redo` | `ctrl+r` | Redo |
-| `new` | `n` | Quick-add |
-| `new-child` | `N` | Quick-add child |
-| `actions` | `!` | Actions menu |
+| `actions` | `!` | Actions… |
+| `open-url` | `O` | Open URL |
+| `mark` | `space` | Mark |
+| `visual` | `V` | Visual range |
+| `mark-all` | `ctrl+a` | Mark all |
+| `cancel` | `esc` | Cancel / clear |
 | `yank-id` | `y y` | Copy ID |
 | `yank-title` | `y t` | Copy title |
-| `yank-branch` | `y b` | Copy branch name |
+| `yank-branch` | `y b` | Copy branch |
 | `yank-url` | `y u` | Copy URL |
 | `yank-markdown` | `y m` | Copy Markdown link |
-| `open-url` | `O` | Open safe provider URL |
-| `mark` | `space` | Mark item / toggle criterion |
-| `visual` | `V` | Visual range |
-| `mark-all` | `ctrl+a` | Mark current view |
-| `split-left` | `ctrl+left` | Shrink list pane |
-| `split-right` | `ctrl+right` | Grow list pane |
-| `filter-status` | `f s` | Filter: status |
-| `filter-priority` | `f p` | Filter: priority |
-| `filter-assignee` | `f a` | Filter: assignee |
-| `filter-label` | `f l` | Filter: label |
-| `filter-type` | `f t` | Filter: type |
-| `filter-milestone` | `f m` | Filter: milestone |
-| `filter-is:ready` | `f r` | Filter: ready only |
-| `filter-is:open,closed` | `f d` | Filter: show done |
-| `filter-clear` | `f c` | Filter: clear |
-| `sort-next` | `o n` | Sort: next |
-| `sort-priority` | `o p` | Sort: priority |
-| `sort-rank` | `o r` | Sort: rank |
-| `sort-updated` | `o u` | Sort: updated |
-| `sort-created` | `o c` | Sort: created |
-| `sort-due` | `o d` | Sort: due |
+| `help` | `?` | Help |
+| `palette` | `:` | Commands |
+| `quit` | `q` | Quit / back |
+| `quit-now` | `ctrl+c` | Quit now |
+| `filter-status` | `f s` | Filter: Status |
+| `filter-priority` | `f p` | Filter: Priority |
+| `filter-assignee` | `f a` | Filter: Assignee |
+| `filter-label` | `f l` | Filter: Label |
+| `filter-type` | `f t` | Filter: Type |
+| `filter-milestone` | `f m` | Filter: Milestone |
+| `filter-is:ready` | `f r` | Filter: Ready only |
+| `filter-is:open,closed` | `f d` | Filter: Show done |
+| `filter-clear` | `f c` | Filter: Clear |
+| `sort-next` | `o n` | Sort: Next |
+| `sort-priority` | `o p` | Sort: Priority |
+| `sort-rank` | `o r` | Sort: Rank |
+| `sort-updated` | `o u` | Sort: Updated |
+| `sort-created` | `o c` | Sort: Created |
+| `sort-due` | `o d` | Sort: Due |
 | `sort-id` | `o i` | Sort: ID |
-| `sort-reverse` | `o o` | Sort: reverse |
-| `group-status` | `z s` | Group: status |
-| `group-category` | `z c` | Group: category |
-| `group-priority` | `z p` | Group: priority |
-| `group-assignee` | `z A` | Group: assignee |
-| `group-label` | `z l` | Group: label |
-| `group-milestone` | `z m` | Group: milestone |
-| `group-type` | `z t` | Group: type |
-| `group-parent` | `z P` | Group: parent |
-| `group-none` | `z n` | Group: none |
-| `group-fold` | `z a` | Group: toggle fold |
-| `group-fold-all` | `z M` | Group: fold all |
-| `group-unfold-all` | `z R` | Group: unfold all |
-| `view-1` | `1` | Jump to view 1 |
-| `view-2` | `2` | Jump to view 2 |
-| `view-3` | `3` | Jump to view 3 |
-| `view-4` | `4` | Jump to view 4 |
-| `view-5` | `5` | Jump to view 5 |
-| `view-6` | `6` | Jump to view 6 |
-| `view-7` | `7` | Jump to view 7 |
-| `view-8` | `8` | Jump to view 8 |
-| `view-9` | `9` | Jump to view 9 |
+| `sort-reverse` | `o o` | Sort: Reverse |
+| `group-status` | `z s` | Group: Status |
+| `group-category` | `z C` | Group: Category |
+| `group-priority` | `z p` | Group: Priority |
+| `group-assignee` | `z A` | Group: Assignee |
+| `group-label` | `z l` | Group: Label |
+| `group-milestone` | `z m` | Group: Milestone |
+| `group-type` | `z T` | Group: Type |
+| `group-parent` | `z P` | Group: Parent |
+| `group-none` | `z n` | Group: None |
+| `fold` | `z a` | Toggle fold |
+| `fold-open` | `z o` | Open fold |
+| `fold-close` | `z c` | Close fold |
+| `fold-all` | `z M` | Fold all |
+| `unfold-all` | `z R` | Unfold all |
+| `scroll-top` | `z t` | Scroll to top |
+| `scroll-center` | `z z` | Scroll to center |
+| `scroll-bottom` | `z b` | Scroll to bottom |
+| `view-1` | `1` | View 1 |
+| `view-2` | `2` | View 2 |
+| `view-3` | `3` | View 3 |
+| `view-4` | `4` | View 4 |
+| `view-5` | `5` | View 5 |
+| `view-6` | `6` | View 6 |
+| `view-7` | `7` | View 7 |
+| `view-8` | `8` | View 8 |
+| `view-9` | `9` | View 9 |
 <!-- keymap:end -->
 
 Pickers preselect the current value and fuzzy-filter as you type. Assignee and
@@ -431,7 +470,7 @@ order. `S`/`D` use workflow start/done, falling back to the first active/done
 status. With coordination enabled, active transitions acquire first; closed
 transitions write then release only matching caller-managed claims. Multi-item
 activation is refused. Unsupported source
-operations do not open a picker or write; the footer shows the unavailable
+operations do not open a picker or write; the status bar shows the unavailable
 capability.
 
 `space` toggles a mark in the list; `V` starts a visual range and navigation
@@ -459,7 +498,7 @@ an argv-based platform opener, never a shell.
 The mouse works too. Click a row to select it and double-click the same cell
 within 400 ms to open it. Click a view tab or detail tab. Board column headers
 focus that column, including empty columns; list headers sort by ID, priority,
-status or title (custom column layouts ignore header sorting). The wheel moves
+status, title or update time, and clicking the sorted column reverses it. The wheel moves
 three rows in the list/board or scrolls detail under the pointer. Dragging the
 split divider resizes the panes, retaining the width in UI state. Mouse routing
 is disabled while a modal input is open.
@@ -489,11 +528,13 @@ Everything else becomes the title. Escape a token with `\` (`\#1`), or put liter
 Pickers are fuzzy, keyboard-first, and preselect current values. The full create and edit form covers every capability-supported field, plus description and criteria editing. Backlog.md forms omit native `rank`, and its priority picker omits `urgent`; shortcuts cannot select hidden provider choices.
 
 The quick-add prompt previews parsed tokens as chips; `tab` opens the complete
-form. In the form, tab/shift-tab or up/down move between fields, enter saves,
-and esc cancels. List values are comma-separated; description, plan, notes,
-and summary accept `\\n` for line breaks. Criteria and definition of done use
-JSON arrays of `{ "text": "...", "checked": false }` entries, with optional
-`evidence`. Invalid values remain in the form with an inline error. `N` defaults
+form, before or after a title is typed. In the form, tab/shift-tab or up/down
+move between fields, enter saves, and esc cancels. List values are
+comma-separated; description, plan, notes, and summary accept `\\n` for line
+breaks. Criteria and definition of done take one entry per line: `- [ ] text`
+or `- [x] text` as in item files, or plain text for an unchecked entry, with an
+indented `Evidence:` line after an entry to record its evidence. Invalid values
+remain in the form with an inline error. `N` defaults
 the parent to the selected item. Sources without create capability disable capture;
 when multiple create-capable sources are configured, `n` offers a source picker
 before quick-add; `N` uses the selected parent's source. Numeric parent and
@@ -521,7 +562,7 @@ terminal clamps the rendered split without discarding the saved width.
 
 Startup reads state before running Bubble Tea; after quitting, the final model
 is saved atomically outside the update loop. Invalid, unsupported-version or
-oversized state is ignored with a visible footer warning. Missing views fall
+oversized state is ignored with a visible status bar warning. Missing views fall
 back to Next; missing selections fall back to the first row. State is disposable
 and never recreates deleted config views. Session query/layout overrides take
 precedence over a tab's config while that declaration is unchanged; editing

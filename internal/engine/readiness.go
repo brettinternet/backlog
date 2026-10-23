@@ -312,17 +312,15 @@ func priority(p model.Priority) int {
 	return 4
 }
 
-// Text is the compact ranking explanation. Exclusion reasons remain available
-// in the structured explanation and are appended for non-candidates.
+// Text is the compact ranking explanation: priority, unblock impact, and the
+// reasons that keep an item out, with their refs or values. Opaque rank keys
+// stay in the structured explanation.
 func (e Explanation) Text() string {
 	p := string(e.Priority)
 	if p == "" {
 		p = "unset"
 	}
 	parts := []string{p}
-	if e.Rank != "" {
-		parts = append(parts, "rank "+e.Rank)
-	}
 	impact := fmt.Sprintf("unblocks %d", e.UnblockImpact)
 	if len(e.Unblocks) > 0 {
 		refs := make([]string, 0, 3)
@@ -335,14 +333,31 @@ func (e Explanation) Text() string {
 		impact += " (" + strings.Join(refs, ", ") + ")"
 	}
 	parts = append(parts, impact)
-	if e.Readiness != Ready {
-		codes := make([]string, len(e.Reasons))
-		for i, r := range e.Reasons {
-			codes[i] = r.Code
+	var reasons []string
+	for _, reason := range e.Reasons {
+		if reason.Code != "candidate" {
+			reasons = append(reasons, reason.text())
 		}
-		parts = append(parts, string(e.Readiness)+": "+strings.Join(codes, ", "))
+	}
+	if len(reasons) > 0 {
+		parts = append(parts, strings.Join(reasons, "; "))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// text is a reason code with the refs or values it names.
+func (r Reason) text() string {
+	if len(r.Refs) > 0 {
+		ids := make([]string, len(r.Refs))
+		for i, ref := range r.Refs {
+			ids[i] = ref.ID
+		}
+		return r.Code + ": " + strings.Join(ids, ", ")
+	}
+	if len(r.Values) > 0 {
+		return r.Code + ": " + strings.Join(r.Values, ", ")
+	}
+	return r.Code
 }
 
 // canonical preserves source identity while treating padded numeric segments as

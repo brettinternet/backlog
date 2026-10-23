@@ -21,12 +21,12 @@ func TestMouseNavigation(t *testing.T) {
 		next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		m = next.(Model)
 	}
-	click(10, 5)
+	click(10, 4)
 	if m.selected != 2 || m.detailOpen {
 		t.Fatal("single click did not select row")
 	}
 	now = now.Add(200 * time.Millisecond)
-	click(10, 5)
+	click(10, 4)
 	if !m.detailOpen || !m.detailFocus {
 		t.Fatal("double click did not open detail")
 	}
@@ -41,20 +41,20 @@ func TestMouseNavigation(t *testing.T) {
 	if m.selected != 2 {
 		t.Fatal("wheel up")
 	}
-	click(16, 2)
-	if !strings.Contains(m.query, "sort:priority") {
+	click(drawnAt(t, m, 1, "Status"), 1)
+	if !strings.Contains(m.query, "sort:status") {
 		t.Fatal("header click did not sort")
 	}
 	// View tabs use terminal-cell positions, matching wide project names.
 	m.opts.Project = "修正"
-	x := ansi.StringWidth("backlog · 修正 · [Next]  ") + 1
-	click(x, 0)
+	click(drawnAt(t, m, 0, "Active"), 0)
 	if m.view != 1 {
 		t.Fatal("view tab click missed")
 	}
 	m = shellFixture(3)
 	m.opts.Now = func() time.Time { return now }
 	m.width = 160
+	m = send(m, "j")
 	m = queryKey(m, "enter")
 	split := m.listWidth()
 	click(split, 10)
@@ -72,8 +72,8 @@ func TestMouseNavigation(t *testing.T) {
 	}
 	// Detail tab hit-testing, then wheel scroll in the detail region.
 	m.width = 240
-	click(m.listWidth()+1+ansi.StringWidth("[Overview]  ")+1, 3)
-	if m.detailTab != tabDescription {
+	click(drawnAt(t, m, 3, "Notes"), 3)
+	if m.detailTab != tabNotes {
 		t.Fatalf("detail tab: %v", m.detailTab)
 	}
 	m.detailLines = make([]string, 100)
@@ -88,11 +88,11 @@ func TestMouseNavigation(t *testing.T) {
 	if count < 2 {
 		t.Fatal("fixture needs columns")
 	}
-	click(width+2, 2)
+	click(width+boardGap, 1)
 	if m.boardColumn() != 1 {
 		t.Fatal("board header click did not focus empty column")
 	}
-	click(2*(width+1)+1, 3)
+	click(2*(width+boardGap)+1, 3)
 	if m.boardColumn() != 2 {
 		t.Fatal("board card hit-testing")
 	}
@@ -103,4 +103,15 @@ func TestMouseNavigation(t *testing.T) {
 	if m.selected != selected || !m.launcher.open {
 		t.Fatal("mouse escaped modal")
 	}
+}
+
+// drawnAt is the terminal cell where text first appears on a frame row.
+func drawnAt(t *testing.T, m Model, row int, text string) int {
+	t.Helper()
+	line := ansi.Strip(strings.Split(m.View().Content, "\n")[row])
+	i := strings.Index(line, text)
+	if i < 0 {
+		t.Fatalf("%q not drawn on row %d: %q", text, row, line)
+	}
+	return ansi.StringWidth(line[:i])
 }

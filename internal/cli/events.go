@@ -18,9 +18,9 @@ import (
 )
 
 func eventsCommand(directory *string, out io.Writer) *urfave.Command {
-	return &urfave.Command{Name: "events", Usage: "Read or follow project events", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{
-		&urfave.BoolFlag{Name: "follow", Usage: "Watch sources and stream new events"},
-		&urfave.StringFlag{Name: "since", Usage: "Resume after event ID (exclusive)"},
+	return &urfave.Command{Name: "events", Usage: "Print or follow project events", ArgsUsage: "[QUERY]", Category: categoryAutomation, Flags: []urfave.Flag{
+		&urfave.BoolFlag{Name: "follow", Aliases: []string{"f"}, Usage: "Watch sources and stream new events"},
+		&urfave.StringFlag{Name: "since", Usage: "Start after event `ID`"},
 	}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 		cfg, err := loadConfig(cmd, *directory)
 		if err != nil {

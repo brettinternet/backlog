@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,22 +78,34 @@ func (s *Session) contains(text string) bool {
 // Reset starts a new observation window; call after the preceding frame arrived.
 func (s *Session) Reset() { s.mu.Lock(); s.output = ""; s.mu.Unlock() }
 func (s *Session) WaitFor(text string, timeout time.Duration) error {
+	return s.wait("waiting for "+strconv.Quote(text), func() bool { return s.contains(text) }, timeout)
+}
+
+// WaitGone waits until text has left the screen, such as a closed modal.
+func (s *Session) WaitGone(text string, timeout time.Duration) error {
+	return s.wait("waiting for "+strconv.Quote(text)+" to clear", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return !strings.Contains(s.screen.String(), text)
+	}, timeout)
+}
+func (s *Session) wait(what string, done func() bool, timeout time.Duration) error {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
-		if s.contains(text) {
+		if done() {
 			return nil
 		}
 		select {
 		case <-s.changed:
 		case <-s.done:
 			<-s.drained
-			if s.contains(text) {
+			if done() {
 				return nil
 			}
-			return fmt.Errorf("child exited (%v), waiting for %q: %q", s.err, text, s.Output())
+			return fmt.Errorf("child exited (%v), %s: %q", s.err, what, s.Output())
 		case <-timer.C:
-			return fmt.Errorf("timeout waiting for %q: %q", text, s.Output())
+			return fmt.Errorf("timeout %s: %q", what, s.Output())
 		}
 	}
 }

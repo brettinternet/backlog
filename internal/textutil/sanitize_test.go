@@ -23,3 +23,23 @@ func TestTerminalControls(t *testing.T) {
 		t.Fatalf("table injection: %q", got)
 	}
 }
+
+// Styled detail output may keep renderer colors but never terminal commands,
+// including C1 controls and sequences cut off at the end of the text.
+func TestStyledTerminalControls(t *testing.T) {
+	t.Parallel()
+	for input, want := range map[string]string{
+		"\x1b[1;38;2;1;2;3mbold\x1b[0m":  "\x1b[1;38;2;1;2;3mbold\x1b[0m",
+		"\x1b[2Jvisible\x1b[H":           "visible",
+		"\x1b]52;c;bad\avisible":         "visible",
+		"\x1b]8;;https://x\x1b\\visible": "visible",
+		"\x1bPhidden\x1b\\visible":       "visible",
+		"\x1b(Bvisible\u009b\x1b[":       "visible",
+		"\x1b[?25lvisible\x1b[>4;1m":     "visible",
+		"a\x00\x07b\nc\td":               "ab\nc\td",
+	} {
+		if got := textutil.SanitizeStyled(input); got != want {
+			t.Errorf("%q => %q, want %q", input, got, want)
+		}
+	}
+}

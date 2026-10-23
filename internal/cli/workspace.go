@@ -5,9 +5,6 @@ import (
 	urfave "github.com/urfave/cli/v3"
 )
 
-func workspaceFlag() urfave.Flag {
-	return &urfave.StringFlag{Name: "workspace", Usage: "Browse a configured workspace NAME"}
-}
 func loadBrowseConfig(cmd *urfave.Command, directory string, implicit bool) (project.Config, error) {
 	cfg, err := loadConfig(cmd, directory)
 	if err != nil || !implicit && cmd.String("workspace") == "" {

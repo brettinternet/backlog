@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
@@ -48,7 +46,7 @@ func (m *Model) updateEditKey(key string) (tea.Cmd, bool) {
 		action := editAction{kind: editSelfToggle, me: m.opts.Me}
 		m.startEdit(action)
 		return m.editCommand(action, false), true
-	case "l":
+	case "#":
 		return m.beginPicker(pickerLabels), true
 	case "m":
 		return m.beginPicker(pickerMilestone), true
@@ -163,11 +161,10 @@ func (m Model) criterionCount() int {
 }
 
 func (m *Model) keepCriterionVisible() {
-	line := criteriaLineAt(m.detailLines, m.criteriaCursor)
-	if line < 0 {
+	if m.detailTab != tabCriteria || m.criteriaCursor < 0 || m.criteriaCursor >= len(m.detailCriteria) {
 		return
 	}
-	visible := max(1, m.height-6)
+	line, visible := m.detailCriteria[m.criteriaCursor], m.detailVisible()
 	if line < m.detailScroll {
 		m.detailScroll = line
 	} else if line >= m.detailScroll+visible {
@@ -187,83 +184,4 @@ func criterionAt(item model.Item, cursor int) (string, int) {
 		return "Definition of done", cursor
 	}
 	return "", -1
-}
-
-func criteriaLineAt(lines []string, cursor int) int {
-	position := 0
-	for i, line := range lines {
-		if strings.Contains(line, "[ ]") || strings.Contains(line, "[x]") || strings.Contains(line, "[X]") {
-			if position == cursor {
-				return i
-			}
-			position++
-		}
-	}
-	return -1
-}
-
-func (m Model) editView() tea.View {
-	lines := []string{"backlog · " + textutil.Line(m.opts.Project)}
-	if m.picker.open {
-		lines = append(lines, ""+textutil.Line(m.picker.title)+"  (type to filter · enter select · esc cancel)")
-		if !m.picker.inputOnly {
-			lines = append(lines, "> "+textutil.Line(m.picker.query))
-			if m.picker.loading {
-				lines = append(lines, "⠋ Loading choices…")
-			} else if len(m.picker.filtered) == 0 {
-				if m.picker.free && m.picker.query != "" {
-					lines = append(lines, "  Create "+textutil.Line(m.picker.query))
-				} else {
-					lines = append(lines, "  No matches.")
-				}
-			} else {
-				start := max(0, m.picker.cursor-max(1, m.height-7))
-				end := min(len(m.picker.filtered), start+max(1, m.height-7))
-				for i := start; i < end; i++ {
-					choice := m.picker.filtered[i]
-					cursor, selected := "  ", " "
-					if i == m.picker.cursor {
-						cursor = "> "
-					}
-					if m.picker.multi && m.picker.selected[choice.value] {
-						selected = "✓"
-					}
-					label := choice.label
-					if choice.current && !m.picker.multi {
-						label += " · current"
-					}
-					lines = append(lines, cursor+selected+" "+textutil.Line(label))
-				}
-			}
-		}
-		footer := "enter apply · space toggle · esc cancel"
-		if m.picker.inputOnly {
-			footer = "Title: " + textutil.Line(m.picker.query) + "▏ · enter save · esc cancel"
-		} else if m.picker.kind == pickerBlocker {
-			footer = "enter select · d remove blocker · esc cancel"
-		} else if m.picker.free {
-			footer = "enter apply/create · space toggle · esc cancel"
-		}
-		lines = append(lines, footer)
-	} else {
-		if m.visual || m.marks != nil && m.marks.size() > 0 {
-			// editCommand archives every marked and visual-range item, not the cursor row.
-			lines = append(lines, "Archive all marked items?  enter/y confirm · esc/n cancel")
-		} else if row, ok := m.selectedRow(); ok {
-			lines = append(lines, "Archive selected item?  enter/y confirm · esc/n cancel")
-			lines = append(lines, row.Ref.ID+" · "+textutil.Line(row.Title))
-		}
-	}
-	for len(lines) < m.height {
-		lines = append(lines, "")
-	}
-	for i := range lines {
-		lines[i] = cell(lines[i], m.width)
-	}
-	if len(lines) > m.height {
-		lines = lines[:m.height]
-	}
-	v := tea.NewView(strings.Join(lines, "\n"))
-	v.AltScreen = true
-	return v
 }
