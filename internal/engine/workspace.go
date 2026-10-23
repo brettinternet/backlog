@@ -249,6 +249,7 @@ func workspaceRanking(ctx context.Context, cfg project.Config, items []model.Ite
 func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnapshot, error) {
 	s := ReadSnapshot{ctx: ctx, Query: query.Snapshot{Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
 	archives := map[model.Ref]bool{}
+	stale := map[model.Ref]bool{}
 	for _, p := range cfg.Workspace.Projects {
 		s.Query.Coordination = s.Query.Coordination || p.Coordination.Worklease != nil
 		reads, err := loadReads(ProjectContext(ctx, p), p, archived, true)
@@ -260,10 +261,12 @@ func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived bool) 
 			for alias, entry := range cfg.Workspace.Sources {
 				if cfg.Workspace.Projects[entry.Project].Project.ID == p.Project.ID && entry.ID == item.Ref.Source {
 					state := reads.Query.States[item.Ref]
+					isStale := reads.stale[item.Ref]
 					item.Ref.Source = alias
 					item.Project = p.Project.ID
 					s.Query.States[item.Ref] = state
 					archives[item.Ref] = state.Archived
+					stale[item.Ref] = isStale
 					break
 				}
 			}
@@ -272,7 +275,7 @@ func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived bool) 
 	}
 	s.Query.Items = workspaceItems(cfg, s.Query.Items)
 	var warnings []string
-	s.Ranking, _, warnings = workspaceRanking(ctx, cfg, s.Query.Items, archives, nil)
+	s.Ranking, _, warnings = workspaceRanking(ctx, cfg, s.Query.Items, archives, stale)
 	s.Warnings = append(s.Warnings, warnings...)
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)

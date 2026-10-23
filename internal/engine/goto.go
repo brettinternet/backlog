@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
@@ -18,12 +17,9 @@ func GoToItems(ctx context.Context, cfg project.Config) ([]Row, error) {
 		if err != nil {
 			return nil, err
 		}
-		delta, err := backend.Load(ctx, source.Cursor{IncludeArchive: true})
+		delta, err := loadObservation(ctx, backend, source.Cursor{IncludeArchive: true})
 		if err != nil {
 			return nil, err
-		}
-		if delta.Coverage != source.Complete {
-			return nil, fmt.Errorf("source %s has incomplete coverage: %v", c.ID, delta.Findings)
 		}
 		for _, item := range delta.Items {
 			rows = append(rows, Row{Ref: item.Ref, Title: item.Title, Version: item.Version, Status: item.Status, Priority: item.Priority})

@@ -238,14 +238,15 @@ func claimedNextItem(ctx context.Context, cfg project.Config, c model.Coordinato
 			if err != nil {
 				return model.Item{}, err
 			}
-			delta, err := backend.Load(ctx, source.Cursor{IncludeArchive: true})
+			delta, err := loadObservation(ctx, backend, source.Cursor{IncludeArchive: true})
 			if err != nil {
-				return model.Item{}, err
+				return model.Item{}, source.Refuse("unavailable", err.Error())
 			}
-			if delta.Coverage != source.Complete {
-				return model.Item{}, source.Refuse("unavailable", "cannot resolve claim from incomplete source")
+			for _, item := range delta.Items {
+				if !delta.Stale[item.Ref] {
+					items = append(items, item)
+				}
 			}
-			items = append(items, delta.Items...)
 		}
 	}
 	matches := []model.Item{}

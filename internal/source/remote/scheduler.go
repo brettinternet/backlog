@@ -63,6 +63,8 @@ type Client struct {
 	HTTP          *http.Client
 	Scheduler     *Scheduler // nil uses the process-wide host/account scheduler
 	Secrets       *Secrets
+	// RawAuthorization is required by Linear personal API keys (not OAuth).
+	RawAuthorization bool
 }
 
 // Do serializes requests through body consumption. It never retries a write,
@@ -100,7 +102,11 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	req.Header.Set("Authorization", "Bearer "+credential.token)
+	if c.RawAuthorization {
+		req.Header.Set("Authorization", credential.token)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+credential.token)
+	}
 	key := sha256.Sum256([]byte(req.Method + "\x00" + req.URL.String() + "\x00" + req.Header.Get("Accept") + "\x00" + credential.token))
 	cacheable := req.Method == http.MethodGet && req.Body == nil
 	if cacheable && q.etags[key] != "" {
@@ -173,6 +179,16 @@ func retryDeadline(header http.Header, now time.Time) time.Time {
 					deadline = now.Add(time.Duration(reset) * time.Second)
 				}
 				if deadline.After(until) {
+					until = deadline
+				}
+			}
+		}
+	}
+	// Linear reports both request and complexity reset epochs in milliseconds.
+	for _, quota := range []string{"Requests", "Complexity"} {
+		if header.Get("X-RateLimit-"+quota+"-Remaining") == "0" {
+			if ms, err := strconv.ParseInt(header.Get("X-RateLimit-"+quota+"-Reset"), 10, 64); err == nil && ms > 0 {
+				if deadline := time.UnixMilli(ms); deadline.After(until) {
 					until = deadline
 				}
 			}

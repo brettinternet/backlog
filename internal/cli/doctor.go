@@ -272,6 +272,10 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 			c.Fix = "Review bl trust --show, then run bl trust"
 			return c
 		}
+		if s.Type == "linear" {
+			c.Message = "Linear configured; reads verify credentials, organization and team bindings"
+			continue
+		}
 		if s.Type == "github" {
 			c.Message = "GitHub configured; reads verify credentials, repository and project bindings"
 			continue

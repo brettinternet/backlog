@@ -75,8 +75,8 @@ config are always trusted. Grants never launch anything by themselves.
 Untrusted programs and network sources remain inert on every interface. The TUI
 shows a persistent trust banner and can still browse local native sources.
 Hooks and actions enforce `Config.RequireTrusted` before execution. This build
-ships native, [Backlog.md](backlog-md.md), Beads, [GitHub](github.md), and external
-adapters; Linear and Jira remain unavailable. Doctor does not execute GitHub
+ships native, [Backlog.md](backlog-md.md), Beads, [GitHub](github.md), [Linear](linear.md),
+and external adapters; Jira remains unavailable. Doctor does not execute provider
 credential helpers; actual reads verify credentials and provider bindings.
 
 `bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
@@ -151,7 +151,10 @@ See [import.md](import.md) for field mappings and skipped content.
 
 `--workspace NAME` reads all configured member projects with their own statuses and trust. Workspace item JSON adds `project` (the project identity); `source` is the stable `url.QueryEscape(project.id)/source-id` key. Without this flag, `ls` retains project scope. See [format.md](format.md) for cross-project references.
 
-Lists native items. With no `is:` term in QUERY or the view, `is:open` is
+Lists source items. Partial provider scans are usable: fresh rows may be ready
+for `next`, but retained stale rows and missing or stale blockers never authorize
+selection. Unknown coverage or error findings fail the read closed.
+With no `is:` term in QUERY or the view, `is:open` is
 added, so closed items need `is:closed` (or another `is:` term). Archives are
 loaded only for a positive `is:archived` term; archived items are never ready.
 Query terms use [query.md](query.md); multiple positional

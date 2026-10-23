@@ -40,6 +40,7 @@ type SourceConfig struct {
 	Repo          string               `yaml:"repo,omitempty" json:"repo,omitempty"`
 	Run           []string             `yaml:"run,omitempty" json:"run,omitempty"`
 	GitHubProject *GitHubProjectConfig `yaml:"githubProject,omitempty" json:"githubProject,omitempty"`
+	AllowWrites   bool                 `yaml:"allowWrites,omitempty" json:"allowWrites,omitempty"`
 }
 
 // GitHubProjectConfig binds immutable provider IDs, not mutable display names.
