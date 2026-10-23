@@ -35,7 +35,7 @@ Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
 | [GitHub Issues and Projects v2](docs/github.md) | Single-field edits and comments |
 | [Linear](docs/linear.md) | Single-field edits and comments |
 | [External adapters](docs/external-adapter-protocol.md) | JSON-RPC over stdio |
-| Jira Cloud | Not yet available ([status](docs/remote.md)) |
+| Jira Cloud | Not yet available ([API probe](docs/providers/jira.md)) |
 
 Around the backlog: [MCP](docs/mcp.md), [hooks and actions](docs/automation.md),
 an [event stream](docs/events.md), and optional Worklease claims.
