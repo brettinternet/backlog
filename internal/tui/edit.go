@@ -194,6 +194,10 @@ func (m Model) captureTargets() editTargets {
 	if ok {
 		ref = selected.Ref
 	}
+	// Detail edits the item it shows, never marks or a visual range.
+	if m.detailOpen && m.detailFocus {
+		return editTargets{rows: m.data.rows, selected: ref}
+	}
 	return editTargets{rows: m.data.rows, marks: m.marks, selected: ref, visual: m.visual, visualAnchor: m.visualAnchor, cursor: m.selected}
 }
 
@@ -1140,7 +1144,7 @@ func (m *Model) yank(key string) tea.Cmd {
 		m.notice = "Selected item has no value for that yank."
 		return nil
 	}
-	m.notice = "Copied " + key + " to clipboard."
+	m.notice = "Copied " + textutil.Line(value)
 	return osc52(value)
 }
 

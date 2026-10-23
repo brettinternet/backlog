@@ -61,7 +61,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				key = "h"
 			}
 			m.detailFocus = false
-			m.goToSelection = nil
+			m.detached = nil
 			m.navigateBoard(key, 1, false, "")
 			if m.detailOpen {
 				return m, m.scheduleDetail()
@@ -76,7 +76,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.detailFocus = false
-		m.goToSelection = nil
+		m.detached = nil
 		if m.isBoard() {
 			key := "j"
 			if delta < 0 {
@@ -99,7 +99,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		_, spans, _ := m.tabs()
 		for i, s := range spans {
 			if p.X >= s.start && p.X < s.end {
-				m.goToSelection = nil
+				m.detached = nil
 				m.switchView(i)
 				return m, nil
 			}
@@ -142,7 +142,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.detailFocus = false
-	m.goToSelection = nil
+	m.detached = nil
 	if m.loading {
 		return m, nil
 	}

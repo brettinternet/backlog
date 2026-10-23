@@ -148,3 +148,65 @@ func TestEditorConflictChoicesAndInvalidFrontmatter(t *testing.T) {
 	}
 }
 func (msg editSavedMsg) applyTo(m Model) Model { next, _ := m.editorSaved(msg); return next.(Model) }
+
+// Notes open with their text and save by replacing the section, so existing
+// notes are never appended a second time. An append-only source starts empty.
+func TestNotesEditor(t *testing.T) {
+	t.Run("replace", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		root := t.TempDir()
+		dir := filepath.Join(root, "items")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "BL-1.md")
+		initial := "---\nid: BL-1\ntitle: Original\nstatus: todo\ncreated: 2026-10-21T00:00:00Z\nupdated: 2026-10-21T00:00:00Z\n---\n\nBody.\n\n## Notes\n\nFirst note.\n"
+		if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+			t.Fatal(err)
+		}
+		backend, err := native.New(native.Options{ID: "tasks", Prefix: "BL", Path: dir, CommonDir: filepath.Join(root, ".git"), Statuses: map[string]model.StatusCategory{"todo": model.Todo}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := project.Config{Settings: project.Settings{Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}}}
+		store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
+		defer store.Close()
+		waitEdit(t, func() bool { return store.Current().Len() == 1 })
+		ref := model.Ref{Source: "tasks", ID: "BL-1"}
+		item, _, _ := store.Current().Get(ref)
+		m := New(Options{Context: ctx, Store: store, NativeBytes: func(context.Context, model.Item) ([]byte, error) { return os.ReadFile(path) }, NativeSource: func(string) bool { return true }})
+		m.data.rows = []screenRow{{row: engine.Row{Ref: ref, Version: item.Version}}}
+		m.loading = false
+		m.detailOpen, m.detailFocus = true, true
+		m = editPress(m, "i")
+		t.Cleanup(func() { os.Remove(m.longEdit.path) })
+		if buffer, err := os.ReadFile(m.longEdit.path); err != nil || string(buffer) != "First note.\n" {
+			t.Fatalf("notes buffer %q %v", buffer, err)
+		}
+		if err := os.WriteFile(m.longEdit.path, []byte("First note.\n\nSecond note.\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, cmd := m.editorFinished(editFinishedMsg{})
+		if saved := cmd().(editSavedMsg); saved.err != nil || saved.conflict {
+			t.Fatalf("save: %+v", saved)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc, err := format.Parse(data)
+		if err != nil || doc.Item().Notes != "First note.\n\nSecond note." {
+			t.Fatalf("notes after save: %q %v", data, err)
+		}
+	})
+	t.Run("append-only source", func(t *testing.T) {
+		m, _ := editFixture(t, []model.Item{editItem("BL-1", "First")}, model.Capabilities{model.AppendNote: true}, Options{})
+		m.detailOpen, m.detailFocus = true, true
+		m = editPress(m, "i")
+		t.Cleanup(func() { os.Remove(m.longEdit.path) })
+		if m.longEdit.appendOp != model.AppendNote || len(m.longEdit.original) != 0 || m.longEdit.path == "" {
+			t.Fatalf("append-only notes: %+v", m.longEdit)
+		}
+	})
+}

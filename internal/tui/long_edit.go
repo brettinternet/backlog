@@ -55,6 +55,15 @@ func (m *Model) beginLongEdit(section string) tea.Cmd {
 	state := longEditState{ref: row.Ref, version: row.Version, section: section}
 	return m.prepareLongEdit(state, item)
 }
+
+// beginNotes opens Notes with their current text, or an empty note where the
+// source can only append.
+func (m *Model) beginNotes() tea.Cmd {
+	if row, ok := m.selectedRow(); ok && m.capability(row.Ref, model.ReplaceSection) == "" {
+		return m.beginLongEdit("Notes")
+	}
+	return m.beginTextAppend(model.AppendNote)
+}
 func (m *Model) beginTextAppend(op model.Operation) tea.Cmd {
 	row, ok := m.selectedRow()
 	if !ok {
@@ -120,6 +129,8 @@ func (m Model) prepareLongEdit(state longEditState, item model.Item) tea.Cmd {
 				if err == nil {
 					if latest.Version != state.version {
 						err = fmt.Errorf("item changed before editor opened")
+					} else if state.section == "Notes" {
+						content = []byte(latest.Notes + "\n")
 					} else {
 						content = []byte(latest.Description + "\n")
 					}

@@ -152,10 +152,12 @@ the focused column.
 
 `enter`, `l`, or `right` opens detail (`enter` on a group header folds it). In
 detail, `j`/`k` and page keys scroll, `tab`/`shift-tab` change tabs, `m` shows
-more of a long body, and `enter`, `esc`, or `q` close (`enter` follows a
-relation in Relations). `J`/`K` select the next or previous item from either
-pane. At split widths, `h` returns to the list without closing detail; a second
-`h` closes it.
+more of a cut-off body (otherwise it picks a milestone), and `enter`, `esc`, or
+`q` close (`enter` follows a relation in Relations). Edit and copy keys work in
+detail on the item shown, never on marks. If an edit moves the item out of the
+view, detail keeps showing it until you move. `J`/`K` select the next or
+previous item from either pane, counting from where a moved item was. At split
+widths, `h` returns to the list without closing detail; a second `h` closes it.
 
 `ctrl-p` opens go-to: fuzzy search over every ID and title, including closed and
 archived items (up to 100 matches). `enter` opens detail without changing the
@@ -220,9 +222,9 @@ order follows config. Pickers never edit config. Unsupported operations show the
 missing capability in the status bar instead of opening.
 
 **Marks:** `space` marks an item (outside the Criteria tab), `V` starts a visual
-range, `ctrl-a` marks the view. Edits apply to the marks, or to the selection
-when nothing is marked. `esc` clears marks or closes detail. `.` repeats the
-last edit on the current targets.
+range, `ctrl-a` marks the view. Edits from the list apply to the marks, or to
+the selection when nothing is marked. `esc` clears marks or closes detail. `.`
+repeats the last edit on the current targets.
 
 **Status keys:** `S` and `D` use `workflow.start` and `workflow.done`, falling
 back to the first active or done status.
@@ -283,7 +285,9 @@ Invalid values stay in the form with an error. Backlog.md forms omit `rank` and
 | `e` | Description | Replacing it |
 | `E` | Native: the whole item file. Others: the full form. | Replacing it |
 | `c` | A new comment | Appending |
-| `i` | A new note | Appending |
+| `i` | Notes | Replacing them |
+
+A source that can only append notes opens an empty note instead.
 
 If the item changed while you edited:
 
@@ -429,7 +433,7 @@ keys:
 | `description` | `e` | Edit description |
 | `edit` | `E` | Edit all fields |
 | `comment` | `c` | Comment |
-| `note` | `i` | Add note |
+| `note` | `i` | Edit notes |
 | `criterion` | `x` | Toggle criterion |
 | `claim` | `C` | Claim / release |
 | `archive` | `d d` | Archive |

@@ -492,41 +492,57 @@ func TestEditKeysMutateFakeSource(t *testing.T) {
 		}},
 	}
 	for _, test := range cases {
+		criteria := test.name == "criteria check" || test.name == "criteria uncheck"
 		for _, marked := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/marked=%t", test.name, marked), func(t *testing.T) {
-				items := []model.Item{test.item(), editItem("BL-2", "Second")}
-				if marked {
-					other := test.item()
-					other.Ref.ID = "BL-3"
-					items = append(items, other)
+			for _, detail := range []bool{false, true} {
+				if criteria && !detail {
+					continue // criteria toggle in the Criteria tab
 				}
-				if test.name == "remove blocker" {
-					items[0].BlockedBy = []model.Ref{{Source: "tasks", ID: "BL-2"}}
-				}
-				m, backend := editFixture(t, items, allEditCapabilities, Options{Me: "@me", Labels: []string{"configured"}, Milestones: []project.Milestone{{Key: "m-1", Name: "First milestone"}}})
-				if marked {
-					m = editPress(m, "space")
-					m = editPress(m, "j")
-					m = editPress(m, "j")
-					m = editPress(m, "space")
-					m = editPress(m, "k")
-					m = editPress(m, "k")
-				}
-				if test.name == "criteria check" || test.name == "criteria uncheck" {
-					m.detailOpen, m.detailFocus, m.detailTab = true, true, tabCriteria
-				}
-				for _, key := range test.keys {
-					m = editPress(m, key)
-				}
-				item := itemFrom(t, backend, "BL-1")
-				test.check(t, item)
-				if marked {
-					test.check(t, itemFrom(t, backend, "BL-3"))
-				}
-				if len(backend.applied()) == 0 {
-					t.Fatal("key produced no fake-source mutation")
-				}
-			})
+				t.Run(fmt.Sprintf("%s/marked=%t/detail=%t", test.name, marked, detail), func(t *testing.T) {
+					items := []model.Item{test.item(), editItem("BL-2", "Second")}
+					if marked {
+						other := test.item()
+						other.Ref.ID = "BL-3"
+						items = append(items, other)
+					}
+					if test.name == "remove blocker" {
+						items[0].BlockedBy = []model.Ref{{Source: "tasks", ID: "BL-2"}}
+					}
+					m, backend := editFixture(t, items, allEditCapabilities, Options{Me: "@me", Labels: []string{"configured"}, Milestones: []project.Milestone{{Key: "m-1", Name: "First milestone"}}})
+					if marked {
+						m = editPress(m, "space")
+						m = editPress(m, "j")
+						m = editPress(m, "j")
+						m = editPress(m, "space")
+						m = editPress(m, "k")
+						m = editPress(m, "k")
+					}
+					if detail {
+						m.detailOpen, m.detailFocus = true, true
+						if criteria {
+							m.detailTab = tabCriteria
+						}
+					}
+					for _, key := range test.keys {
+						m = editPress(m, key)
+					}
+					item := itemFrom(t, backend, "BL-1")
+					test.check(t, item)
+					if marked {
+						other := itemFrom(t, backend, "BL-3")
+						// Detail edits only the item it shows.
+						if detail && other.Version != "v1" {
+							t.Fatalf("detail edit changed a marked item: %+v", other)
+						}
+						if !detail {
+							test.check(t, other)
+						}
+					}
+					if len(backend.applied()) == 0 {
+						t.Fatal("key produced no fake-source mutation")
+					}
+				})
+			}
 		}
 	}
 }
@@ -623,6 +639,42 @@ func TestEditRepeatUndoRedoAndMarkedTargets(t *testing.T) {
 			}
 		}
 	})
+}
+
+// An edit from focused detail can move its item out of the view. Detail must
+// keep the item, and keep it current, or the next key edits the neighbor that
+// took its place.
+func TestDetailHoldsItemThatLeavesView(t *testing.T) {
+	m, backend := editFixture(t, []model.Item{editItem("BL-1", "First"), editItem("BL-2", "Second"), editItem("BL-3", "Third")}, allEditCapabilities, Options{})
+	projector := engine.NewProjector(m.opts.Context, project.Config{Settings: project.Settings{Statuses: m.opts.Statuses}})
+	t.Cleanup(projector.Close)
+	m.opts.Projector, m.query = projector, "status:todo sort:id"
+	m.project()
+	m = settleQuery(t, m)
+	m.detailOpen, m.detailFocus = true, true
+	sync := func(status string) {
+		t.Helper()
+		waitEdit(t, func() bool {
+			item, _, _ := m.opts.Store.Current().Get(model.Ref{Source: "tasks", ID: "BL-1"})
+			return item.Status == status
+		})
+		next, _ := m.Update(snapshotMsg{snapshot: m.opts.Store.Current()})
+		m = settleQuery(t, next.(Model))
+		if row, _ := m.selectedRow(); row.Ref.ID != "BL-1" || row.Status != status || len(m.data.rows) != 2 {
+			t.Fatalf("detail after its item left the view: %+v, %d rows", row, len(m.data.rows))
+		}
+	}
+	m = editPress(m, ">")
+	sync("active")
+	m = editPress(m, ">")
+	if first, second := itemFrom(t, backend, "BL-1"), itemFrom(t, backend, "BL-2"); first.Status != "done" || second.Status != "todo" {
+		t.Fatalf("second edit: BL-1 %q, BL-2 %q", first.Status, second.Status)
+	}
+	sync("done")
+	m = editPress(m, "J")
+	if row, _ := m.selectedRow(); row.Ref.ID != "BL-2" || m.detached != nil {
+		t.Fatalf("J from a held item: %+v", row)
+	}
 }
 
 func TestUnsupportedCapabilitiesAndFailureDetails(t *testing.T) {

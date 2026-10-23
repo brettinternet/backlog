@@ -174,10 +174,15 @@ type Model struct {
 	launcherSerial           uint64
 	goToSession              uint64
 	goToWorker               *goToWorker
-	goToSelection            *engine.Row
-	detailHistory            []detailStop // items followed from, oldest first
-	catalog                  *engine.Catalog
-	mouse                    mouseState
+	// detached is an item detail shows outside the list: a go-to result, a
+	// followed relation, or an item focused detail held when it left the view.
+	// heldPlace says where a held item was: 1 where the list selection is now,
+	// -1 after the last row, 0 nowhere.
+	detached      *engine.Row
+	heldPlace     int
+	detailHistory []detailStop // items followed from, oldest first
+	catalog       *engine.Catalog
+	mouse         mouseState
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -288,8 +293,8 @@ func (m Model) waitDetail() tea.Cmd {
 	}
 }
 func (m Model) selectedRow() (engine.Row, bool) {
-	if m.goToSelection != nil && m.detailOpen {
-		return *m.goToSelection, true
+	if m.detached != nil && m.detailOpen {
+		return *m.detached, true
 	}
 	if m.selected < 0 || m.selected >= len(m.data.rows) {
 		return engine.Row{}, false
@@ -537,7 +542,7 @@ func (m *Model) switchView(n int) {
 	m.captureView()
 	m.serial++
 	m.view = n
-	m.goToSelection = nil
+	m.detached = nil
 	m.query = m.views[n].Config.Query
 	m.restore = &m.views[n].Selection
 	m.editor = queryEditor{}
@@ -671,6 +676,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.failure = ""
 		m.catalog = msg.Catalog
+		m.refreshDetached()
 		m.groups = msg.Groups
 		m.ungrouped = msg.Ungrouped
 		m.serial++
@@ -683,6 +689,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.serial != m.serial {
 			return m, nil
 		}
+		shown, holding := m.selectedRow()
+		holding = holding && m.detailOpen && m.detailFocus && m.detached == nil && m.selected == msg.from
 		m.data = msg.data
 		m.prepared = msg.serial
 		m.loading = false
@@ -694,6 +702,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.selected >= 0 && m.selected == msg.from {
 			m.selected = msg.selected
+		}
+		// Focused detail keeps its item when an edit moves it out of the view,
+		// so the next key can't act on the neighbor that took its place.
+		if holding && msg.selected < 0 && m.catalog != nil {
+			if row, ok := m.catalog.Row(shown.Ref); ok {
+				m.detached, m.heldPlace, m.detailHistory = &row, 1, nil
+				if m.selected >= len(m.data.rows) {
+					m.heldPlace = -1
+				}
+			}
 		}
 		m.selected = max(0, min(m.selected, len(m.data.rows)-1))
 		m.keepBoardVisible()
@@ -883,7 +901,7 @@ func screenOffset(key string, visible, n int) int {
 // canonicalKey keeps the established contextual action semantics in one place.
 func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	if !m.detailOpen {
-		m.goToSelection = nil
+		m.detached = nil
 	}
 	if s == "pagedown" {
 		s = "ctrl+d"
@@ -987,8 +1005,8 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.detailFocus = false
-			if m.goToSelection != nil {
-				m.goToSelection = nil
+			if m.detached != nil {
+				m.detached = nil
 				return m, m.scheduleDetail()
 			}
 			return m, nil
@@ -1012,7 +1030,8 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				m.detailExpanded = !m.detailExpanded
 				return m, m.showDetail()
 			}
-			return m, nil
+			cmd, _ := m.updateItemKey(s)
+			return m, cmd
 		case "x", "space", " ":
 			if m.detailTab == tabCriteria {
 				return m, m.toggleCriterion()
@@ -1052,6 +1071,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		case "G":
 			m.scrollDetail(len(m.detailLines))
 			m.entryCursor = max(0, len(m.detailEntries)-1)
+		default:
+			cmd, _ := m.updateItemKey(s)
+			return m, cmd
 		}
 		return m, nil
 	}
@@ -1090,11 +1112,6 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if !m.detailFocus {
-		if s == "y" || s == "d" {
-			m.prefix = s
-			m.inputSerial++
-			return m, nil
-		}
 		if s == "space" || s == " " {
 			m.markCurrent()
 			return m, nil
@@ -1126,7 +1143,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if cmd, handled := m.updateEditKey(s); handled {
+		if cmd, handled := m.updateItemKey(s); handled {
 			return m, cmd
 		}
 	}
@@ -1248,8 +1265,26 @@ func (m *Model) closeDetail() {
 func (m *Model) stepItem(forward bool) tea.Cmd {
 	m.count = 0
 	m.inputSerial++
-	if m.goToSelection != nil {
-		return nil
+	if m.detached != nil {
+		if m.heldPlace == 0 {
+			return nil // go-to and followed items have no place in the list
+		}
+		// The held item sat just before the list selection, or after the last row.
+		target := m.selected
+		if target >= len(m.data.rows) || m.data.rows[target].header != "" || forward != (m.heldPlace > 0) {
+			next, ok := m.data.nextItem(m.selected, forward)
+			if !ok {
+				return nil
+			}
+			target = next
+		}
+		m.detached, m.selected = nil, target
+		if m.isBoard() {
+			m.keepBoardVisible()
+		} else {
+			m.keepSelectionVisible()
+		}
+		return m.scheduleDetail()
 	}
 	previous := m.selected
 	if m.isBoard() {
@@ -1270,11 +1305,12 @@ func (m *Model) stepItem(forward bool) tea.Cmd {
 	return nil
 }
 
-// detailStop is an item detail followed a relation from: a go-to or followed
-// row, or nil for the list selection.
+// detailStop is an item detail followed a relation from: a detached row, or
+// nil for the list selection.
 type detailStop struct {
 	row    *engine.Row
 	cursor int
+	place  int // heldPlace of row
 }
 
 // followRelation opens the relation under the cursor as go-to does, keeping the
@@ -1294,27 +1330,37 @@ func (m *Model) followRelation() tea.Cmd {
 		m.notice = textutil.Line(target.Ref.ID) + " can't open: " + m.unloadedReason(target.Ref) + "."
 		return nil
 	}
-	if m.goToSelection == nil {
+	if m.detached == nil {
 		m.detailHistory = nil // a chain starts at the list selection
 	}
-	m.detailHistory = append(m.detailHistory, detailStop{row: m.goToSelection, cursor: m.entryCursor})
-	m.goToSelection = &row
+	m.detailHistory = append(m.detailHistory, detailStop{row: m.detached, cursor: m.entryCursor, place: m.heldPlace})
+	m.detached, m.heldPlace = &row, 0
 	m.entryCursor = 0
 	return m.showDetail()
 }
 
 // followBack returns to the item a relation was followed from.
 func (m *Model) followBack() tea.Cmd {
-	if m.goToSelection == nil || len(m.detailHistory) == 0 {
+	if m.detached == nil || len(m.detailHistory) == 0 {
 		m.detailHistory = nil
 		m.notice = "No previous item."
 		return nil
 	}
 	stop := m.detailHistory[len(m.detailHistory)-1]
 	m.detailHistory = m.detailHistory[:len(m.detailHistory)-1]
-	m.goToSelection = stop.row
+	m.detached, m.heldPlace = stop.row, stop.place
+	m.refreshDetached()
 	m.entryCursor = stop.cursor
 	return m.showDetail()
+}
+
+// refreshDetached keeps a detached item current, since no projection lists it.
+func (m *Model) refreshDetached() {
+	if m.detached != nil && m.catalog != nil {
+		if row, ok := m.catalog.Row(m.detached.Ref); ok {
+			m.detached = &row
+		}
+	}
 }
 
 // unloadedReason says why a relation's target isn't in the snapshot.

@@ -248,7 +248,7 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 		m.launcherSerial++
 		if row.item != nil {
 			item := *row.item
-			m.goToSelection = &item
+			m.detached, m.heldPlace = &item, 0
 			m.detailHistory = nil
 			m.detailOpen = true
 			m.detailFocus = true

@@ -435,7 +435,7 @@ func TestDetailFollowRelations(t *testing.T) {
 
 	cursorAt("BL-9")
 	m, _ = detailKey(m, tea.KeyEnter, 0)
-	if m.goToSelection != nil || !m.detailOpen || m.notice != "BL-9 can't open: it isn't in tasks." {
+	if m.detached != nil || !m.detailOpen || m.notice != "BL-9 can't open: it isn't in tasks." {
 		t.Fatalf("missing target: notice %q", m.notice)
 	}
 	if !strings.Contains(strings.Join(m.detailLines, "\n"), "? BL-9") {
@@ -464,7 +464,7 @@ func TestDetailFollowRelations(t *testing.T) {
 		m = settleDetail(t, m)
 		shown(want)
 	}
-	if m.goToSelection != nil || m.detailTargets[m.entryCursor].Ref != ref("BL-2") {
+	if m.detached != nil || m.detailTargets[m.entryCursor].Ref != ref("BL-2") {
 		t.Fatal("back did not end at the original selection and entry")
 	}
 	m, _ = detailKey(m, tea.KeyBackspace, 0)

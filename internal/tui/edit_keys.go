@@ -17,8 +17,15 @@ func (m Model) currentSnapshot() *engine.Snapshot {
 	return &engine.Snapshot{}
 }
 
-func (m *Model) updateEditKey(key string) (tea.Cmd, bool) {
+// updateItemKey runs keys that act on the selected item, from the list or from
+// detail.
+func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 	switch key {
+	case "y", "d":
+		// The next key picks what to copy, or confirms archiving with dd.
+		m.prefix = key
+		m.inputSerial++
+		return nil, true
 	case "s":
 		return m.beginPicker(pickerStatus), true
 	case "<":
@@ -75,7 +82,7 @@ func (m *Model) updateEditKey(key string) (tea.Cmd, bool) {
 	case "c":
 		return m.beginTextAppend(model.AppendComment), true
 	case "i":
-		return m.beginTextAppend(model.AppendNote), true
+		return m.beginNotes(), true
 	case "C":
 		return m.claimCommand(), true
 	case "S":

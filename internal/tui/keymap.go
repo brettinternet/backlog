@@ -76,7 +76,7 @@ func defaultKeymap() []action {
 		{id: "description", label: "Edit description", canonical: "e", bindings: []string{"e"}},
 		{id: "edit", label: "Edit all fields", canonical: "E", bindings: []string{"E"}},
 		{id: "comment", label: "Comment", canonical: "c", bindings: []string{"c"}},
-		{id: "note", label: "Add note", canonical: "i", bindings: []string{"i"}},
+		{id: "note", label: "Edit notes", canonical: "i", bindings: []string{"i"}},
 		{id: "criterion", label: "Toggle criterion", canonical: "x", bindings: []string{"x"}},
 		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
 		{id: "archive", label: "Archive", canonical: "d d", bindings: []string{"d d"}},
@@ -347,7 +347,7 @@ func (m Model) disabledReason(a action) string {
 	if (a.id == "undo" || a.id == "redo") && m.opts.Store == nil {
 		return "session history is unavailable"
 	}
-	if a.id == "back" && (!m.detailFocus || m.goToSelection == nil || len(m.detailHistory) == 0) {
+	if a.id == "back" && (!m.detailFocus || m.detached == nil || len(m.detailHistory) == 0) {
 		return "no previous item"
 	}
 	if a.id == "criterion" && (!m.detailFocus || m.detailTab != tabCriteria) {
@@ -357,11 +357,8 @@ func (m Model) disabledReason(a action) string {
 		if slices.Contains([]string{"move-down", "move-up", "next-item", "previous-item", "first", "last", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "back", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
 			return ""
 		}
-		if a.id == "milestone" {
-			if !m.detailTruncated && !m.detailExpanded {
-				return "body is not truncated"
-			}
-			return ""
+		if a.id == "milestone" && (m.detailTruncated || m.detailExpanded) {
+			return "" // m shows more of the cut-off body
 		}
 		if (a.id == "criterion" || a.id == "mark") && m.detailTab == tabCriteria {
 			row, ok := m.selectedRow()
@@ -370,7 +367,11 @@ func (m Model) disabledReason(a action) string {
 			}
 			return m.capability(row.Ref, model.CheckCriterion, model.UncheckCriterion)
 		}
-		return "focus the list first"
+		// Item actions work on the item in detail; view and selection actions
+		// belong to the list.
+		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url"}, a.id) {
+			return "focus the list first"
+		}
 	}
 	kind := map[string]pickerKind{"status": pickerStatus, "priority": pickerPriority, "assignees": pickerAssignees, "assign-me": pickerAssignees, "labels": pickerLabels, "milestone": pickerMilestone, "blocker": pickerBlocker, "parent": pickerParent, "title": pickerTitle}
 	if picker, ok := kind[a.id]; ok {
@@ -406,6 +407,9 @@ func (m Model) disabledReason(a action) string {
 		row, found := m.selectedRow()
 		if !found {
 			return "select an item"
+		}
+		if a.id == "note" && m.capability(row.Ref, model.ReplaceSection) == "" {
+			return ""
 		}
 		if reason := m.capability(row.Ref, op); reason != "" {
 			return reason
