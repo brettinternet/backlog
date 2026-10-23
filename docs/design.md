@@ -450,7 +450,7 @@ reading private files or inventing request inputs.
 | --- | --- | --- | --- | --- | --- |
 | native | Files | `ID` | `blocked_by` and parent fields | All | [format.md](format.md) |
 | Backlog.md | Files, no CLI | Task ID, filename slug tolerated | `dependencies`, `parent_task_id` | Status, fields, sections, AC, comments. Milestone files and the label list are read-only. | Worklease §3 Backlog.md 1.52.0 |
-| Beads | `bd` 1.3.0 `--json --readonly --sandbox` | Issue ID | Bulk `dependencies`. `blocks` is hard. | `bd update` and comment | Worklease §3 Beads |
+| Beads | `bd` 1.3.0 `--json --readonly --sandbox` | Issue ID | Bulk `dependencies`. `blocks` is hard. | `bd update` and comment | [Mapping and limits](beads.md); Worklease §3 Beads |
 | GitHub | GraphQL and REST over HTTPS, one serial queue per host and account | `owner/repo#N` | `blockedBy` and sub-issues | State, labels, assignees, comments, Projects v2 status | Worklease §3 GitHub and Projects |
 | Linear | GraphQL over HTTPS | Organization and issue UUID, identifier displayed | Directional `blocks` | State, assignee, priority, labels, comments | Worklease §3 Linear |
 | Jira Cloud | REST v3 with API token | Issue ID, key displayed | Issue links | Workflow transitions, fields, comments | Probe pending (BL-40) |

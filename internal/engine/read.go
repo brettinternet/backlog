@@ -12,6 +12,7 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/beads"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
 
@@ -118,7 +119,7 @@ func readSource(cfg project.Config, c project.SourceConfig) (source.Source, erro
 	return &eventSource{Source: backend, cfg: cfg}, nil
 }
 
-func rawSource(cfg project.Config, c project.SourceConfig) (*native.Source, error) {
+func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error) {
 	for i, configured := range cfg.Sources {
 		if configured.ID == c.ID {
 			if err := cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)); err != nil {
@@ -127,7 +128,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (*native.Source, erro
 			break
 		}
 	}
-	if c.Type != "native" {
+	if c.Type != "native" && c.Type != "beads" {
 		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)
 	}
 	statuses := map[string]model.StatusCategory{}
@@ -137,6 +138,9 @@ func rawSource(cfg project.Config, c project.SourceConfig) (*native.Source, erro
 	path := c.Path
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(cfg.Discovery.ControlRoot, path)
+	}
+	if c.Type == "beads" {
+		return beads.New(beads.Options{ID: c.ID, Path: path, Statuses: statuses})
 	}
 	return native.New(native.Options{ID: c.ID, Path: path, Prefix: c.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses, CacheDir: cfg.Paths.CacheDir})
 }

@@ -18,7 +18,7 @@
 - **Edit without leaving the list.** Single-key pickers, quick-add tokens (`!high @me #tui <BL-7`), `.` to repeat, undo, multi-select, and `$EDITOR` for long text.
 - **Built for agents.** `bl next --claim --start --json`, short verbs, numeric IDs, stdin bodies, and an MCP server.
 - **Git-native files.** One Markdown file per item, named by ID, with minimal diffs. Every worktree shares one live backlog.
-- **Many backends.** Native files first, then Backlog.md, Beads, GitHub Issues, Linear, Jira Cloud, and external adapters.
+- **Many backends.** Native files and [local Beads issues](docs/beads.md), with Backlog.md import. GitHub Issues, Linear, Jira Cloud, and external adapters are planned.
 - **Composable.** Hooks, actions, and an event stream connect it to [Worklease](https://github.com/brettinternet/worklease) claims and to any other tool.
 
 ## Try the list shell

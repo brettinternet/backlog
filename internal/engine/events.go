@@ -19,7 +19,6 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
-	"github.com/brettinternet/backlog/internal/source/native"
 )
 
 type eventContext struct {
@@ -68,8 +67,37 @@ func WithEventOrigin(ctx context.Context, origin string) context.Context {
 }
 
 type eventSource struct {
-	*native.Source
+	source.Source
 	cfg project.Config
+}
+
+func (s *eventSource) LoadInitial(ctx context.Context) (source.Delta, error) {
+	if loader, ok := s.Source.(source.InitialLoader); ok {
+		return loader.LoadInitial(ctx)
+	}
+	return source.Delta{Coverage: source.Partial}, nil
+}
+func (s *eventSource) readState(ctx context.Context, id string) (model.Item, bool, error) {
+	if reader, ok := s.Source.(interface {
+		ReadState(context.Context, string) (model.Item, bool, error)
+	}); ok {
+		return reader.ReadState(ctx, id)
+	}
+	item, err := s.Source.Read(ctx, id)
+	return item, false, err
+}
+func (s *eventSource) Prepare(ctx context.Context, m model.Mutation) (source.Prepared, error) {
+	if preparer, ok := s.Source.(source.Preparer); ok {
+		return preparer.Prepare(ctx, m)
+	}
+	return source.Prepared{}, source.Refuse("unavailable", "provider preparation unavailable")
+}
+func (s *eventSource) Watch(ctx context.Context, changed func()) error {
+	if watcher, ok := s.Source.(source.Watcher); ok {
+		return watcher.Watch(ctx, changed)
+	}
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 var errIncompleteEvents = errors.New("incomplete event snapshot")
@@ -155,7 +183,7 @@ func (s *eventSource) Apply(ctx context.Context, m model.Mutation) (model.Item, 
 		}
 		prior := eventRecord{Item: new(model.Item)}
 		if m.Op != model.Create {
-			item, archived, err := s.Source.ReadState(ctx, m.Ref.ID)
+			item, archived, err := s.readState(ctx, m.Ref.ID)
 			prior = eventRecord{Item: &item, Archived: archived}
 			if err != nil {
 				return err
@@ -311,10 +339,10 @@ func eventSnapshot(ctx context.Context, cfg project.Config) ([]eventRecord, map[
 	}
 	return eventRecords(cfg, deltas), deltas, nil
 }
-func loadEventSources(ctx context.Context, cfg project.Config, reuse *native.Source) (map[string]source.Delta, error) {
+func loadEventSources(ctx context.Context, cfg project.Config, reuse source.Source) (map[string]source.Delta, error) {
 	deltas := map[string]source.Delta{}
 	for _, c := range cfg.Sources {
-		var backend *native.Source
+		var backend source.Source
 		if reuse != nil && reuse.Info().ID == c.ID {
 			backend = reuse
 		}
