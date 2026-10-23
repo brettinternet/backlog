@@ -37,7 +37,7 @@ func keyText(bindings []string) string {
 func (m Model) launcherOverlay(lines []string) []string {
 	if m.launcher.help {
 		out := append([]string(nil), lines...)
-		body := m.helpBody(m.width, max(0, len(out)-2))
+		body := m.helpBody(m.width, m.helpRows())
 		copy(out[1:], body)
 		return out
 	}
@@ -73,7 +73,7 @@ func (m Model) launcherLine(r launcherRow, selected bool, width int) string {
 	var left, right string
 	if r.item != nil {
 		item := r.item
-		right = t.muted.render(textutil.Line(m.statusName(item.Status)))
+		right = t.muted.render(m.statusName(item.Status))
 		left = t.categoryIcon(item.Category) + " " + t.muted.render(textutil.Line(item.Ref.ID)) + " " + textutil.Line(item.Title)
 	} else {
 		left = textutil.Line(r.label)
@@ -94,6 +94,53 @@ func (m Model) launcherLine(r launcherRow, selected bool, width int) string {
 	return line
 }
 
+// helpRows is the help page's height: the frame between header and status bar.
+func (m Model) helpRows() int { return max(0, m.height-2) }
+
+// helpSection is one group of the key catalog on the help page.
+type helpSection struct {
+	name  string
+	lines []launcherRow
+}
+
+func (s helpSection) height() int { return len(s.lines) + 2 } // header and gap
+
+// helpLayout groups the catalog and picks the column count and the smallest
+// column height (limit) that keeps groups whole and in reading order.
+func helpLayout(rows []launcherRow, width int) (sections []helpSection, columns, limit int) {
+	for _, r := range rows {
+		if len(sections) == 0 || sections[len(sections)-1].name != r.group {
+			sections = append(sections, helpSection{name: r.group})
+		}
+		s := &sections[len(sections)-1]
+		s.lines = append(s.lines, r)
+	}
+	columns = max(1, min(4, (width-2)/38))
+	total := 0
+	for _, s := range sections {
+		total += s.height()
+	}
+	fits := func(limit int) bool {
+		column, used := 0, 0
+		for _, s := range sections {
+			if used > 0 && used+s.height() > limit {
+				column, used = column+1, 0
+			}
+			used += s.height()
+		}
+		return column < columns
+	}
+	limit = (total + columns - 1) / columns
+	for !fits(limit) {
+		limit++
+	}
+	return sections, columns, limit
+}
+
+// helpScrollMax is the help page's last scroll offset, which puts the final
+// group's last line on the bottom row.
+func helpScrollMax(limit, rows int) int { return max(0, limit-1-(rows-2)) }
+
 // helpBody lays the grouped key catalog out in columns. Groups fill columns in
 // reading order with the smallest even height; the page scrolls vertically.
 func (m Model) helpBody(width, rows int) []string {
@@ -106,52 +153,22 @@ func (m Model) helpBody(width, rows int) []string {
 		return out
 	}
 	out[0] = fit(" "+t.title.render("Keys")+"  "+t.accent.render("›")+" "+textutil.Line(m.launcher.query)+t.accent.render("▏"), width)
-	type section struct {
-		name  string
-		lines []launcherRow
-	}
-	var sections []section
-	keyWidth := 1
-	for _, r := range m.launcher.rows {
-		if len(sections) == 0 || sections[len(sections)-1].name != r.group {
-			sections = append(sections, section{name: r.group})
-		}
-		s := &sections[len(sections)-1]
-		s.lines = append(s.lines, r)
-		keyWidth = max(keyWidth, min(12, ansi.StringWidth(keyText(r.action.bindings))))
-	}
+	sections, columns, limit := helpLayout(m.launcher.rows, width)
 	if len(sections) == 0 {
 		if rows > 2 {
 			out[2] = fit("  "+t.muted.render("No matches"), width)
 		}
 		return out
 	}
-	columns := max(1, min(4, (width-2)/38))
+	keyWidth := 1
+	for _, r := range m.launcher.rows {
+		keyWidth = max(keyWidth, min(12, ansi.StringWidth(keyText(r.action.bindings))))
+	}
 	columnWidth := (width - 2) / columns
-	height := func(s section) int { return len(s.lines) + 2 } // header and gap
-	// Smallest column height that keeps sections in order and whole.
-	total := 0
-	for _, s := range sections {
-		total += height(s)
-	}
-	fits := func(limit int) bool {
-		column, used := 0, 0
-		for _, s := range sections {
-			if used > 0 && used+height(s) > limit {
-				column, used = column+1, 0
-			}
-			used += height(s)
-		}
-		return column < columns
-	}
-	limit := (total + columns - 1) / columns
-	for !fits(limit) {
-		limit++
-	}
 	grid := make([][]string, columns)
 	column, used := 0, 0
 	for _, s := range sections {
-		if used > 0 && used+height(s) > limit {
+		if used > 0 && used+s.height() > limit {
 			column, used = column+1, 0
 		}
 		grid[column] = append(grid[column], cell(" "+s.name, columnWidth))
@@ -166,10 +183,11 @@ func (m Model) helpBody(width, rows int) []string {
 			grid[column] = append(grid[column], fit(" "+keys+"  "+label, columnWidth))
 		}
 		grid[column] = append(grid[column], blank(columnWidth))
-		used += height(s)
+		used += s.height()
 	}
 	visible := rows - 2
-	scroll := max(0, min(m.launcher.cursor, limit-visible))
+	last := helpScrollMax(limit, rows)
+	scroll := min(m.launcher.cursor, last)
 	for i := 0; i < visible; i++ {
 		var b strings.Builder
 		b.WriteString(" ")
@@ -182,7 +200,7 @@ func (m Model) helpBody(width, rows int) []string {
 		}
 		out[2+i] = fit(b.String(), width)
 	}
-	if scroll+visible < limit-1 {
+	if visible > 0 && scroll < last {
 		out[rows-1] = fit(blank(width-3)+t.accent.render("↓"), width)
 	}
 	return out

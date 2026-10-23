@@ -66,8 +66,11 @@ type screenRow struct {
 	branch, collapsed, context bool
 }
 type prepared struct {
-	rows            []screenRow
-	starts          []int
+	rows   []screenRow
+	starts []int
+	// open holds the header rows of groups that show items, so J and K can
+	// skip folded groups without scanning them.
+	open            []int
 	pending, failed int
 	items           int
 	widths          widths
@@ -438,8 +441,43 @@ func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, groupe
 				p.rows = append(p.rows, screenRow{row: row, group: g, value: group.Value, ordinal: p.items})
 			}
 		}
+		if grouped && !folded[group.Value] && len(group.Rows) > 0 {
+			p.open = append(p.open, p.starts[g])
+		}
 	}
 	return p
+}
+
+// nextItem is the nearest item row after (or before) row from. A header row is
+// followed by its group's items, so past a header it searches the open groups.
+func (p prepared) nextItem(from int, forward bool) (int, bool) {
+	step := 1
+	if !forward {
+		step = -1
+	}
+	i := from + step
+	if i < 0 || i >= len(p.rows) {
+		return 0, false
+	}
+	if p.rows[i].header == "" {
+		return i, true
+	}
+	g := sort.SearchInts(p.open, i)
+	if forward {
+		if g == len(p.open) {
+			return 0, false
+		}
+		return p.open[g] + 1, true
+	}
+	if g == 0 {
+		return 0, false
+	}
+	// The last item of an open group sits just before the next group's header.
+	end := len(p.rows)
+	if next := sort.SearchInts(p.starts, p.open[g-1]+1); next < len(p.starts) {
+		end = p.starts[next]
+	}
+	return end - 1, true
 }
 func (m *Model) project() {
 	if m.snapshot != nil && m.opts.Projector != nil {
@@ -1119,15 +1157,8 @@ func (m *Model) stepItem(forward bool) tea.Cmd {
 		}
 		m.navigateBoard(key, 1, false, "")
 	} else {
-		step := -1
-		if forward {
-			step = 1
-		}
-		for i := m.selected + step; i >= 0 && i < len(m.data.rows); i += step {
-			if m.data.rows[i].header == "" {
-				m.selected = i
-				break
-			}
+		if i, ok := m.data.nextItem(m.selected, forward); ok {
+			m.selected = i
 		}
 		m.keepSelectionVisible()
 	}

@@ -57,13 +57,15 @@ func textWidth(s string) int {
 	return len(s)
 }
 
+// statusName is a status's sanitized display name: its configured name, or
+// the provider's raw value.
 func (m Model) statusName(key string) string {
 	for _, s := range m.opts.Statuses {
 		if s.Key == key && s.Name != "" {
-			return s.Name
+			return textutil.Line(s.Name)
 		}
 	}
-	return key
+	return textutil.Line(key)
 }
 
 // statusCategory is a configured status's category, for icons.
@@ -859,7 +861,7 @@ func (m Model) modal(base []string, title string, body []string, width, height i
 	box := make([]string, 0, height)
 	label := ""
 	if title != "" {
-		label = " " + title + " "
+		label = ansi.Truncate(" "+title+" ", width-3, "")
 	}
 	box = append(box, t.faint.render("╭─")+t.accent.render(label)+t.faint.render(strings.Repeat("─", max(0, width-3-ansi.StringWidth(label)))+"╮"))
 	for i := 0; i < height-2; i++ {

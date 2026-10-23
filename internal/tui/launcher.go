@@ -205,6 +205,17 @@ func (m Model) filterLauncher() tea.Cmd {
 		return launcherFiltered{serial, result}
 	}
 }
+
+// launcherLast bounds the cursor: the palette's last row, or the help page's
+// last scroll offset at the current size.
+func (m Model) launcherLast() int {
+	if m.launcher.help {
+		_, _, limit := helpLayout(m.launcher.rows, m.width)
+		return helpScrollMax(limit, m.helpRows())
+	}
+	return max(0, len(m.launcher.rows)-1)
+}
+
 func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "ctrl+c":
@@ -212,27 +223,25 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 		m.launcherSerial++
 		return m, nil
 	case "down", "tab":
-		m.launcher.cursor = min(max(0, len(m.launcher.rows)-1), m.launcher.cursor+1)
+		m.launcher.cursor = min(m.launcherLast(), m.launcher.cursor+1)
 		return m, nil
 	case "up", "shift+tab":
-		m.launcher.cursor = max(0, m.launcher.cursor-1)
+		m.launcher.cursor = max(0, min(m.launcherLast(), m.launcher.cursor)-1)
 		return m, nil
 	case "pagedown":
-		m.launcher.cursor = min(max(0, len(m.launcher.rows)-1), m.launcher.cursor+10)
+		m.launcher.cursor = min(m.launcherLast(), m.launcher.cursor+10)
 		return m, nil
 	case "pageup":
-		m.launcher.cursor = max(0, m.launcher.cursor-10)
+		m.launcher.cursor = max(0, min(m.launcherLast(), m.launcher.cursor)-10)
 		return m, nil
 	case "enter":
-		if m.launcher.loading || len(m.launcher.rows) == 0 {
+		// Help's cursor is a scroll offset, not a row.
+		if m.launcher.help || m.launcher.loading || len(m.launcher.rows) == 0 {
 			return m, nil
 		}
 		row := m.launcher.rows[m.launcher.cursor]
 		if row.reason != "" {
 			m.launcher.err = row.reason
-			return m, nil
-		}
-		if m.launcher.help {
 			return m, nil
 		}
 		m.launcher = launcherState{}

@@ -97,7 +97,8 @@ func (m Model) listPane(width, rows int) []string {
 		for i := 1; i < rows; i++ {
 			out[i] = blank(width)
 		}
-		out[max(1, rows/2)] = center(message, width)
+		// A one-row pane shows the message instead of the column header.
+		out[min(rows-1, max(1, rows/2))] = center(message, width)
 		return out
 	}
 	for i := 1; i < rows; i++ {
@@ -134,10 +135,10 @@ func (m Model) detailMeta(row engine.Row) string {
 	t := m.theme
 	parts := []string{t.muted.render(textutil.Line(row.Ref.ID))}
 	if row.Status != "" {
-		parts = append(parts, t.categoryIcon(row.Category)+" "+t.category(row.Category).render(textutil.Line(m.statusName(row.Status))))
+		parts = append(parts, t.categoryIcon(row.Category)+" "+t.category(row.Category).render(m.statusName(row.Status)))
 	}
 	if row.Priority != "" {
-		parts = append(parts, t.priority(row.Priority).render(priorityGlyph(row.Priority)+" "+string(row.Priority)))
+		parts = append(parts, t.priority(row.Priority).render(priorityGlyph(row.Priority)+" "+textutil.Line(string(row.Priority))))
 	}
 	if row.Pending {
 		parts = append(parts, t.pending.render("● saving"))

@@ -99,7 +99,7 @@ func newItemTable(out io.Writer, cfg project.Config, groups ...[]readItem) itemT
 		for _, i := range items {
 			t.id = max(t.id, ansi.StringWidth(t.refs.item(i)))
 			t.status = max(t.status, ansi.StringWidth(textutil.Line(i.Status)))
-			t.priority = max(t.priority, ansi.StringWidth(string(i.Priority)))
+			t.priority = max(t.priority, ansi.StringWidth(textutil.Line(string(i.Priority))))
 		}
 	}
 	return t
@@ -109,7 +109,7 @@ func (t itemTable) write(i readItem) error {
 	id, status := t.refs.item(i), textutil.Line(i.Status)
 	line := pad(id, id, t.id) + "  " + pad(t.p.category(i.Category, status), status, t.status)
 	if t.priority > 0 {
-		priority := string(i.Priority)
+		priority := textutil.Line(string(i.Priority))
 		line += "  " + pad(t.p.priority(i.Priority, priority), priority, t.priority)
 	}
 	line += "  " + textutil.Line(i.Title)
