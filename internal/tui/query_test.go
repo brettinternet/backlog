@@ -287,6 +287,13 @@ func TestQueryMenuKeys(t *testing.T) {
 	if m.query != "sort:next" {
 		t.Fatal("F must clear predicates")
 	}
+	m = shellFixture(3)
+	m.query = "is:ready sort:next"
+	m = queryKey(queryKey(m, "f"), "d")
+	m = queryKey(queryKey(m, "f"), "d")
+	if m.query != "sort:next" {
+		t.Fatalf("fd must toggle done off: %q", m.query)
+	}
 	m = queryKey(shellFixture(3), "z")
 	m = queryKey(m, "esc")
 	if m.prefix != "" {

@@ -202,7 +202,7 @@ warn. Neither shows while candidates still match the word being typed. ID and
 title matches are bold and underlined.
 
 `f`, `o`, and `z` open menus for filter, sort, and group/fold. Field filters open
-a value picker. `fr` shows ready items; `fd` adds closed items (not archived);
+a value picker. `fr` shows ready items; `fd` toggles closed items (not archived);
 `fb` toggles drafts (`-category:backlog`).
 `F` or `fc` clears filters but keeps sort and group. `oo` reverses every sort
 key. `zA` groups by assignee, since `za` folds.
@@ -468,7 +468,7 @@ keys:
 | `filter-type` | `f t` | Filter: Type |
 | `filter-milestone` | `f m` | Filter: Milestone |
 | `filter-is:ready` | `f r` | Filter: Ready only |
-| `filter-is:open,closed` | `f d` | Filter: Show done |
+| `filter-is:open,closed` | `f d` | Filter: Toggle done |
 | `filter-drafts` | `f b` | Filter: Toggle drafts |
 | `filter-clear` | `f c` | Filter: Clear |
 | `sort-next` | `o n` | Sort: Next |

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -16,7 +17,7 @@ type queryBinding struct{ key, label, value string }
 // Menus follow Vim where it has a meaning: z folds and scrolls, so grouping by
 // category and type take the capitals.
 var queryMenus = map[string][]queryBinding{
-	"f": {{"s", "Status", "status"}, {"p", "Priority", "priority"}, {"a", "Assignee", "assignee"}, {"l", "Label", "label"}, {"t", "Type", "type"}, {"m", "Milestone", "milestone"}, {"r", "Ready only", "is:ready"}, {"d", "Show done", "is:open,closed"}, {"b", "Toggle drafts", "drafts"}, {"c", "Clear", ""}},
+	"f": {{"s", "Status", "status"}, {"p", "Priority", "priority"}, {"a", "Assignee", "assignee"}, {"l", "Label", "label"}, {"t", "Type", "type"}, {"m", "Milestone", "milestone"}, {"r", "Ready only", "is:ready"}, {"d", "Toggle done", "is:open,closed"}, {"b", "Toggle drafts", "drafts"}, {"c", "Clear", ""}},
 	"o": {{"n", "Next", "next"}, {"p", "Priority", "priority"}, {"r", "Rank", "rank"}, {"u", "Updated", "updated"}, {"c", "Created", "created"}, {"d", "Due", "due"}, {"i", "ID", "id"}, {"o", "Reverse", "reverse"}},
 	"z": {{"s", "Status", "status"}, {"C", "Category", "category"}, {"p", "Priority", "priority"}, {"A", "Assignee", "assignee"}, {"l", "Label", "label"}, {"m", "Milestone", "milestone"}, {"T", "Type", "type"}, {"P", "Parent", "parent"}, {"n", "None", "none"},
 		{"a", "Toggle fold", "fold"}, {"o", "Open fold", "fold-open"}, {"c", "Close fold", "fold-close"}, {"M", "Fold all", "fold-all"}, {"R", "Unfold all", "unfold-all"},
@@ -323,8 +324,17 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 			switch key {
 			case "c":
 				m.query = clearQuery(m.query)
-			case "r", "d":
-				m.query = setQueryField(m.query, "is", strings.TrimPrefix(binding.value, "is:"))
+			case "r":
+				m.query = setQueryField(m.query, "is", "ready")
+			case "d":
+				// Removing is: falls back to the implicit is:open.
+				value := "open,closed"
+				if slices.ContainsFunc(tokenSpans(m.query), func(span [2]int) bool {
+					return strings.EqualFold(m.query[span[0]:span[1]], binding.value)
+				}) {
+					value = ""
+				}
+				m.query = setQueryField(m.query, "is", value)
 			case "b":
 				m.query = toggleTerm(m.query, hideDrafts)
 			default:
