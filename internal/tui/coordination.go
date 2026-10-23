@@ -19,19 +19,7 @@ func (m Model) claimPoll() tea.Cmd {
 	}
 	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return claimsPoll{} })
 }
-func (m *Model) refreshClaims() {
-	if m.snapshot != nil && m.opts.Projector != nil {
-		text := m.query
-		if m.editor.open {
-			text = m.editor.text
-		}
-		if m.hasWorkspace() {
-			m.request = m.opts.Projector.RequestScope(m.snapshot, text, m.scopeProject(), "", "", true)
-		} else {
-			m.request = m.opts.Projector.RefreshClaims(m.snapshot, text)
-		}
-	}
-}
+func (m *Model) refreshClaims() { m.requestProjection(true) }
 func (m *Model) expiryCommand() tea.Cmd {
 	if m.claimExpiry.Equal(m.claimTimerAt) {
 		return nil

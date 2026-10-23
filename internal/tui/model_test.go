@@ -304,6 +304,19 @@ func TestShellLiveProjectionKeepsFoldsAndSelection(t *testing.T) {
 	if got := m.data.rows[m.selected].row.Ref; got != want {
 		t.Fatalf("selection moved to %v, want %v", got, want)
 	}
+	// A status edit moves the item into another group. The cursor must follow
+	// it, not stay on the row taking its index, where the next edit would land.
+	groups = slices.Clone(m.groups)
+	for g := range groups {
+		groups[g].Rows = slices.DeleteFunc(slices.Clone(groups[g].Rows), func(r engine.Row) bool { return r.Ref == want })
+	}
+	groups[0].Rows = append(groups[0].Rows, engine.Row{Ref: want, Title: "moved", Status: groups[0].Value})
+	next, _ = m.Update(projectionMsg(engine.Projection{Request: m.request, Groups: groups}))
+	next, _ = next.(Model).Update(next.(Model).prepare()())
+	m = next.(Model)
+	if got := m.data.rows[m.selected]; got.row.Ref != want || got.value != groups[0].Value {
+		t.Fatalf("selection at %v in %q after %v changed groups", got.row.Ref, got.value, want)
+	}
 }
 
 func BenchmarkShellNavigation50k(b *testing.B) {

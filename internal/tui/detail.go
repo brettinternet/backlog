@@ -63,29 +63,22 @@ type detailResult struct {
 	identity   detailIdentity
 	lines      []string
 	criteria   []int // line index of each criterion, for the Criteria cursor
-	counts     tabCounts
 	truncated  bool
 	err        string
 }
 
-// tabCounts label detail tabs from the item, such as "2/5" criteria.
-type tabCounts [len(detailTabNames)]string
-
-func itemCounts(item model.Item) tabCounts {
-	var c tabCounts
-	if total := len(item.Criteria) + len(item.DoD); total > 0 {
-		done := 0
-		for _, list := range [][]model.Criterion{item.Criteria, item.DoD} {
-			for _, criterion := range list {
-				if criterion.Checked {
-					done++
-				}
-			}
-		}
-		c[tabCriteria] = strconv.Itoa(done) + "/" + strconv.Itoa(total)
+// tabCounts label detail tabs from the row, such as "2/5" criteria, so the
+// tab bar is complete before the item is read.
+func tabCounts(row engine.Row) [len(detailTabNames)]string {
+	var c [len(detailTabNames)]string
+	if row.CriteriaTotal > 0 {
+		c[tabCriteria] = strconv.Itoa(row.CriteriaDone) + "/" + strconv.Itoa(row.CriteriaTotal)
 	}
-	if n := len(item.Comments); n > 0 {
-		c[tabComments] = strconv.Itoa(n)
+	if len(row.Relations) > 0 {
+		c[tabRelations] = strconv.Itoa(len(row.Relations))
+	}
+	if row.Comments > 0 {
+		c[tabComments] = strconv.Itoa(row.Comments)
 	}
 	return c
 }
@@ -108,7 +101,6 @@ type itemKey struct {
 type rendered struct {
 	lines     []string
 	criteria  []int
-	counts    tabCounts
 	truncated bool
 	size      int
 }
@@ -323,7 +315,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	dependency := detailDependency(request.row, request.tab)
 	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: request.theme.key(), Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
 	if value, ok := worker.cache.render(key); ok {
-		result.lines, result.criteria, result.counts, result.truncated = value.lines, value.criteria, value.counts, value.truncated
+		result.lines, result.criteria, result.truncated = value.lines, value.criteria, value.truncated
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
@@ -355,7 +347,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	key.Version = version
 	if value, ok := worker.cache.render(key); ok {
 		result.identity.Version = version
-		result.lines, result.criteria, result.counts, result.truncated = value.lines, value.criteria, value.counts, value.truncated
+		result.lines, result.criteria, result.truncated = value.lines, value.criteria, value.truncated
 		return result
 	}
 	page, err := detailPage(ctx, item, request, worker.render)
@@ -366,9 +358,8 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	if len(page.lines) == 0 {
 		page.lines = []string{request.theme.muted.render("Nothing here yet.")}
 	}
-	page.counts = itemCounts(item)
 	result.identity.Version = version
-	result.lines, result.criteria, result.counts, result.truncated = page.lines, page.criteria, page.counts, page.truncated
+	result.lines, result.criteria, result.truncated = page.lines, page.criteria, page.truncated
 	worker.cache.putRender(key, page)
 	return result
 }

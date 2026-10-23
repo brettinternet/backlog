@@ -5,6 +5,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/textutil"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type mouseState struct {
@@ -12,13 +14,14 @@ type mouseState struct {
 	lastRef      model.Ref
 	lastClick    time.Time
 	lastX, lastY int
+	lastSwipe    time.Time
 }
 
 // Mouse routing reuses the renderer's geometry (tab spans, column layout,
 // board columns), so hit-testing cannot drift from what is drawn.
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.modalOpen() {
-		return m, nil
+		return m.modalMouse(msg)
 	}
 	p := msg.Mouse()
 	switch msg.(type) {
@@ -39,9 +42,31 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	detail := m.detailOpen && (!split || p.X > m.listWidth())
 	if _, ok := msg.(tea.MouseWheelMsg); ok {
 		delta := 3
-		if p.Button == tea.MouseWheelUp {
+		switch p.Button {
+		case tea.MouseWheelUp:
 			delta = -3
-		} else if p.Button != tea.MouseWheelDown {
+		case tea.MouseWheelDown:
+		case tea.MouseWheelLeft, tea.MouseWheelRight:
+			// A sideways swipe moves one board column. A trackpad sends a
+			// burst of events per swipe; events until a pause count once.
+			now := m.now()
+			burst := now.Sub(m.mouse.lastSwipe) >= 0 && now.Sub(m.mouse.lastSwipe) < 200*time.Millisecond
+			m.mouse.lastSwipe = now
+			if burst || detail || !m.isBoard() {
+				return m, nil
+			}
+			key := "l"
+			if p.Button == tea.MouseWheelLeft {
+				key = "h"
+			}
+			m.detailFocus = false
+			m.goToSelection = nil
+			m.navigateBoard(key, 1, false, "")
+			if m.detailOpen {
+				return m, m.scheduleDetail()
+			}
+			return m, nil
+		default:
 			return m, nil
 		}
 		if detail {
@@ -81,6 +106,13 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if p.Y == m.height-1 {
+		// The query reads as a search field: a click edits it there.
+		column := p.X - 1 - ansi.StringWidth(m.visualTag()+m.queryPrefix())
+		if m.queryError == "" && m.notice == "" && column >= 0 && column <= ansi.StringWidth(textutil.Line(m.query)) {
+			m.editQuery(m.query)
+			m.editor.cursor = offsetAt(m.query, column)
+			m.project()
+		}
 		return m, nil
 	}
 	if split && p.X == m.listWidth() {
@@ -89,20 +121,20 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if detail {
 		m.detailFocus = true
-		if p.Y == 3 { // meta, title, then the tab bar
-			x, width := p.X-detailPad, m.width
-			if split {
-				x, width = x-m.listWidth()-1, m.detailWidth()
-			}
+		x, width := p.X-detailPad, m.width
+		if split {
+			x, width = x-m.listWidth()-1, m.detailWidth()
+		}
+		switch {
+		case p.Y == 3: // meta, title, then the tab bar
 			_, spans := m.detailTabBar(max(1, width-2*detailPad))
 			for i, s := range spans {
 				if x >= s.start && x < s.end {
-					m.detailTab = detailTab(i)
-					m.detailExpanded = false
-					m.criteriaCursor = 0
-					return m, m.scheduleDetail()
+					return m, m.switchDetailTab(detailTab(i))
 				}
 			}
+		case m.detailTab == tabCriteria && p.Y-1 >= m.detailBodyTop():
+			return m, m.clickCriterion(x, m.detailScroll+p.Y-1-m.detailBodyTop())
 		}
 		return m, nil
 	}
@@ -157,6 +189,11 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.keepSelectionVisible()
 	row, ok := m.selectedRow()
 	if !ok {
+		// A group header has no item to open; a click toggles its fold, like
+		// enter.
+		if m.data.rows[index].header != "" && !m.isBoard() {
+			return m, m.fold("fold")
+		}
 		return m, nil
 	}
 	now := m.now()
@@ -171,4 +208,152 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, m.scheduleDetail()
 	}
 	return m, nil
+}
+
+// modalMouse lets the lists in modals take the pointer: the wheel moves the
+// highlight, and a click picks the row under it as enter would. A click in
+// the query being edited moves its cursor. Other prompts ignore the mouse.
+// The modal that takes keys, in the same order, takes the mouse.
+func (m Model) modalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	p := msg.Mouse()
+	step := 0
+	switch msg.(type) {
+	case tea.MouseWheelMsg:
+		switch p.Button {
+		case tea.MouseWheelUp:
+			step = -1
+		case tea.MouseWheelDown:
+			step = 1
+		default:
+			return m, nil
+		}
+	case tea.MouseClickMsg:
+		if p.Button != tea.MouseLeft {
+			return m, nil
+		}
+	default:
+		return m, nil
+	}
+	switch {
+	case m.actionConfirm != nil:
+	case m.launcher.open && m.launcher.help:
+		// Help's cursor is its scroll offset.
+		m.launcher.cursor = max(0, min(m.launcherLast(), m.launcher.cursor+3*step))
+	case m.launcher.open:
+		if step != 0 {
+			m.launcher.cursor = max(0, min(m.launcherLast(), m.launcher.cursor+step))
+			return m, nil
+		}
+		body, head, start, end, width := m.launcherLayout()
+		x, y, w, h := m.modalRect(width, len(body)+2)
+		line := p.Y - y - 1
+		if i := start + line - head; p.X > x && p.X < x+w-1 && line < h-2 && i >= start && i < end {
+			m.launcher.cursor = i
+			return m.updateLauncher("enter", "")
+		}
+	case m.longEdit.choice != "" || m.capture.open:
+	case m.picker.open:
+		if step != 0 {
+			key := "down"
+			if step < 0 {
+				key = "up"
+			}
+			return m, m.updatePickerKey(key)
+		}
+		if !m.pickerChoices() {
+			return m, nil
+		}
+		start, end := m.pickerWindow()
+		if i := start + m.sheetIndex(m.pickerSheet(), p.Y) - 2; i >= start && i < end { // below the title and input
+			if m.picker.multi {
+				// The cursor stays, so the list holds still for the next click.
+				value := m.picker.filtered[i].value
+				m.picker.selected[value] = !m.picker.selected[value]
+				return m, nil
+			}
+			m.picker.cursor = i
+			return m, m.updatePickerKey("enter")
+		}
+	case m.archiveConfirm || m.save.open:
+	case m.editor.open:
+		e := &m.editor
+		if step != 0 {
+			e.move(step)
+			return m, nil
+		}
+		if p.Y == m.height-1 {
+			// The input follows "/ "; the cursor glyph takes a cell.
+			column := p.X - 1 - ansi.StringWidth(m.visualTag()+"/ ")
+			if column > ansi.StringWidth(textutil.Line(e.text[:e.cursor])) {
+				column--
+			}
+			if column >= 0 {
+				e.cursor = offsetAt(e.text, column)
+				m.changedQuery()
+			}
+			return m, nil
+		}
+		if len(e.candidates) == 0 {
+			return m, nil
+		}
+		start, end := m.completionWindow()
+		if i := start + m.sheetIndex(m.completionSheet(), p.Y) - 1; i >= start && i < end { // below the title
+			e.candidate, e.chosen = i, true
+			m.insertCompletion()
+		}
+	}
+	return m, nil
+}
+
+// sheetIndex maps screen row y to a line of a bottom sheet as drawSheet
+// places it, or -1.
+func (m Model) sheetIndex(sheet []string, y int) int {
+	last := m.height - 2
+	shown := min(len(sheet), last)
+	top := last - shown + 1
+	if shown < 1 || y < top || y > last {
+		return -1
+	}
+	return len(sheet) - shown + y - top
+}
+
+// clickCriterion selects the criterion drawn on a detail line, and toggles
+// it when the click lands on its box. x is relative to the text's left edge.
+func (m *Model) clickCriterion(x, line int) tea.Cmd {
+	if !m.detailCurrent() {
+		return nil
+	}
+	found := -1
+	for i, start := range m.detailCriteria {
+		if start <= line {
+			found = i
+		}
+	}
+	if found < 0 {
+		return nil
+	}
+	// A criterion spans its wrapped text and evidence, up to a blank line.
+	for i := m.detailCriteria[found] + 1; i <= line; i++ {
+		if i >= len(m.detailLines) || m.detailLines[i] == "" {
+			return nil
+		}
+	}
+	m.criteriaCursor = found
+	if line == m.detailCriteria[found] && x >= 1 && x <= 3 { // the box at x 2, or a cell beside it
+		return m.toggleCriterion()
+	}
+	return nil
+}
+
+// offsetAt is the byte offset of the character at screen column col of
+// text, or its end.
+func offsetAt(text string, col int) int {
+	width := 0
+	for i, r := range text {
+		width += ansi.StringWidth(string(r))
+		if col < width {
+			return i
+		}
+	}
+	return len(text)
 }

@@ -24,8 +24,11 @@ func treeItems(count int) ([]model.Item, []engine.RowGroup) {
 	}
 	return items, []engine.RowGroup{group}
 }
+
+// treePress applies the key's one fold command; update leaves out the
+// loading-indicator timers that Update would batch with it.
 func treePress(m Model, key string) Model {
-	next, cmd := m.Update(editKeyMessage(key))
+	next, cmd := m.update(editKeyMessage(key))
 	m = next.(Model)
 	if cmd != nil {
 		next, _ = m.Update(cmd())

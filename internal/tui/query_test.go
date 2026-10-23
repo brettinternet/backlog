@@ -195,6 +195,35 @@ func TestQueryEditor(t *testing.T) {
 	if m.queryError != "" || m.queryWarning == "" || len(m.data.rows) != 0 {
 		t.Fatal("unknown value must warn and project")
 	}
+	// A background refresh (claims poll, file change) keeps the dropdown and
+	// its highlight; enter inserts the highlighted value instead of failing.
+	m = queryKey(m, "ctrl+u")
+	m = queryType(m, "group:")
+	m = settleQuery(t, m)
+	if m.queryError != "" || len(m.editor.candidates) < 2 {
+		t.Fatalf("value list: %q %v", m.queryError, m.editor.candidates)
+	}
+	m = queryKey(m, "down")
+	want := "group:" + m.editor.candidates[1].Value
+	m.refreshClaims()
+	m = settleQuery(t, m)
+	m = queryKey(m, "enter")
+	if m.editor.open || m.query != want {
+		t.Fatalf("enter after refresh: open=%v query=%q error=%q", m.editor.open, m.query, m.queryError)
+	}
+	// A partial value is guided, not an error; enter takes the first match.
+	m = settleQuery(t, m)
+	m = queryKey(m, "/")
+	m = queryKey(m, "ctrl+u")
+	m = queryType(m, "group:la")
+	m = settleQuery(t, m)
+	if m.queryError != "" {
+		t.Fatalf("partial value flashed an error: %q", m.queryError)
+	}
+	m = queryKey(m, "enter")
+	if m.editor.open || m.query != "group:label" {
+		t.Fatalf("partial value: %q", m.query)
+	}
 }
 
 // Catches a documented second key silently falling through to navigation or an

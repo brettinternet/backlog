@@ -41,31 +41,40 @@ func (m Model) launcherOverlay(lines []string) []string {
 		copy(out[1:], body)
 		return out
 	}
-	t := m.theme
 	title := "Commands"
 	if m.launcher.goTo {
 		title = "Go to"
 	}
-	width := min(max(40, m.width*3/5), 88, m.width-2)
+	body, _, _, _, width := m.launcherLayout()
+	return m.modal(lines, title, body, width, len(body)+2)
+}
+
+// launcherLayout is the palette's body and width. Rows start to end are drawn
+// from body[head], so the mouse can find them.
+func (m Model) launcherLayout() (body []string, head, start, end, width int) {
+	t := m.theme
+	width = min(max(40, m.width*3/5), 88, m.width-2)
 	inner := width - 4
 	visible := max(1, min(14, m.height-7))
-	body := []string{t.accent.render("›") + " " + textutil.Line(m.launcher.query) + t.accent.render("▏"), ""}
+	body = []string{t.accent.render("›") + " " + textutil.Line(m.launcher.query) + t.accent.render("▏"), ""}
 	switch {
 	case m.launcher.loading && len(m.launcher.rows) == 0:
 		body = append(body, t.muted.render("Searching…"))
-	case m.launcher.err != "":
+	case len(m.launcher.rows) == 0 && m.launcher.err != "":
 		body = append(body, t.red.render("! "+m.launcher.err))
 	case len(m.launcher.rows) == 0:
 		body = append(body, t.muted.render("No matches"))
 	}
-	start := max(0, min(m.launcher.cursor-visible/2, len(m.launcher.rows)-visible))
-	for i := start; i < min(len(m.launcher.rows), start+visible); i++ {
+	head = len(body)
+	start = max(0, min(m.launcher.cursor-visible/2, len(m.launcher.rows)-visible))
+	end = min(len(m.launcher.rows), start+visible)
+	for i := start; i < end; i++ {
 		body = append(body, m.launcherLine(m.launcher.rows[i], i == m.launcher.cursor, inner))
 	}
 	if m.launcher.err != "" && len(m.launcher.rows) > 0 {
 		body = append(body, "", t.red.render("! "+m.launcher.err))
 	}
-	return m.modal(lines, title, body, width, len(body)+2)
+	return body, head, start, end, width
 }
 
 func (m Model) launcherLine(r launcherRow, selected bool, width int) string {

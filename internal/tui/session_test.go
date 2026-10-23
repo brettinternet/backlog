@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
@@ -128,10 +129,22 @@ func TestShellLiveRefresh(t *testing.T) {
 	defer unsub()
 	m := New(Options{Context: ctx, Store: store, Projector: projector, Sources: []string{"tasks"}, NoColor: true})
 	m.Bind(ch)
+	if content := m.View().Content; strings.Contains(content, "Loading") || strings.Contains(content, "No matching") {
+		t.Fatal("first paint flashed a placeholder")
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = next.(Model)
+	// The first load outlasts loadingDelay and its minimum: loading, not empty.
+	for _, minimum := range []bool{false, true} {
+		for kind := range m.loads {
+			next, _ = m.Update(indicatorDue{kind: loadKind(kind), period: m.loads[kind].period, minimum: minimum})
+			m = next.(Model)
+		}
+	}
 	var transcript strings.Builder
-	fmt.Fprintf(&transcript, "== first paint ==\n%s\n", m.View().Content)
+	fmt.Fprintf(&transcript, "== slow first load ==\n%s\n", m.View().Content)
 	if !strings.Contains(m.View().Content, "Loading") {
-		t.Fatal("no first loading paint")
+		t.Fatal("slow first load not shown as loading")
 	}
 	load := func(want string) {
 		t.Helper()

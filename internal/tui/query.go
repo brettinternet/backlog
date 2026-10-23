@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"unicode"
@@ -28,13 +29,82 @@ func zCommand(value string) bool {
 	return strings.HasPrefix(value, "fold") || strings.HasPrefix(value, "unfold") || strings.HasPrefix(value, "scroll")
 }
 
+// Candidates stay on screen while the next ones load, so typing never flashes
+// the list. Only candidates computed for the current text can be inserted.
 type queryEditor struct {
-	open, picker   bool
+	open           bool
 	text, original string
 	cursor         int // UTF-8 byte offset
 	candidates     []query.Candidate
 	candidate      int
-	ready          uint64
+	field          string // what the candidates complete: a field, or "" for field names
+	current        bool   // the candidates are for the current text and cursor
+	chosen         bool   // a candidate was picked since the last edit
+	unfinished     bool   // the word at the cursor is incomplete or unknown
+}
+
+// highlighted reports the candidate enter inserts: one picked, or the first
+// when the word at the cursor can't stand as typed.
+func (e queryEditor) highlighted() bool {
+	return len(e.candidates) > 0 && (e.chosen || e.unfinished)
+}
+
+// word is the span of the token under the cursor.
+func (e queryEditor) word() (start, end int) {
+	for _, span := range tokenSpans(e.text) {
+		if e.cursor >= span[0] && e.cursor <= span[1] {
+			return span[0], span[1]
+		}
+	}
+	return e.cursor, e.cursor
+}
+
+// inWord reports a query problem located in the word being typed.
+func (e queryEditor) inWord(err error) bool {
+	var problem *query.Error
+	if !errors.As(err, &problem) {
+		return false
+	}
+	start, end := e.word()
+	return problem.Pos >= start && problem.Pos <= end
+}
+
+// receive takes the candidates for the current text. A refresh of the same
+// text keeps the highlighted value.
+func (e *queryEditor) receive(candidates []query.Candidate) {
+	previous := ""
+	if e.candidate < len(e.candidates) {
+		previous = e.candidates[e.candidate].Value
+	}
+	if !e.current {
+		e.chosen = false
+	}
+	e.candidates, e.candidate, e.current = candidates, 0, true
+	e.field, _, _, _ = e.completion()
+	for i, c := range candidates {
+		if c.Value == previous {
+			e.candidate = i
+			break
+		}
+	}
+}
+
+// move highlights the next or previous candidate; the first move from no
+// highlight lands on the first or last.
+func (e *queryEditor) move(delta int) {
+	n := len(e.candidates)
+	if n == 0 {
+		return
+	}
+	switch {
+	case e.highlighted():
+		e.candidate = ((e.candidate+delta)%n + n) % n
+	case delta > 0:
+		e.candidate = 0
+	default:
+		e.candidate = n - 1
+	}
+	e.chosen = true
 }
 
 // tokenSpans preserves source text, including quoted whitespace and escapes.
@@ -163,8 +233,8 @@ func quoteQuery(s string) string {
 	}
 	return s
 }
-func (m *Model) editQuery(text string, picker bool) {
-	m.editor = queryEditor{open: true, picker: picker, text: text, original: m.query, cursor: len(text)}
+func (m *Model) editQuery(text string) {
+	m.editor = queryEditor{open: true, text: text, original: m.query, cursor: len(text)}
 	m.prefix = ""
 	m.count = 0
 	m.inputSerial++
@@ -173,21 +243,25 @@ func (m *Model) editQuery(text string, picker bool) {
 	m.project()
 }
 func (m *Model) changedQuery() {
-	m.editor.candidates = nil
-	m.editor.candidate = 0
-	m.editor.ready = 0
+	m.editor.current = false
 	m.queryError = ""
 	m.queryWarning = ""
 	m.serial++ // fence preparation from a previous valid draft
 	m.project()
 }
+
+// insertCompletion replaces the word at the cursor with the highlighted
+// candidate, or the first.
 func (m *Model) insertCompletion() bool {
 	e := &m.editor
-	if e.ready != m.request || len(e.candidates) == 0 {
+	if !e.current || len(e.candidates) == 0 {
 		return false
 	}
 	field, _, start, end := e.completion()
-	value := e.candidates[e.candidate].Value
+	value := e.candidates[0].Value
+	if e.highlighted() {
+		value = e.candidates[e.candidate].Value
+	}
 	if field != "" {
 		value = quoteQuery(value)
 	}
@@ -207,28 +281,13 @@ func (m Model) updateQuery(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.serial++
 		m.project()
 	case "enter":
-		if e.picker && m.insertCompletion() {
-			e.picker = false
-		}
-		if _, err := query.Parse(e.text, query.Options{}); err != nil {
-			m.queryError = err.Error()
-			return m, nil
-		}
-		m.query = e.text
-		m.editor = queryEditor{}
-		m.queryError = ""
-		m.serial++
-		m.project()
+		m.acceptQuery()
 	case "tab":
 		m.insertCompletion()
 	case "up", "shift+tab":
-		if len(e.candidates) > 0 {
-			e.candidate = (e.candidate + len(e.candidates) - 1) % len(e.candidates)
-		}
+		e.move(-1)
 	case "down":
-		if len(e.candidates) > 0 {
-			e.candidate = (e.candidate + 1) % len(e.candidates)
-		}
+		e.move(1)
 	case "left":
 		if e.cursor > 0 {
 			_, size := utf8.DecodeLastRuneInString(e.text[:e.cursor])
@@ -273,6 +332,25 @@ func (m Model) updateQuery(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// acceptQuery inserts a highlighted candidate, then applies the draft if it
+// parses. A draft that doesn't parse after an insert, such as a new field
+// name, stays open for its value.
+func (m *Model) acceptQuery() {
+	e := &m.editor
+	inserted := e.highlighted() && m.insertCompletion()
+	if _, err := query.Parse(e.text, query.Options{}); err != nil {
+		if !inserted {
+			m.queryError = err.Error()
+		}
+		return
+	}
+	m.query = e.text
+	m.editor = queryEditor{}
+	m.queryError = ""
+	m.serial++
+	m.project()
+}
 func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 	for _, binding := range queryMenus[prefix] {
 		if binding.key != key {
@@ -289,7 +367,7 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 				m.query = toggleTerm(m.query, hideDrafts)
 			default:
 				text := setQueryField(m.query, binding.value, "")
-				m.editQuery(strings.TrimSpace(text+" ")+" "+binding.value+":", true)
+				m.editQuery(strings.TrimSpace(text+" ") + " " + binding.value + ":")
 				return true, nil
 			}
 		case "o":

@@ -34,8 +34,20 @@ func (m Model) frame() []string {
 	return lines
 }
 
+// heldFrame is the list as it was before a view switch. It stays on screen
+// until the new rows are ready, or slow enough to show as loading, so a
+// switch paints once.
+type heldFrame struct {
+	body     []string
+	position string
+}
+
+func (m Model) holding() bool { return m.held != nil && !m.loads[listLoad].shown }
+
 func (m Model) body(rows int) []string {
 	switch {
+	case m.holding():
+		return m.held.body
 	case m.split():
 		left, right := m.listPane(m.listWidth(), rows), m.detailPane(m.detailWidth(), rows)
 		divider := m.theme.faint.render("│")
@@ -62,21 +74,33 @@ func center(s string, width int) string {
 	return blank(left) + s + blank(width-w-left)
 }
 
-// listMessage replaces rows that do not exist yet; a pending result is
-// loading, never empty.
-func (m Model) listMessage() string {
+// listPending reports that the list has no current rows to show yet.
+func (m Model) listPending() bool {
+	return m.loading || m.failure == "" && len(m.data.rows) == 0 && (m.applied != m.request || m.prepared != m.serial || m.syncing)
+}
+
+// unsettled reports that the list has nothing to show yet, not even a
+// previous answer.
+func (m Model) unsettled() bool {
+	return m.loading || m.failure == "" && len(m.data.rows) == 0 && m.syncing
+}
+
+// listMessage reports what replaces the rows, if anything. Pending rows are
+// blank until the wait is long enough to say loading, never empty; a query
+// being answered keeps its last empty result meanwhile.
+func (m Model) listMessage() (string, bool) {
 	t := m.theme
 	switch {
-	case m.loading:
-		return t.muted.render("Loading…")
+	case m.loads[listLoad].shown:
+		return t.muted.render("Loading…"), true
+	case m.unsettled():
+		return "", true
 	case m.failure != "":
-		return t.red.render("! " + textutil.Line(m.failure))
+		return t.red.render("! " + textutil.Line(m.failure)), true
 	case len(m.data.rows) > 0:
-		return ""
-	case m.applied != m.request || m.prepared != m.serial || m.syncing:
-		return t.muted.render("Loading…")
+		return "", false
 	}
-	return t.muted.render("No matching items")
+	return t.muted.render("No matching items"), true
 }
 
 func (m Model) listPane(width, rows int) []string {
@@ -84,8 +108,8 @@ func (m Model) listPane(width, rows int) []string {
 	if rows == 0 {
 		return out
 	}
-	message := m.listMessage()
-	if m.isBoard() && message == "" && len(m.data.starts) > 0 {
+	message, replaced := m.listMessage()
+	if m.isBoard() && !replaced && len(m.data.starts) > 0 {
 		return m.boardPane(width, rows)
 	}
 	l := m.layout(width)
@@ -93,7 +117,7 @@ func (m Model) listPane(width, rows int) []string {
 	if !m.isBoard() {
 		out[0] = m.columnHeader(l)
 	}
-	if message != "" {
+	if replaced {
 		for i := 1; i < rows; i++ {
 			out[i] = blank(width)
 		}
@@ -128,7 +152,22 @@ func (m Model) detailBanner() []string {
 // detailVisible is the number of scrolled content rows below the detail
 // header (meta, title, tabs and a gap) and any failure banner.
 func (m Model) detailVisible() int {
-	return max(1, m.height-6-len(m.detailBanner()))
+	return max(1, m.height-2-m.detailBodyTop())
+}
+
+// detailBodyTop is the pane row of the first body line, below the meta,
+// title and tab rows, a gap, and any banners.
+func (m Model) detailBodyTop() int { return 4 + len(m.detailBanner()) }
+
+// detailPlaceholder reports that the body is replaced while it loads.
+func (m Model) detailPlaceholder() bool {
+	return m.loads[detailLoad].shown || m.detailLoading && len(m.detailLines) == 0
+}
+
+// detailCurrent reports that the body on screen is the selected item's.
+// Another item's body, kept while this one loads, takes no cursor or clicks.
+func (m Model) detailCurrent() bool {
+	return m.detailIdentity.Valid && m.detailError == "" && !m.detailPlaceholder() && (!m.detailLoading || m.detailShownRef == m.detailIdentity.Ref)
 }
 
 func (m Model) detailMeta(row engine.Row) string {
@@ -153,10 +192,8 @@ func (m Model) detailMeta(row engine.Row) string {
 // pane's inner left edge. Too narrow for all tabs, it shows the active one.
 func (m Model) detailTabBar(width int) (string, []span) {
 	t := m.theme
-	counts := m.detailCounts
-	if row, ok := m.selectedRow(); ok && len(row.Relations) > 0 {
-		counts[tabRelations] = strconv.Itoa(len(row.Relations))
-	}
+	row, _ := m.selectedRow()
+	counts := tabCounts(row)
 	labels := make([]string, len(detailTabNames))
 	total := 0
 	for i, name := range detailTabNames {
@@ -215,16 +252,15 @@ func (m Model) detailPane(width, rows int) []string {
 		}
 		return out
 	}
-	put(0, m.detailMeta(row))
-	title := textutil.Line(row.Title)
-	put(1, t.bold.render(ansi.Truncate(title, inner, "…")))
-	tabs, _ := m.detailTabBar(inner)
-	visible := max(1, rows-4-len(m.detailBanner()))
+	meta := m.detailMeta(row)
+	visible := max(1, rows-m.detailBodyTop())
+	placeholder := m.detailPlaceholder()
 	var right []string
-	if n := len(m.detailLines); n > visible && !m.detailLoading {
+	if n := len(m.detailLines); n > visible && !placeholder {
 		right = append(right, strconv.Itoa(min(100, (m.detailScroll+visible)*100/n))+"%")
 	}
 	// A capped body says so where it is always visible, not only at its end.
+	// The meta row has room; the tab row may be full.
 	if m.detailExpanded {
 		right = append(right, "m less")
 	} else if m.detailTruncated {
@@ -232,12 +268,16 @@ func (m Model) detailPane(width, rows int) []string {
 	}
 	for len(right) > 0 {
 		text := strings.Join(right, " · ")
-		if gap := inner - ansi.StringWidth(tabs) - ansi.StringWidth(text); gap >= 2 {
-			tabs += blank(gap) + t.faint.render(text)
+		if gap := inner - ansi.StringWidth(meta) - ansi.StringWidth(text); gap >= 2 {
+			meta += blank(gap) + t.faint.render(text)
 			break
 		}
 		right = right[1:]
 	}
+	put(0, meta)
+	title := textutil.Line(row.Title)
+	put(1, t.bold.render(ansi.Truncate(title, inner, "…")))
+	tabs, _ := m.detailTabBar(inner)
 	put(2, tabs)
 	line := 4
 	for _, banner := range m.detailBanner() {
@@ -249,11 +289,13 @@ func (m Model) detailPane(width, rows int) []string {
 		put(line, t.muted.render("No item selected"))
 	case m.detailError != "":
 		put(line, t.red.render("! "+m.detailError))
-	case m.detailLoading && len(m.detailLines) == 0:
-		put(line, t.muted.render("Loading…"))
+	case placeholder:
+		if m.loads[detailLoad].shown {
+			put(line, t.muted.render("Loading…"))
+		}
 	default:
 		cursor := -1
-		if m.detailTab == tabCriteria && m.criteriaCursor >= 0 && m.criteriaCursor < len(m.detailCriteria) {
+		if m.detailCurrent() && m.detailTab == tabCriteria && m.criteriaCursor >= 0 && m.criteriaCursor < len(m.detailCriteria) {
 			cursor = m.detailCriteria[m.criteriaCursor]
 		}
 		for i := m.detailScroll; i < len(m.detailLines) && line < rows; i++ {
@@ -382,6 +424,19 @@ func (m Model) whichKeySheet() []string {
 	return m.sheet(title, body[:min(len(body), m.maxSheet()-1)], m.width)
 }
 
+// completionWindow is the range of candidates on screen, around the
+// highlighted one.
+func (m Model) completionWindow() (start, end int) {
+	e := m.editor
+	focus := 0
+	if e.highlighted() {
+		focus = e.candidate
+	}
+	limit := min(8, m.maxSheet()-1)
+	start = max(0, min(focus-limit/2, len(e.candidates)-limit))
+	return start, min(len(e.candidates), start+limit)
+}
+
 // completionSheet offers candidates for the query being typed, and keeps its
 // error or warning in view directly above the input.
 func (m Model) completionSheet() []string {
@@ -397,21 +452,19 @@ func (m Model) completionSheet() []string {
 	if len(e.candidates) == 0 {
 		return problem
 	}
-	field, _, _, _ := e.completion()
 	title := "Fields"
-	if field != "" {
-		title = textutil.Line(field)
+	if e.field != "" {
+		title = textutil.Line(e.field)
 	}
-	limit := min(8, m.maxSheet()-1)
-	start := max(0, min(e.candidate-limit/2, len(e.candidates)-limit))
+	start, end := m.completionWindow()
 	var body []string
-	for i := start; i < min(len(e.candidates), start+limit); i++ {
+	for i := start; i < end; i++ {
 		c := e.candidates[i]
 		text := "  " + textutil.Line(c.Value)
 		if c.Name != "" && c.Name != c.Value {
 			text += "  " + t.muted.render(textutil.Line(c.Name))
 		}
-		if i == e.candidate {
+		if i == e.candidate && e.highlighted() {
 			text = t.accent.render("▌") + text[1:]
 			body = append(body, t.selected(fit(text, m.width)))
 			continue
@@ -435,6 +488,21 @@ func (m Model) targetLabel() string {
 	return ""
 }
 
+// pickerChoices reports whether the picker sheet lists choices: below its
+// title and input, from pickerWindow's start.
+func (m Model) pickerChoices() bool {
+	p := m.picker
+	return !p.inputOnly && !p.loading && len(p.filtered) > 0
+}
+
+// pickerWindow is the range of choices on screen, around the cursor.
+func (m Model) pickerWindow() (start, end int) {
+	p := m.picker
+	limit := max(1, min(10, m.maxSheet()-2))
+	start = max(0, min(p.cursor-limit/2, len(p.filtered)-limit))
+	return start, min(len(p.filtered), start+limit)
+}
+
 func (m Model) pickerSheet() []string {
 	t := m.theme
 	p := m.picker
@@ -447,7 +515,6 @@ func (m Model) pickerSheet() []string {
 	if p.inputOnly {
 		return m.sheet(title, body, m.width)
 	}
-	limit := max(1, min(10, m.maxSheet()-2))
 	switch {
 	case p.loading:
 		body = append(body, t.muted.render("  Loading…"))
@@ -456,8 +523,8 @@ func (m Model) pickerSheet() []string {
 	case len(p.filtered) == 0:
 		body = append(body, t.muted.render("  No matches"))
 	default:
-		start := max(0, min(p.cursor-limit/2, len(p.filtered)-limit))
-		for i := start; i < min(len(p.filtered), start+limit); i++ {
+		start, end := m.pickerWindow()
+		for i := start; i < end; i++ {
 			choice := p.filtered[i]
 			mark := ""
 			switch {

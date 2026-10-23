@@ -46,7 +46,7 @@ assignee picker ([Jira](jira.md#writes)).
 | `●` after the ID | Edit pending |
 | `!` after the ID | Edit failed or conflicted; open the item for detail |
 | `•` in the gutter | Marked |
-| `✓` `↻` `~` `!` in the header | Source synced, syncing, partial, error |
+| `✓` `~` `!` in the header | Source synced, partial, error; no mark while syncing |
 
 **Header:** view tabs and one badge per source. Untrusted hooks, actions, or
 adapters replace the badges with `⚠ Untrusted project config · bl trust --show`;
@@ -60,7 +60,9 @@ Grouping by status shows only the icon.
 
 **Status bar:** the query, or the active input, prompt, or error. A notice shows
 until the next key. On the right: a pending prefix or count, marks, pending `●`
-and failed `!` counts, `↻` while results are in flight, and the cursor position.
+and failed `!` counts, `↻` while results or a sync take over 300 ms, and the
+cursor position. A loading indicator, once shown, stays at least 300 ms, so
+nothing flashes.
 
 At 120 columns or wider, detail opens beside the list; narrower, it replaces the
 list. Pickers, quick-add, and which-key menus open above the status bar. The
@@ -71,8 +73,9 @@ palette, go-to, and the full form are centered panels. Help fills the body.
 The frame paints immediately, then the first 256 items in filename order, then
 the rest. The partial list is usable and editable, but readiness, order, and
 counts can change, and missing blockers show as unknown until loading finishes.
-While a source syncs, an empty list shows loading rather than "No matching
-items."
+While a source syncs, an empty list stays blank, then shows loading after 300 ms,
+never "No matching items." Switching tabs keeps the old rows until the new ones
+are ready, or loading shows.
 
 `R` refreshes now. Remote sources poll once a minute and show up to 256 cached
 rows before the network answers. Cached rows appear in Open, but a stale item is
@@ -108,8 +111,9 @@ Explicit `sort` and `group` override query directives. Columns are `id`,
 `title`, in display order.
 
 `gt`/`gT` cycle tabs; `1`–`9` jump to one (a digit waits 350 ms in case it starts
-a count). Each tab keeps its query, folds, and selected item across refreshes;
-if the item disappears, the first row is selected.
+a count). Each tab keeps its query, folds, and selected item across refreshes,
+following the item into another group; if it disappears, the row taking its
+place is selected.
 
 `ctrl-s` saves the current view. Edit the name (`ctrl-u` clears it), press `tab`
 to switch between user and project config, then `enter`. Saving replaces a
@@ -161,8 +165,10 @@ is. `?` opens the same list as read-only help. Both are searchable.
 
 ## Detail
 
-The header (ID, status, priority, title) follows the selection immediately. The
-body loads once the selection rests for 50 ms.
+The header (ID, status, priority, title) and tab counts follow the selection
+immediately. The body loads once the selection rests for 50 ms; switching tabs
+or `m` renders at once. The previous body stays until the new one is ready, or
+loading shows.
 
 | Tab | Content |
 | --- | --- |
@@ -177,10 +183,13 @@ when content is still cut off.
 
 ## Filtering, sorting, grouping
 
-`/` edits the query live. `tab` completes, `up`/`down` choose a candidate,
-`enter` applies, `esc` restores the previous query. Syntax errors show a byte
-position and keep the last valid rows; unknown values warn. ID and title matches
-are bold and underlined.
+`/` edits the query live. `up`/`down` highlight a candidate; an unfinished word
+highlights the first. `tab` inserts the highlighted candidate, or the first.
+`enter` inserts the highlighted candidate, then applies the query if it parses;
+a field name stays open for its value. `esc` restores the previous query.
+Syntax errors show a byte position and keep the last valid rows; unknown values
+warn. Neither shows while candidates still match the word being typed. ID and
+title matches are bold and underlined.
 
 `f`, `o`, and `z` open menus for filter, sort, and group/fold. Field filters open
 a value picker. `fr` shows ready items; `fd` adds closed items (not archived);
@@ -320,11 +329,17 @@ scope; [workspace references](format.md#frontmatter-keys) disambiguate projects.
 
 ## Mouse
 
-Click a row to select it; double-click (within 400 ms) to open it. Click tabs to
-switch. Clicking a board column header focuses it; clicking a list header sorts
-by ID, priority, status, title, or update time, and again to reverse. The wheel
-moves three rows, or scrolls detail under the pointer. Drag the divider to
-resize. The mouse is ignored while a modal is open.
+Click a row to select it; double-click (within 400 ms) to open it. Clicking a
+group header folds or unfolds it. Click tabs to switch. Clicking a board column
+header focuses it; clicking a list header sorts by ID, priority, status, title,
+or update time, and again to reverse. Click a criterion to select it, or its box
+to toggle it. Click the query in the status bar to edit it there. The wheel
+moves three rows, or scrolls detail under the pointer; a sideways swipe moves one
+board column. Drag the divider to resize.
+
+In the palette, pickers, and completion, the wheel moves the highlight and a
+click picks a row, or toggles it in a multi-select. Clicking the query being
+edited moves its cursor. Other prompts ignore the mouse.
 
 ## Default keymap
 

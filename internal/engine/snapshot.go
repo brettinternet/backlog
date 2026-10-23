@@ -25,6 +25,7 @@ type SourceState struct {
 	Coverage source.Coverage
 	Error    string
 	Cursor   source.Cursor
+	Initial  bool // the bounded startup snapshot; the first full load is running
 }
 
 // Snapshot is immutable. Successive snapshots share unchanged item records.

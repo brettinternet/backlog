@@ -120,6 +120,8 @@ type Model struct {
 	folded                   *foldState
 	data                     prepared
 	loading                  bool
+	loads                    [loadKinds]indicator
+	held                     *heldFrame
 	failure                  string
 	sources                  []sourceBadge
 	syncing                  bool
@@ -133,10 +135,12 @@ type Model struct {
 	detailExpanded           bool
 	detailPending            bool
 	detailLoading            bool
+	detailSubmitted          uint64 // the last generation sent to the worker
 	detailTruncated          bool
-	detailLines              []string
-	detailCriteria           []int // detailLines index of each criterion
-	detailCounts             tabCounts
+	detailLines              []string // the last body, kept while the next loads
+	detailCriteria           []int    // detailLines index of each criterion
+	detailShownRef           model.Ref
+	detailShownTab           detailTab
 	detailError              string
 	detailScroll             int
 	criteriaCursor           int
@@ -243,7 +247,7 @@ func (m Model) waitSnapshot() tea.Cmd {
 				switch {
 				case status.Error != "":
 					badge.state, badge.err = "error", status.Error
-				case status.Coverage == "unknown":
+				case status.Coverage == "unknown" || status.Initial:
 					badge.state = "syncing"
 					syncing = true
 				case status.Coverage != "complete":
@@ -296,16 +300,15 @@ func (m Model) detailWidth() int {
 	}
 	return max(1, m.width)
 }
+
+// scheduleDetail loads the selected item's detail once the selection rests.
+// The previous body stays until the new one arrives, or until the load is
+// slow enough to show as loading.
 func (m *Model) scheduleDetail() tea.Cmd {
 	m.routeSelectedProject()
 	m.detailGeneration++
 	row, ok := m.selectedRow()
 	m.detailIdentity = identityFor(row, ok)
-	m.detailLines = nil
-	m.detailCriteria = nil
-	m.detailCounts = tabCounts{}
-	m.detailScroll = 0
-	m.detailTruncated = false
 	m.detailError = ""
 	m.detailLoading = m.detailOpen && ok
 	if !m.detailOpen {
@@ -318,7 +321,18 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	}
 	return nil
 }
+
+// showDetail renders another tab or length of the same item at once; only a
+// moving selection waits to settle.
+func (m *Model) showDetail() tea.Cmd {
+	cmd := m.scheduleDetail()
+	if m.detailOpen {
+		m.submitDetail()
+	}
+	return cmd
+}
 func (m *Model) submitDetail() {
+	m.detailSubmitted = m.detailGeneration
 	row, ok := m.selectedRow()
 	if !ok {
 		m.detailLoading = false
@@ -388,7 +402,7 @@ func (m Model) prepare() tea.Cmd {
 			data = prepareTree(groups, snapshot, folded, foldAll)
 		}
 		data.widths = measure(data.rows, statusNames(statuses))
-		selected := -1
+		selected, moved := -1, -1
 		for i, r := range data.rows {
 			matches := (board || tree || r.value == anchor.value) && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
 			if board && anchor.header != "" {
@@ -401,6 +415,14 @@ func (m Model) prepare() tea.Cmd {
 				selected = i
 				break
 			}
+			// An item that left its group, such as after a status edit, is
+			// followed to its new one.
+			if moved < 0 && restore == nil && anchor.header == "" && r.header == "" && r.row.Ref == anchor.row.Ref {
+				moved = i
+			}
+		}
+		if selected < 0 {
+			selected = moved
 		}
 		return foldedMsg{serial, data, selected, from}
 	}
@@ -482,28 +504,31 @@ func (p prepared) nextItem(from int, forward bool) (int, bool) {
 	}
 	return end - 1, true
 }
-func (m *Model) project() {
-	if m.snapshot != nil && m.opts.Projector != nil {
-		if m.hasWorkspace() {
-			text, field, prefix := m.query, "", ""
-			if m.editor.open {
-				text = m.editor.text
-				field, prefix, _, _ = m.editor.completion()
-			}
-			m.request = m.opts.Projector.RequestScope(m.snapshot, text, m.scopeProject(), field, prefix, false)
-			return
-		}
-		if m.editor.open {
-			field, prefix, _, _ := m.editor.completion()
-			m.request = m.opts.Projector.RequestEditor(m.snapshot, m.editor.text, field, prefix)
-		} else {
-			m.request = m.opts.Projector.Request(m.snapshot, m.query)
-		}
+func (m *Model) project() { m.requestProjection(false) }
+
+// requestProjection asks for the rows of the query, or of the draft and its
+// completions while the editor is open. Every request carries the draft, so a
+// background refresh can't empty the completion list.
+func (m *Model) requestProjection(refreshClaims bool) {
+	if m.snapshot == nil || m.opts.Projector == nil {
+		return
 	}
+	q := engine.ProjectionQuery{Text: m.query, RefreshClaims: refreshClaims}
+	if m.hasWorkspace() {
+		q.Project = m.scopeProject()
+	}
+	if m.editor.open {
+		q.Text, q.Complete = m.editor.text, true
+		q.Field, q.Prefix, _, _ = m.editor.completion()
+	}
+	m.request = m.opts.Projector.RequestQuery(m.snapshot, q)
 }
 func (m *Model) switchView(n int) {
 	if n < 0 || n >= len(m.views) {
 		return
+	}
+	if m.held == nil && !m.unsettled() && !m.loads[listLoad].shown {
+		m.held = &heldFrame{body: m.body(max(0, m.height-2)), position: m.position()}
 	}
 	m.captureView()
 	m.serial++
@@ -512,8 +537,7 @@ func (m *Model) switchView(n int) {
 	m.query = m.views[n].Config.Query
 	m.restore = &m.views[n].Selection
 	m.editor = queryEditor{}
-	m.queryError = ""
-	m.queryWarning = ""
+	m.queryError = "" // a warning stays until the new result replaces it
 	m.highlights = nil
 	m.foldAll = m.views[n].foldAll
 	m.selected = 0
@@ -528,8 +552,23 @@ func (m *Model) switchView(n int) {
 // terminal instead would corrupt the alternate screen.
 type NoticeMsg string
 
+// Update times loading indicators around every change, so no handler has to
+// remember to.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	m = next.(Model)
+	busy := [loadKinds]bool{listLoad: m.listPending(), statusLoad: m.stale() || m.syncing, detailLoad: m.detailLoading}
+	commands := []tea.Cmd{cmd}
+	for kind := range m.loads {
+		commands = append(commands, m.loads[kind].track(loadKind(kind), busy[kind]))
+	}
+	return m, tea.Batch(commands...)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case indicatorDue:
+		return m, m.loads[msg.kind].due(msg)
 	case NoticeMsg:
 		m.notice = boundedLine(string(msg))
 		return m, nil
@@ -551,6 +590,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		oldDetailWidth := m.detailWidth()
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
+		m.held = nil
 		if m.width < 120 {
 			m.detailFocus = m.detailOpen // the detail pane replaces the list
 		}
@@ -573,6 +613,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshClaims()
 		return m, nil
 	case snapshotMsg:
+		// Nothing matched before the sync finished, which proves nothing; the
+		// synced rows are loading.
+		if m.syncing && !msg.syncing && len(m.data.rows) == 0 {
+			m.loading = true
+		}
 		m.snapshot, m.sources, m.syncing = msg.snapshot, msg.sources, msg.syncing
 		m.project()
 		return m, m.waitSnapshot()
@@ -582,21 +627,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applied = msg.Request
 		m.claimExpiry = msg.NextClaimExpiry
+		// While candidates guide the word being typed, its error or unknown
+		// value would only flash; enter reports it.
+		guided := func(error) bool { return false }
 		if m.editor.open {
-			m.editor.candidates = msg.Completions
-			m.editor.candidate = 0
-			m.editor.ready = m.request
+			m.editor.receive(msg.Completions)
+			guided = func(err error) bool { return len(m.editor.candidates) > 0 && m.editor.inWord(err) }
+			m.editor.unfinished = guided(msg.Error) || guided(msg.Warning)
 		}
 		if msg.Error != nil {
 			m.queryError = textutil.Line(msg.Error.Error())
+			if guided(msg.Error) {
+				m.queryError = ""
+			}
 			m.loading = false
+			m.held = nil
 			// Nothing is in flight: the last valid rows stay, without a spinner.
 			m.prepared = m.serial
 			return m, m.waitProjection()
 		}
 		m.queryError = ""
 		m.queryWarning = ""
-		if msg.Warning != nil {
+		if msg.Warning != nil && !guided(msg.Warning) {
 			m.queryWarning = textutil.Line(msg.Warning.Error())
 		}
 		text := m.query
@@ -629,6 +681,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.data = msg.data
 		m.prepared = msg.serial
 		m.loading = false
+		m.held = nil
 		// The store can publish its empty loading snapshot before source data.
 		// Keep the restart anchor until rows exist to resolve it against.
 		if m.data.items > 0 {
@@ -648,7 +701,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.count = 0
 		}
 	case detailDue:
-		if !m.detailOpen {
+		if !m.detailOpen || m.detailSubmitted == m.detailGeneration {
 			m.detailPending = false
 			return m, nil
 		}
@@ -662,13 +715,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case detailResultMsg:
 		result := detailResult(msg)
 		if m.detailOpen && result.generation == m.detailGeneration && result.identity.Ref == m.detailIdentity.Ref {
+			// A new version or length of the page in view keeps its scroll.
+			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab
 			m.detailLoading = false
 			m.detailError = result.err
 			m.detailLines = result.lines
 			m.detailCriteria = result.criteria
-			m.detailCounts = result.counts
 			m.detailTruncated = result.truncated
-			m.detailScroll = 0
+			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
+			if !same {
+				m.detailScroll = 0
+			}
+			m.scrollDetail(0)
 			m.keepCriterionVisible()
 		}
 		return m, m.waitDetail()
@@ -878,7 +936,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	if !m.detailFocus {
 		switch s {
 		case "/":
-			m.editQuery(m.query, false)
+			m.editQuery(m.query)
 			return m, nil
 		case "f", "o", "z":
 			m.prefix = s
@@ -933,23 +991,13 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			m.closeDetail()
 			return m, nil
 		case "tab":
-			m.detailTab = (m.detailTab + 1) % detailTab(len(detailTabNames))
-			m.detailExpanded = false
-			if m.detailTab == tabCriteria {
-				m.criteriaCursor = 0
-			}
-			return m, m.scheduleDetail()
+			return m, m.switchDetailTab((m.detailTab + 1) % detailTab(len(detailTabNames)))
 		case "shift+tab":
-			m.detailTab = (m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames))
-			m.detailExpanded = false
-			if m.detailTab == tabCriteria {
-				m.criteriaCursor = 0
-			}
-			return m, m.scheduleDetail()
+			return m, m.switchDetailTab((m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames)))
 		case "m":
 			if m.detailTruncated || m.detailExpanded {
 				m.detailExpanded = !m.detailExpanded
-				return m, m.scheduleDetail()
+				return m, m.showDetail()
 			}
 			return m, nil
 		case "x", "space", " ":
@@ -1007,7 +1055,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		opened := !m.detailOpen
 		m.detailOpen, m.detailFocus = true, true
 		if opened {
-			return m, m.scheduleDetail()
+			return m, m.showDetail()
 		}
 		return m, nil
 	}
@@ -1020,7 +1068,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			m.detailOpen = true
 			m.detailFocus = true
 			m.detailTab = tabOverview
-			return m, m.scheduleDetail()
+			return m, m.showDetail()
 		}
 		m.detailFocus = true
 		return m, nil
@@ -1149,6 +1197,16 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// switchDetailTab shows another tab of the item in view.
+func (m *Model) switchDetailTab(tab detailTab) tea.Cmd {
+	m.detailTab = tab
+	m.detailExpanded = false
+	if tab == tabCriteria {
+		m.criteriaCursor = 0
+	}
+	return m.showDetail()
+}
+
 // toggleLayout switches the current view between list and layout. The view's
 // session state keeps the choice.
 func (m *Model) toggleLayout(layout string) tea.Cmd {
@@ -1170,6 +1228,7 @@ func (m *Model) closeDetail() {
 	m.detailLoading = false
 	m.detailLines = nil
 	m.detailCriteria = nil
+	m.detailTruncated = false
 }
 
 // stepItem moves to the next or previous item, skipping group headers, without

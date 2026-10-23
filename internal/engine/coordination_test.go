@@ -294,7 +294,7 @@ func TestProjectionRetriesCanceledClaimLookup(t *testing.T) {
 			}
 			if refresh {
 				await(projector.Request(snap, "is:open"))
-				projector.RefreshClaims(snap, "is:open")
+				projector.RequestQuery(snap, engine.ProjectionQuery{Text: "is:open", RefreshClaims: true})
 			} else {
 				projector.Request(snap, "is:open")
 			}
@@ -369,7 +369,7 @@ func TestProjectionStatusRefreshDoesNotWaitForCanceledClaimPoll(t *testing.T) {
 	}
 	const query = "is:open group:status"
 	await(projector.Request(snapshot, query), "todo", "agent@host")
-	projector.RefreshClaims(snapshot, query)
+	projector.RequestQuery(snapshot, engine.ProjectionQuery{Text: query, RefreshClaims: true})
 	select {
 	case <-c.started:
 	case <-ctx.Done():
@@ -393,7 +393,7 @@ func TestProjectionStatusRefreshDoesNotWaitForCanceledClaimPoll(t *testing.T) {
 	c.claims = nil
 	c.mu.Unlock()
 	close(c.release)
-	await(projector.RefreshClaims(snapshot, query), "doing", "")
+	await(projector.RequestQuery(snapshot, engine.ProjectionQuery{Text: query, RefreshClaims: true}), "doing", "")
 	if c.calls.Load() != 3 {
 		t.Fatal("next explicit poll did not refresh claims")
 	}

@@ -714,7 +714,9 @@ func (m Model) badgeText() string {
 		case "error":
 			parts = append(parts, t.red.render("! "+id+": "+textutil.Line(s.err)))
 		case "syncing":
-			parts = append(parts, t.accent.render("↻ "+id))
+			// Badges report results. The status bar's ↻ reports the work, once
+			// it is slow enough not to flash.
+			parts = append(parts, t.muted.render("  "+id))
 		case "partial":
 			parts = append(parts, t.yellow.render("~ "+id))
 		default:
@@ -739,7 +741,8 @@ func (m Model) headerLine() string {
 }
 
 // stale reports a projection or preparation still in flight. It is shown as a
-// fixed-width glyph so the status bar never reflows while results arrive.
+// fixed-width glyph, once it outlasts loadingDelay, so the status bar neither
+// reflows nor blinks while results arrive.
 func (m Model) stale() bool {
 	return m.loading || m.applied != m.request || m.prepared != m.serial
 }
@@ -771,20 +774,9 @@ func (m Model) statusBar() string {
 	case m.notice != "":
 		left = textutil.Line(m.notice)
 	default:
-		left = t.muted.render(textutil.Line(m.query))
-		if m.queryWarning != "" {
-			left = t.yellow.render("⚠ "+m.queryWarning) + "  " + left
-		}
-		if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" && layout != "board" && layout != "tree" {
-			left = t.yellow.render(textutil.Line(layout)+" unavailable") + "  " + left
-		}
+		left = m.queryPrefix() + t.muted.render(textutil.Line(m.query))
 	}
-	if m.visual {
-		left = t.tab.render(" VISUAL ") + " " + left
-		if !t.color {
-			left = "-- VISUAL -- " + left
-		}
-	}
+	left = m.visualTag() + left
 	var right []string
 	if m.count > 0 || m.keyPrefix != "" || m.prefix != "" {
 		pending := m.keyPrefix
@@ -806,14 +798,12 @@ func (m Model) statusBar() string {
 	if m.data.failed > 0 {
 		right = append(right, t.failed.render("! "+strconv.Itoa(m.data.failed)))
 	}
-	position := ""
-	if m.data.items > 0 && m.selected < len(m.data.rows) {
-		position = strconv.Itoa(m.data.rows[m.selected].ordinal) + "/" + strconv.Itoa(m.data.items)
-	} else if !m.loading {
-		position = "0/0"
+	position := m.position()
+	if m.holding() {
+		position = m.held.position
 	}
 	spinner := " "
-	if m.stale() {
+	if m.loads[statusLoad].shown {
 		spinner = t.accent.render("↻")
 	}
 	right = append(right, spinner+" "+t.muted.render(position))
@@ -823,6 +813,43 @@ func (m Model) statusBar() string {
 		left = ansi.Truncate(left, max(0, room), "…")
 	}
 	return fit(" "+left+strings.Repeat(" ", max(1, m.width-1-ansi.StringWidth(left)-ansi.StringWidth(rightText)))+rightText, m.width)
+}
+
+// visualTag leads the status bar in visual mode.
+func (m Model) visualTag() string {
+	switch {
+	case !m.visual:
+		return ""
+	case !m.theme.color:
+		return "-- VISUAL -- "
+	}
+	return m.theme.tab.render(" VISUAL ") + " "
+}
+
+// queryPrefix is what the status bar shows before the query: an unavailable
+// layout, then a query warning.
+func (m Model) queryPrefix() string {
+	t := m.theme
+	prefix := ""
+	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" && layout != "board" && layout != "tree" {
+		prefix = t.yellow.render(textutil.Line(layout)+" unavailable") + "  "
+	}
+	if m.queryWarning != "" {
+		prefix += t.yellow.render("⚠ "+m.queryWarning) + "  "
+	}
+	return prefix
+}
+
+// position is the selected item's ordinal among the items, once there is an
+// answer to count.
+func (m Model) position() string {
+	switch {
+	case m.data.items > 0 && m.selected < len(m.data.rows):
+		return strconv.Itoa(m.data.rows[m.selected].ordinal) + "/" + strconv.Itoa(m.data.items)
+	case m.unsettled():
+		return ""
+	}
+	return "0/0"
 }
 
 // sheet is a bottom overlay drawn over the body, above the status bar.
@@ -850,13 +877,18 @@ func (m Model) hintSheet(title, hint string, body []string, width int) []string 
 	return lines
 }
 
+// modalRect places a modal box of the requested size; body line i is drawn
+// at row y+1+i, columns x+2 to x+width-2.
+func (m Model) modalRect(width, height int) (x, y, w, h int) {
+	w = max(10, min(width, m.width-2))
+	h = max(3, min(height, m.height-2))
+	return (m.width - w) / 2, max(1, (m.height-h)/2), w, h
+}
+
 // modal draws a bordered box centered over already rendered lines.
 func (m Model) modal(base []string, title string, body []string, width, height int) []string {
 	t := m.theme
-	width = max(10, min(width, m.width-2))
-	height = max(3, min(height, m.height-2))
-	x := (m.width - width) / 2
-	y := max(1, (m.height-height)/2)
+	x, y, width, height := m.modalRect(width, height)
 	inner := width - 4
 	box := make([]string, 0, height)
 	label := ""

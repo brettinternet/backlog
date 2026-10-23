@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -103,6 +104,57 @@ func TestMouseNavigation(t *testing.T) {
 	if m.selected != selected || !m.launcher.open {
 		t.Fatal("mouse escaped modal")
 	}
+	// A palette click runs the command drawn under the pointer.
+	m = send(shellFixture(30), ":")
+	y := drawnRow(t, m, "Last row")
+	click(drawnAt(t, m, y, "Last row"), y)
+	if m.launcher.open || m.selected != len(m.data.rows)-1 {
+		t.Fatalf("palette click ran another command: selected %d", m.selected)
+	}
+}
+
+// Catches drift between drawn rows and click routing that would write a
+// different status or criterion than the one under the pointer.
+func TestMouseClicksEditDrawnTarget(t *testing.T) {
+	item := editItem("BL-1", "First")
+	item.Criteria = []model.Criterion{{Text: "alpha"}, {Text: "beta"}, {Text: "gamma"}}
+	m, backend := editFixture(t, []model.Item{item}, allEditCapabilities, Options{})
+	click := func(text, at string) {
+		t.Helper()
+		y := drawnRow(t, m, text)
+		next, cmd := m.Update(tea.MouseClickMsg{X: drawnAt(t, m, y, at), Y: y, Button: tea.MouseLeft})
+		if cmd == nil {
+			t.Fatalf("click on %q did nothing", text)
+		}
+		m = editPressMessage(next.(Model), cmd)
+	}
+	m = editPress(m, "s")
+	click("Done", "Done")
+	if got := itemFrom(t, backend, "BL-1").Status; got != "done" {
+		t.Fatalf("status %q after clicking Done", got)
+	}
+	// The fixture's rows don't refresh after an edit, so start again.
+	m, backend = editFixture(t, []model.Item{item}, allEditCapabilities, Options{})
+	row, _ := m.selectedRow()
+	m.detailOpen, m.detailFocus, m.detailTab = true, true, tabCriteria
+	m.detailIdentity, m.detailShownRef, m.detailShownTab = identityFor(row, true), row.Ref, tabCriteria
+	m.detailLines, m.detailCriteria = criteriaLines(item, m.theme, m.detailWidth()-2*detailPad)
+	click("beta", "\u2610")
+	if got := itemFrom(t, backend, "BL-1").Criteria; got[0].Checked || !got[1].Checked || got[2].Checked {
+		t.Fatalf("criteria after clicking the second box: %+v", got)
+	}
+}
+
+// drawnRow is the first frame row showing text.
+func drawnRow(t *testing.T, m Model, text string) int {
+	t.Helper()
+	for i, line := range strings.Split(m.View().Content, "\n") {
+		if strings.Contains(ansi.Strip(line), text) {
+			return i
+		}
+	}
+	t.Fatalf("%q not drawn", text)
+	return -1
 }
 
 // drawnAt is the terminal cell where text first appears on a frame row.

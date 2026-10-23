@@ -30,7 +30,7 @@ func detailFixture(t *testing.T, count int, render func(string, int) (string, er
 	m.width = 120
 	group := engine.RowGroup{Value: "todo"}
 	for i := 0; i < count; i++ {
-		group.Rows = append(group.Rows, engine.Row{Ref: model.Ref{Source: "tasks", ID: fmt.Sprintf("BL-%d", i+1)}, Version: "v1", Title: fmt.Sprintf("Item %d", i+1), Status: "todo", Category: model.Todo, Priority: model.High, Readiness: engine.Ready, ReadinessReason: "all readiness checks pass"})
+		group.Rows = append(group.Rows, engine.Row{Ref: model.Ref{Source: "tasks", ID: fmt.Sprintf("BL-%d", i+1)}, Version: "v1", Title: fmt.Sprintf("Item %d", i+1), Status: "todo", Category: model.Todo, Priority: model.High, Readiness: engine.Ready, ReadinessReason: "all readiness checks pass", CriteriaDone: 1, CriteriaTotal: 2, Comments: 1})
 	}
 	m.data = prepareGroupedRows([]engine.RowGroup{group}, nil, false, "", nil)
 	m.data.widths = measure(m.data.rows, nil)
@@ -41,16 +41,29 @@ func detailKey(m Model, code rune, mod tea.KeyMod) (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
-// Commands are deliberately driven with virtual settle messages, not wall-clock sleeps.
+// settleDetail skips the settle timer, not the worker: it submits the current
+// request unless a tab change already did, and applies the worker's answer.
 func settleDetail(t *testing.T, m Model) Model {
 	t.Helper()
-	row, ok := m.selectedRow()
-	if !ok {
+	if _, ok := m.selectedRow(); !ok {
 		t.Fatal("no selected item")
 	}
-	result := m.detailWorker.prepare(m.opts.Context, m.detailRequest(row))
-	next, _ := m.Update(detailResultMsg(result))
-	m = next.(Model)
+	if m.detailSubmitted != m.detailGeneration {
+		m.submitDetail()
+	}
+	for {
+		select {
+		case result := <-m.detailWorker.results:
+			next, _ := m.Update(detailResultMsg(result))
+			m = next.(Model)
+			if result.generation != m.detailGeneration {
+				continue
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("detail never settled")
+		}
+		break
+	}
 	if m.detailError != "" {
 		t.Fatal(m.detailError)
 	}
@@ -65,11 +78,15 @@ func TestDetailHeldNavigation(t *testing.T) {
 	read := m.detailWorker.read
 	m.detailWorker.read = func(ctx context.Context, ref model.Ref) (model.Item, error) { reads.Add(1); return read(ctx, ref) }
 	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m) // opening renders at once
 	m, _ = detailKey(m, 'h', 0)
+	renders.Store(0)
+	reads.Store(0)
 	for i := 1; i < 10000; i++ {
 		var cmd tea.Cmd
 		m, cmd = detailKey(m, 'j', 0)
-		if cmd != nil {
+		// Only the first move starts timers: settling and the loading delay.
+		if cmd != nil && i > 1 {
 			t.Fatal("held navigation spawned extra settle timers")
 		}
 		if header := detailHeader(m); !strings.Contains(header, fmt.Sprintf("BL-%d ", i+1)) || !strings.Contains(header, fmt.Sprintf("Item %d", i+1)) {
@@ -101,7 +118,7 @@ func TestDetailCacheAndStaleResults(t *testing.T) {
 	m.detailWorker.read = func(ctx context.Context, ref model.Ref) (model.Item, error) {
 		reads++
 		item, err := read(ctx, ref)
-		item.Version = m.data.rows[m.selected].row.Version
+		item.Version = "" // follow the row's version
 		return item, err
 	}
 	m, _ = detailKey(m, tea.KeyEnter, 0)

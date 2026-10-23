@@ -36,7 +36,24 @@ type Row struct {
 	Error                                     string
 	ErrorLocalVersion, ErrorRemoteVersion     string
 	OpenBlockers, ChildrenDone, ChildrenTotal int
+	CriteriaDone, CriteriaTotal, Comments     int
 }
+
+// SetCounts tallies the item's checked criteria and its comments, so detail
+// tabs can label them before the full item is read.
+func (r *Row) SetCounts(item model.Item) {
+	r.CriteriaDone, r.CriteriaTotal = 0, 0
+	for _, list := range [][]model.Criterion{item.Criteria, item.DoD} {
+		for _, criterion := range list {
+			r.CriteriaTotal++
+			if criterion.Checked {
+				r.CriteriaDone++
+			}
+		}
+	}
+	r.Comments = len(item.Comments)
+}
+
 type Relation struct {
 	Kind          string
 	Ref           model.Ref
@@ -92,24 +109,22 @@ func NewProjectorWithClock(ctx context.Context, cfg project.Config, now func() t
 	return p
 }
 func (p *Projector) Request(snapshot *Snapshot, text string) uint64 {
-	return p.request(snapshot, text, false, "", "", false)
+	return p.RequestQuery(snapshot, ProjectionQuery{Text: text})
 }
 
-// RequestEditor uses the same bounded latest-wins worker for completion and projection.
-func (p *Projector) RequestEditor(snapshot *Snapshot, text, field, prefix string) uint64 {
-	return p.request(snapshot, text, true, field, prefix, false)
+// ProjectionQuery is one request. Project scopes a workspace. Complete adds
+// candidates for Prefix in Field, as typed in an editor. RefreshClaims does
+// one bulk claim refresh first.
+type ProjectionQuery struct {
+	Text, Project string
+	Complete      bool
+	Field, Prefix string
+	RefreshClaims bool
 }
 
-// RefreshClaims requests one bulk provider refresh on the projection worker.
-func (p *Projector) RefreshClaims(snapshot *Snapshot, text string) uint64 {
-	return p.request(snapshot, text, false, "", "", true)
-}
-
-// RequestScope keeps source/project filtering on the projection worker.
-func (p *Projector) RequestScope(snapshot *Snapshot, text, project, field, prefix string, refresh bool) uint64 {
-	return p.request(snapshot, text, field != "", field, prefix, refresh, project)
-}
-func (p *Projector) request(snapshot *Snapshot, text string, complete bool, field, prefix string, refreshClaims bool, scope ...string) uint64 {
+// RequestQuery runs every projection, completion and claim refresh on the same
+// bounded latest-wins worker.
+func (p *Projector) RequestQuery(snapshot *Snapshot, q ProjectionQuery) uint64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.active != nil {
@@ -122,11 +137,7 @@ func (p *Projector) request(snapshot *Snapshot, text string, complete bool, fiel
 	case <-p.results:
 	default:
 	}
-	project := ""
-	if len(scope) > 0 {
-		project = scope[0]
-	}
-	latest(p.requests, projectionRequest{project: project, id: p.serial, snapshot: snapshot, text: text, ctx: ctx, complete: complete, field: field, prefix: prefix, refreshClaims: refreshClaims})
+	latest(p.requests, projectionRequest{project: q.Project, id: p.serial, snapshot: snapshot, text: q.Text, ctx: ctx, complete: q.Complete, field: q.Field, prefix: q.Prefix, refreshClaims: q.RefreshClaims})
 	return p.serial
 }
 func (p *Projector) Results() <-chan Projection { return p.results }
@@ -451,6 +462,7 @@ func (p *Projector) run() {
 								ReadinessVersion: string(explanation.Readiness) + "\x00" + reason,
 								Relations:        relations, RelationVersion: RelationVersion(relations),
 							}
+							row.SetCounts(i)
 							closed := func(ref model.Ref) bool {
 								r := req.snapshot.records[normalizedRef(ref, i.Ref)]
 								return r != nil && !r.stale && (r.item.Category == model.Done || r.item.Category == model.Canceled)

@@ -287,13 +287,13 @@ func (st *storeState) begin(job *editJob) {
 	w.jobs <- job
 }
 func (s *Store) runSource(id string, w *sourceWorker) {
-	publish := func(delta source.Delta, err error, replaceInitial bool) {
+	publish := func(delta source.Delta, err error, replaceInitial, initial bool) {
 		s.send(func(st *storeState) {
 			// The actor can retain its last callback while idle. Records own
 			// individual items, not the full transfer slice or search closure.
 			defer func() { delta = source.Delta{} }()
 			n := st.snapshot.fork()
-			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor}
+			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor, Initial: initial}
 			if err != nil {
 				status.Error = err.Error()
 				status.Coverage = source.Unknown
@@ -383,14 +383,14 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			}
 			delta.Cursor = cursor
 		}
-		publish(delta, err, provisional)
+		publish(delta, err, provisional, false)
 		provisional = provisional && err != nil
 	}
 	if initial, ok := w.backend.(source.InitialLoader); ok {
 		if delta, err := initial.LoadInitial(s.ctx); err == nil {
 			cursor = delta.Cursor
 			if len(delta.Items) > 0 {
-				publish(delta, nil, false)
+				publish(delta, nil, false, true)
 				provisional = len(delta.Stale) == 0
 			}
 		}

@@ -276,6 +276,15 @@
 == view 1 ==
  fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
        ID      Status    Title                                        ⊘        ▣
+▌ ▾ · To Do  2                                                                  
+   ▲   BL-1    · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-2 ●  · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Active  2                                                                 
+   ▲   BL-3    · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-4 ●  · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Done  2                                                                   
+   ▲   BL-5    · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-6 ●  · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
                                                                                 
                                                                                 
                                                                                 
@@ -286,21 +295,21 @@
                                                                                 
                                                                                 
                                                                                 
-                                    Loading…                                    
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
- is:ready sort:next                                                  ● 3  ↻ 1/6 
+ is:ready sort:next                                                  ● 3    1/6 
 == view 2 ==
  fixture   Next  [Active]  Mine   Open   Board                          ✓ tasks 
        ID      Status    Title                                        ⊘        ▣
+▌ ▾ · To Do  2                                                                  
+   ▲   BL-1    · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-2 ●  · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Active  2                                                                 
+   ▲   BL-3    · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-4 ●  · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Done  2                                                                   
+   ▲   BL-5    · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-6 ●  · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
                                                                                 
                                                                                 
                                                                                 
@@ -311,21 +320,21 @@
                                                                                 
                                                                                 
                                                                                 
-                                    Loading…                                    
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
- category:active group:status                                        ● 3  ↻ 1/6 
+ category:active group:status                                        ● 3    1/6 
 == view 3 ==
  fixture   Next   Active  [Mine]  Open   Board                          ✓ tasks 
        ID      Status    Title                                        ⊘        ▣
+▌ ▾ · To Do  2                                                                  
+   ▲   BL-1    · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-2 ●  · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Active  2                                                                 
+   ▲   BL-3    · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-4 ●  · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Done  2                                                                   
+   ▲   BL-5    · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-6 ●  · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
                                                                                 
                                                                                 
                                                                                 
@@ -336,21 +345,21 @@
                                                                                 
                                                                                 
                                                                                 
-                                    Loading…                                    
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
- assignee:me is:open group:status                                    ● 3  ↻ 1/6 
+ assignee:me is:open group:status                                    ● 3    1/6 
 == view 4 ==
  fixture   Next   Active   Mine  [Open]  Board                          ✓ tasks 
        ID      Status    Title                                        ⊘        ▣
+▌ ▾ · To Do  2                                                                  
+   ▲   BL-1    · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-2 ●  · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Active  2                                                                 
+   ▲   BL-3    · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-4 ●  · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Done  2                                                                   
+   ▲   BL-5    · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-6 ●  · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
                                                                                 
                                                                                 
                                                                                 
@@ -361,20 +370,21 @@
                                                                                 
                                                                                 
                                                                                 
-                                    Loading…                                    
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
- is:open group:status                                                ● 3  ↻ 1/6 
+ is:open group:status                                                ● 3    1/6 
 == view 5 ==
  fixture   Next   Active   Mine   Open  [Board]                         ✓ tasks 
+       ID      Status    Title                                        ⊘        ▣
+▌ ▾ · To Do  2                                                                  
+   ▲   BL-1    · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-2 ●  · To Do   修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Active  2                                                                 
+   ▲   BL-3    · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-4 ●  · Active  修正 🚀 selection                          ⊘ 1    ▣ 2/3
+  ▾ · Done  2                                                                   
+   ▲   BL-5    · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
+   ▲   BL-6 ●  · Done    修正 🚀 selection                          ⊘ 1    ▣ 2/3
                                                                                 
                                                                                 
                                                                                 
@@ -386,18 +396,8 @@
                                                                                 
                                                                                 
                                                                                 
-                                    Loading…                                    
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
- is:open -category:backlog group:status                              ● 3  ↻ 1/6 
+ is:open -category:backlog group:status                              ● 3    1/6 
 == help ==
  fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
  Keys  › ▏                                                                      

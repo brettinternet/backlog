@@ -42,9 +42,9 @@ func TestLatestProjectionAndCancellation(t *testing.T) {
 	defer p.Close()
 	// A burst supersedes work even when the worker has started the prior query.
 	for range 50 {
-		p.RequestEditor(snapshot, "sort:title group:status", "id", "BL-")
+		p.RequestQuery(snapshot, engine.ProjectionQuery{Text: "sort:title group:status", Complete: true, Field: "id", Prefix: "BL-"})
 	}
-	id := p.RequestEditor(snapshot, "id:BL-49999", "id", "BL-49999")
+	id := p.RequestQuery(snapshot, engine.ProjectionQuery{Text: "id:BL-49999", Complete: true, Field: "id", Prefix: "BL-49999"})
 	select {
 	case result := <-p.Results():
 		if result.Request != id || result.Error != nil || len(result.Groups) != 1 || len(result.Groups[0].Rows) != 1 || result.Groups[0].Rows[0].Ref.ID != "BL-49999" {
