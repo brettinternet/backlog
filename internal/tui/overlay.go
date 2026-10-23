@@ -162,7 +162,7 @@ func (m Model) helpBody(width, rows int) []string {
 	}
 	keyWidth := 1
 	for _, r := range m.launcher.rows {
-		keyWidth = max(keyWidth, min(12, ansi.StringWidth(keyText(r.action.bindings))))
+		keyWidth = max(keyWidth, min(14, ansi.StringWidth(keyText(r.action.bindings))))
 	}
 	columnWidth := (width - 2) / columns
 	grid := make([][]string, columns)

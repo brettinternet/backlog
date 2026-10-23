@@ -172,10 +172,13 @@ type Model struct {
 	mouse                    mouseState
 }
 
-// Next is a ranked list, so it is never grouped; Board hides the closed
-// columns its open-only query cannot fill.
+// Next is a ranked list, so it is never grouped. Board hides drafts, which are
+// never ready to work; fb toggles them.
 var viewNames = []string{"Next", "Active", "Mine", "Open", "Board"}
-var viewQueries = []string{"is:ready sort:next", "category:active group:status", "assignee:me is:open group:status", "is:open group:status", "is:open group:status"}
+var viewQueries = []string{"is:ready sort:next", "category:active group:status", "assignee:me is:open group:status", "is:open group:status", "is:open " + hideDrafts + " group:status"}
+
+// hideDrafts excludes drafts: items in a backlog-category status (design.md D29).
+const hideDrafts = "-category:backlog"
 
 func New(opts Options) Model {
 	if opts.Context == nil {
@@ -353,7 +356,7 @@ func (m Model) prepare() tea.Cmd {
 	if board && statusGroup {
 		groupKey = "status"
 	}
-	showEmpty := board && boardShowsEmpty(m.shown)
+	empty := boardEmpty(m.shown, statuses)
 	var anchor screenRow
 	if m.loading || from >= len(m.data.rows) {
 		from = -1 // a new view starts at the top
@@ -377,7 +380,7 @@ func (m Model) prepare() tea.Cmd {
 			states[f.group] = !states[f.group]
 		}
 		if board {
-			groups = boardGroups(groups, statuses, statusGroup, showEmpty)
+			groups = boardGroups(groups, statuses, statusGroup, empty)
 			states = nil // board columns never fold
 		}
 		data := prepareGroupedRows(groups, states, board || !ungrouped, groupKey, statuses)
@@ -714,7 +717,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.actionSerial++
 		// A notice lasts until the next key, then the query shows again.
 		m.notice = ""
-		s := msg.String()
+		s := keyString(msg)
+		if code, ok := emacsInputKeys[s]; ok && m.modalOpen() {
+			msg = tea.KeyPressMsg{Code: code}
+			s = msg.String()
+		}
 		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.editor.open) {
 			return m, tea.Quit
 		}
@@ -765,6 +772,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// Prompts, pickers and menus own their keys, so the keymap's Emacs aliases
+// don't reach them; these translate to the keys every input handles.
+var emacsInputKeys = map[string]rune{"ctrl+g": tea.KeyEscape, "ctrl+n": tea.KeyDown, "ctrl+p": tea.KeyUp}
+
+// modalOpen reports an input or prompt that takes every key and the mouse.
+func (m Model) modalOpen() bool {
+	return m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.editor.open || m.save.open || m.archiveConfirm || m.actionConfirm != nil
+}
+
 // retheme rebuilds the palette once the terminal reports its colors. Rendered
 // detail lines embed theme colors, so an open detail is prepared again.
 func (m *Model) retheme() tea.Cmd {
@@ -786,6 +802,19 @@ func (m *Model) keepSelectionVisible() {
 		m.top = m.selected - page + 1
 	}
 	m.top = max(0, min(m.top, max(0, len(m.data.rows)-page)))
+}
+
+// screenOffset is the visible row H, M or L selects. A count N selects the Nth
+// row from the top (H) or bottom (L), as in Vim.
+func screenOffset(key string, visible, n int) int {
+	visible = max(1, visible)
+	switch key {
+	case "H":
+		return min(n, visible) - 1
+	case "L":
+		return max(0, visible-n)
+	}
+	return (visible - 1) / 2
 }
 
 // canonicalKey keeps the established contextual action semantics in one place.
@@ -1085,6 +1114,8 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		} else {
 			m.selected = len(m.data.rows) - 1
 		}
+	case s == "H" || s == "M" || s == "L":
+		m.selected = m.top + screenOffset(s, min(page, len(m.data.rows)-m.top), n)
 	case s == "ctrl+d":
 		m.selected += max(1, page/2) * n
 	case s == "ctrl+u":

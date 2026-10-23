@@ -16,7 +16,7 @@ type queryBinding struct{ key, label, value string }
 // Menus follow Vim where it has a meaning: z folds and scrolls, so grouping by
 // category and type take the capitals.
 var queryMenus = map[string][]queryBinding{
-	"f": {{"s", "Status", "status"}, {"p", "Priority", "priority"}, {"a", "Assignee", "assignee"}, {"l", "Label", "label"}, {"t", "Type", "type"}, {"m", "Milestone", "milestone"}, {"r", "Ready only", "is:ready"}, {"d", "Show done", "is:open,closed"}, {"c", "Clear", ""}},
+	"f": {{"s", "Status", "status"}, {"p", "Priority", "priority"}, {"a", "Assignee", "assignee"}, {"l", "Label", "label"}, {"t", "Type", "type"}, {"m", "Milestone", "milestone"}, {"r", "Ready only", "is:ready"}, {"d", "Show done", "is:open,closed"}, {"b", "Toggle drafts", "drafts"}, {"c", "Clear", ""}},
 	"o": {{"n", "Next", "next"}, {"p", "Priority", "priority"}, {"r", "Rank", "rank"}, {"u", "Updated", "updated"}, {"c", "Created", "created"}, {"d", "Due", "due"}, {"i", "ID", "id"}, {"o", "Reverse", "reverse"}},
 	"z": {{"s", "Status", "status"}, {"C", "Category", "category"}, {"p", "Priority", "priority"}, {"A", "Assignee", "assignee"}, {"l", "Label", "label"}, {"m", "Milestone", "milestone"}, {"T", "Type", "type"}, {"P", "Parent", "parent"}, {"n", "None", "none"},
 		{"a", "Toggle fold", "fold"}, {"o", "Open fold", "fold-open"}, {"c", "Close fold", "fold-close"}, {"M", "Fold all", "fold-all"}, {"R", "Unfold all", "unfold-all"},
@@ -77,6 +77,23 @@ func setQueryField(text, field, value string) string {
 	}
 	if value != "" {
 		terms = append(terms, field+":"+value)
+	}
+	return strings.Join(terms, " ")
+}
+
+// toggleTerm removes term from the query, or appends it when absent.
+func toggleTerm(text, term string) string {
+	var terms []string
+	found := false
+	for _, span := range tokenSpans(text) {
+		if t := text[span[0]:span[1]]; strings.EqualFold(t, term) {
+			found = true
+		} else {
+			terms = append(terms, t)
+		}
+	}
+	if !found {
+		terms = append(terms, term)
 	}
 	return strings.Join(terms, " ")
 }
@@ -268,6 +285,8 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 				m.query = clearQuery(m.query)
 			case "r", "d":
 				m.query = setQueryField(m.query, "is", strings.TrimPrefix(binding.value, "is:"))
+			case "b":
+				m.query = toggleTerm(m.query, hideDrafts)
 			default:
 				text := setQueryField(m.query, binding.value, "")
 				m.editQuery(strings.TrimSpace(text+" ")+" "+binding.value+":", true)

@@ -10,7 +10,7 @@ Run `bl` or `bl tui` in a terminal. Every key is remappable, and the
 2. **Common actions take one or two keys.** Prefix keys open a which-key menu;
    `:` lists every action with its binding.
 3. **Vim muscle memory.** Counts, `gg`/`G`, `ctrl-d`/`ctrl-u`, `.` repeat, `u`
-   undo, `/` filter, `z` folds.
+   undo, `/` filter, `z` folds. Emacs motion and cancel keys work too.
 4. **One program.** Views are tabs; layouts are list, board, and tree; detail is
    a pane.
 5. **Show only what works.** Actions appear only when the source supports them
@@ -82,7 +82,7 @@ Quota errors stay visible until the provider's retry time.
 | Active | `category:active` | status |
 | Mine | `assignee:me is:open` | status |
 | Open | `is:open` | status |
-| Board | `is:open` | status columns (open statuses only) |
+| Board | `is:open -category:backlog` | status columns (open statuses only) |
 
 Saved views follow, in order: project `views`, user `views`, then user
 `projects.<project-id>.views`. Same-named views in different layers are separate
@@ -118,7 +118,10 @@ under a file lock. The tab appears at once and persists.
 | Tree | Parent/child hierarchy. `h` collapses or goes to the parent; `l` expands or goes to the first child. | All item keys |
 
 **Board:** configured statuses in workflow order, including empty ones, then
-undeclared statuses. Other group keys use their group order. Columns are at
+undeclared statuses. The Board tab hides drafts, which are never ready
+(design.md D29); `fb` shows them. A status or category filter drops empty
+columns; a negated one drops only the columns it excludes. Other group keys use
+their group order. Columns are at
 least 28 cells wide, scroll horizontally, and keep their own cursor. `<`/`>`
 always change workflow status, even when grouped by something else. Quick-add
 uses the focused column's status. `l` navigates instead of opening the label
@@ -134,7 +137,9 @@ finds them). Indentation is capped for very deep trees.
 ## Navigation
 
 `j`/`k` and arrows move by display row, including group headers. Counts work
-(`5j`, `25G`), as do `gg`, `G`, half and full pages, `[`/`]`, and `za`.
+(`5j`, `25G`), as do `gg`, `G`, `H`/`M`/`L` (top, middle, or bottom of the
+screen), half and full pages, `[`/`]`, and `za`. On a board, these move within
+the focused column.
 
 `enter`, `l`, or `right` opens detail (`enter` on a group header folds it). In
 detail, `j`/`k` and page keys scroll, `tab`/`shift-tab` change tabs, `m` shows
@@ -173,7 +178,8 @@ position and keep the last valid rows; unknown values warn. ID and title matches
 are bold and underlined.
 
 `f`, `o`, and `z` open menus for filter, sort, and group/fold. Field filters open
-a value picker. `fr` shows ready items; `fd` adds closed items (not archived).
+a value picker. `fr` shows ready items; `fd` adds closed items (not archived);
+`fb` toggles drafts (`-category:backlog`).
 `F` or `fc` clears filters but keeps sort and group. `oo` reverses every sort
 key. `zA` groups by assignee, since `za` folds.
 
@@ -313,14 +319,20 @@ resize. The mouse is ignored while a modal is open.
 
 ## Default keymap
 
-Keys use Bubble Tea names (`down` is ↓, `ctrl+d` is Ctrl-D). Spaces separate a
-sequence (`g g`). Keys typed into a text field or picker stay there; `ctrl-c`
-quits.
+Keys use Bubble Tea names (`down` is ↓, `ctrl+d` is Ctrl-D, `alt+x` is Alt-X).
+Spaces separate a sequence (`g g`). Keys typed into a text field or picker stay
+there; `ctrl-c` quits.
+
+Emacs aliases: `ctrl+n` down, `ctrl+v`/`alt+v` page, `alt+<`/`alt+>` first or
+last row, `ctrl+g` cancel, `alt+x` palette. `ctrl+p` stays go-to. Prompts,
+pickers, and menus take `ctrl+g`, `ctrl+n`, and `ctrl+p` too. Alt keys need a
+terminal that sends Option/Alt as Meta.
 
 Remap in user config by action ID. An override replaces every default binding;
-an empty value unbinds. Unknown actions, invalid keys, collisions, and prefix
-conflicts stop the TUI at startup and name both bindings. To swap two actions,
-override both:
+an empty value unbinds. `ctrl+` takes a letter or arrow; `alt+` takes any
+character except a capital letter. Unknown actions, invalid keys, collisions,
+and prefix conflicts stop the TUI at startup and name both bindings. To swap
+two actions, override both:
 
 ```yaml
 keys:
@@ -335,16 +347,19 @@ keys:
 <!-- keymap:start -->
 | Action ID | Keys | Action |
 | --- | --- | --- |
-| `move-down` | `j`, `down` | Move down |
+| `move-down` | `j`, `down`, `ctrl+n` | Move down |
 | `move-up` | `k`, `up` | Move up |
 | `next-item` | `J` | Next item |
 | `previous-item` | `K` | Previous item |
-| `first` | `g g`, `home` | First row |
-| `last` | `G`, `end` | Last row, or row N |
+| `first` | `g g`, `home`, `alt+<` | First row |
+| `last` | `G`, `end`, `alt+>` | Last row, or row N |
+| `screen-top` | `H` | Top of screen |
+| `screen-middle` | `M` | Middle of screen |
+| `screen-bottom` | `L` | Bottom of screen |
 | `half-down` | `ctrl+d`, `pagedown` | Half page down |
 | `half-up` | `ctrl+u`, `pageup` | Half page up |
-| `page-down` | `ctrl+f` | Page down |
-| `page-up` | `ctrl+b` | Page up |
+| `page-down` | `ctrl+f`, `ctrl+v` | Page down |
+| `page-up` | `ctrl+b`, `alt+v` | Page up |
 | `previous-group` | `[` | Previous group |
 | `next-group` | `]` | Next group |
 | `left` | `h`, `left` | Back / parent / left |
@@ -394,14 +409,14 @@ keys:
 | `mark` | `space` | Mark |
 | `visual` | `V` | Visual range |
 | `mark-all` | `ctrl+a` | Mark all |
-| `cancel` | `esc` | Cancel / clear |
+| `cancel` | `esc`, `ctrl+g` | Cancel / clear |
 | `yank-id` | `y y` | Copy ID |
 | `yank-title` | `y t` | Copy title |
 | `yank-branch` | `y b` | Copy branch |
 | `yank-url` | `y u` | Copy URL |
 | `yank-markdown` | `y m` | Copy Markdown link |
 | `help` | `?` | Help |
-| `palette` | `:` | Commands |
+| `palette` | `:`, `alt+x` | Commands |
 | `quit` | `q` | Quit / back |
 | `quit-now` | `ctrl+c` | Quit now |
 | `filter-status` | `f s` | Filter: Status |
@@ -412,6 +427,7 @@ keys:
 | `filter-milestone` | `f m` | Filter: Milestone |
 | `filter-is:ready` | `f r` | Filter: Ready only |
 | `filter-is:open,closed` | `f d` | Filter: Show done |
+| `filter-drafts` | `f b` | Filter: Toggle drafts |
 | `filter-clear` | `f c` | Filter: Clear |
 | `sort-next` | `o n` | Sort: Next |
 | `sort-priority` | `o p` | Sort: Priority |

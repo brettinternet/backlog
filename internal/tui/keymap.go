@@ -5,10 +5,11 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -24,16 +25,21 @@ type action struct {
 func defaultKeymap() []action {
 	// Order is the help and palette order; group starts a help section.
 	actions := []action{
-		{group: "Navigate", id: "move-down", label: "Move down", canonical: "j", bindings: []string{"j", "down"}},
+		// Emacs aliases (ctrl+n, alt+< and alt+>, ctrl+v and alt+v, ctrl+g, alt+x)
+		// follow the Vim keys; ctrl+p already opens go-to.
+		{group: "Navigate", id: "move-down", label: "Move down", canonical: "j", bindings: []string{"j", "down", "ctrl+n"}},
 		{id: "move-up", label: "Move up", canonical: "k", bindings: []string{"k", "up"}},
 		{id: "next-item", label: "Next item", canonical: "J", bindings: []string{"J"}},
 		{id: "previous-item", label: "Previous item", canonical: "K", bindings: []string{"K"}},
-		{id: "first", label: "First row", canonical: "g g", bindings: []string{"g g", "home"}},
-		{id: "last", label: "Last row, or row N", canonical: "G", bindings: []string{"G", "end"}},
+		{id: "first", label: "First row", canonical: "g g", bindings: []string{"g g", "home", "alt+<"}},
+		{id: "last", label: "Last row, or row N", canonical: "G", bindings: []string{"G", "end", "alt+>"}},
+		{id: "screen-top", label: "Top of screen", canonical: "H", bindings: []string{"H"}},
+		{id: "screen-middle", label: "Middle of screen", canonical: "M", bindings: []string{"M"}},
+		{id: "screen-bottom", label: "Bottom of screen", canonical: "L", bindings: []string{"L"}},
 		{id: "half-down", label: "Half page down", canonical: "ctrl+d", bindings: []string{"ctrl+d", "pagedown"}},
 		{id: "half-up", label: "Half page up", canonical: "ctrl+u", bindings: []string{"ctrl+u", "pageup"}},
-		{id: "page-down", label: "Page down", canonical: "ctrl+f", bindings: []string{"ctrl+f"}},
-		{id: "page-up", label: "Page up", canonical: "ctrl+b", bindings: []string{"ctrl+b"}},
+		{id: "page-down", label: "Page down", canonical: "ctrl+f", bindings: []string{"ctrl+f", "ctrl+v"}},
+		{id: "page-up", label: "Page up", canonical: "ctrl+b", bindings: []string{"ctrl+b", "alt+v"}},
 		{id: "previous-group", label: "Previous group", canonical: "[", bindings: []string{"["}},
 		{id: "next-group", label: "Next group", canonical: "]", bindings: []string{"]"}},
 		{id: "left", label: "Back / parent / left", canonical: "h", bindings: []string{"h", "left"}},
@@ -83,14 +89,14 @@ func defaultKeymap() []action {
 		{group: "Select", id: "mark", label: "Mark", canonical: "space", bindings: []string{"space"}},
 		{id: "visual", label: "Visual range", canonical: "V", bindings: []string{"V"}},
 		{id: "mark-all", label: "Mark all", canonical: "ctrl+a", bindings: []string{"ctrl+a"}},
-		{id: "cancel", label: "Cancel / clear", canonical: "esc", bindings: []string{"esc"}},
+		{id: "cancel", label: "Cancel / clear", canonical: "esc", bindings: []string{"esc", "ctrl+g"}},
 		{group: "Copy", id: "yank-id", label: "Copy ID", canonical: "y y", bindings: []string{"y y"}},
 		{id: "yank-title", label: "Copy title", canonical: "y t", bindings: []string{"y t"}},
 		{id: "yank-branch", label: "Copy branch", canonical: "y b", bindings: []string{"y b"}},
 		{id: "yank-url", label: "Copy URL", canonical: "y u", bindings: []string{"y u"}},
 		{id: "yank-markdown", label: "Copy Markdown link", canonical: "y m", bindings: []string{"y m"}},
 		{group: "General", id: "help", label: "Help", bindings: []string{"?"}},
-		{id: "palette", label: "Commands", bindings: []string{":"}},
+		{id: "palette", label: "Commands", bindings: []string{":", "alt+x"}},
 		{id: "quit", label: "Quit / back", canonical: "q", bindings: []string{"q"}},
 		{id: "quit-now", label: "Quit now", canonical: "ctrl+c", bindings: []string{"ctrl+c"}},
 	}
@@ -195,7 +201,32 @@ func validKey(key string) bool {
 		rest := strings.TrimPrefix(key, "ctrl+")
 		return len(rest) == 1 && rest[0] >= 'a' && rest[0] <= 'z' || slices.Contains([]string{"left", "right", "up", "down"}, rest)
 	}
+	// Terminals report Alt with a capital as alt+shift+x, which bindings can't
+	// spell, so only lowercase letters and symbols follow alt+.
+	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
+		r := []rune(rest)
+		return len(r) == 1 && !unicode.IsUpper(r[0]) && validKey(rest)
+	}
 	return false
+}
+
+// shiftedKeys maps US keys to their shifted symbols.
+var shiftedKeys = map[string]string{"`": "~", "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")", "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?"}
+
+// keyString names a key press the way bindings spell it. Terminals report Alt
+// with a shifted symbol three ways: alt+< (an ESC prefix), alt+shift+< (xterm's
+// modifyOtherKeys) and alt+shift+, (the kitty protocol, which sends the
+// unshifted key of a US layout). All three become alt+<.
+func keyString(msg tea.KeyPressMsg) string {
+	s := msg.String()
+	rest, ok := strings.CutPrefix(s, "alt+shift+")
+	if r := []rune(rest); !ok || len(r) != 1 || unicode.IsLetter(r[0]) {
+		return s
+	}
+	if shifted, ok := shiftedKeys[rest]; ok {
+		rest = shifted
+	}
+	return "alt+" + rest
 }
 
 func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
@@ -206,7 +237,7 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 	if key == " " {
 		key = "space"
 	}
-	if m.keyPrefix != "" && key == "esc" {
+	if m.keyPrefix != "" && (key == "esc" || key == "ctrl+g") {
 		m.keyPrefix = ""
 		m.count = 0
 		m.inputSerial++

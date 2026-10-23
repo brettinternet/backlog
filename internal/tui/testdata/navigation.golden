@@ -397,29 +397,29 @@
                                                                                 
                                                                                 
                                                                                 
- is:open group:status                                                ● 3  ↻ 1/6 
+ is:open -category:backlog group:status                              ● 3  ↻ 1/6 
 == help ==
  fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
  Keys  › ▏                                                                      
                                                                                 
-  Navigate                               Copy                                   
-  j ↓          Move down                 yy           Copy ID                   
-  k ↑          Move up                   yt           Copy title                
-  J            Next item                 yb           Copy branch               
-  K            Previous item             yu           Copy URL                  
-  gg home      First row                 ym           Copy Markdown link        
-  G end        Last row, or row N                                               
-  ctrl+d pgdn  Half page down            General                                
-  ctrl+u pgup  Half page up              ?            Help                      
-  ctrl+f       Page down                 :            Commands                  
-  ctrl+b       Page up                   q            Quit / back               
-  [            Previous group            ctrl+c       Quit now                  
-  ]            Next group                                                       
-  h ←          Back / parent / left      Filter                                 
-  l →          Open / child / right      fs           Status                    
-  ctrl+p       Go to item                fp           Priority                  
-                                         fa           Assignee                  
-  Detail                                 fl           Label                     
-  enter        Toggle detail             ft           Type                      
+  Navigate                               Select                                 
+  j ↓ ctrl+n     Move down               space          Mark                    
+  k ↑            Move up                 V              Visual range            
+  J              Next item               ctrl+a         Mark all                
+  K              Previous item           esc ctrl+g     Cancel / clear          
+  gg home alt+<  First row                                                      
+  G end alt+>    Last row, or row N      Copy                                   
+  H              Top of screen           yy             Copy ID                 
+  M              Middle of screen        yt             Copy title              
+  L              Bottom of screen        yb             Copy branch             
+  ctrl+d pgdn    Half page down          yu             Copy URL                
+  ctrl+u pgup    Half page up            ym             Copy Markdown link      
+  ctrl+f ctrl+v  Page down                                                      
+  ctrl+b alt+v   Page up                 General                                
+  [              Previous group          ?              Help                    
+  ]              Next group              : alt+x        Commands                
+  h ←            Back / parent / left    q              Quit / back             
+  l →            Open / child / right    ctrl+c         Quit now                
+  ctrl+p         Go to item                                                     
                                                                              ↓  
  is:ready sort:next                                            ● 3  ! 3    5/60 

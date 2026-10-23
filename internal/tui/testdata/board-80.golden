@@ -9,4 +9,4 @@
                                                                                 
                                                                                 
                                                                                 
- is:open group:status                                           ● 3  ! 3    1/9 
+ is:open -category:backlog group:status                         ● 3  ! 3    1/9 
