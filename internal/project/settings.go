@@ -28,17 +28,28 @@ type ProjectConfig struct {
 	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 type SourceConfig struct {
-	ID      string   `yaml:"id" json:"id"`
-	Type    string   `yaml:"type" json:"type"`
-	Path    string   `yaml:"path,omitempty" json:"path,omitempty"`
-	Prefix  string   `yaml:"prefix,omitempty" json:"prefix,omitempty"`
-	Team    string   `yaml:"team,omitempty" json:"team,omitempty"`
-	Account string   `yaml:"account,omitempty" json:"account,omitempty"`
-	Site    string   `yaml:"site,omitempty" json:"site,omitempty"`
-	Project string   `yaml:"project,omitempty" json:"project,omitempty"`
-	Host    string   `yaml:"host,omitempty" json:"host,omitempty"`
-	Repo    string   `yaml:"repo,omitempty" json:"repo,omitempty"`
-	Run     []string `yaml:"run,omitempty" json:"run,omitempty"`
+	ID            string               `yaml:"id" json:"id"`
+	Type          string               `yaml:"type" json:"type"`
+	Path          string               `yaml:"path,omitempty" json:"path,omitempty"`
+	Prefix        string               `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	Team          string               `yaml:"team,omitempty" json:"team,omitempty"`
+	Account       string               `yaml:"account,omitempty" json:"account,omitempty"`
+	Site          string               `yaml:"site,omitempty" json:"site,omitempty"`
+	Project       string               `yaml:"project,omitempty" json:"project,omitempty"`
+	Host          string               `yaml:"host,omitempty" json:"host,omitempty"`
+	Repo          string               `yaml:"repo,omitempty" json:"repo,omitempty"`
+	Run           []string             `yaml:"run,omitempty" json:"run,omitempty"`
+	GitHubProject *GitHubProjectConfig `yaml:"githubProject,omitempty" json:"githubProject,omitempty"`
+}
+
+// GitHubProjectConfig binds immutable provider IDs, not mutable display names.
+type GitHubProjectConfig struct {
+	Owner       string            `yaml:"owner" json:"owner"`
+	Number      int               `yaml:"number" json:"number"`
+	ID          string            `yaml:"id" json:"id"`
+	FieldID     string            `yaml:"fieldId" json:"fieldId"`
+	Options     map[string]string `yaml:"options" json:"options"`
+	AllowWrites bool              `yaml:"allowWrites,omitempty" json:"allowWrites,omitempty"`
 }
 type StatusConfig struct {
 	Key      string `yaml:"key" json:"key"`

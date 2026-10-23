@@ -1,7 +1,8 @@
 # Remote source boundary
 
-`internal/source/remote` is the shared framework for upcoming remote adapters;
-it does not enable a provider before its adapter ships. Native sources keep
+[GitHub Issues and Projects v2](github.md) is available through the configured
+source registry. `internal/source/remote` supplies its shared scheduler,
+credentials, sanitization and SQLite cache. Linear and Jira remain upcoming. Native sources keep
 their stat cache and directory watcher. The engine accepts both through the
 existing source registry, without network I/O on the Bubble Tea update loop.
 
@@ -34,8 +35,11 @@ Nothing in the cache is required for correctness.
 The wrapper prepares common Set/Batch field edits and provider-level inverses
 without converting remote IDs or raw fields into native Markdown. Adapters
 implementing other operations must supply their own preparation. Every provider
-`Apply` must atomically enforce `ExpectedVersion`, not rely on a preceding Read.
-The framework never retries a write whose remote outcome could be uncertain.
+`Apply` must atomically enforce `ExpectedVersion` where the provider supports it,
+not rely on the wrapper's preceding Read. APIs without compare-and-swap (GitHub)
+require a fresh provider preflight immediately before a single mutation and must
+document the remaining concurrent-write race. The framework never retries a write
+whose remote outcome could be uncertain.
 
 Optional `Delta.TextSearch` supplies text predicate candidates. Errors or missing
 local matches disable the narrowing; the shared evaluator removes false
@@ -78,7 +82,8 @@ and `RateLimit-Remaining/Reset` relative headers set the account retry deadline,
 even on successful responses. Before that deadline requests fail with a
 `ScheduleDiagnostic` carrying `RetryAt`, rather than sleeping or retrying writes.
 GET ETags are memory-only and partitioned by account, credential, URL and Accept.
-A 304 is not an empty enumeration: the adapter must reuse its representation.
+A 304 is not an empty enumeration: the adapter must reuse its representation,
+or treat a conditional request only as a hint and independently enumerate (GitHub).
 
 The scheduler and credential helper behavior derives from Worklease v1.9.3
 `internal/queue/scheduler.go`, `credential_helper.go`, and the GitHub quota/ETag

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/model"
@@ -25,7 +26,7 @@ type provider struct {
 }
 
 func (p *provider) Info() source.Info {
-	return source.Info{ID: "remote", Capabilities: model.Capabilities{model.Set: true, model.Batch: true}}
+	return source.Info{ID: "remote", Capabilities: model.Capabilities{model.Set: true, model.Batch: true, model.AppendComment: true}}
 }
 func (p *provider) Load(_ context.Context, c source.Cursor) (source.Delta, error) {
 	p.cursors = append(p.cursors, c)
@@ -37,7 +38,15 @@ func (p *provider) Apply(_ context.Context, m model.Mutation) (model.Item, error
 	if p.item.Version != m.ExpectedVersion {
 		return model.Item{}, source.Refuse("conflict", "provider rejected version")
 	}
-	p.item.Title = m.Value.(string)
+	if m.Op == model.AppendComment {
+		comment := m.Comment
+		if comment.Body == "" {
+			comment.Body = m.Text
+		}
+		p.item.Comments = append(p.item.Comments, comment)
+	} else {
+		p.item.Title = m.Value.(string)
+	}
 	p.item.Version = "v2"
 	return p.item, p.err
 }
@@ -228,6 +237,47 @@ func TestCredentialCanaryAcrossSourceSinks(t *testing.T) {
 	p.delta.Cursor.Value = canary
 	if _, err = s.Load(context.Background(), source.Cursor{}); err == nil || strings.Contains(fmt.Sprint(err), canary) {
 		t.Fatalf("credential-bearing cursor accepted: %v", err)
+	}
+}
+
+// Comments must prepare for TUI edits and before hooks without fabricating an
+// inverse that could replay an append. Preserve author/time and Text fallback.
+func TestRemoteCommentPreparationAndApply(t *testing.T) {
+	t.Parallel()
+	for _, useText := range []bool{false, true} {
+		t.Run(fmt.Sprint("text=", useText), func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			p := &provider{item: row("A", "todo")}
+			p.item.Comments = []model.Comment{{Author: "original", Body: "Existing"}}
+			s := New(p, remoteStore(t), &Secrets{})
+			comment := model.Comment{Author: "alice", Body: "Progress", Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+			m := model.Mutation{Ref: p.item.Ref, ExpectedVersion: p.item.Version, Op: model.AppendComment, Comment: comment, Text: "ignored fallback"}
+			if useText {
+				m.Comment.Body, m.Text = "", comment.Body
+			}
+			prepared, err := s.Prepare(ctx, m)
+			if err != nil || len(prepared.Item.Comments) != 2 || prepared.Item.Comments[1] != comment || prepared.Inverse.Op != "" {
+				t.Fatalf("prepare: %+v %v", prepared, err)
+			}
+			if p.writes != 0 || len(p.item.Comments) != 1 {
+				t.Fatal("preparation mutated provider")
+			}
+			// A batch containing a comment must not expose a partial inverse.
+			batch := m
+			batch.Op, batch.Changes = model.Batch, []model.Mutation{{Op: model.Set, Field: "title", Value: "Edited"}, m}
+			batched, err := s.Prepare(ctx, batch)
+			if err != nil || batched.Item.Title != "Edited" || len(batched.Item.Comments) != 2 || batched.Inverse.Op != "" {
+				t.Fatalf("batch preparation: %+v %v", batched, err)
+			}
+			after, err := s.Apply(ctx, m)
+			if err != nil || len(after.Comments) != 2 || after.Comments[1] != comment || p.writes != 1 {
+				t.Fatalf("append: %+v %v writes=%d", after, err, p.writes)
+			}
+			if _, err = s.Prepare(ctx, m); err == nil {
+				t.Fatal("stale comment preparation accepted")
+			}
+		})
 	}
 }
 

@@ -521,13 +521,19 @@ func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err e
 			case -1:
 				targetVersion = st.undo[len(st.undo)-1].targetVersion
 				st.undo = st.undo[:len(st.undo)-1]
-				st.redo = append(st.redo, entry)
+				if inverse.Op != "" {
+					st.redo = append(st.redo, entry)
+				}
 			case 1:
 				targetVersion = st.redo[len(st.redo)-1].targetVersion
 				st.redo = st.redo[:len(st.redo)-1]
-				st.undo = append(st.undo, entry)
+				if inverse.Op != "" {
+					st.undo = append(st.undo, entry)
+				}
 			default:
-				st.undo = append(st.undo, entry)
+				if inverse.Op != "" {
+					st.undo = append(st.undo, entry)
+				}
 				st.redo = nil
 			}
 			// Only rebind history across our own contiguous edits. Crossing an external

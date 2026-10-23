@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -115,6 +116,10 @@ func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig
 	h.Secrets.add(token) // before the verifier can reflect it in any response
 	principal, err := verify(bounded, Credential{token: token})
 	if err != nil {
+		var diagnostic ScheduleDiagnostic
+		if errors.As(err, &diagnostic) {
+			return Credential{}, diagnostic
+		}
 		return fail("cannot verify authenticated principal")
 	}
 	if principal != account.User {

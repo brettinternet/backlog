@@ -64,6 +64,7 @@ type InitialLoader interface {
 
 // Prepared holds an optimistic result and a version-bound inverse. Native
 // sources derive it from the lossless document, not a reserialized Item.
+// An empty Inverse.Op marks a nonundoable operation.
 type Prepared struct {
 	Item    model.Item
 	Inverse model.Mutation

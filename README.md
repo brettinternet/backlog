@@ -25,9 +25,10 @@ CLI commands return a versioned envelope with `--json`; `bl instructions workflo
 prints the installed version's agent protocol.
 
 Native files, [direct Backlog.md editing](docs/backlog-md.md), Backlog.md import,
-local Beads, CLI/MCP, the TUI, hooks, actions, and optional Worklease coordination
-are available. Detected Backlog.md projects open read-only until configured. Remote and external source
-adapters are still being implemented; see [remote adapter status](docs/remote.md).
+local Beads, GitHub Issues with Projects v2, external adapters, CLI/MCP, the TUI,
+hooks, actions, and optional Worklease coordination are available. Detected
+Backlog.md projects open read-only until configured. Linear and Jira adapters
+are still being implemented; see [remote adapter status](docs/remote.md).
 
 ## Docs
 
@@ -41,6 +42,7 @@ adapters are still being implemented; see [remote adapter status](docs/remote.md
 - [Backlog.md source](docs/backlog-md.md) and [import](docs/import.md)
 - [Beads](docs/beads.md)
 - [Remote adapters](docs/remote.md)
+- [GitHub setup](docs/github.md) and [live verification](docs/github-verification.md)
 - [External adapter protocol v1](docs/external-adapter-protocol.md) and [wire schema](docs/external-adapter/v1/schema.json)
 - [MCP](docs/mcp.md)
 - [Events](docs/events.md)

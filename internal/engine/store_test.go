@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
+	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
 // Negotiated capabilities must replace the initial deny-by-default cache;
@@ -126,7 +128,7 @@ func fakeSource(t *testing.T, id string) *controlledSource {
 	return &controlledSource{id: id, doc: doc, coverage: source.Complete}
 }
 func (s *controlledSource) Info() source.Info {
-	return source.Info{ID: s.id, Capabilities: model.Capabilities{model.Set: true, model.Restore: true}}
+	return source.Info{ID: s.id, Capabilities: model.Capabilities{model.Set: true, model.Restore: true, model.AppendComment: true}}
 }
 func (s *controlledSource) current() model.Item {
 	i := s.doc.Item()
@@ -256,6 +258,52 @@ func TestInitialSnapshotBeforeFullLoad(t *testing.T) {
 			t.Fatal("partial refresh after a failed load retained a removed preview item")
 		}
 	})
+}
+
+// Nonundoable remote comments must neither offer a bogus undo nor leave redo
+// available. Older inverses cannot cross the resulting version gap.
+func TestRemoteCommentSessionHistory(t *testing.T) {
+	t.Parallel()
+	for _, history := range []string{"empty", "redo", "undo gap"} {
+		t.Run(history, func(t *testing.T) {
+			t.Parallel()
+			backend := fakeSource(t, "tasks")
+			wrapped := remote.New(backend, cache.New(t.TempDir(), "test", "tasks", "remote"), &remote.Secrets{})
+			s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": wrapped})
+			defer s.Close()
+			awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Source("tasks").Coverage == source.Complete })
+			ref := model.Ref{Source: "tasks", ID: "BL-1"}
+			current := func() model.Item { i, _, _ := s.Current().Get(ref); return i }
+			if history != "empty" {
+				requireSuccess(t, s.Mutate(change(current(), "Edited")))
+				if history == "redo" {
+					requireSuccess(t, s.Undo())
+				}
+			}
+			before := current()
+			comment := model.Comment{Author: "alice", Body: "Progress", Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+			requireSuccess(t, s.Mutate(model.Mutation{Ref: ref, ExpectedVersion: before.Version, Op: model.AppendComment, Comment: comment}))
+			after := current()
+			if len(after.Comments) != 1 || after.Comments[0] != comment {
+				t.Fatalf("comment missing: %+v", after.Comments)
+			}
+			calls := backend.calls.Load()
+			want := "not-found"
+			if history == "undo gap" {
+				want = "busy" // The inverse expects the version superseded by our comment.
+			}
+			var refusal *source.Error
+			if err := awaitResult(t, s.Undo()); !errors.As(err, &refusal) || refusal.Reason != want {
+				t.Fatalf("undo: %v, want %s", err, want)
+			}
+			if err := awaitResult(t, s.Redo()); engine.ErrorReason(err) != "not-found" {
+				t.Fatalf("redo offered after comment: %v", err)
+			}
+			if backend.calls.Load() != calls || len(current().Comments) != 1 {
+				t.Fatal("history dispatched a write or replayed comment")
+			}
+		})
+	}
 }
 
 func TestOptimisticFailureAndConflict(t *testing.T) {

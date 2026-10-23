@@ -36,7 +36,7 @@ func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 	}
 	if _, err := strconv.ParseUint(ref.ID, 10, 64); err == nil {
 		for _, c := range cfg.Sources {
-			if c.ID == lookup {
+			if c.ID == lookup && c.Prefix != "" {
 				ref.ID = c.Prefix + "-" + ref.ID
 			}
 		}
