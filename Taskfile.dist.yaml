@@ -90,7 +90,7 @@ tasks:
     desc: Render the fixture TUI tour (requires VHS, FFmpeg and ttyd)
     deps:
       - task: cli:build
-    cmd: mise exec vhs@0.11.0 ffmpeg@8.1.1 -- vhs docs/demo.tape
+    cmd: mise exec vhs@0.12.1 ffmpeg@9.0.2 -- vhs docs/demo.tape
 
   docs:icon:
     desc: Render assets/app-icon.png and app-icon-square.png from assets/AppIcon.icon (requires Xcode 26+)
