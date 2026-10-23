@@ -22,7 +22,7 @@ func Generate(root string, count int, seed uint64) error {
 	if err := os.Mkdir(root, 0755); err != nil {
 		return err
 	}
-	for _, dir := range []string{".git", ".config", "backlog"} {
+	for _, dir := range []string{".git", "backlog"} {
 		if err := os.Mkdir(filepath.Join(root, dir), 0755); err != nil {
 			return err
 		}

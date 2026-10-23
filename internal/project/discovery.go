@@ -49,9 +49,6 @@ func Discover(directory string) (Discovery, error) {
 	}
 	d := Discovery{Directory: absolute}
 	for root := absolute; ; root = filepath.Dir(root) {
-		if err := rejectLegacyConfig(root); err != nil {
-			return d, err
-		}
 		marker := filepath.Join(root, ".git")
 		info, statErr := os.Stat(marker)
 		if statErr == nil {
@@ -79,10 +76,6 @@ func Discover(directory string) (Discovery, error) {
 			d.CheckoutRoot = root
 			d.GitDir = root
 			break
-		}
-		if isFile(ProjectFile(root)) || isFile(LocalFile(root)) {
-			d.CheckoutRoot, d.ControlRoot = root, root
-			return d, nil
 		}
 		if parent := filepath.Dir(root); parent == root {
 			return d, nil
@@ -116,8 +109,11 @@ func Discover(directory string) (Discovery, error) {
 			d.Warnings = append(d.Warnings, "no primary worktree; using invoking checkout as control root")
 		}
 	}
-	if err := rejectLegacyConfig(d.ControlRoot); err != nil {
-		return d, err
+	// root: checkout may select either checkout, so neither may keep the old path.
+	for _, root := range []string{d.ControlRoot, d.CheckoutRoot} {
+		if err := rejectLegacyConfig(root); err != nil {
+			return d, err
+		}
 	}
 	d.Detected = detectSources(d.ControlRoot)
 	return d, nil

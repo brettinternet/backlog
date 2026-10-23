@@ -123,12 +123,23 @@ func TestLocalConfigWorktreeRouting(t *testing.T) {
 	put(t, project.LocalFile(linked), "root: checkout\nlabels: [checkout-local]\n")
 	check(linked, "checkout", "checkout-local")
 
-	for _, onlyLocal := range []string{repo(t), t.TempDir()} {
-		put(t, project.LocalFile(onlyLocal), "project: {id: local-only}\n")
-		cfg, err := project.Resolve(paths, onlyLocal, nil)
-		if err != nil || cfg.Project.ID != "local-only" {
-			t.Fatalf("local-only project not discovered: %+v %v", cfg, err)
-		}
+	onlyLocal := repo(t)
+	put(t, project.LocalFile(onlyLocal), "project: {id: local-only}\n")
+	cfg, err := project.Resolve(paths, onlyLocal, nil)
+	if err != nil || cfg.Project.ID != "local-only" {
+		t.Fatalf("local-only project not discovered: %+v %v", cfg, err)
+	}
+	// Discovery stops at the Git root: an unrelated backlog.yaml (such as a
+	// Taskfile include) inside or outside a repository is not a project.
+	stray := filepath.Join(onlyLocal, ".taskfiles")
+	put(t, project.ProjectFile(stray), "version: '3'\n")
+	if cfg, err := project.Resolve(paths, stray, nil); err != nil || cfg.Project.ID != "local-only" {
+		t.Fatalf("nested backlog.yaml hijacked discovery: %+v %v", cfg, err)
+	}
+	outside := t.TempDir()
+	put(t, project.ProjectFile(outside), "version: '3'\n")
+	if d, err := project.Discover(outside); err != nil || d.ControlRoot != "" {
+		t.Fatalf("non-repository backlog.yaml discovered: %+v %v", d, err)
 	}
 }
 

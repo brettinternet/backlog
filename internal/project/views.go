@@ -35,8 +35,8 @@ func SaveView(path string, user bool, view ViewConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	// Lock the directory: it survives the rename and leaves no lock file in a
-	// checkout's .config directory.
+	// Lock the directory: it survives the rename and leaves no lock file in
+	// the checkout.
 	lock, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
