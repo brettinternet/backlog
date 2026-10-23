@@ -437,7 +437,7 @@ reading private files or inventing request inputs.
 | Beads | `bd` 1.3.0 `--json --readonly --sandbox` | Issue ID | Bulk `dependencies`. `blocks` is hard. | `bd update` and comment | [Mapping and limits](beads.md); Worklease §3 Beads |
 | [GitHub](github.md) | GraphQL and REST over HTTPS, one serial queue per host and account | `owner/repo#N` | `blockedBy` and sub-issues | State, labels, assignees, comments, Projects v2 status | Worklease §3 GitHub and Projects |
 | Linear | GraphQL over HTTPS | Organization and issue UUID, identifier displayed | Directional `blocks` | State, assignee, priority, labels, comments (explicit source `allowWrites`) | Worklease §3 Linear; [setup and sync](linear.md) |
-| Jira Cloud | REST v3 with API token | Issue ID, key displayed | Issue links | Workflow transitions, fields, comments | Probe pending (BL-40) |
+| Jira Cloud | REST v3 with API token | Site origin + numeric issue ID, key displayed | Directional issue links | Per-issue workflow transitions, fields, ADF comments | [BL-40 observations and unknowns](providers/jira.md) |
 | external | JSON-RPC stdio | Adapter-defined | Adapter-defined | Capability-declared | BL-42 |
 
 "Worklease §3" means [worklease `docs/work-queue-tui-proposal.md` §3 at v1.9.3](https://github.com/brettinternet/worklease/blob/v1.9.3/docs/work-queue-tui-proposal.md), which holds live probe results:
