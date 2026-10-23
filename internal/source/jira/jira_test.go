@@ -32,6 +32,7 @@ type fixture struct {
 	comments                                              []any
 	tokens                                                []string
 	denied, empty, limited, badToken, required, failWrite bool
+	limitWrite                                            bool
 	cloudID                                               string
 	wrongSite                                             bool
 	writes, searches                                      int
@@ -163,6 +164,11 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		if f.failWrite {
 			w.WriteHeader(500)
+			return
+		}
+		if f.limitWrite {
+			w.Header().Set("Retry-After", "2")
+			w.WriteHeader(429)
 			return
 		}
 		switch {
@@ -330,5 +336,11 @@ func TestDiscoveredTransitionsAndVersionedWrites(t *testing.T) {
 	mutation.ExpectedVersion = updated.Version
 	if _, err = s.Apply(ctx, mutation); reason(err) != "unknown-outcome" || f.writes != 4 {
 		t.Fatalf("uncertain mutation retried or hidden: %v writes=%d", err, f.writes)
+	}
+	// A 429 proves the write was not applied; report when to retry, not an unknown outcome.
+	f.failWrite, f.limitWrite = false, true
+	var diagnostic remote.ScheduleDiagnostic
+	if _, err = s.Apply(ctx, mutation); !errors.As(err, &diagnostic) || diagnostic.Code != "rate-limited" {
+		t.Fatalf("rate-limited write: %v", err)
 	}
 }

@@ -124,6 +124,7 @@ The MCP `fields` form otherwise matches the CLI; one field is allowed per write.
 Every write refreshes the principal, issue, directional links, full comments,
 and discovered transitions, then compares the composite version. Observed
 conflicts are rejected. Jira has no established server compare-and-swap here:
-a concurrent edit can still race between preflight and dispatch. A failed
-mutation or failed post-write refresh reports `unknown-outcome`; refresh before
-deciding whether to act again. Never blindly repeat a comment or transition.
+a concurrent edit can still race between preflight and dispatch. A rate-limited
+or overloaded write was not applied and reports `rate-limited` or `overloaded`.
+Any other failed mutation or failed post-write refresh reports `unknown-outcome`;
+refresh before deciding whether to act again. Never blindly repeat a comment or transition.

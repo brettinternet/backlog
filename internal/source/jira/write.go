@@ -2,11 +2,13 @@ package jira
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
 func assignees(value any) ([]string, bool) {
@@ -111,6 +113,11 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	// Jira exposes no established CAS token. Never retry a potentially applied write.
 	if err = s.request(ctx, c, method, path, body, nil); err != nil {
+		// Scheduler refusals and rate-limit responses prove the write was not applied.
+		var limited remote.ScheduleDiagnostic
+		if errors.As(err, &limited) {
+			return model.Item{}, err
+		}
 		return model.Item{}, source.Refuse("unknown-outcome", "Jira write unconfirmed; refresh before further edits")
 	}
 	result, err := s.read(ctx, c, m.Ref.ID)
