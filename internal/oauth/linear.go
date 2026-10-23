@@ -83,7 +83,13 @@ func (p *linearProvider) Authorize(ctx context.Context, a Account, scopes []stri
 		}
 	})
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, MaxHeaderBytes: 16 << 10}
-	defer server.Close()
+	// The handler signals before it writes; let it finish so the browser sees
+	// the result instead of a reset connection.
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
+	}()
 	go func() { _ = server.Serve(listener) }()
 	query := url.Values{"client_id": {linearClientID}, "redirect_uri": {p.redirect}, "response_type": {"code"}, "scope": {strings.Join(scopes, ",")}, "state": {state}, "actor": {"user"}, "prompt": {"consent"}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
 	if _, err = fmt.Fprintln(interaction.Out, "Open this URL to authorize Linear:\n"+p.authorizeURL+"?"+query.Encode()); err != nil {
