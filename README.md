@@ -1,4 +1,8 @@
-# backlog
+<p align="center">
+  <img width="128" src="assets/app-icon.png" alt="backlog app icon" style="padding:0.5rem;">
+</p>
+
+<h1 align="center">backlog</h1>
 
 `bl` is a keyboard-first terminal backlog for people and coding agents. Tasks are
 Markdown files in Git; linked worktrees share one live queue.
