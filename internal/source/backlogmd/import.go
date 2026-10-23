@@ -93,7 +93,6 @@ type taskInput struct {
 	created         time.Time
 	updated         time.Time
 	createdFallback bool
-	updatedFallback bool
 	ordinal         *big.Int
 	rank            string
 	archived        bool
@@ -151,15 +150,7 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	report := Report{
 		Input: inputAbs, Target: targetAbs, DryRun: dryRun,
 		OutputPaths: []string{}, Files: []FileReport{}, Configuration: []FieldMapping{},
-		Decisions: []string{
-			"Task IDs are upper-cased while retaining zero padding and dotted suffixes; references use the same IDs.",
-			"Drafts outside the native prefix are numbered after its highest ID, in draft ID order, as backlog draft promote would; references follow the new IDs.",
-			"Source ordinals are sorted and converted to spaced lexical rank keys, preserving their order and leaving insertion gaps.",
-			"Completed-partition items use the done status; draft-partition items use the draft status, which is always configured in the backlog category.",
-			"Legacy timestamps without a timezone are interpreted as UTC and emitted as RFC 3339 UTC timestamps.",
-			"Unknown task frontmatter fields are retained as native fields; unknown body sections are retained under Description.",
-			"Structural HTML markers and one leading #N index from Acceptance Criteria and Definition of Done task-list entries are removed; entry text, order, and checked state are retained.",
-		},
+		Decisions: []string{},
 	}
 	if err := ctx.Err(); err != nil {
 		return report, err
@@ -176,6 +167,7 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		return report, err
 	}
 	tasks := make([]taskInput, 0, len(taskFiles))
+	indexed := 0
 	for _, candidate := range taskFiles {
 		if err := ctx.Err(); err != nil {
 			return report, err
@@ -187,10 +179,17 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		if task.createdFallback {
 			report.Decisions = append(report.Decisions, fmt.Sprintf("%s has no created timestamp; used the updated timestamp or source file modification time.", task.sourcePath))
 		}
-		if task.updatedFallback {
-			report.Decisions = append(report.Decisions, fmt.Sprintf("%s has no updated timestamp; used the created timestamp.", task.sourcePath))
+		for _, key := range []string{"criteria", "dod"} {
+			original := task.doc.body.originals[key]
+			if stripBodyMarkers(original, true) != stripBodyMarkers(original, false) {
+				indexed++
+				break
+			}
 		}
 		tasks = append(tasks, task)
+	}
+	if indexed > 0 {
+		report.Decisions = append(report.Decisions, fmt.Sprintf("Removed one leading #N index per criterion in %d file(s); text, order, and checked state are kept.", indexed))
 	}
 	milestones := make([]milestoneInput, 0, len(milestoneFiles))
 	for _, candidate := range milestoneFiles {
@@ -282,12 +281,6 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		if !knownConfigKey(key) {
 			report.Skipped = append(report.Skipped, SkippedContent{Path: source.configPath, Field: key, Reason: "Backlog.md setting has no native project-config equivalent", Content: source.config[key]})
 		}
-	}
-	if len(report.UnresolvedMilestones) > 0 {
-		report.Decisions = append(report.Decisions, "Milestone values that match neither an imported key nor a unique title are kept unchanged and listed as unresolved.")
-	}
-	if len(report.Skipped) > 0 {
-		report.Decisions = append(report.Decisions, "Files and source settings that have no native representation are listed under skipped; skipped file contents are not copied.")
 	}
 	for relative, data := range plan.files {
 		if filepath.IsAbs(relative) || !filepath.IsLocal(filepath.Clean(relative)) {
@@ -731,7 +724,7 @@ func readTaskBytes(candidate sourceCandidate, data []byte) (taskInput, error) {
 	if err != nil {
 		return taskInput{}, fmt.Errorf("updated_date: %w", err)
 	}
-	createdFallback, updatedFallback := !createdOK, !updatedOK
+	createdFallback := !createdOK
 	if !createdOK {
 		if updatedOK {
 			created = updated
@@ -756,8 +749,8 @@ func readTaskBytes(candidate sourceCandidate, data []byte) (taskInput, error) {
 	return taskInput{
 		doc: doc, sourcePath: candidate.relative,
 		id: id, title: title, status: status, typeName: typeName, due: due, created: created, updated: updated,
-		createdFallback: createdFallback, updatedFallback: updatedFallback,
-		ordinal: ordinal, archived: candidate.archived, draft: candidate.draft,
+		createdFallback: createdFallback,
+		ordinal:         ordinal, archived: candidate.archived, draft: candidate.draft,
 		milestone: milestone,
 	}, nil
 }

@@ -14,6 +14,7 @@ Imported 4 item(s) (1 draft(s), 0 archived) and 1 milestone(s) into backlog-impo
   tasks/task-1 - Set-up-CI.md → backlog/TASK-1.md
   tasks/task-2 - Add-sign-in-page.md → backlog/TASK-2.md
   tasks/task-3 - Add-password-reset.md → backlog/TASK-3.md
+note Removed one leading #N index per criterion in 1 file(s); text, order, and checked state are kept.
 skipped backlog/config.yml default_status: Backlog.md default status has no native project-wide default
 ```
 

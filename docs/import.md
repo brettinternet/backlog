@@ -37,7 +37,7 @@ and counts without writing. To rehearse a full cutover, see
 | `ordinal` | Spaced `rank` keys in numeric ordinal order; ties and missing ordinals follow source path |
 | `references`, `documentation` | `refs`, both lists in order |
 | `modified_files` | `files` |
-| `created_date`, `updated_date` | `created`, `updated` in UTC to the second. No time zone means UTC. A missing date uses the other date or the file's mtime (reported). Invalid dates fail. |
+| `created_date`, `updated_date` | `created`, `updated` in UTC to the second. No time zone means UTC. A missing `updated` uses `created`. A missing `created` uses `updated`, else the file's mtime (noted). Invalid dates fail. |
 | Other frontmatter | Kept as unknown fields |
 | Description, Acceptance Criteria, Definition of Done, (Implementation) Plan, (Implementation) Notes, (Final) Summary | Matching native sections |
 | Comments block | Native comments; unstructured text gets author `unknown` |
@@ -92,20 +92,26 @@ reported.
 ## Report
 
 Without `--json`, the report prints the counts, each source file and its
-output, skipped content, and unresolved milestones:
+output, notes, skipped content, and unresolved milestones:
 
 ```text
 Would import 4 item(s) (1 draft(s), 0 archived) and 1 milestone(s) into backlog-import
   drafts/draft-1 - Explore-single-sign-on.md → backlog/TASK-4.md
   milestones/m-1 - Beta.md → backlog.yaml m-1
   tasks/task-1 - Set-up-CI.md → backlog/TASK-1.md
+note Removed one leading #N index per criterion in 1 file(s); text, order, and checked state are kept.
 skipped backlog/config.yml default_status: Backlog.md default status has no native project-wide default
 ```
 
+Notes cover what this import guessed or changed: an inferred prefix, a created
+date taken from the file's modification time, a comment without a timestamp, an
+ambiguous milestone title, and criterion-index removal. The rules above that
+always apply aren't repeated.
+
 The JSON report, in the envelope's `data`, adds each field's original and output
-value per source file, config mappings, output paths, the dry-run flag, and
-mapping decisions (such as criterion-index removal). `outputPaths` are absolute;
-each file's `outputPath` is relative to the destination.
+value per source file, config mappings, and output paths. Notes are in
+`decisions`. `outputPaths` are absolute; each file's `outputPath` is relative to
+the destination.
 
 Skipped and reported: documentation, decisions, locks, unsupported archive
 folders, symlinks or non-Markdown files in task and milestone folders, and

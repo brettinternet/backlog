@@ -45,7 +45,7 @@ func importCommands(directory *string, out io.Writer) []*urfave.Command {
 	}}}}}
 }
 
-// printImport summarizes the report; --json carries every field mapping and decision.
+// printImport summarizes the report; --json adds every field mapping.
 func printImport(out io.Writer, directory string, report backlogmd.Report) error {
 	verb := "Imported"
 	if report.DryRun {
@@ -63,6 +63,9 @@ func printImport(out io.Writer, directory string, report backlogmd.Report) error
 			output += " " + file.ID
 		}
 		lines = append(lines, fmt.Sprintf("  %s → %s", file.SourcePath, output))
+	}
+	for _, decision := range report.Decisions {
+		lines = append(lines, "note "+decision)
 	}
 	for _, skipped := range report.Skipped {
 		path := skipped.Path
