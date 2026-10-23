@@ -28,6 +28,9 @@ A `config.yaml` belongs in `~/.config/backlog/config.yaml`; merge it into yours.
 | [13-monorepo](13-monorepo) | Native | One queue per package, cross-queue blockers |
 | [14-local-overrides](14-local-overrides) | Native | Private and per-user settings |
 | [15-workspaces](15-workspaces) | Native | Several repositories in one list |
+| [16-mcp](16-mcp) | Native | Tools for Claude Code and other agents |
+| [17-import-backlog-md](17-import-backlog-md) | Backlog.md | Converting to native files |
+| [18-git-and-events](18-git-and-events) | Native | Automatic commits, the event log |
 
 Credentials stay in user config or the environment, never in `backlog.yaml`.
 Hooks, actions, adapters, and network sources run only after `bl trust`.

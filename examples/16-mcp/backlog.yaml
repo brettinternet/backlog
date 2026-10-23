@@ -1,0 +1,12 @@
+version: 1
+sources:
+  - {id: tasks, type: native, path: backlog, prefix: BL}
+statuses:
+  - {key: draft, name: Draft, category: backlog}
+  - {key: todo, name: To Do, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+  - {key: done, name: Done, category: done}
+workflow: {start: in-progress, done: done}
+ready:
+  statuses: [todo]
+  satisfiedBy: [done, canceled]

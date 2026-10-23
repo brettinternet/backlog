@@ -115,6 +115,10 @@ func TestExamples(t *testing.T) {
 			t.Setenv("BL_FAKE_ROOT", root)
 			t.Setenv("BL_FAKE_STATE", filepath.Join(root, "authority.json"))
 			t.Setenv("BL_FAKE_ITEMS", "backlog")
+			for _, name := range []string{"GIT_AUTHOR", "GIT_COMMITTER"} {
+				t.Setenv(name+"_NAME", "Ana")
+				t.Setenv(name+"_EMAIL", "ana@example.com")
+			}
 			run(t, root, "git", "init", "--quiet")
 			if _, err := os.Stat(filepath.Join(root, "backlog.yaml")); err == nil {
 				run(t, root, "bl", "config", "show", "--json")

@@ -1,0 +1,5 @@
+project_name: Shop
+default_status: To Do
+statuses: [To Do, In Progress, Done]
+labels: [auth, docs]
+task_prefix: task
