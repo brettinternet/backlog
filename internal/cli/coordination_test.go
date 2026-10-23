@@ -1,14 +1,24 @@
 package cli_test
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
-	"context"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/worklease"
@@ -29,6 +39,7 @@ func TestClaimThenFailedStatusKeepsOwnership(t *testing.T) {
 	script := `#!/bin/sh
 set -eu
 case "$2" in
+profile) printf '%s\n' '{"schemaVersion":2,"ok":true,"profile":{"builtin":true,"name":"local"}}';;
 handle)
  printf '%s\n' '{"schemaVersion":2,"ok":false,"error":{"reason":"handle-malformed","message":"handle is missing"}}'
  exit 2;;
@@ -66,6 +77,7 @@ func TestClaimContentionAndShowResource(t *testing.T) {
 	script := `#!/bin/sh
 set -eu
 case "$2" in
+profile) printf '%s\n' '{"schemaVersion":2,"ok":true,"profile":{"builtin":true,"name":"local"}}';;
 handle) printf '%s\n' '{"schemaVersion":2,"ok":false,"error":{"reason":"handle-malformed","message":"handle is missing"}}';exit 2;;
 acquire) printf '%s\n' '{"schemaVersion":2,"ok":false,"error":{"reason":"already-claimed","message":"resource claimed","details":{"holder":{"claimId":"other","agentId":"agent@host"}}}}';exit 2;;
 *) exit 1;;
@@ -375,4 +387,284 @@ func assertProviderBuild(t *testing.T) {
 		t.Fatalf("requires Worklease >=1.10.1 with schema-v2: %s %v", output, err)
 	}
 	t.Logf("provider build: %s", output)
+}
+
+// A host-local project key must never reach a remote authority, where every
+// host derives a different key and claims silently never contend.
+func TestHostLocalClaimRefusedWithRemoteProfile(t *testing.T) {
+	root := writeFixture(t)
+	enableCoordination(t, root)
+	script := `#!/bin/sh
+case "$2" in
+profile) printf '%s\n' '{"schemaVersion":2,"ok":true,"profile":{"name":"team","endpoint":"https://authority.example:8443"}}';;
+handle) printf '%s\n' '{"schemaVersion":2,"ok":false,"error":{"reason":"handle-malformed","message":"handle is missing"}}';exit 2;;
+*) touch "$BL_FAKE_CALLED"; exit 1;;
+esac
+`
+	bin := t.TempDir()
+	path := filepath.Join(bin, "worklease")
+	put(t, path, script)
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	called := filepath.Join(t.TempDir(), "called")
+	t.Setenv("BL_FAKE_CALLED", called)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, args := range [][]string{{"claim", "12"}, {"next", "--claim", "--start"}} {
+		code, out, _ := writeRun(root, "", args...)
+		if code != 5 || !strings.Contains(out, `"reason":"invalid-config"`) || !strings.Contains(out, "host-local") {
+			t.Fatalf("%v: %d %s", args, code, out)
+		}
+	}
+	if _, err := os.Stat(called); err == nil {
+		t.Fatal("host-local key reached the remote authority")
+	}
+}
+
+// remoteHome is one isolated host: its own HOME and XDG directories, resolved
+// because Worklease refuses owner-private paths below a symlink (macOS /var).
+type remoteHome []string
+
+func newRemoteHome(t *testing.T, agent string) remoteHome {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err == nil {
+		err = os.Chmod(dir, 0700)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := remoteHome{"HOME=" + dir, "WORKLEASE_AGENT_ID=" + agent}
+	for _, name := range []string{"XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR"} {
+		sub := filepath.Join(dir, name)
+		if err := os.Mkdir(sub, 0700); err != nil {
+			t.Fatal(err)
+		}
+		env = append(env, name+"="+sub)
+	}
+	return env
+}
+
+// use selects this host for in-process bl calls and the worklease they spawn.
+func (h remoteHome) use(t *testing.T) {
+	t.Helper()
+	for _, pair := range h {
+		name, value, _ := strings.Cut(pair, "=")
+		t.Setenv(name, value)
+	}
+}
+func (h remoteHome) dir() string { return strings.TrimPrefix(h[0], "HOME=") }
+func (h remoteHome) worklease(t *testing.T, dir string, args ...string) map[string]any {
+	t.Helper()
+	cmd := exec.Command("worklease", append([]string{"--json"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), h...)
+	output, _ := cmd.Output()
+	var v map[string]any
+	if err := json.Unmarshal(output, &v); err != nil || v["ok"] != true {
+		t.Fatalf("worklease %v: %s %v", args, output, err)
+	}
+	return v
+}
+
+// remoteAuthority runs `worklease serve` behind a TLS-terminating proxy that
+// uses the server's own pinned certificate. An armed proxy forwards the next
+// acquire, so it commits, then kills the authority before relaying the reply.
+type remoteAuthority struct {
+	home   remoteHome
+	config string
+	listen string
+	serve  *exec.Cmd
+	armed  atomic.Bool
+}
+
+func freeAddress(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return l.Addr().String()
+}
+func startRemoteAuthority(t *testing.T) (*remoteAuthority, string) {
+	t.Helper()
+	a := &remoteAuthority{home: newRemoteHome(t, "server"), listen: freeAddress(t)}
+	proxy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invite := filepath.Join(a.home.dir(), "bootstrap.invite")
+	init := a.home.worklease(t, t.TempDir(), "server", "init", "--listen", a.listen, "--endpoint", "https://"+proxy.Addr().String(), "--bootstrap-invite-file", invite)
+	a.config = init["serverConfig"].(string)
+	certificate, err := tls.LoadX509KeyPair(init["certificateFile"].(string), init["keyFile"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(leaf)
+	backend := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
+	target := &url.URL{Scheme: "https", Host: a.listen}
+	forward := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(target); r.Out.Host = r.In.Host }, Transport: backend}
+	server := &http.Server{
+		TLSConfig:    &tls.Config{Certificates: []tls.Certificate{certificate}},
+		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && r.URL.Path == "/v1/claims/acquire" && a.armed.CompareAndSwap(true, false) {
+				out := r.Clone(r.Context())
+				out.URL = target.JoinPath(r.URL.Path)
+				out.RequestURI = ""
+				response, err := backend.RoundTrip(out)
+				if err == nil {
+					response.Body.Close()
+				}
+				a.stop()
+				panic(http.ErrAbortHandler)
+			}
+			forward.ServeHTTP(w, r)
+		}),
+		ErrorLog: log.New(io.Discard, "", 0),
+	}
+	go server.ServeTLS(proxy, "", "")
+	t.Cleanup(func() { server.Close(); a.stop() })
+	a.start(t)
+	return a, invite
+}
+func (a *remoteAuthority) start(t *testing.T) {
+	t.Helper()
+	a.serve = exec.Command("worklease", "serve", "--server-config", a.config)
+	a.serve.Env = append(os.Environ(), a.home...)
+	if err := a.serve.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		if conn, err := net.Dial("tcp", a.listen); err == nil {
+			conn.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("worklease serve did not listen")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+func (a *remoteAuthority) stop() {
+	if a.serve != nil && a.serve.Process != nil {
+		_ = a.serve.Process.Kill()
+		_ = a.serve.Wait()
+		a.serve = nil
+	}
+}
+
+type remoteNext struct {
+	Data struct {
+		Items    []struct{ ID string }
+		Attempts []struct {
+			Ref   struct{ ID string }
+			Claim struct{ Outcome, Reason string }
+		}
+		Status string
+	}
+	Error struct{ Reason string }
+}
+
+func decodeNext(t *testing.T, out string) remoteNext {
+	t.Helper()
+	var v remoteNext
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("next: %s %v", out, err)
+	}
+	return v
+}
+
+// Two hosts with their own enrolled homes and clones of one origin share a
+// remote TLS authority: claims contend, renew, release, and an acquire whose
+// reply is lost when the authority stops replays exactly after restart.
+func TestProviderRemoteAuthority(t *testing.T) {
+	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
+		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.10.1")
+	}
+	selectProviderBinary(t, os.Getenv("BL_PROVIDER_WORKLEASE"))
+	assertProviderBuild(t)
+	authority, bootstrap := startRemoteAuthority(t)
+	hostA, hostB := newRemoteHome(t, "agent-a"), newRemoteHome(t, "agent-b")
+	hostA.worklease(t, t.TempDir(), "enroll", "--invite-file", bootstrap)
+	invite := filepath.Join(hostA.dir(), "b.invite")
+	hostA.worklease(t, t.TempDir(), "invite", "issue", "--invite-file", invite)
+	hostB.worklease(t, t.TempDir(), "enroll", "--invite-file", invite)
+	clone := func() string {
+		root := writeFixture(t)
+		enableCoordination(t, root)
+		nextItems(t, root)
+		put(t, filepath.Join(root, ".git/config"), "[core]\n bare = false\n[remote \"origin\"]\n url = https://github.com/example/shared.git\n")
+		return root
+	}
+	rootA, rootB := clone(), clone()
+
+	hostA.use(t)
+	code, out, stderr := writeRun(rootA, "", "next", "--claim", "--start", "--session", "loop-a")
+	first := decodeNext(t, out)
+	if code != 0 || len(first.Data.Items) != 1 || first.Data.Items[0].ID != "BL-012" {
+		t.Fatalf("host A next: %d %s %s", code, out, stderr)
+	}
+	hostB.use(t)
+	code, out, stderr = writeRun(rootB, "", "next", "--claim", "--start", "--session", "loop-b")
+	second := decodeNext(t, out)
+	if code != 0 || len(second.Data.Items) != 1 || second.Data.Items[0].ID != "BL-013" || second.Data.Attempts[0].Claim.Outcome != "contended" {
+		t.Fatalf("host B next did not skip host A's claim: %d %s %s", code, out, stderr)
+	}
+	code, out, _ = writeRun(rootB, "", "claim", "12", "--session", "loop-c")
+	if code != 7 || !strings.Contains(out, "agent-a") {
+		t.Fatalf("host B claim of host A's item: %d %s", code, out)
+	}
+
+	hostA.use(t)
+	code, out, _ = writeRun(rootA, "", "heartbeat", "--session", "loop-a")
+	if code != 0 || !strings.Contains(out, `"outcome":"renewed"`) {
+		t.Fatalf("heartbeat: %d %s", code, out)
+	}
+	code, out, _ = writeRun(rootA, "", "done", "12", "--session", "loop-a")
+	if code != 0 || !strings.Contains(out, `"outcome":"released"`) {
+		t.Fatalf("done: %d %s", code, out)
+	}
+	hostB.use(t)
+	code, out, _ = writeRun(rootB, "", "done", "13", "--session", "loop-b")
+	if code != 0 || !strings.Contains(out, `"outcome":"released"`) {
+		t.Fatalf("host B done: %d %s", code, out)
+	}
+	if claims := hostB.worklease(t, rootB, "list")["claims"]; claims != nil {
+		t.Fatalf("remote claims survived done: %v", claims)
+	}
+
+	// Host A's clone still has BL-013 open. Lose the committed acquire's reply.
+	hostA.use(t)
+	authority.armed.Store(true)
+	code, out, stderr = writeRun(rootA, "", "next", "--claim", "--start", "--session", "replay")
+	lost := decodeNext(t, out)
+	if code != 6 || lost.Error.Reason != "unknown-outcome" || lost.Data.Status != "not-written" || len(lost.Data.Attempts) != 1 || lost.Data.Attempts[0].Ref.ID != "BL-013" {
+		t.Fatalf("interrupted acquire: %d %s %s", code, out, stderr)
+	}
+	authority.start(t)
+	code, out, stderr = writeRun(rootA, "", "next", "--claim", "--start", "--session", "replay")
+	replayed := decodeNext(t, out)
+	if code != 0 || len(replayed.Data.Items) != 1 || replayed.Data.Items[0].ID != "BL-013" || len(replayed.Data.Attempts) != 1 {
+		t.Fatalf("replay: %d %s %s", code, out, stderr)
+	}
+	claims, _ := hostA.worklease(t, rootA, "list")["claims"].([]any)
+	if len(claims) != 1 || claims[0].(map[string]any)["sessionId"] != "replay" {
+		t.Fatalf("replay acquired other than exactly one claim: %v", claims)
+	}
+
+	// A clone without origin has a host-local ID: refused, never sent.
+	local := writeFixture(t)
+	enableCoordination(t, local)
+	hostA.use(t)
+	code, out, _ = writeRun(local, "", "claim", "12", "--session", "local")
+	if code != 5 || !strings.Contains(out, "host-local") {
+		t.Fatalf("host-local claim with remote profile: %d %s", code, out)
+	}
 }

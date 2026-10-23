@@ -272,6 +272,24 @@ Every Worklease call runs from the control root, even from a linked worktree.
 `WORKLEASE_HOME` and `WORKLEASE_PROFILE` pass through; inherited
 `WORKLEASE_SESSION_ID`, `WORKLEASE_HANDLE`, and `WORKLEASE_RUN_ID` don't.
 
+### Remote authority
+
+To coordinate across hosts, run one `worklease serve` and enroll each host
+(see Worklease's remote claim authority guide). Enrollment makes the remote
+profile the user default; select another with `worklease profile bind NAME` in
+the repository or `WORKLEASE_PROFILE=NAME`. `bl` commands don't change:
+
+```sh
+worklease enroll --invite-file PATH
+worklease profile show            # remote profile and its selection source
+bl next --claim --start --session loop-a --json
+```
+
+Every clone must share the project ID, which defaults to the `origin` remote.
+Without one, the ID is host-local and other hosts would derive different keys,
+so `bl` refuses claims through a remote profile (exit 5, `invalid-config`). Set
+`project.id` in `backlog.yaml` or add `origin`.
+
 ### Claimed selection
 
 `bl next --claim [--start]` returns at most one item:

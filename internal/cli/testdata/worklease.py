@@ -10,6 +10,9 @@ for name in ("WORKLEASE_SESSION_ID", "WORKLEASE_HANDLE", "WORKLEASE_RUN_ID"):
     assert name not in os.environ
 argv = sys.argv[1:]
 assert argv[0] == "--json"
+if argv[1:] == ["profile", "show"]:
+    print(json.dumps(dict(schemaVersion=2, ok=True, builtin=True, profile=dict(builtin=True, name="local"))))
+    sys.exit(0)
 assert argv[1] == "runs" or argv[-2:] == ["--session", "loop"]
 path = pathlib.Path(os.environ["BL_FAKE_STATE"])
 claim = json.loads(path.read_text()) if path.exists() else None

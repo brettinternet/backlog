@@ -74,6 +74,16 @@ func asciiQuote(s string) string {
 	b.WriteByte('"')
 	return b.String()
 }
+
+// projectScoped reports whether the item's key derives from the project ID.
+func projectScoped(cfg project.Config, item model.Item) bool {
+	for _, s := range cfg.Sources {
+		if s.ID == item.Ref.Source {
+			return s.Type == "native" || s.Type == "backlog-md"
+		}
+	}
+	return false
+}
 func resource(cfg project.Config, item model.Item) (string, error) {
 	for _, s := range cfg.Sources {
 		if s.ID != item.Ref.Source {

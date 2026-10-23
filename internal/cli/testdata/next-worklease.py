@@ -15,6 +15,9 @@ if argv == ["version", "--json"]:
     sys.exit(0)
 assert not any(k in os.environ for k in ("WORKLEASE_SESSION_ID", "WORKLEASE_HANDLE", "WORKLEASE_RUN_ID"))
 assert argv[0] == "--json"
+if argv[1:] == ["profile", "show"]:
+    print(json.dumps(dict(schemaVersion=2, ok=True, builtin=True, profile=dict(builtin=True, name="local"))))
+    sys.exit(0)
 op = argv[1]
 session = argv[argv.index("--session") + 1] if "--session" in argv else None
 state_path = pathlib.Path(os.environ["BL_FAKE_STATE"])

@@ -53,6 +53,10 @@ type envelope struct {
 	PendingRequestPresent, RecoveryRequestPresent  bool
 	Run                                            wireRun   `json:"run"`
 	Runs                                           []wireRun `json:"runs"`
+	Profile                                        *struct {
+		Name    string `json:"name"`
+		Builtin bool   `json:"builtin"`
+	} `json:"profile"`
 }
 type wireRun struct {
 	ID, State, Health string
@@ -101,8 +105,8 @@ func (c *Coordinator) call(ctx context.Context, caller model.CallerContext, args
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	argv := append([]string{"--json"}, args...)
-	// runs/list have no selector flag; all contextual commands select explicitly.
-	if len(args) > 0 && args[0] != "runs" && args[0] != "list" {
+	// runs/list/profile have no selector flag; all contextual commands select explicitly.
+	if len(args) > 0 && args[0] != "runs" && args[0] != "list" && args[0] != "profile" {
 		argv = append(argv, "--session", caller.Session)
 	}
 	cmd := exec.CommandContext(ctx, "worklease", argv...)
@@ -263,6 +267,9 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 	if err != nil {
 		return failure(envelope{}, err)
 	}
+	if refused := c.refuseHostLocal(ctx, caller, item); refused != nil {
+		return *refused
+	}
 	v, err := c.call(ctx, caller, "acquire", "--resource", key, "--wait", "0s", "--work-key", item.Ref.Source+":"+item.Ref.ID)
 	if err != nil || !v.OK {
 		return mutationFailure(v, err)
@@ -275,6 +282,25 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 	}
 	return model.ClaimResult{Outcome: "acquired", Resource: key, Claim: v.wireClaim.info(), ExpiresAt: v.ExpiresAt}
 }
+
+// refuseHostLocal stops a host-local project key from reaching a remote
+// authority, where other hosts derive different keys and never contend.
+func (c *Coordinator) refuseHostLocal(ctx context.Context, caller model.CallerContext, item model.Item) *model.ClaimResult {
+	if !c.Config.HostLocal || !projectScoped(c.Config, item) {
+		return nil
+	}
+	v, err := c.call(ctx, caller, "profile", "show")
+	if err != nil || !v.OK || v.Profile == nil {
+		r := failure(v, err)
+		r.Message = "cannot determine whether the selected Worklease authority is remote; no claim attempted"
+		return &r
+	}
+	if v.Profile.Builtin {
+		return nil
+	}
+	return &model.ClaimResult{Outcome: model.ClaimUnavailable, Reason: "invalid-config", Message: "project ID " + c.Config.Project.ID + " is host-local, so claims through remote Worklease profile " + v.Profile.Name + " would not contend with other hosts; set project.id or an origin remote"}
+}
+
 func (c *Coordinator) Release(ctx context.Context, caller model.CallerContext, item model.Item, expectedClaimID string) model.ClaimResult {
 	if expectedClaimID == "" {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "verified claim identity required; no release attempted"}
