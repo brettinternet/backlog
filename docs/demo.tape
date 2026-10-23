@@ -34,6 +34,7 @@ Sleep 2s
 Type "status"
 Sleep 2s
 Escape
+Sleep 500ms
 Hide
 Ctrl+C
 Sleep 1s
