@@ -4,20 +4,21 @@ Convert a Backlog.md folder to native files. The input is untouched; the output
 goes to a new directory, `backlog-import/` by default.
 
 ```sh
-bl import backlog-md >/dev/null
-find backlog-import -type f | sort
+bl import backlog-md
 ```
 
 ```text
-backlog-import/backlog.yaml
-backlog-import/backlog/TASK-1.md
-backlog-import/backlog/TASK-2.md
-backlog-import/backlog/TASK-3.md
-backlog-import/backlog/TASK-4.md
+Imported 4 item(s) (1 draft(s), 0 archived) and 1 milestone(s) into backlog-import
+  drafts/draft-1 - Explore-single-sign-on.md → backlog/TASK-4.md
+  milestones/m-1 - Beta.md → backlog.yaml m-1
+  tasks/task-1 - Set-up-CI.md → backlog/TASK-1.md
+  tasks/task-2 - Add-sign-in-page.md → backlog/TASK-2.md
+  tasks/task-3 - Add-password-reset.md → backlog/TASK-3.md
+skipped backlog/config.yml default_status: Backlog.md default status has no native project-wide default
 ```
 
-`bl import backlog-md --dry-run` prints every field mapping without writing
-anything. Statuses, labels, and milestones become `backlog.yaml`:
+Preview with `--dry-run`; add `--json` for every field mapping. Statuses,
+labels, and milestones become `backlog.yaml`:
 
 ```yaml
 version: 1
@@ -85,8 +86,8 @@ Email and password sign-in.
 - [ ] Invalid credentials show an error
 ```
 
-The draft `DRAFT-1` takes the next task number, `TASK-4`, with status `draft`.
-To switch over, move the old folder aside and the new files into place:
+The draft keeps status `draft`. To switch over, move the old folder aside and
+the new files into place:
 
 ```sh
 mv backlog backlog-md

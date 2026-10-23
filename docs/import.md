@@ -91,11 +91,21 @@ reported.
 
 ## Report
 
-The report (human-readable, or JSON in the envelope's `data`) lists, per source
-file, each field's original and output value, plus config mappings, output
-paths and counts, the dry-run flag, mapping decisions (such as criterion-index
-removal), skipped paths and settings, and unresolved milestones. `outputPaths`
-are absolute; each file's `outputPath` is relative to the destination.
+Without `--json`, the report prints the counts, each source file and its
+output, skipped content, and unresolved milestones:
+
+```text
+Would import 4 item(s) (1 draft(s), 0 archived) and 1 milestone(s) into backlog-import
+  drafts/draft-1 - Explore-single-sign-on.md → backlog/TASK-4.md
+  milestones/m-1 - Beta.md → backlog.yaml m-1
+  tasks/task-1 - Set-up-CI.md → backlog/TASK-1.md
+skipped backlog/config.yml default_status: Backlog.md default status has no native project-wide default
+```
+
+The JSON report, in the envelope's `data`, adds each field's original and output
+value per source file, config mappings, output paths, the dry-run flag, and
+mapping decisions (such as criterion-index removal). `outputPaths` are absolute;
+each file's `outputPath` is relative to the destination.
 
 Skipped and reported: documentation, decisions, locks, unsupported archive
 folders, symlinks or non-Markdown files in task and milestone folders, and
