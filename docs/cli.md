@@ -66,6 +66,17 @@ adapters fail with a fix hint. Network probes are permitted only by `--online`,
 never before trust, and only for installed adapters; the native-only build
 performs no network probes even with that flag.
 
+## `bl adapter check [--timeout 5s] EXEC [ARG...]`
+
+Explicitly execute an external adapter and check protocol negotiation, mandatory
+capabilities, bounded list pages, and a read of the first item when present.
+Use `--` before EXEC when its arguments begin with flags. This command does not
+grant trust to configured sources. Timeout must be positive and at most one
+minute. Success prints `Adapter protocol v1: PASS`; JSON data is
+`{"protocolVersion":1,"valid":true}`. Failures use reason `adapter-check` and a
+safe diagnostic, including invalid frames, protocol versions or capabilities.
+See [external-adapter-protocol.md](external-adapter-protocol.md).
+
 ## `bl instructions [TOPIC]`
 
 Print embedded, version-matched Markdown without loading project configuration.

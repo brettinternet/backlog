@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,8 +16,46 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/external"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
+
+func TestExternalSilentChild(t *testing.T) {
+	if len(os.Args) > 1 && os.Args[len(os.Args)-1] == "silent-adapter" {
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		os.Exit(0)
+	}
+}
+
+// A hung adapter must reach the visible source error badge, not leave the UI
+// indefinitely in its loading state or block the healthy source's paint.
+func TestExternalTimeoutErrorBadge(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	backend, err := external.New(external.Options{ID: "adapter", Run: []string{os.Args[0], "-test.run=^TestExternalSilentChild$", "--", "silent-adapter"}, Timeout: 200 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	store := engine.OpenStore(ctx, project.Config{}, source.Registry{"adapter": backend})
+	defer store.Close()
+	snapshots, unsubscribe := store.Subscribe()
+	defer unsubscribe()
+	m := New(Options{Context: ctx, Store: store, Sources: []string{"adapter"}, NoColor: true})
+	m.Bind(snapshots)
+	for {
+		msg := m.waitSnapshot()()
+		if msg == nil {
+			t.Fatal("timeout waiting for adapter failure")
+		}
+		next, _ := m.Update(msg)
+		m = next.(Model)
+		if store.Current().Source("adapter").Error != "" && strings.Contains(m.View().Content, "adapter ! error:") {
+			break
+		}
+	}
+}
 
 type shellSource struct{ loads atomic.Int32 }
 

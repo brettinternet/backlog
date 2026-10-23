@@ -37,6 +37,8 @@ type BuildInfo struct {
 // Run owns streams and exit codes; the framework must never exit the process.
 // Help and version do not load configuration.
 func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out, errOut io.Writer) int {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	build.Go = runtime.Version()
 	command := "bl"
 	var directory string
@@ -261,7 +263,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
 	root.Commands = append(root.Commands, eventsCommand(&directory, out))
 	root.Commands = append(root.Commands, hooksCommand(&directory), actionCommand(&directory, in, out, errOut))
-	root.Commands = append(root.Commands, instructionsCommand(out))
+	root.Commands = append(root.Commands, instructionsCommand(out), adapterCommand(&directory, out))
 	root.Commands = append(root.Commands, readCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, writeCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
@@ -360,7 +362,7 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "claim", "release", "events", "run", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
+	case "check", "claim", "release", "events", "run", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
 		return true
 	}
 	return false

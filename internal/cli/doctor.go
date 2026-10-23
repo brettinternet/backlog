@@ -272,6 +272,14 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 			c.Fix = "Review bl trust --show, then run bl trust"
 			return c
 		}
+		if s.Type == "external" {
+			if len(s.Run) == 0 || s.Run[0] == "" {
+				c.Status, c.Message, c.Fix = "fail", "External source requires executable argv", "Configure sources.run"
+				return c
+			}
+			c.Message = "External adapters configured; use bl adapter check EXEC for explicit execution"
+			continue
+		}
 		if s.Type != "native" {
 			c.Status = "fail"
 			c.Message = "Source " + s.ID + " (" + s.Type + ") is not available in this build"
@@ -290,7 +298,7 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 			return c
 		}
 	}
-	if online {
+	if online && c.Message == "Sources are configured; no network checks requested" {
 		c.Message = "Native sources are local; no network probes needed"
 	}
 	return c

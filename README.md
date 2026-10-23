@@ -40,6 +40,7 @@ adapters are still being implemented; see [remote adapter status](docs/remote.md
 - [Backlog.md import](docs/import.md)
 - [Beads](docs/beads.md)
 - [Remote adapters](docs/remote.md)
+- [External adapter protocol v1](docs/external-adapter-protocol.md) and [wire schema](docs/external-adapter/v1/schema.json)
 - [MCP](docs/mcp.md)
 - [Events](docs/events.md)
 - [Hooks, actions, and agent handoff](docs/automation.md)

@@ -1,0 +1,28 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema",
+ "$id":"https://github.com/brettinternet/backlog/docs/external-adapter/v1/schema.json",
+ "title":"Backlog external adapter protocol v1",
+ "oneOf":[{"$ref":"#/$defs/request"},{"$ref":"#/$defs/response"},{"$ref":"#/$defs/cancel"}],
+ "$defs":{
+  "ref":{"type":"object","required":["source","id"],"properties":{"source":{"type":"string","minLength":1},"id":{"type":"string","minLength":1}},"additionalProperties":false},
+  "item":{"type":"object","required":["Ref","Version"],"properties":{"Ref":{"$ref":"#/$defs/ref"},"Version":{"type":"string","minLength":1},"Title":{"type":"string"},"Status":{"type":"string"},"Category":{"enum":["backlog","todo","active","done","canceled",""]}}},
+  "mutation":{"type":"object","required":["Ref","Op"],"properties":{"Ref":{"$ref":"#/$defs/ref"},"Op":{"enum":["batch","create","archive","unarchive","set","add","remove","unset","replace-section","append-note","append-comment","check-criterion","uncheck-criterion","add-criterion","remove-criterion","restore"]},"ExpectedVersion":{"type":"string"},"Field":{"type":"string"},"Value":{},"Section":{"type":"string"},"Text":{"type":"string"},"Index":{"type":"integer"},"Evidence":{"type":["string","null"]},"Changes":{"type":["array","null"],"items":{"$ref":"#/$defs/mutation"}},"Comment":{"type":"object"},"Original":{"type":["string","null"]},"Item":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/item"}]}},"allOf":[{"if":{"properties":{"Op":{"const":"create"}}},"else":{"required":["ExpectedVersion"],"properties":{"ExpectedVersion":{"minLength":1}}}}],"additionalProperties":false},
+  "capabilities":{"type":"array","maxItems":100,"uniqueItems":true,"items":{"type":"string"},"allOf":[{"contains":{"const":"list"}},{"contains":{"const":"read"}}]},
+  "manifest":{"type":"object","required":["id","version","capabilities"],"properties":{"id":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"capabilities":{"$ref":"#/$defs/capabilities"},"requiredFeatures":{"type":"array","maxItems":0}}},
+  "common":{"type":"object","required":["sourceId","deadline"],"properties":{"sourceId":{"type":"string","minLength":1},"deadline":{"type":"string","format":"date-time"}}},
+  "request":{"type":"object","required":["jsonrpc","id","method","params"],"properties":{"jsonrpc":{"const":"2.0"},"id":{"type":"string","minLength":1},"method":{"enum":["initialize","capabilities","list","read","apply"]},"params":{"type":"object"}},"additionalProperties":false,"allOf":[
+   {"if":{"properties":{"method":{"const":"initialize"}}},"then":{"properties":{"params":{"type":"object","required":["protocolMajors","sourceId"],"properties":{"protocolMajors":{"type":"array","contains":{"const":1}},"sourceId":{"type":"string","minLength":1}}}}},"else":{"properties":{"params":{"$ref":"#/$defs/common"}}}},
+   {"if":{"properties":{"method":{"const":"list"}}},"then":{"properties":{"params":{"required":["cursor","maxItems","maxBytes"],"properties":{"cursor":{"type":"string"},"maxItems":{"type":"integer","minimum":1,"maximum":100},"maxBytes":{"type":"integer","minimum":1,"maximum":786432}}}}}},
+   {"if":{"properties":{"method":{"const":"read"}}},"then":{"properties":{"params":{"required":["id"],"properties":{"id":{"type":"string","minLength":1}}}}}},
+   {"if":{"properties":{"method":{"const":"apply"}}},"then":{"properties":{"params":{"required":["mutation"],"properties":{"mutation":{"$ref":"#/$defs/mutation"}}}}}}
+  ]},
+  "result":{"oneOf":[
+   {"type":"object","required":["protocolVersion","manifest"],"properties":{"protocolVersion":{"const":1},"manifest":{"$ref":"#/$defs/manifest"}}},
+   {"type":"object","required":["capabilities"],"properties":{"capabilities":{"$ref":"#/$defs/capabilities"}}},
+   {"type":"object","required":["items","nextCursor","coverage"],"properties":{"items":{"type":"array","maxItems":100,"items":{"$ref":"#/$defs/item"}},"nextCursor":{"type":"string"},"coverage":{"enum":["complete","partial","unknown"]}}},
+   {"type":"object","required":["item"],"properties":{"item":{"$ref":"#/$defs/item"}}}
+  ]},
+  "response":{"type":"object","required":["jsonrpc","id"],"properties":{"jsonrpc":{"const":"2.0"},"id":{"type":"string","minLength":1},"result":{"$ref":"#/$defs/result"},"error":{"type":"object","required":["code","message","data"],"properties":{"code":{"type":"integer"},"message":{"type":"string","maxLength":4096},"data":{"type":"object","required":["diagnostic"],"properties":{"diagnostic":{"type":"string","maxLength":4096}}}}}},"oneOf":[{"required":["result"],"not":{"required":["error"]}},{"required":["error"],"not":{"required":["result"]}}],"additionalProperties":false},
+  "cancel":{"type":"object","required":["jsonrpc","method","params"],"properties":{"jsonrpc":{"const":"2.0"},"method":{"const":"$/cancelRequest"},"params":{"type":"object","required":["id"],"properties":{"id":{"type":"string","minLength":1}},"additionalProperties":false}},"additionalProperties":false}
+ }
+}

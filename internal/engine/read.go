@@ -13,6 +13,7 @@ import (
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/beads"
+	"github.com/brettinternet/backlog/internal/source/external"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
 
@@ -143,6 +144,9 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			}
 			break
 		}
+	}
+	if c.Type == "external" {
+		return external.New(external.Options{ID: c.ID, Run: c.Run, Dir: cfg.Discovery.ControlRoot})
 	}
 	if c.Type != "native" && c.Type != "beads" {
 		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)

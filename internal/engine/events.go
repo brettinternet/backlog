@@ -71,6 +71,13 @@ type eventSource struct {
 	cfg project.Config
 }
 
+func (s *eventSource) Initialize(ctx context.Context) error {
+	if initializer, ok := s.Source.(interface{ Initialize(context.Context) error }); ok {
+		return initializer.Initialize(ctx)
+	}
+	return nil
+}
+
 func (s *eventSource) LoadInitial(ctx context.Context) (source.Delta, error) {
 	if loader, ok := s.Source.(source.InitialLoader); ok {
 		return loader.LoadInitial(ctx)

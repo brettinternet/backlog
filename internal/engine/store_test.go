@@ -21,6 +21,38 @@ import (
 	"github.com/brettinternet/backlog/internal/source/native"
 )
 
+// Negotiated capabilities must replace the initial deny-by-default cache;
+// otherwise external adapters stay permanently read-only in the TUI.
+type negotiatedSource struct {
+	source.Source
+	ready atomic.Bool
+}
+
+func (s *negotiatedSource) Info() source.Info {
+	info := s.Source.Info()
+	if !s.ready.Load() {
+		info.Capabilities = nil
+	}
+	return info
+}
+func (s *negotiatedSource) Load(ctx context.Context, c source.Cursor) (source.Delta, error) {
+	d, err := s.Source.Load(ctx, c)
+	if err == nil {
+		s.ready.Store(true)
+	}
+	return d, err
+}
+func TestNegotiatedCapabilitiesReachStore(t *testing.T) {
+	t.Parallel()
+	backend := &negotiatedSource{Source: fakeSource(t, "tasks")}
+	store := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
+	defer store.Close()
+	awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Source("tasks").Coverage == source.Complete })
+	if !store.Capabilities("tasks").Allows(model.Set) {
+		t.Fatal("negotiated write capability remains unavailable")
+	}
+}
+
 func storeConfig() project.Config {
 	return project.Config{Settings: project.Settings{Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}, {Key: "done", Category: "done"}}, Ready: project.ReadyConfig{Statuses: []string{"todo"}, SatisfiedBy: []string{"done"}}}}
 }

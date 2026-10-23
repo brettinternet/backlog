@@ -415,7 +415,7 @@ A hook or action whose placeholders cannot expand doesn't run. A hook records a 
 
 **Environment.** Hooks and actions get `BL_ITEM_ID`, `BL_ITEM_REF`, `BL_SOURCE`, `BL_PROJECT_ID`, `BL_ROOT`, `BL_BRANCH`, `BL_RESOURCE` (when available), `BL_EVENT_ID`, `BL_HOOK_DEPTH`, and `BL_RESULT`. The triggering event arrives on stdin as JSON. The process starts in a minimal environment with credentials removed (D17, D21).
 
-**External source adapters** speak a versioned JSON-RPC 2.0 stdio protocol: initialize and manifest, capabilities, paged list, read, apply with expected version, and cancellation, all with per-frame and per-response bounds. BL-42 freezes it. It derives from Worklease's external adapter protocol v1 without the receipt and recovery journal.
+**External source adapters** speak the frozen [external adapter protocol v1](external-adapter-protocol.md): initialize and manifest, capabilities, paged list, read, apply with expected version, and cancellation, all with per-frame and per-response bounds. Its [versioned JSON Schema](external-adapter/v1/schema.json) defines the wire shapes. It derives from Worklease's external adapter protocol v1 without the receipt and recovery journal. `bl adapter check EXEC [ARG...]` explicitly executes an adapter for bounded conformance checks; configured committed adapters remain inert until trusted.
 
 ## 9. Coordination and Worklease
 
