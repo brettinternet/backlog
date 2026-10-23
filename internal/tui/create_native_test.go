@@ -34,7 +34,7 @@ func TestNativeCaptureCreateAndEditAllFields(t *testing.T) {
 	item := model.Item{Title: "All fields", Status: "todo", Type: "feature", Priority: model.High, Rank: "a", Assignees: []string{"alice"}, Labels: []string{"tui"}, Milestone: "m-1", Due: "2026-12-01", Parent: &model.Ref{ID: "BL-9"}, BlockedBy: []model.Ref{{ID: "BL-8"}}, Related: []model.Ref{{ID: "BL-7"}}, DuplicateOf: &model.Ref{ID: "BL-6"}, Refs: []string{"abc"}, Files: []string{"file"}, Description: "description", Criteria: []model.Criterion{{Text: "criterion"}}, DoD: []model.Criterion{{Text: "done"}}, Plan: "plan", Notes: "notes", Summary: "summary"}
 	m := New(Options{Context: ctx, Store: store, CreateSource: "tasks", Statuses: statuses, ValidateItem: func(i model.Item) error { return engine.ValidateItem(cfg, i) }})
 	m.capture = captureState{open: true, full: true, source: "tasks"}
-	m.capture.loadFields(item)
+	m.capture.loadFields(item, false)
 	command := m.updateCapture("enter")
 	if m.capture.errorText != "" {
 		t.Fatal(m.capture.errorText)
@@ -56,7 +56,7 @@ func TestNativeCaptureCreateAndEditAllFields(t *testing.T) {
 		}
 	}
 	m.capture = captureState{open: true, full: true, source: "tasks", original: saved, version: saved.Version}
-	m.capture.loadFields(saved)
+	m.capture.loadFields(saved, false)
 	changes := map[string]string{
 		"title": "Edited", "status": "active", "type": "bug", "priority": "urgent", "rank": "b",
 		"assignees": "bob", "labels": "review", "milestone": "m-2", "due": "2026-12-02",

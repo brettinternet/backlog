@@ -12,7 +12,8 @@ The destination is a project directory, not a `backlog/` subdirectory. It must b
 | Backlog.md field or content | Native output |
 | --- | --- |
 | `id` | `id`, upper-cased while preserving zero padding and dotted suffixes (`task-012.3` becomes `TASK-012.3`). Drafts outside the native prefix get new IDs, described below. |
-| `title`, `type`, `priority`, `labels`, `milestone`, `due` | Same-named native fields; source status names become the generated status keys in `.config/backlog.yaml` |
+| `title`, `type`, `priority`, `labels`, `milestone` | Same-named native fields; source status names become the generated status keys in `.config/backlog.yaml` |
+| `due_date` (or legacy `due`) | Native `due` date |
 | `assignee` | `assignees` list |
 | `dependencies` | `blocked_by`; IDs and `parent_task_id` references are upper-cased and rewritten to match imported IDs, including archived items |
 | `parent_task_id` | `parent` |

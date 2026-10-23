@@ -43,7 +43,7 @@ func TestFullFormFieldsAndInlineValidation(t *testing.T) {
 	t.Parallel()
 	item := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}, Title: "Title", Status: "todo", Type: "feature", Priority: model.High, Rank: "a", Assignees: []string{"alice"}, Labels: []string{"tui"}, Milestone: "m-2", Due: "2026-12-01", Parent: &model.Ref{ID: "BL-2"}, BlockedBy: []model.Ref{{ID: "BL-3"}}, Related: []model.Ref{{ID: "BL-4"}}, DuplicateOf: &model.Ref{ID: "BL-5"}, Refs: []string{"ref"}, Files: []string{"file"}, Description: "A\nB", Criteria: []model.Criterion{{Text: "works"}}, DoD: []model.Criterion{{Text: "done", Checked: true}}, Plan: "plan", Notes: "notes", Summary: "summary"}
 	c := captureState{source: "tasks"}
-	c.loadFields(item)
+	c.loadFields(item, false)
 	actual, err := captureItem(c.fields, "tasks")
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,18 @@ func TestBacklogMDUnsupportedChoices(t *testing.T) {
 			t.Fatal("unsupported rank editing was offered")
 		}
 	}
+	// Exercise the distinct multi-source chooser route, not only a default.
+	store := engine.OpenStore(context.Background(), cfg, source.Registry{
+		"tasks": newEditFakeSource(nil, model.Capabilities{model.Create: true}),
+		"other": newEditFakeSource(nil, model.Capabilities{model.Create: true}),
+	})
+	defer store.Close()
+	m = New(Options{Store: store, Workspace: &cfg, Sources: []string{"tasks", "other"}})
 	m.beginCapture(false)
+	if !m.capture.choosing {
+		t.Fatal("source chooser did not open")
+	}
+	m.updateCapture("enter")
 	m.capture.line = "New task"
 	m.expandCapture()
 	for _, field := range m.capture.fields {

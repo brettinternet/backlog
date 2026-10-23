@@ -74,8 +74,8 @@ config are always trusted. Grants never launch anything by themselves.
 Untrusted programs and network sources remain inert on every interface. The TUI
 shows a persistent trust banner and can still browse local native sources.
 Hooks and actions enforce `Config.RequireTrusted` before execution. This build
-ships native, [Backlog.md](backlog-md.md), and Beads adapters; configured
-remote/external sources remain unavailable.
+ships native, [Backlog.md](backlog-md.md), Beads, and external adapters;
+remote service adapters remain unavailable.
 
 `bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
 `control-root`, `cache`, `worklease`, and `sources`. Each check has `name`,
