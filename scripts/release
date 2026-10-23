@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Standalone release build and fail-closed GitHub CI gate."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -40,6 +41,7 @@ def build(version):
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?|snapshot", version):
         raise ValueError("version must be vMAJOR.MINOR.PATCH[-PRERELEASE] or snapshot")
     commit = run("git", "rev-parse", "HEAD")
+    build_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     output = Path("dist")
     output.mkdir(exist_ok=True)
     checksums = []
@@ -48,14 +50,15 @@ def build(version):
         for system in ("darwin", "linux"):
             for arch in ("arm64", "amd64"):
                 subprocess.run(["go", "build", "-trimpath", "-ldflags",
-                                f"-s -w -X main.buildVersion={version} -X main.buildCommit={commit}",
+                                f"-s -w -X main.buildVersion={version} -X main.buildCommit={commit} -X main.buildTime={build_time}",
                                 "-o", str(binary), "./cmd/bl"], check=True,
                                env={**os.environ, "CGO_ENABLED": "0", "GOOS": system, "GOARCH": arch})
                 metadata = run("go", "version", "-m", str(binary))
                 if ("CGO_ENABLED=0" not in metadata or f"GOOS={system}" not in metadata
                         or f"GOARCH={arch}" not in metadata
                         or version.encode() not in binary.read_bytes()
-                        or commit.encode() not in binary.read_bytes()):
+                        or commit.encode() not in binary.read_bytes()
+                        or build_time.encode() not in binary.read_bytes()):
                     raise ValueError("missing build metadata")
                 archive = output / f"bl_{system}_{arch}.tar.gz"
                 with tarfile.open(archive, "w:gz") as tar:

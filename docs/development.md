@@ -93,7 +93,7 @@ To upgrade tools, run `task setup:upgrade`, review the `mise.toml` diff, and run
 ## Releases
 
 `task release:snapshot` builds unpublished archives in `dist/` for Darwin and
-Linux on arm64 and amd64: a static `bl` with version and commit, plus
+Linux on arm64 and amd64: a static `bl` with version, commit, and UTC build time, plus
 `checksums.txt`. `task release:test` (also in `task ci`) tests the CI gate and
 installer against local fixtures. Neither needs credentials or sibling
 repositories.

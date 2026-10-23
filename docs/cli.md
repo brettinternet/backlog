@@ -22,6 +22,14 @@ prints the problem and `Run bl COMMAND --help for usage.` on stderr.
 Short flags: `-n` limit, `-s` status (`new`) or section (`show`, `edit`), `-b`
 body, `-e` evidence, `-f` follow, `-y` yes, `-j` JSON, and `-C` directory.
 
+## Version
+
+`bl version` and `bl --version` print `bl VERSION (SHA, built TIME)`, with a
+seven-character commit SHA and a UTC RFC 3339 build timestamp. Builds without
+injected metadata report an unknown build time and omit the unknown commit.
+With `--json`, `data` contains `version`, `commit` (unshortened), `build_time`,
+and `go`.
+
 ## IDs
 
 `12`, `012`, and `BL-12` all find `BL-012`. Numeric IDs use each native

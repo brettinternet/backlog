@@ -34,9 +34,10 @@ import (
 )
 
 type BuildInfo struct {
-	Version string `json:"version"`
-	Commit  string `json:"commit"`
-	Go      string `json:"go"`
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	Go        string `json:"go"`
+	BuildTime string `json:"build_time"`
 }
 
 // Run owns streams and exit codes; the framework must never exit the process.
@@ -52,7 +53,22 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if cmd.Bool("json") {
 			return success(out, command, build)
 		}
-		_, err := fmt.Fprintf(out, "bl %s (%s)\n", build.Version, build.Commit)
+		details := make([]string, 0, 2)
+		if build.Commit != "" && build.Commit != "unknown" {
+			commit := build.Commit
+			if len(commit) > 7 {
+				commit = commit[:7]
+			}
+			details = append(details, commit)
+		}
+		if build.BuildTime != "" {
+			details = append(details, "built "+build.BuildTime)
+		}
+		label := build.Version
+		if len(details) > 0 {
+			label += " (" + strings.Join(details, ", ") + ")"
+		}
+		_, err := fmt.Fprintf(out, "bl %s\n", label)
 		return err
 	}
 	showConfig := func(_ context.Context, cmd *urfave.Command) error {

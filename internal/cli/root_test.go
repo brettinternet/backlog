@@ -20,7 +20,7 @@ import (
 func run(args ...string) (int, string, string) {
 	return testkit.RunCLI(context.Background(), append([]string{"bl"}, args...),
 		func(ctx context.Context, argv []string, out, errOut io.Writer) int {
-			return cli.Run(ctx, argv, cli.BuildInfo{Version: "test", Commit: "abc1234"}, strings.NewReader(""), out, errOut)
+			return cli.Run(ctx, argv, cli.BuildInfo{Version: "test", Commit: "abc123456789", BuildTime: "2026-10-21T01:29:04Z"}, strings.NewReader(""), out, errOut)
 		})
 }
 
@@ -60,7 +60,7 @@ func TestMachineOutput(t *testing.T) {
 			}
 			if tc.reason == "" {
 				info, ok := envelope.Data.(map[string]any)
-				if !ok || info["version"] != "test" || info["commit"] != "abc1234" || info["go"] == "" || envelope.Error != nil {
+				if !ok || info["version"] != "test" || info["commit"] != "abc123456789" || info["build_time"] != "2026-10-21T01:29:04Z" || info["go"] == "" || envelope.Error != nil {
 					t.Fatalf("missing build metadata: %+v", envelope)
 				}
 			} else if envelope.Data != nil || envelope.Error == nil || envelope.Error.Reason != tc.reason || envelope.Error.Details == nil {

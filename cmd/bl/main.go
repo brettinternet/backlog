@@ -15,6 +15,7 @@ import (
 var (
 	buildVersion = "dev"
 	buildCommit  = "unknown"
+	buildTime    = "unknown"
 )
 
 func main() {
@@ -32,6 +33,6 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return cli.Run(ctx, os.Args, cli.BuildInfo{
-		Version: buildVersion, Commit: buildCommit,
+		Version: buildVersion, Commit: buildCommit, BuildTime: buildTime,
 	}, os.Stdin, os.Stdout, os.Stderr)
 }
