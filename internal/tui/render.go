@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
@@ -578,29 +577,11 @@ func (m Model) highlightText(text string, base paint) string {
 		return base.render(text)
 	}
 	runes := []rune(text)
-	marked := make([]bool, len(runes))
-	any := false
+	var needles [][]rune
 	for _, term := range m.highlights {
-		needle := []rune(strings.ToLower(term))
-		if len(needle) == 0 {
-			continue
-		}
-		for i := 0; i+len(needle) <= len(runes); i++ {
-			match := true
-			for j, r := range needle {
-				if unicode.ToLower(runes[i+j]) != r {
-					match = false
-					break
-				}
-			}
-			if match {
-				any = true
-				for j := range needle {
-					marked[i+j] = true
-				}
-			}
-		}
+		needles = append(needles, []rune(strings.ToLower(term)))
 	}
+	marked, any := markMatches(runes, needles)
 	if !any {
 		return base.render(text)
 	}
@@ -768,10 +749,14 @@ func (m Model) statusBar() string {
 		}
 	case m.editor.open:
 		left = t.accent.render("/") + " " + m.editor.view(t.accent.render("▏"))
+	case m.find.open:
+		left = t.accent.render("Find ›") + " " + m.find.input.view(t.accent.render("▏")) + "  " + m.findStatus()
 	case m.queryError != "":
 		left = t.red.render("! " + m.queryError)
 	case m.notice != "":
 		left = textutil.Line(m.notice)
+	case m.detailFocus && m.find.text != "":
+		left = t.muted.render("Find › "+textutil.Line(m.find.text)) + "  " + m.findStatus()
 	default:
 		left = m.queryPrefix() + t.muted.render(textutil.Line(m.query))
 	}

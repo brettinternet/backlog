@@ -153,6 +153,7 @@ type Model struct {
 	restore                  *selection
 	splitWidth               int
 	save                     savePrompt
+	find                     findState
 	notice                   string
 	picker                   pickerState
 	pickerSerial             int
@@ -751,6 +752,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.scrollDetail(0)
 			m.keepEntryVisible()
+			current := m.find.current
+			m.findMatches()
+			if same && current < len(m.find.lines) {
+				m.find.current = current
+			}
 		}
 		return m, m.waitDetail()
 	case pickerChoicesMsg:
@@ -803,7 +809,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg = tea.KeyPressMsg{Code: code}
 			s = msg.String()
 		}
-		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.editor.open) {
+		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.find.open || m.editor.open) {
 			return m, tea.Quit
 		}
 		if m.actionConfirm != nil {
@@ -843,6 +849,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.save.open {
 			return m.updateSave(msg)
 		}
+		if m.find.open {
+			return m.updateFind(msg)
+		}
 		if m.editor.open {
 			return m.updateQuery(msg)
 		}
@@ -861,7 +870,7 @@ var emacsInputKeys = map[string]rune{"ctrl+g": tea.KeyEscape, "ctrl+n": tea.KeyD
 
 // modalOpen reports an input or prompt that takes every key and the mouse.
 func (m Model) modalOpen() bool {
-	return m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.editor.open || m.save.open || m.archiveConfirm || m.actionConfirm != nil
+	return m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.editor.open || m.save.open || m.find.open || m.archiveConfirm || m.actionConfirm != nil
 }
 
 // plainField reports that keys go to a text field without a list to move
@@ -877,7 +886,7 @@ func (m Model) plainField() bool {
 	case m.archiveConfirm:
 		return false
 	}
-	return m.save.open
+	return m.save.open || m.find.open
 }
 
 // retheme rebuilds the palette once the terminal reports its colors. Rendered
@@ -974,7 +983,12 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		_, cmd := m.queryMenu(prefix, s)
 		return m, cmd
 	}
-	if !m.detailFocus {
+	if s == "/" && m.detailFocus {
+		m.openFind()
+		return m, nil
+	}
+	// View keys act on the list wherever it shows, including beside detail.
+	if !m.detailFocus || m.split() {
 		switch s {
 		case "/":
 			// A trailing space starts a new clause instead of extending the last.
@@ -1006,6 +1020,10 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		return m, m.stepItem(s == "J")
 	}
 	if s == "esc" {
+		if m.detailFocus && m.find.text != "" {
+			m.find = findState{}
+			return m, nil
+		}
 		if m.detailOpen {
 			m.closeDetail()
 			return m, nil
@@ -1044,6 +1062,13 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "backspace":
 			return m, m.followBack()
+		case "n", "N":
+			if m.find.text != "" {
+				m.stepFind(s == "n")
+				return m, nil
+			}
+			cmd, _ := m.updateItemKey(s)
+			return m, cmd
 		case "tab":
 			return m, m.switchDetailTab((m.detailTab + 1) % detailTab(len(detailTabNames)))
 		case "shift+tab":
@@ -1281,6 +1306,7 @@ func (m *Model) closeDetail() {
 	m.detailEntries, m.detailTargets = nil, nil
 	m.detailHistory = nil
 	m.detailTruncated = false
+	m.find = findState{}
 }
 
 // stepItem moves to the next or previous item, skipping group headers, without

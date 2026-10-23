@@ -158,6 +158,14 @@ detail on the item shown, never on marks. If an edit moves the item out of the
 view, detail keeps showing it until you move. `J`/`K` select the next or
 previous item from either pane, counting from where a moved item was. At split
 widths, `h` returns to the list without closing detail; a second `h` closes it.
+Filter, sort, group, fold, and layout keys (`f`, `o`, `z`, `F`, `B`, `T`) act
+on the list from split detail too, and detail keeps its item if it leaves the
+view. Narrower, they need the list focused.
+
+In detail, `/` finds text in the tab in view, case-insensitively, jumping as
+you type from where it opened. `enter` keeps the search; `n`/`N` then step
+through matching lines, wrapping, instead of creating items. The search carries
+across tabs and items; `esc` clears it before closing detail.
 
 `ctrl-p` opens go-to: fuzzy search over every ID and title, including closed and
 archived items (up to 100 matches). `enter` opens detail without changing the
@@ -193,7 +201,7 @@ when content is still cut off.
 
 ## Filtering, sorting, grouping
 
-`/` edits the query live, after a space so typing starts a new clause.
+In the list, `/` edits the query live, after a space so typing starts a new clause.
 `up`/`down` highlight a candidate; an unfinished word highlights the first. `tab` inserts the highlighted candidate, or the first.
 `enter` inserts the highlighted candidate, then applies the query if it parses;
 a field name stays open for its value. `esc` restores the previous query.
@@ -417,7 +425,7 @@ keys:
 | `previous-view` | `g T` | Previous view |
 | `board` | `B` | Board layout |
 | `tree` | `T` | Tree layout |
-| `query` | `/` | Edit query |
+| `query` | `/` | Edit query / find |
 | `clear-filter` | `F` | Clear filters |
 | `save-view` | `ctrl+s` | Save view |
 | `workspace` | `W` | Toggle workspace |
@@ -442,8 +450,8 @@ keys:
 | `criterion` | `x` | Toggle criterion |
 | `claim` | `C` | Claim / release |
 | `archive` | `d d` | Archive |
-| `new` | `n` | New item |
-| `new-child` | `N` | New child |
+| `new` | `n` | New item / next match |
+| `new-child` | `N` | New child / previous match |
 | `repeat` | `.` | Repeat edit |
 | `undo` | `u` | Undo |
 | `redo` | `ctrl+r` | Redo |

@@ -96,7 +96,7 @@ func (m Model) prepareConfiguredActionForID(name, id string) (tea.Model, tea.Cmd
 }
 
 func (m Model) receiveActionPrepared(msg actionPreparedMsg) (tea.Model, tea.Cmd) {
-	if msg.serial != m.actionSerial || m.launcher.open || m.capture.open || m.picker.open || m.editor.open || m.save.open || m.archiveConfirm || m.longEdit.path != "" || m.actionConfirm != nil {
+	if msg.serial != m.actionSerial || m.launcher.open || m.capture.open || m.picker.open || m.editor.open || m.save.open || m.find.open || m.archiveConfirm || m.longEdit.path != "" || m.actionConfirm != nil {
 		return m, nil
 	}
 	if msg.err != nil {

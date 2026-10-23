@@ -55,7 +55,7 @@ func defaultKeymap() []action {
 		{id: "previous-view", label: "Previous view", canonical: "g T", bindings: []string{"g T"}},
 		{id: "board", label: "Board layout", canonical: "B", bindings: []string{"B"}},
 		{id: "tree", label: "Tree layout", canonical: "T", bindings: []string{"T"}},
-		{id: "query", label: "Edit query", canonical: "/", bindings: []string{"/"}},
+		{id: "query", label: "Edit query / find", canonical: "/", bindings: []string{"/"}},
 		{id: "clear-filter", label: "Clear filters", canonical: "F", bindings: []string{"F"}},
 		{id: "save-view", label: "Save view", canonical: "ctrl+s", bindings: []string{"ctrl+s"}},
 		{id: "workspace", label: "Toggle workspace", bindings: []string{"W"}},
@@ -80,8 +80,8 @@ func defaultKeymap() []action {
 		{id: "criterion", label: "Toggle criterion", canonical: "x", bindings: []string{"x"}},
 		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
 		{id: "archive", label: "Archive", canonical: "d d", bindings: []string{"d d"}},
-		{id: "new", label: "New item", canonical: "n", bindings: []string{"n"}},
-		{id: "new-child", label: "New child", canonical: "N", bindings: []string{"N"}},
+		{id: "new", label: "New item / next match", canonical: "n", bindings: []string{"n"}},
+		{id: "new-child", label: "New child / previous match", canonical: "N", bindings: []string{"N"}},
 		{id: "repeat", label: "Repeat edit", canonical: ".", bindings: []string{"."}},
 		{id: "undo", label: "Undo", canonical: "u", bindings: []string{"u"}},
 		{id: "redo", label: "Redo", canonical: "ctrl+r", bindings: []string{"ctrl+r"}},
@@ -295,6 +295,12 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 		m.notice = "Disabled: go-to search is unavailable"
 		return m, nil
 	}
+	// A list action's later keys would otherwise reach detail as item keys:
+	// f s would open the status picker.
+	if m.disabledReason(a) == focusList {
+		m.notice = "Disabled: " + focusList
+		return m, nil
+	}
 	switch a.id {
 	case "actions":
 		return m.openConfiguredActions()
@@ -313,6 +319,16 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 	}
 	return m, tea.Batch(commands...)
 }
+
+const focusList = "focus the list first"
+
+// listViewAction reports a filter, sort, group, fold or layout action, which
+// changes the list without acting on an item.
+func listViewAction(id string) bool {
+	return id == "board" || id == "tree" || id == "clear-filter" || zCommand(id) ||
+		strings.HasPrefix(id, "filter-") || strings.HasPrefix(id, "sort-") || strings.HasPrefix(id, "group-")
+}
+
 func (m Model) disabledReason(a action) string {
 	if a.id == "workspace" && !m.hasWorkspace() {
 		return "no workspace configured for this project"
@@ -354,6 +370,9 @@ func (m Model) disabledReason(a action) string {
 		return "open the Criteria tab"
 	}
 	if m.detailFocus {
+		if a.id == "query" || m.split() && listViewAction(a.id) {
+			return ""
+		}
 		if slices.Contains([]string{"move-down", "move-up", "next-item", "previous-item", "first", "last", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "back", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
 			return ""
 		}
@@ -370,7 +389,7 @@ func (m Model) disabledReason(a action) string {
 		// Item actions work on the item in detail; view and selection actions
 		// belong to the list.
 		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url"}, a.id) {
-			return "focus the list first"
+			return focusList
 		}
 	}
 	kind := map[string]pickerKind{"status": pickerStatus, "priority": pickerPriority, "assignees": pickerAssignees, "assign-me": pickerAssignees, "labels": pickerLabels, "milestone": pickerMilestone, "blocker": pickerBlocker, "parent": pickerParent, "title": pickerTitle}

@@ -277,7 +277,7 @@ func (m Model) modalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.picker.cursor = i
 			return m, m.updatePickerKey("enter")
 		}
-	case m.archiveConfirm || m.save.open:
+	case m.archiveConfirm || m.save.open || m.find.open:
 	case m.editor.open:
 		e := &m.editor
 		if step != 0 {

@@ -477,3 +477,45 @@ func TestDetailFollowRelations(t *testing.T) {
 func detailHeader(m Model) string {
 	return ansi.Strip(strings.Join(m.detailPane(m.detailWidth(), 2), "\n"))
 }
+
+// Catches list keys leaking into narrow detail as item keys (f s opening the
+// status picker), n creating an item during a search, and esc closing detail
+// before clearing the search.
+func TestDetailListKeysAndFind(t *testing.T) {
+	t.Parallel()
+	m := shellFixture(3)
+	m.width, m.height = 120, 30
+	m.detailOpen, m.detailFocus = true, true
+	m = queryKey(queryKey(m, "f"), "d")
+	if !strings.Contains(m.query, "is:open,closed") || !m.detailFocus {
+		t.Fatalf("split detail filter: %q", m.query)
+	}
+	m.width = 100
+	m = queryKey(queryKey(m, "f"), "s")
+	if m.notice != "Disabled: "+focusList || m.editor.open {
+		t.Fatalf("narrow detail must refuse list keys: %q", m.notice)
+	}
+
+	m.detailLines = []string{"alpha", "\x1b[1mBeta\x1b[22m one", "gamma", "beta two"}
+	m = queryType(m, "/beta")
+	m = queryKey(m, "enter")
+	if m.find.open || len(m.find.lines) != 2 || m.find.current != 0 {
+		t.Fatalf("find: %+v", m.find)
+	}
+	m = queryKey(m, "n")
+	m = queryKey(m, "n")
+	if m.find.current != 0 || m.picker.open || m.capture.open {
+		t.Fatalf("n must wrap through matches, not create: %+v", m.find)
+	}
+	m.theme = newTheme(false, false, nil, nil)
+	if got, want := m.highlightFind(m.detailLines[1]), "\x1b[1m\x1b[7mBeta\x1b[27m\x1b[22m one"; got != want {
+		t.Fatalf("highlight %q, want %q", got, want)
+	}
+	m = queryKey(m, "esc")
+	if m.find.text != "" || !m.detailOpen {
+		t.Fatal("first esc clears the search")
+	}
+	if m = queryKey(m, "esc"); m.detailOpen {
+		t.Fatal("second esc closes detail")
+	}
+}
