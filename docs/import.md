@@ -18,7 +18,7 @@ The destination is a project directory, not a `backlog/` subdirectory. It must b
 | `modified_files` | `files` |
 | `created_date`, `updated_date` | `created`, `updated` in UTC at whole-second precision. Offset-bearing timestamps are converted to UTC; timestamps without a timezone are interpreted as UTC. If a date is absent, the importer uses the other date or the source file modification time and reports the decision. Invalid dates are refused. |
 | Any other task frontmatter key | Retained as a native unknown field with its value |
-| Description, Acceptance Criteria, Definition of Done, Plan / Implementation Plan, Notes / Implementation Notes, Summary / Final Summary | Corresponding native body sections. Structural HTML markers such as `<!-- AC:BEGIN -->` and `<!-- SECTION:DESCRIPTION:END -->` are removed; checklist text and checked state are retained. |
+| Description, Acceptance Criteria, Definition of Done, Plan / Implementation Plan, Notes / Implementation Notes, Summary / Final Summary | Corresponding native body sections. Structural HTML markers such as `<!-- AC:BEGIN -->` and `<!-- SECTION:DESCRIPTION:END -->` are removed. In Acceptance Criteria and Definition of Done task-list entries, one leading generated `#N ` index is also removed; remaining text, order, and checked state are retained (`#1 #12 regression` becomes `#12 regression`). Fenced code and other sections are unchanged. |
 | Backlog.md Comments block | Native timestamped comments. `author` and `created` are converted from each legacy entry; unstructured comment text is retained under an `unknown` author. |
 | Other level-two body sections | Retained under Description with their heading and contents. |
 
@@ -32,6 +32,6 @@ Every `milestones/*.md` and `archive/milestones/*.md` file becomes a project mil
 
 ## Report and skipped material
 
-The JSON-serializable report contains per-source-file, per-field original and output values; configuration mappings; output paths and counts; dry-run state; mapping decisions; skipped paths/settings; and unresolved milestones. Task and milestone files are listed separately, while their output path points into the native project. Paths in `outputPaths` are absolute; per-file `outputPath` values are relative to the destination.
+The JSON-serializable report contains per-source-file, per-field original and output values; configuration mappings; output paths and counts; dry-run state; mapping decisions (including generated criterion-index removal); skipped paths/settings; and unresolved milestones. Task and milestone files are listed separately, while their output path points into the native project. Paths in `outputPaths` are absolute; per-file `outputPath` values are relative to the destination.
 
 The importer does not import Backlog.md documentation, decisions, locks, or unsupported archive partitions. It reports these paths and source configuration settings without native equivalents under `skipped`. Unsupported files inside task or milestone partitions (including symlinks and non-Markdown files) are also reported. It never edits the source directory.
