@@ -9,6 +9,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 )
@@ -132,6 +133,10 @@ func (s *Source) safeError(err error) error {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
+	}
+	var diagnostic *oauth.Diagnostic
+	if errors.As(err, &diagnostic) {
+		return oauth.Failure(diagnostic.Code, diagnostic.RetryAt)
 	}
 	var schedule ScheduleDiagnostic
 	if errors.As(err, &schedule) {

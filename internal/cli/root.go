@@ -24,6 +24,7 @@ import (
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
@@ -278,6 +279,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			},
 		},
 	}
+	root.Commands = append(root.Commands, authCommands(&directory, in, out, errOut))
 	root.Commands = append(root.Commands, claimCommands(&directory, out)...)
 	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)
 	root.Commands = append(root.Commands, eventsCommand(&directory, out))
@@ -336,7 +338,10 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	if err := root.Run(ctx, args); err != nil {
 		var failure *Error
 		if !errors.As(err, &failure) {
-			failure = &Error{Reason: "internal", Message: err.Error()}
+			failure = oauthCLIError(err)
+			if failure == nil {
+				failure = &Error{Reason: "internal", Message: err.Error()}
+			}
 		}
 		if jsonRequested(args, valueFlags) {
 			if err := json.NewEncoder(out).Encode(Envelope{SchemaVersion: 1, Command: command, Data: failure.Data, Error: failure}); err != nil {
@@ -386,10 +391,22 @@ func terminal(stream any) bool {
 
 func acceptsArguments(name string) bool {
 	switch name {
-	case "check", "claim", "release", "events", "run", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md":
+	case "check", "claim", "release", "events", "run", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber", "backlog-md", "login", "logout":
 		return true
 	}
 	return false
+}
+
+func oauthCLIError(err error) *Error {
+	var diagnostic *oauth.Diagnostic
+	if !errors.As(err, &diagnostic) || diagnostic == nil {
+		return nil
+	}
+	details := map[string]any{"code": diagnostic.Code}
+	if !diagnostic.RetryAt.IsZero() {
+		details["retryAt"] = diagnostic.RetryAt
+	}
+	return &Error{Reason: diagnostic.Code, Message: diagnostic.Message, Details: details}
 }
 
 func commandName(cmd *urfave.Command) string {

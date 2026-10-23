@@ -11,6 +11,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
@@ -169,8 +170,19 @@ func readSource(cfg project.Config, c project.SourceConfig) (source.Source, erro
 	return &eventSource{Source: backend, cfg: cfg}, nil
 }
 
-var providerSecrets = &remote.Secrets{}
-var providerCredentials = &remote.Credentials{Secrets: providerSecrets}
+var providerSecrets = remote.ProcessSecrets
+
+func providerCredentialsFor(cfg project.Config) *remote.Credentials {
+	manager := oauth.NewManager(oauth.Store{StateDir: cfg.Paths.StateDir}, cfg.Paths.CacheDir, oauth.DefaultRegistry(), providerSecrets)
+	return &remote.Credentials{Secrets: providerSecrets, OAuth: manager}
+}
+
+func providerCache(cfg project.Config, sourceID, identity string, account project.AccountConfig) cache.Store {
+	if account.OAuth {
+		return cache.NewPrincipal(cfg.Paths.CacheDir, cfg.Project.ID, sourceID, identity, oauth.PrincipalKey(account.Provider, account.Host, account.User))
+	}
+	return cache.New(cfg.Paths.CacheDir, cfg.Project.ID, sourceID, identity)
+}
 
 func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error) {
 	for i, configured := range cfg.Sources {
@@ -189,13 +201,14 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 					return nil, source.Refuse("unavailable", "ambiguous Linear account")
 				}
 				copy := candidate
+				copy.Provider = "linear"
 				account = &copy
 			}
 		}
 		if account == nil {
 			return nil, source.Refuse("unavailable", "Linear user account not configured")
 		}
-		backend, err := linear.New(linear.Options{ID: c.ID, Organization: c.Site, Team: c.Team, Project: c.Project, Account: *account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentials})
+		backend, err := linear.New(linear.Options{ID: c.ID, Organization: c.Site, Team: c.Team, Project: c.Project, Account: *account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg)})
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +216,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			Source project.SourceConfig
 			User   string
 		}{c, account.User})
-		return remote.New(backend, cache.New(cfg.Paths.CacheDir, cfg.Project.ID, c.ID, string(identity)), providerSecrets), nil
+		return remote.New(backend, providerCache(cfg, c.ID, string(identity), *account), providerSecrets), nil
 	}
 	if c.Type == "github" {
 		host := c.Host
@@ -217,6 +230,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 					return nil, source.Refuse("unavailable", "ambiguous GitHub account")
 				}
 				copy := candidate
+				copy.Provider = "github"
 				account = &copy
 			}
 		}
@@ -239,7 +253,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 				aliases[key] = configured.ID
 			}
 		}
-		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: *account, Project: c.GitHubProject, Secrets: providerSecrets, Credentials: providerCredentials, SourceIDs: aliases})
+		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: *account, Project: c.GitHubProject, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg), SourceIDs: aliases})
 		if err != nil {
 			return nil, err
 		}
@@ -249,7 +263,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			User    string
 			Aliases map[string]string
 		}{c, account.User, aliases})
-		return remote.New(backend, cache.New(cfg.Paths.CacheDir, cfg.Project.ID, c.ID, string(identity)), providerSecrets), nil
+		return remote.New(backend, providerCache(cfg, c.ID, string(identity), *account), providerSecrets), nil
 	}
 	if c.Type == "external" {
 		return external.New(external.Options{ID: c.ID, Run: c.Run, Dir: cfg.Discovery.ControlRoot})

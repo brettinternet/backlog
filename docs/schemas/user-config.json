@@ -81,6 +81,13 @@
               "items": {
                 "type": "string"
               }
+            },
+            "env": {
+              "type": "string"
+            },
+            "oauth": {
+              "type": "boolean",
+              "description": "Explicitly opt this user account into the built-in OAuth flow when its provider is available"
             }
           }
         }

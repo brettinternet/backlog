@@ -47,6 +47,13 @@ func TestCredentialsBoundedPrivateAndVerified(t *testing.T) {
 	if secrets.Redact("prefix "+canary) != "prefix [REDACTED]" {
 		t.Fatal("credential not registered for redaction")
 	}
+	if fmt.Sprintf("%v %#v", secrets, secrets) != "[REDACTED] [REDACTED]" {
+		t.Fatal("secret registry formatting leaked")
+	}
+	secrets.Register("")
+	if secrets.Redact("plain text") != "plain text" {
+		t.Fatal("empty secret corrupted redaction")
+	}
 	badVerify := func(context.Context, Credential) (string, error) { return "", fmt.Errorf("error %s", canary) }
 	if _, err = resolver.Resolve(context.Background(), account, badVerify); err == nil || strings.Contains(err.Error(), canary) {
 		t.Fatalf("unsafe verifier error: %v", err)

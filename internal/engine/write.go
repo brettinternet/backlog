@@ -11,6 +11,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 )
@@ -94,6 +95,10 @@ func ResolveChanges(ctx context.Context, cfg project.Config, sourceID string, ch
 
 // ErrorReason classifies engine/source failures for machine-facing adapters.
 func ErrorReason(err error) string {
+	var diagnostic *oauth.Diagnostic
+	if errors.As(err, &diagnostic) && diagnostic != nil {
+		return diagnostic.Code
+	}
 	var refusal *source.Error
 	if errors.As(err, &refusal) {
 		switch refusal.Reason {
@@ -110,6 +115,10 @@ func ErrorReason(err error) string {
 
 // ErrorMessage preserves source refusal text without its machine reason prefix.
 func ErrorMessage(err error) string {
+	var diagnostic *oauth.Diagnostic
+	if errors.As(err, &diagnostic) && diagnostic != nil {
+		return diagnostic.Message
+	}
 	var refusal *source.Error
 	if errors.As(err, &refusal) {
 		return refusal.Message

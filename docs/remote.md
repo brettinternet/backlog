@@ -70,10 +70,29 @@ accounts:
       host: github.com
       user: bob
       env: BL_PERSONAL_GITHUB_TOKEN
+    - name: oauth-work
+      host: github.com
+      user: alice
+      oauth: true # only when this in-tree provider flow is registered
 ```
 
-Select exactly one helper argv or explicit environment variable per account.
-`Credentials.Resolve` verifies the returned credential against `user` using the
+A user account selects one helper argv, one explicit environment variable, or
+`oauth: true`; the choices are mutually exclusive. OAuth is opt-in only in the
+user config, and the current production provider registry is empty until BL-61/62.
+`bl auth login PROVIDER ACCOUNT` requires a terminal and begins with read-only
+scopes. `bl auth login PROVIDER ACCOUNT --write` performs a separate explicit
+write-scope upgrade. `bl auth logout PROVIDER ACCOUNT` deletes the owner's stored
+tokens and purges cache rows for that principal, revoking remotely when its
+registered public-client flow supports it; otherwise it reports the manual
+provider-settings revocation step. No OAuth endpoint/client can be configured by
+a user, and an unavailable provider never falls back to helper/environment
+credentials. OAuth tokens live in the owner-private XDG state store (0700
+folders, 0600 fsynced records), are never in the disposable cache, and refresh is
+serialized per account across processes. The provider principal and scopes are
+verified after login and each rotation; capabilities are rediscovered after
+consent changes. Existing helper/environment accounts remain memory-only.
+
+`Credentials.Resolve` verifies helper/environment credentials against `user` using the
 provider's authenticated identity endpoint. Refresh immediately before writes.
 Helpers run without a shell in a minimal environment, with a 15-second timeout,
 4-KiB stdout/stderr limits, and descendant cancellation. Helper and verifier

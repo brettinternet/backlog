@@ -95,6 +95,9 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	if err := userNode.Decode(&user); err != nil {
 		return Config{}, err
 	}
+	if err := validateUserAccounts(userNode); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", paths.ConfigFile, err)
+	}
 	overlaySettings(effective, userNode, Provenance{Layer: "user", File: paths.ConfigFile}, cfg.Provenance)
 	cfg.Me, cfg.Accounts, cfg.Workspaces, cfg.DefaultWorkspace, cfg.Keys = user.Me, user.Accounts, user.Workspaces, user.DefaultWorkspace, user.Keys
 	for _, key := range []string{"me", "workspaces", "defaultWorkspace", "keys"} {
@@ -442,6 +445,33 @@ func validateNode(node *yaml.Node, typ reflect.Type, key string) error {
 	}
 	return nil
 }
+func validateUserAccounts(node *yaml.Node) error {
+	accounts := field(node, "accounts")
+	if accounts == nil {
+		return nil
+	}
+	for i := 0; i+1 < len(accounts.Content); i += 2 {
+		provider, list := accounts.Content[i].Value, accounts.Content[i+1]
+		for index, entry := range list.Content {
+			key := fmt.Sprintf("accounts.%s[%d]", provider, index)
+			optIn := field(entry, "oauth")
+			if optIn == nil || optIn.Value != "true" {
+				continue
+			}
+			for _, required := range []string{"name", "user"} {
+				value := field(entry, required)
+				if value == nil || strings.TrimSpace(value.Value) == "" {
+					return fmt.Errorf("line %d: key %s.%s: required for OAuth", entry.Line, key, required)
+				}
+			}
+			if field(entry, "credential") != nil || field(entry, "env") != nil {
+				return fmt.Errorf("line %d: key %s: OAuth cannot be combined with helper or environment credentials", entry.Line, key)
+			}
+		}
+	}
+	return nil
+}
+
 func validateSettings(node *yaml.Node) error {
 	fail := func(n *yaml.Node, key, message string) error {
 		return fmt.Errorf("line %d: key %s: %s", n.Line, key, message)
