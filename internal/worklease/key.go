@@ -13,6 +13,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source/jira"
 )
 
 // Key mirrors Worklease's portable policies, including ASCII JSON hashing.
@@ -91,6 +92,16 @@ func resource(cfg project.Config, item model.Item) (string, error) {
 				return "", fmt.Errorf("linear stable UUID unavailable")
 			}
 			return Key("linear", s.Site, stable)
+		case "jira":
+			site, err := jira.CanonicalSite(s.Site)
+			if err != nil {
+				return "", err
+			}
+			stable, _ := item.Fields["id"].(string)
+			if stable == "" {
+				return "", fmt.Errorf("jira numeric identity unavailable")
+			}
+			return Key("generic", site, stable)
 		case "native", "backlog-md":
 			return Key("generic", cfg.Project.ID, item.Ref.ID)
 		default:

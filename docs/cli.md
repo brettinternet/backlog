@@ -136,7 +136,7 @@ All writes accept `--if-version V`. A stale version exits 4 (`conflict`) and
 changes nothing. Without the flag, a write is still checked against the version
 it read, under the source's write lock for local files. Native writes are atomic
 and preserve unchanged lines, unknown fields, comments, and quoting. GitHub and
-Linear check a fresh version before one mutation, but have no compare-and-swap,
+Linear and [Jira Cloud](jira.md) check a fresh version before one mutation, but have no compare-and-swap,
 so a concurrent edit can still race ([GitHub](github.md#writes-and-claims)).
 
 `new` and `edit` return the item as `data`. Other writes return one outcome per
@@ -171,14 +171,17 @@ echo 'Long description' | bl new 'Write docs' --body -
 - `--source` is required when there are several sources.
 - `--if-version` on create always conflicts.
 
-### `bl set ID... FIELD=V FIELD+=V FIELD-=V`
+### `bl set ID... FIELD=V FIELD+=V FIELD-=V [--yes]`
 
 ```sh
 bl set 12 status=in-progress priority=high label+=bug blocked_by+=BL-7
 bl set 12 13 milestone=
 ```
 
-IDs come first. All assignments to one item succeed or fail together.
+IDs come first. All assignments to one item succeed or fail together. Jira
+accepts one field per request; `status` must be a discovered destination name.
+Jira single-assignee replacement (including clearing) requires `--yes` (MCP
+`update.confirm: true`), and accepts zero or one accountId. See [Jira setup](jira.md).
 
 | | |
 | --- | --- |

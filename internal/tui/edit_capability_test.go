@@ -5,7 +5,19 @@ import (
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 )
+
+// A global project status must not leak into a per-issue workflow picker.
+func TestJiraStatusPickerUsesDiscoveredTransitions(t *testing.T) {
+	item := editItem("BL-1", "Jira issue")
+	item.Fields = map[string]any{"jiraTransitions": map[string]any{"In Progress": map[string]any{"id": "21", "category": "active"}}}
+	m, _ := editFixture(t, []model.Item{item}, model.Capabilities{model.Set: true}, Options{Statuses: []project.StatusConfig{{Key: "unavailable", Name: "Unavailable"}}})
+	m = editPress(m, "s")
+	if len(m.picker.choices) != 1 || m.picker.choices[0].value != "In Progress" {
+		t.Fatalf("undiscovered transition offered: %+v", m.picker.choices)
+	}
+}
 
 func TestUnsupportedEditKeysOnlyShowReason(t *testing.T) {
 	cases := []struct {

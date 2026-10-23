@@ -321,6 +321,16 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 	}
 	switch kind {
 	case pickerStatus:
+		if transitions, ok := current.Fields["jiraTransitions"].(map[string]any); ok {
+			names := map[string]bool{}
+			for name := range transitions {
+				names[name] = true
+			}
+			for _, name := range sortedKeys(names) {
+				add(name, name, current.Status)
+			}
+			break
+		}
 		for _, status := range settings.statuses {
 			label := status.Name
 			if label == "" {

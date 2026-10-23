@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
@@ -158,6 +159,43 @@ func TestCoordinatedStoreTransitions(t *testing.T) {
 		})
 	}
 }
+
+// Provider-discovered categories must gate claims even when project statuses
+// omit (or misclassify) the destination name.
+func TestDiscoveredJiraTransitionClaims(t *testing.T) {
+	t.Parallel()
+	for _, contended := range []bool{false, true} {
+		t.Run(fmt.Sprint(contended), func(t *testing.T) {
+			backend := fakeSource(t, "tasks")
+			current := backend.current()
+			current.Fields["jiraTransitions"] = map[string]any{"Start": map[string]any{"id": "21", "category": "active"}}
+			raw, err := format.Serialize(current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			backend.doc, err = format.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := coordinationConfig()
+			cfg.Sources = []project.SourceConfig{{ID: "tasks", Type: "jira"}}
+			c := &coordinator{state: model.SessionState{State: "absent"}}
+			if contended {
+				c.acquire = model.ClaimResult{Outcome: "contended", Reason: "contention"}
+			}
+			ctx := engine.WithCoordination(context.Background(), c, model.CallerContext{Session: "loop"})
+			store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
+			defer store.Close()
+			before := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+			item, _, _ := before.Get(model.Ref{Source: "tasks", ID: "BL-1"})
+			err = awaitResult(t, store.Mutate(model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "status", Value: "Start"}))
+			if c.acquired != 1 || contended && (err == nil || backend.calls.Load() != 0) || !contended && (err != nil || backend.calls.Load() != 1) {
+				t.Fatalf("dynamic claim bypass: contended=%v err=%v acquired=%d writes=%d", contended, err, c.acquired, backend.calls.Load())
+			}
+		})
+	}
+}
+
 func TestSessionRecoveryNeverFreshAcquires(t *testing.T) {
 	t.Parallel()
 	item := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}}

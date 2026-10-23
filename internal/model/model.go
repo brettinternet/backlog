@@ -102,6 +102,7 @@ const (
 type Mutation struct {
 	Ref             Ref
 	ExpectedVersion string
+	Confirmed       bool // Explicit acknowledgement for destructive provider replacements.
 	Op              Operation
 	Field           string
 	Value           any

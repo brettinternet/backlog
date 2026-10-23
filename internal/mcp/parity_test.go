@@ -49,7 +49,7 @@ func TestWriteCommandOptionParity(t *testing.T) {
 	// for the corresponding CLI operation, not excluded commands.
 	mapping := map[string]map[string]string{
 		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "source": "create.source", "status": "create.status"},
-		"set":   {"if-version": "update.version"},
+		"set":   {"if-version": "update.version", "yes": "update.confirm"},
 		"start": {"if-version": "update.version"}, "done": {"if-version": "update.version"},
 		"archive": {"if-version": "update.version"}, "unarchive": {"if-version": "update.version"},
 		"note": {"if-version": "append.version"}, "comment": {"if-version": "append.version", "author": "append.author"},

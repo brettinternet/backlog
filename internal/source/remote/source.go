@@ -148,7 +148,7 @@ func (s *Source) safeError(err error) error {
 	var refusal *source.Error
 	if errors.As(err, &refusal) {
 		switch refusal.Reason {
-		case "conflict", "not-found", "unavailable", "rejected":
+		case "conflict", "not-found", "unavailable", "rejected", "unknown-outcome":
 			return source.Refuse(refusal.Reason, "remote source refused operation")
 		}
 	}

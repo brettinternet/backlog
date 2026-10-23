@@ -195,7 +195,7 @@ func StatusTarget(cfg project.Config, m model.Mutation) (string, model.StatusCat
 	return status, "", found
 }
 func coordinatedWrite(ctx context.Context, cfg project.Config, m model.Mutation, read func() (model.Item, error), write func() (model.Item, error)) (model.Item, error) {
-	_, category, changes := StatusTarget(cfg, m)
+	target, category, changes := StatusTarget(cfg, m)
 	if cfg.Coordination.Worklease == nil || !changes {
 		return write()
 	}
@@ -211,6 +211,14 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, m model.Mutation,
 	item, err := read()
 	if err != nil {
 		return model.Item{}, err
+	}
+	if transitions, ok := item.Fields["jiraTransitions"].(map[string]any); ok {
+		choice, _ := transitions[target].(map[string]any)
+		raw, _ := choice["category"].(string)
+		category = model.StatusCategory(raw)
+		if category != model.Todo && category != model.Active && category != model.Done {
+			return model.Item{}, source.Refuse("rejected", "Jira transition unavailable")
+		}
 	}
 	if caller.Run == "" && category != model.Active {
 		state := c.InspectSession(ctx, caller)

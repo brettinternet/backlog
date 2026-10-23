@@ -35,7 +35,7 @@ Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
 | [GitHub Issues and Projects v2](docs/github.md) | Single-field edits and comments |
 | [Linear](docs/linear.md) | Single-field edits and comments |
 | [External adapters](docs/external-adapter-protocol.md) | JSON-RPC over stdio |
-| Jira Cloud | Not yet available ([API probe](docs/providers/jira.md)) |
+| [Jira Cloud](docs/jira.md) | Discovered transitions, confirmed single-assignee replacement and ADF comments |
 
 Around the backlog: [MCP](docs/mcp.md), [hooks and actions](docs/automation.md),
 an [event stream](docs/events.md), and optional Worklease claims.
@@ -62,6 +62,7 @@ Sources:
 - [Remote sources](docs/remote.md) and [OAuth](docs/oauth.md)
 - [GitHub](docs/github.md) ([live verification](docs/github-verification.md))
 - [Linear](docs/linear.md) ([live verification](docs/linear-verification.md))
+- [Jira Cloud](docs/jira.md) ([API probe](docs/providers/jira.md))
 - [External adapter protocol v1](docs/external-adapter-protocol.md) ([schema](docs/external-adapter/v1/schema.json))
 
 Project:

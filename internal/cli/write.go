@@ -97,6 +97,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 					m.Ref = item.Ref
 					m.ExpectedVersion = version
 				}
+				m.Confirmed = cmd.Name == "set" && cmd.Bool("yes")
 				item, err = engine.ApplyWrite(ctx, cfg, m)
 			}
 			outcome := writeOutcome{ID: id}
@@ -221,7 +222,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		return writeItemRow(out, cfg, itemData(item))
 	}})
-	commands = append(commands, &urfave.Command{Name: "set", Usage: "Set item fields", ArgsUsage: "ID... FIELD=VALUE...", Description: setHelp, Flags: flag(), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "set", Usage: "Set item fields", ArgsUsage: "ID... FIELD=VALUE...", Description: setHelp, Flags: append(flag(), &urfave.BoolFlag{Name: "yes", Usage: "Confirm provider assignee replacement"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		ids := []string{}
 		changes := []model.Mutation{}
 		for _, arg := range cmd.Args().Slice() {

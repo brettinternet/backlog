@@ -19,6 +19,7 @@ import (
 	"github.com/brettinternet/backlog/internal/source/beads"
 	"github.com/brettinternet/backlog/internal/source/external"
 	"github.com/brettinternet/backlog/internal/source/github"
+	"github.com/brettinternet/backlog/internal/source/jira"
 	"github.com/brettinternet/backlog/internal/source/linear"
 	"github.com/brettinternet/backlog/internal/source/native"
 	"github.com/brettinternet/backlog/internal/source/remote"
@@ -192,6 +193,35 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			}
 			break
 		}
+	}
+	if c.Type == "jira" {
+		var account *project.AccountConfig
+		site, err := jira.CanonicalSite(c.Site)
+		if err != nil {
+			return nil, err
+		}
+		for _, candidate := range cfg.Accounts["jira"] {
+			accountSite, siteErr := jira.CanonicalSite(candidate.Host)
+			if siteErr == nil && accountSite == site && (candidate.Name == c.Account || candidate.User == c.Account) {
+				if account != nil {
+					return nil, source.Refuse("unavailable", "ambiguous Jira account")
+				}
+				copy := candidate
+				account = &copy
+			}
+		}
+		if account == nil {
+			return nil, source.Refuse("unavailable", "Jira user account not configured")
+		}
+		backend, err := jira.New(jira.Options{ID: c.ID, Site: site, JQL: c.JQL, CloudID: c.CloudID, HardLinkTypes: c.HardLinkTypes, UnsuccessfulResolutions: c.UnsuccessfulResolutions, Account: *account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg)})
+		if err != nil {
+			return nil, err
+		}
+		identity, _ := json.Marshal(struct {
+			Source      project.SourceConfig
+			User, Email string
+		}{c, account.User, account.Email})
+		return remote.New(backend, providerCache(cfg, c.ID, string(identity), *account), providerSecrets), nil
 	}
 	if c.Type == "linear" {
 		var account *project.AccountConfig

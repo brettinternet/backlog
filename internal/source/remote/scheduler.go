@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +37,12 @@ type Scheduler struct {
 	now    func() time.Time
 }
 
-func NewScheduler() *Scheduler { return &Scheduler{now: time.Now, queues: map[string]*accountQueue{}} }
+func NewScheduler() *Scheduler { return NewSchedulerWithClock(time.Now) }
+
+// NewSchedulerWithClock permits deterministic retry deadlines without sleeping.
+func NewSchedulerWithClock(now func() time.Time) *Scheduler {
+	return &Scheduler{now: now, queues: map[string]*accountQueue{}}
+}
 
 var sharedScheduler = NewScheduler()
 
@@ -66,6 +72,7 @@ type Client struct {
 	Scheduler     *Scheduler // nil uses the process-wide host/account scheduler
 	Secrets       *Secrets
 	// RawAuthorization is required by Linear personal API keys (not OAuth).
+	BasicUser        string // Jira API tokens use email:token, encoded only inside this boundary.
 	RawAuthorization bool
 	OAuth            bool
 }
@@ -113,13 +120,17 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	if c.RawAuthorization {
+	if c.BasicUser != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(c.BasicUser + ":" + credential.token))
+		c.Secrets.add(encoded)
+		req.Header.Set("Authorization", "Basic "+encoded)
+	} else if c.RawAuthorization {
 		req.Header.Set("Authorization", credential.token)
 	} else {
 		req.Header.Set("Authorization", "Bearer "+credential.token)
 	}
 	key := sha256.Sum256([]byte(req.Method + "\x00" + req.URL.String() + "\x00" + req.Header.Get("Accept") + "\x00" + credential.token))
-	cacheable := req.Method == http.MethodGet && req.Body == nil
+	cacheable := req.Method == http.MethodGet && req.Body == nil && req.Header.Get("Cache-Control") != "no-cache"
 	if cacheable && q.etags[key] != "" {
 		req.Header.Set("If-None-Match", q.etags[key])
 	}

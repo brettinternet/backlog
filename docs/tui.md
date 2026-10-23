@@ -18,6 +18,11 @@ Run `bl` or `bl tui` in a terminal. Every key is remappable, and the
 6. **Color is never the only signal.** Glyphs and text carry meaning under
    `NO_COLOR` and `--high-contrast`.
 
+For Jira Cloud, the status picker offers only transitions discovered for the
+selected issue; unsupported required-field transitions are omitted. Replace a
+Jira single assignee through the confirmed CLI/MCP operation, not the additive
+assignee picker ([Jira](jira.md#writes)).
+
 ## Layout
 
 ```text

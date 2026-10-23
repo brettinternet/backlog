@@ -174,6 +174,7 @@ func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation
 			if change.Op == model.Batch || change.Op == model.Create || change.Op == model.Restore || change.Op == model.Archive || change.Op == model.Unarchive || (change.Ref != (model.Ref{}) && change.Ref != m.Ref) {
 				return reject("invalid batch operation")
 			}
+			change.Ref = m.Ref
 			if err := validateWrite(cfg, caps, change); err != nil {
 				return err
 			}
@@ -197,6 +198,11 @@ func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation
 			value, _ := m.Value.(string)
 			allowed := []string{"urgent", "high", "medium", "low", ""}
 			if m.Field == "status" {
+				for _, configured := range cfg.Sources {
+					if configured.ID == m.Ref.Source && configured.Type == "jira" {
+						return nil
+					} // Per-issue transitions validate at the source.
+				}
 				allowed = nil
 				for _, s := range cfg.Statuses {
 					allowed = append(allowed, s.Key)

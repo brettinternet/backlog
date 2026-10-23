@@ -118,6 +118,7 @@ type CreateArgs struct {
 }
 type UpdateArgs struct {
 	WriteArgs
+	Confirm   bool           `json:"confirm,omitempty" jsonschema:"Acknowledge replacement of a Jira single assignee."`
 	ID        string         `json:"id"`
 	Operation string         `json:"operation,omitempty" jsonschema:"archive, unarchive, or replace_section; start and done are status field updates."`
 	Fields    map[string]any `json:"fields,omitempty" jsonschema:"Field values matching bl set fields; suffix list fields with + or - for add/remove."`
@@ -432,7 +433,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes})
+	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes, Confirmed: args.Confirm})
 	if err != nil {
 		return failedTransition(err, updated, transition)
 	}

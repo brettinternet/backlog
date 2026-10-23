@@ -270,6 +270,10 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 			c.Fix = "Review bl trust --show, then run bl trust"
 			return c
 		}
+		if s.Type == "jira" {
+			c.Message = "Jira Cloud configured; reads verify credentials and visible JQL scope"
+			continue
+		}
 		if s.Type == "linear" {
 			c.Message = "Linear configured; reads verify credentials, organization and team bindings"
 			continue
