@@ -24,7 +24,10 @@ A leading `-` negates the term. Empty queries match all items. Whitespace separa
 
 Field names, `is:`/`has:` values, categories, statuses, priorities, claim values, and outcomes are case-insensitive. Other exact values (including labels, handles, and IDs) are case-sensitive. `none` is a case-insensitive reserved value for an unset scalar or empty list where listed below. Raw field suffixes match frontmatter keys case-insensitively, like other field names.
 
-Free text is a case-insensitive **literal substring** of the ID or title. `text:` is a case-insensitive literal substring of the title or body: description, criteria, DoD, plan, notes, summary, and comment bodies, joined with newlines. Neither mode tokenizes, stems, interprets wildcards, nor uses a search-engine query grammar. The SQLite FTS5 trigram index narrows `text:` candidates using Go-lowercased text; the evaluator then checks the literal substring. Queries shorter than three Unicode code points, queries containing NUL, and unavailable or stale indexes use the in-memory evaluator. Both paths return the same results.
+Free text is a case-insensitive **literal substring** of the ID or title. `text:` is a case-insensitive literal substring of the title or body: description, criteria, DoD, plan, notes, summary, and comment bodies, joined with newlines. Neither mode tokenizes, stems, interprets wildcards, nor uses a search-engine query grammar. The SQLite FTS5 trigram index narrows `text:` candidates using Go-lowercased text; the evaluator then checks the literal substring. Queries shorter than three Unicode code points, queries containing NUL, and unavailable or stale indexes use the in-memory evaluator. Both paths return the same results. Remote adapters can supply `text:` candidate
+pushdown through the same source search seam. Candidates are post-filtered
+locally; a failed search or any missing local match disables pushdown for that
+snapshot, so provider search semantics cannot hide a matching item.
 
 ## Fields
 
@@ -48,7 +51,9 @@ Free text is a case-insensitive **literal substring** of the ID or title. `text:
 | `hook`, `action` | Name. Hook `if:` only. Matches the hook or action that produced a `hook.finished` or `action.finished` event. |
 | `outcome` | `ok`, `failed`, `timeout`, `refused`. Hook `if:` only, for `*.finished` events. |
 
-`is:ready` and related readiness values use the engine's design.md §6 assessment, not a second readiness calculation. `is:mine` matches any configured caller handle against assignees. Claims, archive state, pending state, and readiness are injected snapshot overlays. Missing readiness is unknown; missing claim state is not known-free. Claim predicates require coordination to be enabled. `has:blockers` means the item has dependency references, regardless of their readiness; `has:criteria` refers to acceptance criteria, not DoD.
+`is:ready` and related readiness values use the engine's design.md §6 assessment, not a second readiness calculation. `is:mine` matches any configured caller handle against assignees. Claims, archive state, pending state, and readiness are injected snapshot overlays. Missing readiness is unknown; missing claim state is not known-free. Stale cached
+items have unknown readiness, and a stale dependency target remains unknown even
+when its cached status is done. Claim predicates require coordination to be enabled. `has:blockers` means the item has dependency references, regardless of their readiness; `has:criteria` refers to acceptance criteria, not DoD.
 
 Event predicates require explicit hook parsing mode. With no event context they are false (before negation). `hook:` and `action:` only match their corresponding finished event types; `outcome:` only matches a hook/action finished event. `changed:` matches changed field names case-insensitively, including `readiness`.
 

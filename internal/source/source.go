@@ -34,7 +34,12 @@ type Delta struct {
 	Items    []model.Item
 	Findings []Finding
 	Coverage Coverage
-	Cursor   Cursor
+	// Incremental means Items are changes since Cursor, not a full enumeration.
+	// Even complete incremental coverage cannot evict unseen rows.
+	Incremental bool
+	// Stale rows may be displayed, but cannot satisfy dependencies or be ready.
+	Stale  map[model.Ref]bool
+	Cursor Cursor
 	// TextSearch optionally narrows matches for this snapshot. Nil results or
 	// errors require in-memory fallback.
 	TextSearch func(context.Context, string) (map[model.Ref]bool, error)

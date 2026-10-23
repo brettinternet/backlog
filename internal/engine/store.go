@@ -286,10 +286,18 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			// individual items, not the full transfer slice or search closure.
 			defer func() { delta = source.Delta{} }()
 			n := st.snapshot.fork()
-			status := SourceState{Coverage: delta.Coverage}
+			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor}
 			if err != nil {
 				status.Error = err.Error()
 				status.Coverage = source.Unknown
+				status.Cursor = n.sources[id].Cursor
+				for ref, old := range n.records {
+					if ref.Source == id {
+						r := *old
+						r.stale = true
+						n.records[ref] = &r
+					}
+				}
 			} else {
 				seen := map[model.Ref]bool{}
 				for index := range delta.Items {
@@ -307,7 +315,7 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 					old := n.records[ref]
 					// Loads list active items only, so a session-archived record seen here
 					// was unarchived externally; a version check alone would keep it hidden.
-					if old == nil || old.item.Version != i.Version || old.archived {
+					if old == nil || old.item.Version != i.Version || old.archived != delta.Archived[i.Ref] || old.stale != delta.Stale[i.Ref] {
 						edit := EditState{}
 						if old != nil {
 							edit = old.edit
@@ -316,16 +324,25 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 							i = new(cloneItem(*i))
 							i.Ref.Source = id
 						}
-						n.records[i.Ref] = &record{item: i, edit: edit}
+						n.records[i.Ref] = &record{item: i, edit: edit, archived: delta.Archived[i.Ref], stale: delta.Stale[i.Ref]}
 					}
 				}
 				// Initial records are provisional, not a prior successful full
 				// refresh. Even a partial first load must discard omitted preview
 				// items (e.g. deleted files or files that now fail to parse).
-				if delta.Coverage == source.Complete || replaceInitial {
+				if delta.Coverage == source.Complete && !delta.Incremental && len(delta.Stale) == 0 || replaceInitial {
 					for ref := range n.records {
 						if ref.Source == id && !seen[ref] && !st.pending[ref] && !n.records[ref].archived {
 							delete(n.records, ref)
+						}
+					}
+				}
+				if delta.Coverage != source.Complete {
+					for ref, old := range n.records {
+						if ref.Source == id && !seen[ref] {
+							r := *old
+							r.stale = true
+							n.records[ref] = &r
 						}
 					}
 				}
@@ -343,15 +360,25 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 	// Preview records stay provisional until a load succeeds; a failed first
 	// load must not leave them to be retained by later partial loads.
 	provisional := false
+	cursor := source.Cursor{}
 	load := func() {
-		delta, err := w.backend.Load(s.ctx, source.Cursor{})
+		delta, err := w.backend.Load(s.ctx, cursor)
+		if err == nil {
+			if delta.Cursor.Value != "" {
+				cursor = delta.Cursor
+			}
+			delta.Cursor = cursor
+		}
 		publish(delta, err, provisional)
 		provisional = provisional && err != nil
 	}
 	if initial, ok := w.backend.(source.InitialLoader); ok {
-		if delta, err := initial.LoadInitial(s.ctx); err == nil && len(delta.Items) > 0 {
-			publish(delta, nil, false)
-			provisional = true
+		if delta, err := initial.LoadInitial(s.ctx); err == nil {
+			cursor = delta.Cursor
+			if len(delta.Items) > 0 {
+				publish(delta, nil, false)
+				provisional = len(delta.Stale) == 0
+			}
 		}
 	}
 	load()
@@ -377,7 +404,9 @@ func preparePreview(cfg project.Config, job *editJob) {
 		job.inverse = model.Mutation{Ref: m.Ref, Op: model.Archive}
 	} else {
 		job.preview = *job.before.item
-		if data, err := format.Serialize(*job.before.item); err == nil {
+		if prepared, err := source.PrepareFields(job.preview, m); err == nil {
+			job.preview = prepared.Item
+		} else if data, err := format.Serialize(*job.before.item); err == nil {
 			if doc, err := format.Parse(data); err == nil {
 				preview := m
 				preview.ExpectedVersion = ""

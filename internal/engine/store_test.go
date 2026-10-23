@@ -75,6 +75,9 @@ type controlledSource struct {
 	coverage     source.Coverage
 	empty        bool
 	loadFailures int
+	items        []model.Item
+	cursor       source.Cursor
+	received     []source.Cursor
 	calls        atomic.Int32
 }
 
@@ -99,7 +102,7 @@ func (s *controlledSource) current() model.Item {
 	i.Category = model.Todo
 	return i
 }
-func (s *controlledSource) Load(ctx context.Context, _ source.Cursor) (source.Delta, error) {
+func (s *controlledSource) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	if s.loadGate != nil {
 		select {
 		case <-s.loadGate:
@@ -109,12 +112,15 @@ func (s *controlledSource) Load(ctx context.Context, _ source.Cursor) (source.De
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.received = append(s.received, cursor)
 	if s.loadFailures > 0 {
 		s.loadFailures--
 		return source.Delta{}, errors.New("cache unavailable")
 	}
-	delta := source.Delta{Coverage: s.coverage}
-	if !s.empty {
+	delta := source.Delta{Coverage: s.coverage, Cursor: s.cursor}
+	if s.items != nil {
+		delta.Items = append([]model.Item(nil), s.items...)
+	} else if !s.empty {
 		delta.Items = []model.Item{s.current()}
 	}
 	return delta, nil
@@ -342,6 +348,65 @@ func TestSourceIsolationCoverageAndBlockedSubscriber(t *testing.T) {
 	fast.mu.Unlock()
 	s.Refresh()
 	awaitSnapshot(t, s, func(s *engine.Snapshot) bool { _, _, ok := s.Get(ref); return !ok })
+}
+
+// Catches retained done blockers satisfying dependencies after a partial load
+// or failed refresh. Exercise the store-to-projector path, not Evaluate alone.
+func TestStaleCoverageCannotSatisfyBlockers(t *testing.T) {
+	t.Parallel()
+	backend := fakeSource(t, "tasks")
+	dependent := backend.current()
+	blocker := dependent
+	blocker.Ref.ID, blocker.Status, blocker.Category = "BL-2", "done", model.Done
+	dependent.BlockedBy = []model.Ref{blocker.Ref}
+	backend.items = []model.Item{dependent, blocker}
+	backend.cursor = source.Cursor{Value: "first"}
+	store := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
+	defer store.Close()
+	initial := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 2 })
+	projector := engine.NewProjector(context.Background(), storeConfig())
+	defer projector.Close()
+	check := func(snapshot *engine.Snapshot, want engine.Readiness) {
+		t.Helper()
+		projector.Request(snapshot, "id:BL-1")
+		select {
+		case result := <-projector.Results():
+			if result.Error != nil || len(result.Groups) != 1 || len(result.Groups[0].Rows) != 1 || result.Groups[0].Rows[0].Readiness != want {
+				t.Fatalf("readiness want %s: %+v", want, result)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("projection timed out")
+		}
+	}
+	check(initial, engine.Ready)
+	backend.mu.Lock()
+	backend.coverage, backend.items = source.Partial, []model.Item{dependent}
+	backend.cursor = source.Cursor{Value: "second"}
+	backend.mu.Unlock()
+	store.Refresh()
+	partial := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Source("tasks").Coverage == source.Partial })
+	if partial.Len() != 2 {
+		t.Fatal("partial response removed blocker")
+	}
+	check(partial, engine.Unknown)
+	backend.mu.Lock()
+	if backend.received[len(backend.received)-1].Value != "first" {
+		t.Error("engine dropped sync cursor")
+	}
+	backend.loadFailures = 1
+	backend.mu.Unlock()
+	store.Refresh()
+	failed := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Source("tasks").Error != "" })
+	check(failed, engine.Unknown)
+	if failed.Len() != 2 || failed.Source("tasks").Cursor.Value != "second" {
+		t.Fatal("failed load removed rows or cursor")
+	}
+	backend.mu.Lock()
+	backend.coverage, backend.items = source.Complete, []model.Item{dependent, blocker}
+	backend.mu.Unlock()
+	store.Refresh()
+	fresh := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Source("tasks").Coverage == source.Complete })
+	check(fresh, engine.Ready)
 }
 
 func nativeStore(t testing.TB) (*engine.Store, *native.Source, string) {

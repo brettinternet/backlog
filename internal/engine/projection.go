@@ -280,6 +280,12 @@ func (p *Projector) run() {
 				if req.ctx.Err() != nil {
 					continue
 				}
+				staleRefs := map[model.Ref]bool{}
+				for ref, r := range req.snapshot.records {
+					if r.stale {
+						staleRefs[ref] = true
+					}
+				}
 				archivedRefs := map[model.Ref]bool{}
 				for ref, state := range base.States {
 					if state.Archived {
@@ -306,7 +312,7 @@ func (p *Projector) run() {
 					}
 					base.States[ref] = state
 				}
-				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Coordination: coordination, Claims: claimStates})
+				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates})
 				if req.ctx.Err() != nil {
 					continue
 				}
@@ -397,8 +403,8 @@ func (p *Projector) run() {
 								Relations:        relations, RelationVersion: RelationVersion(relations),
 							}
 							closed := func(ref model.Ref) bool {
-								r := req.snapshot.records[ref]
-								return r != nil && (r.item.Category == model.Done || r.item.Category == model.Canceled)
+								r := req.snapshot.records[normalizedRef(ref, i.Ref)]
+								return r != nil && !r.stale && (r.item.Category == model.Done || r.item.Category == model.Canceled)
 							}
 							for _, ref := range i.BlockedBy {
 								if !closed(ref) {
