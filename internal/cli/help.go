@@ -58,17 +58,22 @@ func init() {
 	urfave.SubcommandHelpTemplate = strings.Replace(urfave.SubcommandHelpTemplate, category, "", 1)
 }
 
-// helpCommand keeps "bl help [COMMAND]" working without listing itself.
+// helpCommand keeps "bl help [COMMAND...]" working without listing itself,
+// including for subcommands such as "bl help auth login".
 func helpCommand() *urfave.Command {
-	return &urfave.Command{Name: "help", Hidden: true, ArgsUsage: "[COMMAND]", Action: func(ctx context.Context, cmd *urfave.Command) error {
-		root := cmd.Root()
-		if name := cmd.Args().First(); name != "" {
-			if root.Command(name) == nil {
-				return &Error{Reason: "usage", Message: fmt.Sprintf("unknown command %q", name)}
+	return &urfave.Command{Name: "help", Hidden: true, ArgsUsage: "[COMMAND...]", Action: func(ctx context.Context, cmd *urfave.Command) error {
+		names := cmd.Args().Slice()
+		parent := cmd.Root()
+		for i, name := range names {
+			if parent.Command(name) == nil {
+				return &Error{Reason: "usage", Message: fmt.Sprintf("unknown command %q", strings.Join(names[:i+1], " "))}
 			}
-			return urfave.ShowCommandHelp(ctx, root, name)
+			if i == len(names)-1 {
+				return urfave.ShowCommandHelp(ctx, parent, name)
+			}
+			parent = parent.Command(name)
 		}
-		return urfave.ShowAppHelp(root)
+		return urfave.ShowAppHelp(parent)
 	}}
 }
 

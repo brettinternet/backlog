@@ -13,10 +13,14 @@ name. JSON output is the [schema-version-1 envelope](design.md#7-agent-interface
 The `ls`, `show`, `next`, and write command interfaces are frozen.
 
 `bl --help` lists item commands first, then the Automation, Coordination, and
-Project groups. `bl COMMAND --help` (or `bl help COMMAND`) shows arguments,
-options, and examples. A command group without a subcommand (`config`, `import`,
-`adapter`, `auth`) prints its help, or exits 2 with `--json`. A usage error
+Project groups. `bl COMMAND --help` (or `bl help COMMAND`, including
+subcommands such as `bl help auth login`) shows arguments, options, and
+examples. Bare `bl config` runs `config show`. `import`, `adapter`, and `auth`
+without a subcommand print their help, or exit 2 with `--json`. A usage error
 prints the problem and `Run bl COMMAND --help for usage.` on stderr.
+
+Short flags: `-n` limit, `-s` status (`new`) or section (`show`, `edit`), `-b`
+body, `-e` evidence, `-f` follow, `-y` yes, `-j` JSON, and `-C` directory.
 
 ## IDs
 
@@ -372,7 +376,7 @@ directory and may be a repository root or backlog directory. `--to` defaults to
 (exit 5 otherwise). `--dry-run` prints the report without writing. The source is
 never changed. See [Import](import.md).
 
-### `bl config show`
+### `bl config [show]`
 
 Loads settings without running anything or contacting sources. JSON `data` holds
 the effective non-secret settings plus `directory`, `paths`, `discovery`,

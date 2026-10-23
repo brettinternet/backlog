@@ -282,7 +282,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, importCommands(&directory, out)...)
 	root.Commands = append(root.Commands, &urfave.Command{
-		Name: "config", Usage: "Inspect project settings", Category: categoryProject, Action: groupHelp("use bl config show"),
+		Name: "config", Usage: "Show effective settings and where they come from", Category: categoryProject, Action: showConfig,
 		Commands: []*urfave.Command{{Name: "show", Usage: "Show effective settings and where they come from", Action: showConfig}},
 	})
 	root.Commands = append(root.Commands, diagnosticCommands(&directory, out)...)

@@ -195,7 +195,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "show", Usage: "Show an item", ArgsUsage: "ID", Flags: []urfave.Flag{&urfave.StringFlag{Name: "section", Usage: "Print only section `NAME`: description, criteria, dod, plan, notes, summary, or comments"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "show", Usage: "Show an item", ArgsUsage: "ID", Flags: []urfave.Flag{&urfave.StringFlag{Name: "section", Aliases: []string{"s"}, Usage: "Print only section `NAME`: description, criteria, dod, plan, notes, summary, or comments"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 1 {
 				return &Error{Reason: "usage", Message: "show requires exactly one ID"}
 			}
