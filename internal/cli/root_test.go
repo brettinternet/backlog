@@ -190,6 +190,41 @@ func TestConfigInvocation(t *testing.T) {
 	}
 }
 
+func TestOAuthCommandsRequireOptInAndInteraction(t *testing.T) {
+	testkit.Isolate(t)
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.ConfigFile, []byte("accounts:\n  fake:\n    - name: work\n      user: alice\n      oauth: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := run("--json", "auth", "login", "fake", "work")
+	var envelope cli.Envelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 6 || stderr != "" || envelope.Error == nil || envelope.Error.Reason != "interactive-login-required" {
+		t.Fatalf("unattended login: %d %q %q: %v", code, out, stderr, err)
+	}
+	if strings.Contains(out, "canary") {
+		t.Fatalf("OAuth error leaked config data: %s", out)
+	}
+	code, out, stderr = run("--json", "auth", "logout", "fake", "work")
+	envelope = cli.Envelope{}
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 0 || stderr != "" || envelope.Error != nil {
+		t.Fatalf("empty logout: %d %q %q: %v", code, out, stderr, err)
+	}
+	if err := os.WriteFile(paths.ConfigFile, []byte("accounts:\n  fake:\n    - name: work\n      user: alice\n      credential: [helper, canary-token]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr = run("--json", "auth", "logout", "fake", "work")
+	envelope = cli.Envelope{}
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 0 || stderr != "" || envelope.Error != nil || strings.Contains(out, "canary-token") {
+		t.Fatalf("logout after switching to helper credentials: %d %q %q: %v", code, out, stderr, err)
+	}
+}
+
 func TestMCPUsesRunStreams(t *testing.T) {
 	home := testkit.Isolate(t)
 	root := filepath.Join(home, "repo")

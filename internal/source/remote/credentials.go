@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 )
 
@@ -25,7 +26,17 @@ type Secrets struct {
 	values []string
 }
 
+func (*Secrets) String() string   { return "[REDACTED]" }
+func (*Secrets) GoString() string { return "[REDACTED]" }
+
+// ProcessSecrets is shared by configured remote sources and explicit OAuth
+// lifecycle commands so rotated tokens remain redacted for the process lifetime.
+var ProcessSecrets = &Secrets{}
+
 func (s *Secrets) add(value string) {
+	if s == nil || value == "" {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, old := range s.values {
@@ -51,6 +62,10 @@ func (s *Secrets) Redact(text string) string {
 
 // Credential deliberately has no exported token field or JSON representation.
 // Only Client can attach it to a request. Formatting never reveals the value.
+// Register adds a credential to the process-wide redaction set before it can
+// be reflected by a verifier or provider response.
+func (s *Secrets) Register(value string) { s.add(value) }
+
 type Credential struct{ token string }
 
 func (Credential) String() string   { return "[REDACTED]" }
@@ -61,6 +76,7 @@ func (Credential) GoString() string { return "[REDACTED]" }
 // Share it across adapters: identical helper commands cannot refresh in parallel.
 type Credentials struct {
 	Secrets *Secrets
+	OAuth   *oauth.Manager
 	mu      sync.Mutex
 	locks   map[[32]byte]chan struct{}
 }
@@ -70,8 +86,32 @@ type Credentials struct {
 // again immediately before writes. Neither helper nor verifier errors escape.
 func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig, verify func(context.Context, Credential) (string, error)) (Credential, error) {
 	fail := func(message string) (Credential, error) { return Credential{}, fmt.Errorf("credentials: %s", message) }
-	if h.Secrets == nil || account.User == "" || verify == nil || (len(account.Credential) == 0) == (account.Env == "") {
-		return fail("one helper or environment variable, expected user, secret store and verifier required")
+	if h.Secrets == nil || account.User == "" || verify == nil {
+		return fail("expected user, secret store and verifier required")
+	}
+	if account.OAuth {
+		if len(account.Credential) != 0 || account.Env != "" || h.OAuth == nil || account.Provider == "" {
+			return Credential{}, oauth.Failure(oauth.CodeProviderUnavailable, time.Time{})
+		}
+		tokens, err := h.OAuth.Resolve(ctx, oauth.Account{Provider: account.Provider, Name: account.Name, Host: account.Host, User: account.User, OptIn: account.OAuth}, func(ctx context.Context, tokens oauth.Tokens) (string, error) {
+			h.Secrets.add(tokens.AccessToken)
+			credential := Credential{token: tokens.AccessToken}
+			principal, verifyErr := verify(ctx, credential)
+			if verifyErr != nil {
+				var limited ScheduleDiagnostic
+				if errors.As(verifyErr, &limited) {
+					return "", oauth.Failure(oauth.CodeRateLimited, limited.RetryAt)
+				}
+			}
+			return principal, verifyErr
+		})
+		if err != nil {
+			return Credential{}, err
+		}
+		return Credential{token: tokens.AccessToken}, nil
+	}
+	if (len(account.Credential) == 0) == (account.Env == "") {
+		return fail("one helper or environment variable required")
 	}
 	key := sha256.Sum256([]byte(strings.Join(account.Credential, "\x00") + "\x00" + account.Env))
 	h.mu.Lock()

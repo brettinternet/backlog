@@ -31,6 +31,9 @@ func eventsCommand(directory *string, out io.Writer) *urfave.Command {
 			return &Error{Reason: "usage", Message: err.Error()}
 		}
 		if _, err = engine.LoadReads(ctx, cfg, false); err != nil {
+			if auth := oauthCLIError(err); auth != nil {
+				return auth
+			}
 			return &Error{Reason: "unavailable", Message: err.Error()}
 		}
 		log := hooks.New(cfg.Paths.StateDir, cfg.Project.ID)

@@ -1,18 +1,41 @@
 # OAuth qualification
 
-## Authentication today
+## Shared lifecycle status
 
-`bl` does not implement interactive OAuth login, logout or token storage yet.
-Use user-configured [credential helpers](remote.md), [GitHub setup](github.md)
-and [Linear personal API keys](linear.md). Linear's current adapter sends raw
-API-key authorization; putting an OAuth token in that helper does not enable
-OAuth. Jira Cloud remains pending BL-40's approved probe and BL-41's adapter.
-External adapters manage their own private authentication, not host tokens.
+BL-60 implements the shared opt-in account manager, protected token store,
+serialized refresh, principal checks, logout/cache purge and a provider contract.
+The production registry is intentionally empty: there is no working `bl` OAuth
+provider until BL-61/62 register and verify its flow. `bl auth login` therefore
+fails safely with `oauth-provider-unavailable` today; it does not contact a
+provider or prompt. There is no user-configurable arbitrary OAuth endpoint or
+client-secret path. Jira is explicitly excluded by the owner; use its future
+helper/API-token path only. External adapters continue to own their private
+authentication. Existing helper/environment accounts are unchanged.
+
+The contract is provider-injected for tests and future in-tree integrations. A
+provider must qualify public-client authorization, return granted scopes and an
+immutable principal, implement refresh/rotation and capability rediscovery, and
+classify provider failures using the shared safe diagnostic codes. Login always
+authorizes read scopes first. `bl auth login PROVIDER ACCOUNT --write` performs
+a separate explicit write-scope upgrade after the read grant is verified.
+OAuth accounts are declared only in user config, for example:
+
+```yaml
+accounts:
+  linear:
+    - name: work
+      user: VIEWER_UUID
+      oauth: true
+```
+
+Until a built-in provider is available, keep `credential: [...]` or `env:` in
+place instead of setting `oauth: true`. These choices are mutually exclusive;
+OAuth never silently falls back to a helper or environment token.
 
 This is BL-59's documentation-based qualification for BL-53, checked **2026-10-23**.
-It is not evidence of live authorization, registered applications or production
-support. D17 remains unchanged: credentials held by `bl` are memory-only. The
-flows below are implementation candidates, not commands or config you can use.
+The provider matrix records research, not live authorization, registered
+applications or production support. Jira's documented secret requirement remains
+ineligible under D17. The candidate provider flows below remain gates for BL-61/62.
 
 ## Provider evidence matrix
 
@@ -26,12 +49,13 @@ flows below are implementation candidates, not commands or config you can use.
 
 ## Implementation gates
 
-BL-60 follows this qualification and implements the shared seam. BL-61 (GitHub),
-BL-62 (Linear), and BL-63 (Jira/external boundaries) depend on BL-59 and BL-60.
-BL-53 remains open until all its acceptance criteria are satisfied; completing
-this research does not deliver OAuth login.
+BL-60 implements only the shared seam; provider registrations and flows remain
+BL-61 (GitHub) and BL-62 (Linear). BL-63 records Jira/external boundaries, with
+Jira native OAuth explicitly excluded by the owner. BL-53 remains open until all
+its acceptance criteria are satisfied; BL-60 alone does not deliver a usable
+provider login.
 
-Before shipping any eligible flow:
+Before registering any eligible flow:
 
 - Register an owner-approved public application and obtain its public client ID.
   Qualify redirect registration and loopback callback support for Linear; require
@@ -46,11 +70,10 @@ Before shipping any eligible flow:
   Linear needs explicit Bearer-token handling distinct from its raw personal API
   key path. Keep non-opt-in helper/environment accounts unchanged. Verify principal
   and binding after login and **every refresh**; mismatch disables those sources.
-- Update D17 in the same change that introduces persistence. Store access/refresh
-  tokens only in an OS keychain or owner-private store, never disposable cache.
-  Serialize refresh across CLI, TUI and MCP processes by credential identity,
-  durably retain each rotated token before releasing the lock, and re-read under
-  the lock. The existing resolver's process-local lock is not sufficient. Provider
+- BL-60 establishes D17's owner-private state store and serialized-refresh
+  contract. Provider children must preserve its per-account lock, durably persist
+  each rotated pair before release, re-read under lock, and never send tokens to
+  config, argv, logs, hooks/actions, events, MCP output or disposable cache. The existing resolver's process-local lock is not sufficient. Provider
   grace periods are recovery aids, not substitutes for serialization.
 - Discover actual granted scopes/permissions, request writes only after explicit
   opt-in, then rediscover capabilities. Distinguish expiry, revocation, insufficient

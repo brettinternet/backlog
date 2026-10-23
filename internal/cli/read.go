@@ -63,6 +63,9 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 	load := func(ctx context.Context, cfg project.Config, archived bool) (engine.ReadSnapshot, error) {
 		snapshot, err := engine.LoadReads(ctx, cfg, archived)
 		if err != nil {
+			if auth := oauthCLIError(err); auth != nil {
+				return snapshot, auth
+			}
 			return snapshot, &Error{Reason: "unavailable", Message: err.Error()}
 		}
 		for _, warning := range append(cfg.Discovery.Warnings, snapshot.Warnings...) {
@@ -193,6 +196,9 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				return e
 			}
 			if err != nil {
+				if auth := oauthCLIError(err); auth != nil {
+					return auth
+				}
 				return &Error{Reason: "unavailable", Message: err.Error()}
 			}
 			if len(matches) == 0 {

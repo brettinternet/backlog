@@ -14,11 +14,51 @@ import (
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/external"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
+
+type oauthDiagnosticSource struct{}
+
+func (*oauthDiagnosticSource) Info() source.Info { return source.Info{ID: "remote"} }
+func (*oauthDiagnosticSource) Load(context.Context, source.Cursor) (source.Delta, error) {
+	return source.Delta{}, oauth.Failure(oauth.CodeSSORequired, time.Time{})
+}
+func (*oauthDiagnosticSource) Read(context.Context, string) (model.Item, error) {
+	return model.Item{}, errors.New("unused")
+}
+func (*oauthDiagnosticSource) Apply(context.Context, model.Mutation) (model.Item, error) {
+	return model.Item{}, errors.New("unused")
+}
+
+func TestOAuthDiagnosticVisibleInTUI(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	store := engine.OpenStore(ctx, project.Config{}, source.Registry{"remote": &oauthDiagnosticSource{}})
+	defer store.Close()
+	snapshots, unsubscribe := store.Subscribe()
+	defer unsubscribe()
+	m := New(Options{Context: ctx, Store: store, Sources: []string{"remote"}, NoColor: true})
+	m.Bind(snapshots)
+	for {
+		msg := m.waitSnapshot()()
+		if msg == nil {
+			t.Fatal("timeout waiting for OAuth source error")
+		}
+		next, _ := m.Update(msg)
+		m = next.(Model)
+		if store.Current().Source("remote").Error != "" {
+			if !strings.Contains(m.View().Content, "sso-required") {
+				t.Fatalf("OAuth code not shown in TUI: %s", m.View().Content)
+			}
+			return
+		}
+	}
+}
 
 func TestExternalSilentChild(t *testing.T) {
 	if len(os.Args) > 1 && os.Args[len(os.Args)-1] == "silent-adapter" {

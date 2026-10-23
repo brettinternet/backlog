@@ -121,6 +121,35 @@ with one stable distinct session, version guards, exact pending recovery, and
 separate claim/status outcomes. Plain `next` remains read-only. See the
 provider-evidence requirements below.
 
+## OAuth accounts
+
+OAuth accounts are declared only in user config and explicitly opt in with
+`oauth: true`. They cannot also select a credential helper or environment token.
+The shared manager stores tokens in the owner-private XDG state directory, not
+config or cache, verifies the account principal, serializes refresh across
+processes, and removes token/cache state on logout. Existing helper and environment
+accounts keep their current behavior.
+
+```sh
+bl auth login linear work          # interactive, read scopes only
+bl auth login linear work --write  # explicit read grant, then write-scope upgrade
+bl auth logout linear work         # local deletion/cache purge; remote revoke if supported
+```
+
+Login requires a terminal and is never initiated by MCP, claims, hooks or actions.
+Scope upgrades trigger provider permission/capability rediscovery. Logout reports
+when provider settings must be used for manual revocation. The shared command
+exists, but no production provider flow is registered yet; BL-61/62 own those
+integrations. Jira OAuth is excluded by the owner. See [OAuth qualification](oauth.md)
+for the evidence matrix, current boundary and provider requirements.
+
+`--json` returns a versioned envelope with `provider`, `account`, requested
+write-consent state, and for logout whether remote revocation happened or is
+manual. OAuth failures use stable `error.reason` codes such as
+`authentication-required`, `token-expired`, `grant-revoked`, `insufficient-scope`,
+`sso-required`, `rate-limited`, `provider-unavailable`, and
+`principal-mismatch`; messages never include provider response bodies or tokens.
+
 ## Native read cache
 
 `ls` and `next` keep a disposable SQLite WAL cache under

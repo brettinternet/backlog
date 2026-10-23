@@ -1,6 +1,7 @@
 package project_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,6 +151,38 @@ actions: [{name: work, run: [must-not-run]}]
 		if !p.Trusted || p.Origin.Layer != "user" {
 			t.Fatalf("user declaration not trusted: %+v", p)
 		}
+	}
+}
+
+func TestOAuthOptInIsUserOnlyAndExclusive(t *testing.T) {
+	testkit.Isolate(t)
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, paths.ConfigFile, "accounts:\n  linear:\n    - name: work\n      user: immutable-user\n      oauth: true\n")
+	cfg, err := project.Load(paths, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := cfg.Accounts["linear"][0]
+	if account.Name != "work" || account.User != "immutable-user" || !account.OAuth {
+		t.Fatalf("OAuth account did not resolve: %+v", account)
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil || strings.Contains(string(data), "immutable-user") || strings.Contains(string(data), "oauth") {
+		t.Fatalf("user account leaked through config output: %s %v", data, err)
+	}
+	put(t, paths.ConfigFile, "accounts:\n  linear:\n    - name: work\n      user: immutable-user\n      oauth: true\n      credential: [helper, canary-token]\n")
+	_, err = project.Load(paths, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("OAuth/helper combination accepted: %v", err)
+	}
+	root := repo(t)
+	put(t, filepath.Join(root, ".config", "backlog.yaml"), "accounts: {linear: [{name: work, user: immutable-user, oauth: true}]}\n")
+	put(t, paths.ConfigFile, "{}\n")
+	if _, err = project.Resolve(paths, root, nil); err == nil || !strings.Contains(err.Error(), "accounts") {
+		t.Fatalf("project-scoped OAuth account accepted: %v", err)
 	}
 }
 

@@ -11,9 +11,34 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
+
+func TestOAuthDiagnosticsUseStableMCPFailureShape(t *testing.T) {
+	codes := []string{
+		oauth.CodeAuthenticationRequired, oauth.CodeProviderUnavailable, oauth.CodeTokenExpired,
+		oauth.CodeGrantRevoked, oauth.CodeInsufficientScope, oauth.CodeSSORequired,
+		oauth.CodeRateLimited, oauth.CodeProviderDown, oauth.CodePrincipalMismatch,
+		oauth.CodeNotOptedIn, oauth.CodeStorageUnavailable, oauth.CodeInteractionRequired,
+	}
+	for _, code := range codes {
+		t.Run(code, func(t *testing.T) {
+			diagnostic := oauth.Failure(code, time.Time{})
+			result, _, err := failed[any](ErrorReason(diagnostic), engine.ErrorMessage(diagnostic))
+			if err != nil || result == nil || !result.IsError || len(result.Content) != 1 {
+				t.Fatalf("MCP diagnostic result: %#v %v", result, err)
+			}
+			var response map[string]string
+			text := result.Content[0].(*mcp.TextContent).Text
+			if json.Unmarshal([]byte(text), &response) != nil || response["reason"] != code || response["message"] == "" {
+				t.Fatalf("MCP diagnostic shape: %s", text)
+			}
+		})
+	}
+}
 
 func TestFoundationToolsAndWriteGuards(t *testing.T) {
 	home := testkit.Isolate(t)
