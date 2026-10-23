@@ -230,7 +230,8 @@ after confirmed ownership. Still-uncertain replay stops with `unknown-outcome`;
 missing items, unresolved state, and closed held items never fall through to new
 selection (closed items report `claim-held`). Do not switch sessions to bypass
 recovery. In a verified run, selection returns only that run's item without
-acquiring or walking; the supervisor owns heartbeat and release.
+acquiring or walking, or `claim-held` once that item is closed; the supervisor
+owns heartbeat and release.
 
 ## Write commands
 

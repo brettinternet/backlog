@@ -66,6 +66,10 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 		if err != nil {
 			return out, err
 		}
+		// A worker that already finished its item must not reopen it with --start.
+		if closed(item) {
+			return out, source.Refuse("claim-held", "run holds closed item "+item.Ref.Source+":"+item.Ref.ID)
+		}
 		out.Resumed = true
 	} else {
 		state := c.InspectSession(ctx, caller)

@@ -148,7 +148,7 @@ func TestNextClaimBoundedWalk(t *testing.T) {
 // or closed identities and uncertain replay must never fall into the fresh walk.
 func TestNextClaimSessionAndRunFirst(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"held", "interim-label", "pending", "pending-unknown", "replay-mismatch", "closed", "missing", "unresolved", "run", "run-mismatch", "missing-session"} {
+	for _, mode := range []string{"held", "interim-label", "pending", "pending-unknown", "replay-mismatch", "closed", "missing", "unresolved", "run", "run-closed", "run-mismatch", "missing-session"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, c, ctx := nextFixture(t)
 			claim := &model.ClaimInfo{ID: "claim", Resources: []string{"tasks:BL-2"}, Item: "tasks:BL-2", Session: "loop"}
@@ -170,7 +170,11 @@ func TestNextClaimSessionAndRunFirst(t *testing.T) {
 					c.acquire.Claim = &model.ClaimInfo{ID: "changed"}
 					wantReason, wantResume = "unknown-outcome", false
 				}
-			case "closed":
+			case "closed", "run-closed":
+				if mode == "run-closed" {
+					ctx = engine.WithCoordination(context.Background(), c, model.CallerContext{Session: "loop", Run: "run"})
+					c.run = model.ClaimResult{Outcome: model.ClaimRunManaged, Claim: claim}
+				}
 				item, err := engine.ReadItem(ctx, cfg, model.Ref{Source: "tasks", ID: "BL-2"})
 				if err != nil {
 					t.Fatal(err)
@@ -208,7 +212,7 @@ func TestNextClaimSessionAndRunFirst(t *testing.T) {
 			if wantResume && (len(result.Items) != 1 || result.Items[0].Ref.ID != "BL-2") {
 				t.Fatalf("lost retained item: %+v", result)
 			}
-			if mode == "run" && c.inspections != 0 || mode == "missing-session" && c.inspections != 0 {
+			if (mode == "run" || mode == "run-closed") && c.inspections != 0 || mode == "missing-session" && c.inspections != 0 {
 				t.Fatalf("unexpected inspection: %d", c.inspections)
 			}
 			if (mode == "pending" || mode == "pending-unknown" || mode == "replay-mismatch") && c.replayed != 1 {
