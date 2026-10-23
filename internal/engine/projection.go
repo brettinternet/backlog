@@ -259,12 +259,18 @@ func (p *Projector) run() {
 			now := p.now()
 			refresh := coordination && (!claimsLoaded || req.refreshClaims)
 			if refresh {
-				claimsLoaded = true
 				if coordinator == nil {
 					claimErr = fmt.Errorf("coordination unavailable")
 				} else {
 					claims, claimErr = coordinator.List(req.ctx)
 				}
+				// Superseded requests must not cache a canceled lookup, even
+				// when this was an explicit refresh of an already loaded overlay.
+				if req.ctx.Err() != nil {
+					claimsLoaded = false
+					continue
+				}
+				claimsLoaded = true
 			}
 			expired := !claimExpiry.IsZero() && !claimExpiry.After(now)
 			if cached != req.snapshot || refresh || expired || p.cfg.Workspace != nil && req.refreshClaims {

@@ -118,8 +118,14 @@ func (c *Coordinator) call(ctx context.Context, caller model.CallerContext, args
 	cmd.Stdout = &out
 	cmd.Stderr = io.Discard
 	runErr := cmd.Run()
+	if ctx.Err() != nil {
+		return envelope{}, fmt.Errorf("worklease execution canceled: %w", ctx.Err())
+	}
 	v, decodeErr := decodeEnvelope(out.Bytes())
 	if decodeErr != nil {
+		if runErr != nil {
+			return v, fmt.Errorf("worklease execution failed: %w", runErr)
+		}
 		return v, decodeErr
 	}
 	if runErr != nil && v.OK {

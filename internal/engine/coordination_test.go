@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -198,6 +199,77 @@ func TestBulkOverlayExpiryAndReadiness(t *testing.T) {
 	_, labels = engine.OverlayStates(c, model.CallerContext{Session: "loop"}, []model.Item{item}, c.claims, now)
 	if labels[item.Ref] != "mine" {
 		t.Fatal(labels)
+	}
+}
+
+// A superseding projection must retry a canceled startup lookup or refresh,
+// rather than retaining an unavailable warning and losing the claim overlay.
+type canceledListCoordinator struct {
+	coordinator
+	cancelCall int
+	calls      int
+	started    chan struct{}
+}
+
+func (c *canceledListCoordinator) List(ctx context.Context) ([]model.ClaimInfo, error) {
+	c.calls++
+	if c.calls == c.cancelCall {
+		close(c.started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return c.coordinator.List(ctx)
+}
+
+func TestProjectionRetriesCanceledClaimLookup(t *testing.T) {
+	t.Parallel()
+	for _, refresh := range []bool{false, true} {
+		t.Run(fmt.Sprintf("refresh=%t", refresh), func(t *testing.T) {
+			t.Parallel()
+			cfg := coordinationConfig()
+			c := &canceledListCoordinator{
+				coordinator: coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent", Host: "host", ExpiresAt: time.Now().Add(time.Hour)}}},
+				cancelCall:  1,
+				started:     make(chan struct{}),
+			}
+			if refresh {
+				c.cancelCall = 2
+			}
+			ctx := engine.WithCoordination(context.Background(), c, model.CallerContext{Session: "loop"})
+			store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": fakeSource(t, "tasks")})
+			defer store.Close()
+			snap := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+			projector := engine.NewProjector(ctx, cfg)
+			defer projector.Close()
+			await := func(id uint64) engine.Projection {
+				t.Helper()
+				select {
+				case result := <-projector.Results():
+					if result.Request != id || result.Error != nil || result.Warning != nil {
+						t.Fatalf("projection: %+v", result)
+					}
+					return result
+				case <-time.After(5 * time.Second):
+					t.Fatal("projection timeout")
+					return engine.Projection{}
+				}
+			}
+			if refresh {
+				await(projector.Request(snap, "is:open"))
+				projector.RefreshClaims(snap, "is:open")
+			} else {
+				projector.Request(snap, "is:open")
+			}
+			select {
+			case <-c.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("claim lookup did not start")
+			}
+			result := await(projector.Request(snap, "is:open claimed:others"))
+			if len(result.Groups) != 1 || len(result.Groups[0].Rows) != 1 || result.Groups[0].Rows[0].Claim != "agent@host" {
+				t.Fatalf("claim overlay not recovered: %+v", result)
+			}
+		})
 	}
 }
 

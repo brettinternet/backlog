@@ -3,8 +3,10 @@ package worklease
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,6 +53,24 @@ func cliFixture(t *testing.T, steps []step) *Coordinator {
 	})
 	return New(project.Config{Settings: project.Settings{Project: project.ProjectConfig{ID: "test"}, Sources: []project.SourceConfig{{ID: "tasks", Type: "native"}}}, Discovery: project.Discovery{ControlRoot: root}})
 }
+
+// Startup diagnostics must distinguish process failures from malformed JSON.
+func TestListExecutionErrors(t *testing.T) {
+	testkit.Isolate(t)
+	t.Setenv("PATH", t.TempDir())
+	c := New(project.Config{})
+	_, err := c.List(context.Background())
+	if !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("missing executable error lost: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = c.List(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation error lost: %v", err)
+	}
+}
+
 func successFixture(fields map[string]any) map[string]any {
 	fields["schemaVersion"] = 2
 	fields["ok"] = true
