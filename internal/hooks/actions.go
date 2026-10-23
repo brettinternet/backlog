@@ -124,11 +124,8 @@ func StartAction(cfg project.Config, invocation ActionInvocation) (ActionResult,
 	}
 	cmd := exec.Command(executable, "-C", invocation.CWD, "hooks", "action", path)
 	cmd.Dir = invocation.CWD
-	if err = cmd.Start(); err != nil {
+	if err = startDetached(cmd); err != nil {
 		os.Remove(path)
-		return ActionResult{}, err
-	}
-	if err = cmd.Process.Release(); err != nil {
 		return ActionResult{}, err
 	}
 	return ActionResult{Detached: true}, nil

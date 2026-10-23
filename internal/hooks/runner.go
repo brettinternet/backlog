@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -106,10 +107,19 @@ func StartRunner(cfg project.Config, events []Event, cwd string) error {
 	args = append(args, ids...)
 	cmd := exec.Command(executable, args...)
 	cmd.Dir = cwd
+	return startDetached(cmd)
+}
+
+// startDetached runs a private bl runner in its own session, so closing the
+// invoking terminal does not hang it up, and reaps it so long-lived TUI and MCP
+// processes do not accumulate zombies.
+func startDetached(cmd *exec.Cmd) error {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	return cmd.Process.Release()
+	go cmd.Wait() //nolint:errcheck
+	return nil
 }
 
 // RunEvents executes after hooks for logged events. Each event owns its
