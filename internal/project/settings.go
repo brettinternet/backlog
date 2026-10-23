@@ -4,6 +4,7 @@ package project
 // these declarations never executes a program or contacts a source.
 type Settings struct {
 	Version      int                `yaml:"version,omitempty" json:"version"`
+	Git          GitConfig          `yaml:"git,omitempty" json:"git"`
 	Root         string             `yaml:"root,omitempty" json:"root,omitempty"`
 	Project      ProjectConfig      `yaml:"project,omitempty" json:"project"`
 	UI           UIConfig           `yaml:"ui,omitempty" json:"ui"`
@@ -18,6 +19,9 @@ type Settings struct {
 	Coordination CoordinationConfig `yaml:"coordination,omitempty" json:"coordination"`
 	Hooks        []HookConfig       `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	Actions      []ActionConfig     `yaml:"actions,omitempty" json:"actions,omitempty"`
+}
+type GitConfig struct {
+	AutoCommit bool `yaml:"autoCommit,omitempty" json:"autoCommit"`
 }
 type ProjectConfig struct {
 	ID   string `yaml:"id,omitempty" json:"id"`

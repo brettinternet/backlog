@@ -13,11 +13,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
 	urfave "github.com/urfave/cli/v3"
 
+	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
@@ -110,7 +112,9 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			return &Error{Reason: "invalid-config", Message: err.Error()}
 		}
 		defer tui.ConfigureRuntime()()
-		session, cancel := context.WithCancel(engine.WithEventOrigin(ctx, "tui"))
+		commits := autocommit.New(2*time.Second, "", func(message string) { fmt.Fprintln(errOut, "bl: warning: "+message) })
+		defer commits.Close()
+		session, cancel := context.WithCancel(autocommit.WithSession(engine.WithEventOrigin(ctx, "tui"), commits))
 		defer cancel()
 		store, err := engine.OpenProjectStore(session, cfg)
 		if err != nil {
@@ -301,6 +305,11 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 						}
 						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, coordinator, caller), cfg)
 					}
+				}
+				if selected.Name != "mcp" {
+					commits := autocommit.New(0, selected.Name, func(message string) { fmt.Fprintln(errOut, "bl: warning: "+message) })
+					defer commits.Close()
+					ctx = autocommit.WithSession(ctx, commits)
 				}
 				return action(engine.WithEventOrigin(ctx, "cli"), selected)
 			}
