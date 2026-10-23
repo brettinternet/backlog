@@ -411,6 +411,8 @@ func TestLineInputReadlineKeys(t *testing.T) {
 		{"ctrl+d", "ix  ", ""},
 		{"x", "xix  ", "x"},
 		{"ctrl+b", "xix  ", ""},
+		{"ctrl+f", "xix  ", "x"},
+		{"ctrl+k", "x", "x"},
 	} {
 		l.edit(step.key, "")
 		if l.text != step.text || l.text[:l.cursor] != step.before {

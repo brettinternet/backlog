@@ -9,7 +9,7 @@ import (
 )
 
 // lineInput is a single-line text field with the readline keys a terminal
-// prompt has. ctrl+k moves up in lists (as in fzf), so it doesn't kill.
+// prompt has. Fields with a list take ctrl+k to move up before it gets here.
 type lineInput struct {
 	text   string
 	cursor int // byte offset into text
@@ -46,6 +46,8 @@ func (l *lineInput) edit(key, text string) (handled, changed bool) {
 		l.cut(l.cursor, l.nextWord())
 	case "ctrl+u":
 		l.cut(0, l.cursor)
+	case "ctrl+k":
+		l.cut(l.cursor, len(l.text))
 	default:
 		if key == "space" {
 			text = " "

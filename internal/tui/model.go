@@ -799,7 +799,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A notice lasts until the next key, then the query shows again.
 		m.notice = ""
 		s := keyString(msg)
-		if code, ok := emacsInputKeys[s]; ok && m.modalOpen() {
+		if code, ok := emacsInputKeys[s]; ok && m.modalOpen() && !(m.plainField() && (s == "ctrl+j" || s == "ctrl+k")) {
 			msg = tea.KeyPressMsg{Code: code}
 			s = msg.String()
 		}
@@ -855,12 +855,29 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // Prompts, pickers and menus own their keys, so the keymap's Emacs aliases
 // don't reach them; these translate to the keys every input handles. ctrl+j
-// and ctrl+k move as in fzf.
+// and ctrl+k move as in fzf, except in a plain field, where ctrl+k deletes to
+// the end.
 var emacsInputKeys = map[string]rune{"ctrl+g": tea.KeyEscape, "ctrl+n": tea.KeyDown, "ctrl+p": tea.KeyUp, "ctrl+j": tea.KeyDown, "ctrl+k": tea.KeyUp}
 
 // modalOpen reports an input or prompt that takes every key and the mouse.
 func (m Model) modalOpen() bool {
 	return m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.editor.open || m.save.open || m.archiveConfirm || m.actionConfirm != nil
+}
+
+// plainField reports that keys go to a text field without a list to move
+// through. It follows Update's modal order.
+func (m Model) plainField() bool {
+	switch {
+	case m.actionConfirm != nil, m.launcher.open, m.longEdit.choice != "":
+		return false
+	case m.capture.open:
+		return !m.capture.choosing
+	case m.picker.open:
+		return m.picker.inputOnly
+	case m.archiveConfirm:
+		return false
+	}
+	return m.save.open
 }
 
 // retheme rebuilds the palette once the terminal reports its colors. Rendered
