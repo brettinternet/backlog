@@ -7,7 +7,8 @@
 With trusted `git.autoCommit: true`, consecutive native item edits share one
 commit after two seconds without another successful edit. Quit flushes the
 remaining batch after the source workers stop. Timers, Git, and file checks run
-outside the Bubble Tea update loop. Skips and Git hook failures are warnings;
+outside the Bubble Tea update loop. Skips and Git hook failures are warnings,
+shown in the status line while the TUI runs and on stderr after quit;
 successful item writes remain. See [CLI Git behavior](cli.md#git-auto-commit)
 for path preservation, unsafe states, and the message format.
 

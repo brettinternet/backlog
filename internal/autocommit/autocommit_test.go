@@ -188,3 +188,21 @@ func TestBatchAndQuitFlush(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// Regression: a batched create then rename leaves the created path missing and
+// never tracked; its pathspec must not fail the whole commit.
+func TestBatchCreateThenRename(t *testing.T) {
+	root := repository(t)
+	var warnings []string
+	s := New(2*time.Second, "", func(w string) { warnings = append(warnings, w) })
+	s.afterFunc = func(time.Duration, func()) *time.Timer { return time.NewTimer(time.Hour) }
+	mutate(t, s, root, []string{"new.md"}, func() error { return os.WriteFile(filepath.Join(root, "new.md"), []byte("new\n"), 0600) })
+	mutate(t, s, root, []string{"new.md", "moved.md"}, func() error { return os.Rename(filepath.Join(root, "new.md"), filepath.Join(root, "moved.md")) })
+	s.Close()
+	if len(warnings) != 0 {
+		t.Fatal(warnings)
+	}
+	if got := run(t, root, "show", "--name-only", "--format=", "HEAD"); got != "moved.md\n" {
+		t.Fatal(got)
+	}
+}

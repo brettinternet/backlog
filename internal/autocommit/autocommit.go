@@ -267,8 +267,13 @@ func (s *Session) commit(root string, b *batch) {
 	// --only preserves unrelated staged entries. New files need an index entry;
 	// rollback only those entries on failure, never the user's other staging.
 	added := []string{}
+	committed := paths[:0]
 	for _, rel := range paths {
-		if _, err := git(root, "ls-files", "--error-unmatch", "--", rel); err != nil && !b.paths[rel].Missing {
+		if _, err := git(root, "ls-files", "--error-unmatch", "--", rel); err != nil {
+			if b.paths[rel].Missing {
+				// Never tracked and not written: a pathspec for it would fail the commit.
+				continue
+			}
 			if _, err = git(root, "add", "--intent-to-add", "--", rel); err != nil {
 				s.warn(err.Error())
 				valid = false
@@ -276,8 +281,10 @@ func (s *Session) commit(root string, b *batch) {
 			}
 			added = append(added, rel)
 		}
+		committed = append(committed, rel)
 	}
-	if valid {
+	paths = committed
+	if valid && len(paths) > 0 {
 		if output, err := git(root, append([]string{"status", "--porcelain=v1", "--untracked-files=all", "--"}, paths...)...); err == nil && output == "" {
 			return
 		}

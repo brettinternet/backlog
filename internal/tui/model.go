@@ -458,8 +458,16 @@ func (m *Model) switchView(n int) {
 	m.folded = m.views[n].folded
 	m.project()
 }
+
+// NoticeMsg shows a background warning in the status line. Writing it to the
+// terminal instead would corrupt the alternate screen.
+type NoticeMsg string
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case NoticeMsg:
+		m.notice = boundedLine(string(msg))
+		return m, nil
 	case goToResult:
 		return m.receiveGoTo(msg)
 	case launcherFiltered:

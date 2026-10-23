@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -112,7 +113,16 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			return &Error{Reason: "invalid-config", Message: err.Error()}
 		}
 		defer tui.ConfigureRuntime()()
-		commits := autocommit.New(2*time.Second, "", func(message string) { fmt.Fprintln(errOut, "bl: warning: "+message) })
+		// While the TUI owns the terminal, warnings go to its status line; the quit
+		// flush runs after it exits and prints to stderr.
+		var program atomic.Pointer[tea.Program]
+		commits := autocommit.New(2*time.Second, "", func(message string) {
+			if p := program.Load(); p != nil {
+				p.Send(tui.NoticeMsg("Warning: " + message))
+				return
+			}
+			fmt.Fprintln(errOut, "bl: warning: "+message)
+		})
 		defer commits.Close()
 		session, cancel := context.WithCancel(autocommit.WithSession(engine.WithEventOrigin(ctx, "tui"), commits))
 		defer cancel()
@@ -191,7 +201,10 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			NoColor:      os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb",
 		})
 		app.Bind(snapshots)
-		final, runErr := tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
+		p := tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120))
+		program.Store(p)
+		final, runErr := p.Run()
+		program.Store(nil)
 		err = runErr
 		if result, ok := final.(tui.Model); ok {
 			if saveErr := result.SaveSession(cfg); saveErr != nil {
