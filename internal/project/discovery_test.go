@@ -153,3 +153,36 @@ func TestDetectLegacySources(t *testing.T) {
 		t.Fatalf("explicit: %+v %v", d, err)
 	}
 }
+
+// Detection must never grant write access, and provider metadata must survive
+// resolving a custom backlog directory from either the root or that directory.
+func TestBacklogMDReadOnlyDiscoveryAndCatalog(t *testing.T) {
+	testkit.Isolate(t)
+	root := repo(t)
+	put(t, filepath.Join(root, "backlog.config.yml"), "project_name: Fixture\nbacklog_directory: work\ntask_prefix: TASK\nstatuses: [To Do, In Progress, Done]\nlabels: [bug, feature]\n")
+	put(t, filepath.Join(root, "work", "milestones", "m-1.md"), "---\nid: m-1\ntitle: Release\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nShip it.\n<!-- SECTION:DESCRIPTION:END -->\n")
+	put(t, filepath.Join(root, "work", "archive", "milestones", "m-0.md"), "---\nid: m-0\ntitle: Foundation\n---\n\nFinished.\n")
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Sources) != 1 || !cfg.ReadOnlySources["tasks"] || cfg.Sources[0].Path != filepath.Join(root, "work") || len(cfg.Discovery.Warnings) == 0 {
+		t.Fatalf("unsafe or missing detected source: %+v", cfg)
+	}
+	if len(cfg.Milestones) != 2 || cfg.Milestones[0].Name != "Release" || cfg.Milestones[0].Description != "Ship it." || cfg.Milestones[0].Archived || !cfg.Milestones[1].Archived || strings.Join(cfg.Labels, ",") != "bug,feature" {
+		t.Fatalf("catalog: %+v labels=%v", cfg.Milestones, cfg.Labels)
+	}
+	settings, err := project.BacklogMDSettings(filepath.Join(root, "work"))
+	if err != nil || len(settings.Milestones) != 2 {
+		t.Fatalf("directory resolution: %+v %v", settings, err)
+	}
+	put(t, filepath.Join(root, ".config", "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: work}]\n")
+	cfg, err = project.Resolve(paths, root, nil)
+	if err != nil || cfg.ReadOnlySources["tasks"] || len(cfg.Discovery.Detected) != 0 {
+		t.Fatalf("explicit source: %+v %v", cfg, err)
+	}
+}

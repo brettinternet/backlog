@@ -476,7 +476,7 @@ Everything else becomes the title. Escape a token with `\` (`\#1`), or put liter
 
 ## Forms and editors
 
-Pickers are fuzzy, keyboard-first, and preselect current values. The full create and edit form covers every capability-supported field, plus description and criteria editing.
+Pickers are fuzzy, keyboard-first, and preselect current values. The full create and edit form covers every capability-supported field, plus description and criteria editing. Backlog.md forms omit native `rank`, and its priority picker omits `urgent`; shortcuts cannot select hidden provider choices.
 
 The quick-add prompt previews parsed tokens as chips; `tab` opens the complete
 form. In the form, tab/shift-tab or up/down move between fields, enter saves,

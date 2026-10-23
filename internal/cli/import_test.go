@@ -57,3 +57,40 @@ func TestImportDryRunAndDestinationRefusal(t *testing.T) {
 		t.Fatal("refused import modified target")
 	}
 }
+
+// Catches detection accidentally enabling writes and section editing incorrectly
+// requiring a native-format file for a configured Backlog.md source.
+func TestBacklogMDDetectionAndSectionEdit(t *testing.T) {
+	testkit.Isolate(t)
+	root := t.TempDir()
+	for _, dir := range []string{".git", ".config", "backlog/tasks"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(t, filepath.Join(root, ".git/config"), "[core]\n bare = false\n")
+	put(t, filepath.Join(root, "backlog/config.yml"), "project_name: Fixture\nstatuses: [To Do, In Progress, Done]\n")
+	path := filepath.Join(root, "backlog/tasks/task-1 - Original.md")
+	original := "---\nid: TASK-1\ntitle: Original\nstatus: To Do\ncreated_date: 2026-10-21 12:00\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nOriginal body.\n<!-- SECTION:DESCRIPTION:END -->\n"
+	put(t, path, original)
+	code, out, stderr := writeRun(root, "", "ls")
+	if code != 0 || !strings.Contains(out, "Original") || !strings.Contains(stderr, "read-only") {
+		t.Fatalf("detected read: %d %s %s", code, out, stderr)
+	}
+	code, out, _ = writeRun(root, "", "set", "TASK-1", "title=Unsafe")
+	if code == 0 || get(t, path) != original {
+		t.Fatalf("detected write: %d %s", code, out)
+	}
+	put(t, filepath.Join(root, ".config/backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: backlog}]\n")
+	editor := filepath.Join(root, "editor")
+	put(t, editor, "#!/bin/sh\nprintf 'Changed body.\\n' > \"$1\"\n")
+	if err := os.Chmod(editor, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EDITOR", editor)
+	writeOK(t, root, "", "edit", "TASK-1", "--section", "description")
+	code, out, stderr = writeRun(root, "", "show", "TASK-1")
+	if code != 0 || stderr != "" || !strings.Contains(out, "Changed body.") || !strings.Contains(get(t, path), "<!-- SECTION:DESCRIPTION:BEGIN -->") {
+		t.Fatalf("configured section edit: %d %s %s", code, out, stderr)
+	}
+}

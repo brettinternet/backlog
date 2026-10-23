@@ -15,6 +15,7 @@ import (
 
 type captureState struct {
 	open, full, child, choosing bool
+	backlogMD                   bool
 	line, errorText             string
 	sources                     []string
 	fields                      []captureField
@@ -71,7 +72,7 @@ func (m *Model) beginCapture(child bool) {
 		return
 	}
 	m.routeSourceProject(source)
-	m.capture = captureState{open: true, child: child, source: source}
+	m.capture = captureState{open: true, child: child, source: source, backlogMD: m.isBacklogMD(source)}
 	m.notice = ""
 }
 func (m *Model) beginFullEdit() {
@@ -89,12 +90,15 @@ func (m *Model) beginFullEdit() {
 		m.notice = "Item is no longer available."
 		return
 	}
-	m.capture = captureState{open: true, full: true, original: item, version: row.Version, source: row.Ref.Source}
+	m.capture = captureState{open: true, full: true, original: item, version: row.Version, source: row.Ref.Source, backlogMD: m.isBacklogMD(row.Ref.Source)}
 	m.capture.loadFields(item)
 }
 func (c *captureState) loadFields(item model.Item) {
 	c.fields = make([]captureField, 0, len(captureNames))
 	for _, name := range captureNames {
+		if c.backlogMD && name == "rank" {
+			continue
+		}
 		c.fields = append(c.fields, captureField{name, captureValue(item, name)})
 	}
 }

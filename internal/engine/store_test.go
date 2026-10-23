@@ -645,3 +645,38 @@ func TestStaleOwnEditIsBusyNotConflict(t *testing.T) {
 		t.Fatalf("own stale edit left state: item=%q edit=%+v", item.Title, edit)
 	}
 }
+
+// A provider-issued raw inverse must reach its codec rather than the native
+// parser, and undo must retain unknown provider fields and Markdown.
+func TestBacklogMDStoreUndo(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, dir := range []string{"tasks", "common"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.yml"), []byte("statuses: [To Do, In Progress, Done]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "tasks", "task-1 - Original.md")
+	original := "---\nid: TASK-1\ntitle: Original\nstatus: To Do\ncreated_date: 2026-10-21 12:00\ncustom: 'keep this'\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nUntouched.\n<!-- SECTION:DESCRIPTION:END -->\n"
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "tasks", Type: "backlog-md", Path: root}}, Statuses: []project.StatusConfig{{Key: "To Do", Name: "To Do", Category: "todo"}}}, Discovery: project.Discovery{ControlRoot: root, CommonDir: filepath.Join(root, "common")}}
+	store, err := engine.OpenProjectStore(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ref := model.Ref{Source: "tasks", ID: "TASK-1"}
+	initial := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	item, _, _ := initial.Get(ref)
+	requireSuccess(t, store.Mutate(change(item, "Changed")))
+	requireSuccess(t, store.Undo())
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != original {
+		t.Fatalf("undo lost provider bytes: %s %v", data, err)
+	}
+}

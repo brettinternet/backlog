@@ -204,7 +204,7 @@ Workspace declarations compose each listed project with its own independently re
 additive saved-view catalog (built-ins, project, user, user per-project) without
 changing list replacement in effective settings; see [tui.md](tui.md#views-and-layouts).
 
-**Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Show them read-only and suggest `bl import` or an explicit source. Outside any repository, open the user's default workspace, if configured.
+**Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Open Backlog.md read-only, and detect Beads, suggesting `bl import` or an explicit source. Backlog.md source behavior and supported edits are specified in [backlog-md.md](backlog-md.md). Outside any repository, open the user's default workspace, if configured.
 
 **Identity.** `project.id` defaults to the normalized `origin` remote (`github.com/owner/repo`). If there is no remote, or `origin` is a local path or `file://` URL, it falls back to the control root path, marked host-local, and claims show as host-local. The project ID keys caches, trust, events, and claim resources.
 

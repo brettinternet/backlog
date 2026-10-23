@@ -233,6 +233,7 @@ func FuzzParseSourceDocument(f *testing.F) {
 	f.Add("---\nid: x\nid: y\n---\n")
 	f.Fuzz(func(t *testing.T, input string) {
 		_, _ = parseSourceDocument([]byte(input))
+		_, _ = parseDocument([]byte(input))
 	})
 }
 

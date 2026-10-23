@@ -5,6 +5,19 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 )
 
+func (m Model) isBacklogMD(source string) bool {
+	if m.opts.Workspace == nil {
+		return false
+	}
+	cfg, local := m.opts.Workspace.SourceProject(source)
+	for _, configured := range cfg.Sources {
+		if configured.ID == local {
+			return configured.Type == "backlog-md"
+		}
+	}
+	return false
+}
+
 func (m Model) hasWorkspace() bool {
 	return m.opts.Workspace != nil && m.opts.Workspace.Workspace != nil
 }

@@ -196,6 +196,13 @@ func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation
 			}
 		}
 	case model.Restore:
+		for _, configured := range cfg.Sources {
+			if configured.ID == m.Ref.Source && configured.Type == "backlog-md" {
+				// A provider-issued inverse contains its own file format. The
+				// adapter validates it under the same version-checked write lock.
+				return nil
+			}
+		}
 		doc, err := format.Parse(m.Original)
 		if err != nil {
 			return reject(err.Error())

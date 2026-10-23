@@ -133,6 +133,8 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		trustWarning := ""
 		if len(cfg.Untrusted()) > 0 {
 			trustWarning = "Untrusted project config · bl trust --show"
+		} else if len(cfg.Discovery.Detected) > 0 {
+			trustWarning = "Read-only · configure sources in .config/backlog.yaml"
 		}
 		workspaceScope := cmd.String("workspace") != ""
 		if cfg.Workspace != nil {

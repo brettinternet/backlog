@@ -70,3 +70,36 @@ func TestFullFormFieldsAndInlineValidation(t *testing.T) {
 		t.Fatalf("validation failed: %s", m.capture.errorText)
 	}
 }
+
+// Provider-rejected choices must not be reachable through picker shortcuts or
+// a full form that would silently drop unsupported ordering metadata.
+func TestBacklogMDUnsupportedChoices(t *testing.T) {
+	t.Parallel()
+	cfg := project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "tasks", Type: "backlog-md"}}}}
+	item := editItem("TASK-1", "Provider item")
+	item.Rank = "000100"
+	m, backend := editFixture(t, []model.Item{item}, model.Capabilities{model.Set: true, model.Create: true}, Options{Workspace: &cfg, CreateSource: "tasks"})
+	m = editPress(m, "p")
+	if choiceIndex(m.picker.choices, "urgent") >= 0 {
+		t.Fatal("unsupported urgent priority was offered")
+	}
+	m = editPress(m, "u")
+	if len(backend.applied()) != 0 {
+		t.Fatal("shortcut bypassed provider choices")
+	}
+	m = editPress(m, "esc")
+	m.beginFullEdit()
+	for _, field := range m.capture.fields {
+		if field.name == "rank" {
+			t.Fatal("unsupported rank editing was offered")
+		}
+	}
+	m.beginCapture(false)
+	m.capture.line = "New task"
+	m.expandCapture()
+	for _, field := range m.capture.fields {
+		if field.name == "rank" {
+			t.Fatal("unsupported rank creation was offered")
+		}
+	}
+}

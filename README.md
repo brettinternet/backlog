@@ -18,7 +18,7 @@
 - **Edit without leaving the list.** Single-key pickers, quick-add tokens (`!high @me #tui <BL-7`), `.` to repeat, undo, multi-select, and `$EDITOR` for long text.
 - **Built for agents.** `bl next --claim --start --json`, short verbs, numeric IDs, stdin bodies, and an MCP server.
 - **Git-native files.** One Markdown file per item, named by ID, with minimal diffs. Every worktree shares one live backlog.
-- **Many backends.** Native files and [local Beads issues](docs/beads.md), with Backlog.md import. GitHub Issues, Linear, Jira Cloud, and external adapters are planned.
+- **Many backends.** Native files, [Backlog.md files](docs/backlog-md.md) and [local Beads issues](docs/beads.md), plus Backlog.md import. GitHub Issues, Linear, Jira Cloud, and external adapters are planned.
 - **Composable.** Hooks, actions, and an event stream connect it to [Worklease](https://github.com/brettinternet/worklease) claims and to any other tool.
 
 ## Try the list shell
@@ -60,8 +60,9 @@ disables styling. See the [project schema](docs/schemas/project-config.json) and
 provenance, and trust boundaries without creating files or changing cwd. Linked
 worktrees share the primary checkout's control root; `root: checkout` opts out.
 Origin URLs become stable project IDs; no origin, or a local-path or `file://` origin, means a host-local path identity.
-Without project config, Backlog.md and Beads are detected read-only, not loaded as
-writable sources. Privileged project entries remain untrusted and nothing runs
+Without project config, Backlog.md opens read-only with a configuration prompt;
+Beads is detected but not loaded. Configure a [Backlog.md source](docs/backlog-md.md)
+to enable edits without converting files. Privileged project entries remain untrusted and nothing runs
 while loading configuration. Trust grants and diagnostics remain BL-29 work.
 `--json`/`-j` returns a versioned success or error envelope, with structured error
 `details`. Usage errors exit 2; see [the exit-code contract](docs/design.md#7-agent-interface)

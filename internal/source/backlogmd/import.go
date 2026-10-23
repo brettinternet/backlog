@@ -1,4 +1,4 @@
-// Package backlogmd imports Backlog.md projects into the native file format.
+// Package backlogmd reads and writes Backlog.md files and imports them into the native format.
 package backlogmd
 
 import (
@@ -537,6 +537,7 @@ func scanPartitions(ctx context.Context, root string, report *Report) ([]sourceC
 		{partition: "tasks"},
 		{partition: "completed", completed: true},
 		{partition: filepath.Join("archive", "tasks"), archived: true},
+		{partition: filepath.Join("archive", "completed"), archived: true, completed: true},
 		{partition: "drafts", draft: true},
 		{partition: filepath.Join("archive", "drafts"), archived: true, draft: true},
 	}
@@ -656,7 +657,7 @@ func collectSkipped(root, configPath string, report *Report) error {
 			return err
 		}
 		for _, entry := range entries {
-			if entry.Name() == "tasks" || entry.Name() == "drafts" || entry.Name() == "milestones" {
+			if entry.Name() == "tasks" || entry.Name() == "completed" || entry.Name() == "drafts" || entry.Name() == "milestones" {
 				continue
 			}
 			path := filepath.ToSlash(filepath.Join("archive", entry.Name()))
@@ -674,6 +675,10 @@ func readTask(candidate sourceCandidate) (taskInput, error) {
 	if err != nil {
 		return taskInput{}, err
 	}
+	return readTaskBytes(candidate, data)
+}
+
+func readTaskBytes(candidate sourceCandidate, data []byte) (taskInput, error) {
 	doc, err := parseSourceDocument(data)
 	if err != nil {
 		return taskInput{}, err
@@ -704,15 +709,17 @@ func readTask(candidate sourceCandidate) (taskInput, error) {
 	if err != nil {
 		return taskInput{}, err
 	}
-	due, err := optionalDateField(doc.fields, "due")
+	due, err := optionalDateField(doc.fields, "due_date")
 	if err != nil {
 		return taskInput{}, err
+	}
+	if due == "" {
+		due, err = optionalDateField(doc.fields, "due")
+		if err != nil {
+			return taskInput{}, err
+		}
 	}
 	milestone, err := optionalStringField(doc.fields, "milestone")
-	if err != nil {
-		return taskInput{}, err
-	}
-	stat, err := os.Stat(candidate.absolute)
 	if err != nil {
 		return taskInput{}, err
 	}
@@ -729,6 +736,10 @@ func readTask(candidate sourceCandidate) (taskInput, error) {
 		if updatedOK {
 			created = updated
 		} else {
+			stat, err := os.Stat(candidate.absolute)
+			if err != nil {
+				return taskInput{}, err
+			}
 			created = stat.ModTime().UTC().Truncate(time.Second)
 		}
 	}
@@ -1528,7 +1539,7 @@ func mapReportedField(key string, original any, task taskInput) (string, any) {
 		return "milestone", task.milestone
 	case "type":
 		return "type", task.typeName
-	case "due":
+	case "due_date", "due":
 		return "due", task.due
 	default:
 		if key == "priority" {
@@ -1880,7 +1891,7 @@ func unknownFields(fields map[string]any) map[string]any {
 	known := map[string]bool{
 		"id": true, "title": true, "status": true, "type": true, "priority": true,
 		"assignee": true, "assignees": true, "labels": true, "milestone": true,
-		"due": true, "created_date": true, "created": true, "updated_date": true,
+		"due_date": true, "due": true, "created_date": true, "created": true, "updated_date": true,
 		"updated": true, "dependencies": true, "blocked_by": true, "parent_task_id": true,
 		"parent": true, "ordinal": true, "rank": true, "references": true,
 		"documentation": true, "refs": true, "modified_files": true, "files": true,

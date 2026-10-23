@@ -58,7 +58,8 @@ type UIConfig struct {
 }
 
 type Config struct {
-	Workspace        *Workspace `yaml:"-" json:"-"`
+	ReadOnlySources  map[string]bool `yaml:"-" json:"readOnlySources,omitempty"`
+	Workspace        *Workspace      `yaml:"-" json:"-"`
 	Settings         `yaml:",inline"`
 	SavedViews       []SavedView                `yaml:"-" json:"savedViews,omitempty"`
 	Paths            Paths                      `yaml:"-" json:"paths"`
@@ -187,6 +188,9 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 		return Config{}, err
 	}
 	if err := validateSettings(effective); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.resolveBacklogMD(); err != nil {
 		return Config{}, err
 	}
 	// Milestone archived is serialized even when omitted in YAML. Attribute its

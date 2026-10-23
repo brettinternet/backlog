@@ -249,7 +249,7 @@ func (m *Model) beginPicker(kind pickerKind) tea.Cmd {
 	m.notice = ""
 	generation := p.generation
 	store := m.opts.Store
-	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me}
+	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me, backlogMD: m.isBacklogMD(row.Ref.Source)}
 	selectedItem := item
 	return func() tea.Msg {
 		choices := buildPickerChoices(store.Current(), kind, selectedItem, settings, false)
@@ -262,6 +262,7 @@ type pickerSettings struct {
 	labels     []string
 	milestones []project.Milestone
 	me         string
+	backlogMD  bool
 }
 
 func (m Model) pickerCapability(ref model.Ref, kind pickerKind) string {
@@ -332,6 +333,9 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 		add(current.Status, current.Status, current.Status)
 	case pickerPriority:
 		for _, priority := range []model.Priority{model.Urgent, model.High, model.Medium, model.Low} {
+			if settings.backlogMD && priority == model.Urgent {
+				continue
+			}
 			add(string(priority), string(priority), string(current.Priority))
 		}
 		add("", "None", string(current.Priority))
@@ -575,7 +579,7 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 	}
 	if p.kind == pickerPriority && p.query == "" && !p.loading {
 		values := map[string]string{"u": "urgent", "h": "high", "m": "medium", "l": "low", "n": ""}
-		if value, ok := values[key]; ok {
+		if value, ok := values[key]; ok && choiceIndex(p.choices, value) >= 0 {
 			action, _ := pickerAction(pickerPriority, value, false)
 			m.picker = pickerState{}
 			m.startEdit(action)
@@ -688,7 +692,7 @@ func (m *Model) reloadPickerChoices() tea.Cmd {
 	m.picker.generation = generation
 	m.picker.loading = true
 	store := m.opts.Store
-	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me}
+	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me, backlogMD: m.isBacklogMD(row.Ref.Source)}
 	kind, remove := p.kind, p.remove
 	return func() tea.Msg {
 		choices := buildPickerChoices(store.Current(), kind, item, settings, remove)

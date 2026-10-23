@@ -376,22 +376,36 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if cmd.IsSet("if-version") && cmd.String("if-version") != version {
 			return &Error{Reason: "conflict", Message: "expected version does not match current content"}
 		}
-		original, err := readNativeBytes(cfg, item)
-		if err != nil {
-			return writeError(err)
+		var content []byte
+		providerSection := false
+		for _, configured := range cfg.Sources {
+			if configured.ID == item.Ref.Source && configured.Type == "backlog-md" {
+				if cfg.ReadOnlySources[configured.ID] {
+					return &Error{Reason: "unavailable", Message: "detected Backlog.md source is read-only; configure it first"}
+				}
+				providerSection = section != ""
+			}
 		}
-		// Bind the editor buffer to the bytes actually read, not an earlier lookup.
-		doc, err := format.Parse(original)
-		if err != nil {
-			return writeError(err)
-		}
-		if doc.Version() != version {
-			return &Error{Reason: "conflict", Message: "item changed before opening editor"}
-		}
-		content := original
-		if section != "" {
-			names := map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}
-			content = []byte(doc.SectionText(names[section]) + "\n")
+		if providerSection {
+			content = []byte(itemSections(item)[section] + "\n")
+		} else {
+			original, err := readNativeBytes(cfg, item)
+			if err != nil {
+				return writeError(err)
+			}
+			// Bind the editor buffer to the bytes actually read, not an earlier lookup.
+			doc, err := format.Parse(original)
+			if err != nil {
+				return writeError(err)
+			}
+			if doc.Version() != version {
+				return &Error{Reason: "conflict", Message: "item changed before opening editor"}
+			}
+			content = original
+			if section != "" {
+				names := map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}
+				content = []byte(doc.SectionText(names[section]) + "\n")
+			}
 		}
 		file, err := os.CreateTemp("", "bl-edit-*.md")
 		if err != nil {

@@ -42,6 +42,11 @@ func parseSourceDocument(data []byte) (sourceDocument, error) {
 	}
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "<<<<<<<") || strings.HasPrefix(line, "|||||||") || line == "=======" || strings.HasPrefix(line, ">>>>>>>") {
+			return sourceDocument{}, fmt.Errorf("merge-conflict: conflict marker at line %d", i+1)
+		}
+	}
 	if len(lines) == 0 || strings.TrimSuffix(lines[0], "\r") != "---" {
 		return sourceDocument{}, fmt.Errorf("expected opening YAML frontmatter")
 	}
@@ -74,7 +79,7 @@ func parseSourceDocument(data []byte) (sourceDocument, error) {
 	if err := root.Content[0].Decode(&fields); err != nil {
 		return sourceDocument{}, fmt.Errorf("invalid YAML frontmatter: %w", err)
 	}
-	dateFields := map[string]bool{"created_date": true, "updated_date": true, "created": true, "updated": true, "due": true}
+	dateFields := map[string]bool{"created_date": true, "updated_date": true, "created": true, "updated": true, "due": true, "due_date": true}
 	for i := 0; i < len(root.Content[0].Content); i += 2 {
 		key, value := root.Content[0].Content[i], root.Content[0].Content[i+1]
 		if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {

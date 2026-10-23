@@ -46,8 +46,8 @@ config are always trusted. Grants never launch anything by themselves.
 Untrusted programs and network sources remain inert on every interface. The TUI
 shows a persistent trust banner and can still browse local native sources.
 Hooks and actions enforce `Config.RequireTrusted` before execution. This build
-does not ship remote/external adapters; configured non-native sources remain
-unavailable.
+ships native, [Backlog.md](backlog-md.md), and Beads adapters; configured
+remote/external sources remain unavailable.
 
 `bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
 `control-root`, `cache`, `worklease`, and `sources`. Each check has `name`,
@@ -62,7 +62,8 @@ then init.defaultBranch, then an existing main/master; unknown or nondefault
 branches warn. Worklease's local `version --json` must report schema v2 and
 version >= 1.10.1. Absence warns when coordination is disabled and fails when
 configured. Source checks validate native directories and prefixes; unavailable
-adapters fail with a fix hint. Network probes are permitted only by `--online`,
+adapters fail with a fix hint. Backlog.md sources validate their provider config
+and local directory. Network probes are permitted only by `--online`,
 never before trust, and only for installed adapters; the native-only build
 performs no network probes even with that flag.
 

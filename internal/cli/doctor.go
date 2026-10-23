@@ -272,7 +272,7 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 			c.Fix = "Review bl trust --show, then run bl trust"
 			return c
 		}
-		if s.Type != "native" {
+		if s.Type != "native" && s.Type != "backlog-md" {
 			c.Status = "fail"
 			c.Message = "Source " + s.ID + " (" + s.Type + ") is not available in this build"
 			c.Fix = "Use a build with this adapter or configure a native source"
@@ -291,7 +291,7 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 		}
 	}
 	if online {
-		c.Message = "Native sources are local; no network probes needed"
+		c.Message = "File sources are local; no network probes needed"
 	}
 	return c
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/backlogmd"
 	"github.com/brettinternet/backlog/internal/source/beads"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
@@ -144,7 +145,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			break
 		}
 	}
-	if c.Type != "native" && c.Type != "beads" {
+	if c.Type != "native" && c.Type != "beads" && c.Type != "backlog-md" {
 		return nil, fmt.Errorf("source %s (%s) is not available in this build", c.ID, c.Type)
 	}
 	statuses := map[string]model.StatusCategory{}
@@ -154,6 +155,9 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 	path := c.Path
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(cfg.Discovery.ControlRoot, path)
+	}
+	if c.Type == "backlog-md" {
+		return backlogmd.New(backlogmd.Options{ID: c.ID, Path: path, CommonDir: cfg.Discovery.CommonDir, Statuses: statuses, ReadOnly: cfg.ReadOnlySources[c.ID]})
 	}
 	if c.Type == "beads" {
 		return beads.New(beads.Options{ID: c.ID, Path: path, Statuses: statuses})
