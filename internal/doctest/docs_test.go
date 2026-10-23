@@ -4,6 +4,7 @@ package doctest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,29 @@ import (
 
 // Catch examples drifting from actual arguments, mutation behavior and claim
 // lifecycle, without contacting providers or touching the reader's projects.
+// blDir holds the bl binary built once for every test in the package.
+var blDir string
+
+func TestMain(m *testing.M) {
+	os.Exit(buildAndRun(m))
+}
+
+func buildAndRun(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "bl-doctest-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer os.RemoveAll(dir)
+	// Build before tests isolate HOME/XDG so Go keeps the caller's toolchain caches.
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(dir, "bl"), "../../cmd/bl").CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "build bl: %v\n%s", err, out)
+		return 1
+	}
+	blDir = dir
+	return m.Run()
+}
+
 func docCLI(t *testing.T) string {
 	t.Helper()
 	repo, err := filepath.Abs("../..")
@@ -24,8 +48,6 @@ func docCLI(t *testing.T) string {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	// Build before HOME/XDG isolation so Go keeps the caller's toolchain caches.
-	run(t, repo, "go", "build", "-o", filepath.Join(bin, "bl"), "./cmd/bl")
 	testkit.Isolate(t)
 	fake, err := os.ReadFile(filepath.Join(repo, "internal/cli/testdata/next-worklease.py"))
 	if err != nil {
@@ -34,7 +56,7 @@ func docCLI(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(bin, "worklease"), fake, 0700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", strings.Join([]string{bin, blDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
 	return repo
 }
 
