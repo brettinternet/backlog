@@ -1,0 +1,5 @@
+project_name: Synthetic migration
+statuses: [To Do, In Progress, Done]
+task_prefix: task
+labels: [migration, blocked]
+definition_of_done: [Review evidence]
