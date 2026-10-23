@@ -6,6 +6,7 @@ includes:
   setup: .taskfiles/setup.yaml
   cli: .taskfiles/cli.yaml
   backlog: .taskfiles/backlog.yaml
+  release: .taskfiles/release.yaml
 
 tasks:
   default:
@@ -69,6 +70,7 @@ tasks:
     deps:
       - task: cli:test
       - task: backlog:test
+      - task: release:test
 
   race:
     desc: Run tests with the race detector
