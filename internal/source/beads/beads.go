@@ -343,6 +343,11 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		if len(before.Assignees) == 1 {
 			assignee = before.Assignees[0]
 		}
+		// bd rejects guards when labels are the only change, but a guarded
+		// update that fails writes nothing, labels included.
+		if len(args) == 3 && strings.HasPrefix(args[2], "--set-labels=") {
+			args = append(args, "--status="+before.Status)
+		}
 		args = append(args, "--if-status="+before.Status, "--if-assignee="+assignee)
 	}
 	if err = s.run(ctx, true, nil, args...); err != nil {

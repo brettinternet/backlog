@@ -15,6 +15,7 @@ import (
 	"github.com/brettinternet/backlog/internal/cli"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
@@ -439,5 +440,40 @@ func TestAllSingleWritesGuardVersion(t *testing.T) {
 	code, out, _ := writeRun(root, "", "new", "New", "--if-version", "stale")
 	if code != 4 || !strings.Contains(out, `"reason":"conflict"`) {
 		t.Fatalf("create version: %d %s", code, out)
+	}
+}
+
+// An unqualified blocker that exists only in another queue previously stored a
+// local ref that never resolves, leaving the item silently never ready.
+func TestNewResolvesBlockersAcrossSources(t *testing.T) {
+	root := writeFixture(t)
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: web, type: native, path: web, prefix: WEB}, {id: api, type: native, path: api, prefix: API}, {id: legacy, type: native, path: legacy, prefix: API}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\n")
+	writeOK(t, root, "", "new", "--source", "api", "First")
+	writeOK(t, root, "", "new", "--source", "api", "Second")
+	writeOK(t, root, "", "new", "--source", "legacy", "Legacy first")
+	for _, tc := range []struct {
+		blocker string
+		stored  model.Ref
+		warning string
+	}{
+		{"API-2", model.Ref{Source: "api", ID: "API-2"}, ""},
+		{"API-1", model.Ref{ID: "API-1"}, "bl: warning: blocker API-1 matches no single item; qualify it as source:ID\n"},
+		{"API-9", model.Ref{ID: "API-9"}, "bl: warning: blocker API-9 matches no single item; qualify it as source:ID\n"},
+	} {
+		code, out, stderr := writeRun(root, "", "new", "--source", "web", "Blocked <"+tc.blocker)
+		if code != 0 || stderr != tc.warning {
+			t.Fatalf("<%s: %d %s %q", tc.blocker, code, out, stderr)
+		}
+		var envelope struct{ Data struct{ ID string } }
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		doc, err := format.Parse([]byte(get(t, filepath.Join(root, "web", envelope.Data.ID+".md"))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := doc.Item().BlockedBy; len(got) != 1 || got[0] != tc.stored {
+			t.Fatalf("<%s stored %+v", tc.blocker, got)
+		}
 	}
 }

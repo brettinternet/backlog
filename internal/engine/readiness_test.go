@@ -67,6 +67,12 @@ func TestReadiness(t *testing.T) {
 			in.Items[0].BlockedBy = []model.Ref{in.Items[1].Ref}
 		}, engine.Blocked, []string{"blocker"}},
 		{"cross source missing", func(in *engine.Input) { in.Items[0].BlockedBy = []model.Ref{{Source: "remote", ID: "BL-2"}} }, engine.Unknown, []string{"blocker-unknown"}},
+		// Provider IDs from native files resolve exactly, never by native grammar.
+		{"provider blocker", func(in *engine.Input) {
+			in.Items = append(in.Items, model.Item{Ref: model.Ref{Source: "issues", ID: "128"}, Category: model.Active})
+			in.Items[0].BlockedBy = []model.Ref{{Source: "issues", ID: "128"}}
+		}, engine.Blocked, []string{"blocker"}},
+		{"provider blocker unloaded", func(in *engine.Input) { in.Items[0].BlockedBy = []model.Ref{{Source: "jira", ID: "10001"}} }, engine.Unknown, []string{"blocker-unknown"}},
 		{"local padded", func(in *engine.Input) { in.Items[0].BlockedBy = []model.Ref{{ID: "BL-002"}} }, engine.Blocked, []string{"blocker"}},
 		{"ambiguous padded", func(in *engine.Input) {
 			in.Items = append(in.Items, item("BL-002"))

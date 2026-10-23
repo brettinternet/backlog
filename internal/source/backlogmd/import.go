@@ -1005,27 +1005,17 @@ func makeStatuses(source sourceConfig, tasks []taskInput) ([]project.StatusConfi
 		}
 	}
 	start, done := "", ""
-	readyStatuses := []string{}
-	satisfied := []string{}
 	for _, status := range statuses {
 		switch model.StatusCategory(status.Category) {
 		case model.Active:
 			if start == "" {
 				start = status.Key
 			}
-		case model.Todo:
-			readyStatuses = append(readyStatuses, status.Key)
 		case model.Done:
 			if done == "" {
 				done = status.Key
 			}
-			satisfied = append(satisfied, status.Key)
-		case model.Canceled:
-			satisfied = append(satisfied, status.Key)
 		}
-	}
-	if start == "" && len(readyStatuses) > 0 {
-		start = readyStatuses[0]
 	}
 	if done == "" {
 		done = "done"
@@ -1036,8 +1026,9 @@ func makeStatuses(source sourceConfig, tasks []taskInput) ([]project.StatusConfi
 			excludeLabels = append(excludeLabels, label)
 		}
 	}
+	// Readiness matches status categories, not keys.
 	return statuses, lookup, project.WorkflowConfig{Start: start, Done: done}, project.ReadyConfig{
-		Statuses: readyStatuses, SatisfiedBy: satisfied, ExcludeLabels: excludeLabels, SkipContainers: true,
+		Statuses: []string{string(model.Todo)}, SatisfiedBy: []string{string(model.Done), string(model.Canceled)}, ExcludeLabels: excludeLabels, SkipContainers: true,
 	}
 }
 

@@ -189,6 +189,26 @@ func TestConflictAndValidation(t *testing.T) {
 	}
 }
 
+// A native file may block on a provider item (issues:128), whose ID isn't
+// native, while an unqualified ref must still be a native ID.
+func TestQualifiedReferences(t *testing.T) {
+	t.Parallel()
+	item := fixture(t, "item.md")
+	with := func(refs string) []byte {
+		return bytes.Replace(item, []byte("priority: high"), []byte("priority: high\nblocked_by: "+refs), 1)
+	}
+	got := parse(t, with("[issues:128, jira:10001, eng:ENG-431, BL-2]")).Item().BlockedBy
+	want := []model.Ref{{Source: "issues", ID: "128"}, {Source: "jira", ID: "10001"}, {Source: "eng", ID: "ENG-431"}, {ID: "BL-2"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("blocked_by = %+v", got)
+	}
+	for _, bad := range []string{"['128']", "[app-2]", "[issues:]", "[':128']", `["issues:1\t2"]`} {
+		if _, err := format.Parse(with(bad)); err == nil || !strings.Contains(err.Error(), "blocked_by reference") {
+			t.Fatalf("accepted blocked_by %s: %v", bad, err)
+		}
+	}
+}
+
 // Multiline YAML and unterminated final lines previously risked swallowing a
 // following key or leaving a closing flow delimiter after an edit.
 func TestMultilineFields(t *testing.T) {

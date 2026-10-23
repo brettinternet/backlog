@@ -28,7 +28,10 @@ func TestCLIAndTUIQuickAddParity(t *testing.T) {
 	// 404 use the configured prefix, and the qualified ref stays cross-source.
 	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: other, type: native, path: other, prefix: EXT}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\ndefaults: {type: task, dod: [Run checks]}\n")
 	writeOK(t, root, "", "new", "--source", "other", "Other fixture")
-	writeOK(t, root, "", append([]string{"new", "--source", "tasks"}, strings.Fields(line)...)...)
+	// Missing blockers are stored as written, with a warning each.
+	if code, out, stderr := writeRun(root, "", append([]string{"new", "--source", "tasks"}, strings.Fields(line)...)...); code != 0 || strings.Count(stderr, "bl: warning: blocker ") != 2 {
+		t.Fatalf("quick-add: %d %s %s", code, out, stderr)
+	}
 	dir := filepath.Join(root, "items")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

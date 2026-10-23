@@ -208,14 +208,25 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			}
 			item.Parent = &parent
 		}
+		// A missing or ambiguous blocker is stored as written but leaves the
+		// item unknown, so say so now rather than only in bl check.
+		var unresolved []model.Ref
 		for n, ref := range item.BlockedBy {
-			if item.BlockedBy[n], err = ResolveRef(ctx, cfg, sourceID, ref); err != nil {
+			resolved, found, err := resolveRef(ctx, cfg, sourceID, ref)
+			if err != nil {
 				return err
 			}
+			if !found {
+				unresolved = append(unresolved, resolved)
+			}
+			item.BlockedBy[n] = resolved
 		}
 		item, err = engine.ApplyWrite(ctx, cfg, model.Mutation{Op: model.Create, Ref: model.Ref{Source: sourceID}, Item: &item, ExpectedVersion: cmd.String("if-version")})
 		if err != nil {
 			return writeError(err)
+		}
+		for _, ref := range unresolved {
+			fmt.Fprintf(errOut, "bl: warning: blocker %s matches no single item; qualify it as source:ID\n", refs{}.ref(ref, sourceID))
 		}
 		if cmd.Bool("json") {
 			return success(out, "new", itemData(item))
@@ -495,17 +506,23 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 }
 
 // ResolveRef expands ID shorthand in a reference written to an item of
-// sourceID: an existing item keeps its stored ID, an unqualified ref is local,
-// and a missing numeric ID takes the source's prefix (dangling refs are allowed).
+// sourceID: an existing item keeps its stored ID, an unqualified ref found only
+// in another native source is qualified, and a missing numeric ID takes the
+// source's prefix (dangling refs are allowed).
 func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
-	resolved, err := engine.ResolveRef(ctx, cfg, sourceID, ref)
+	resolved, _, err := resolveRef(ctx, cfg, sourceID, ref)
+	return resolved, err
+}
+
+func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, bool, error) {
+	resolved, found, err := engine.ResolveRef(ctx, cfg, sourceID, ref)
 	if e := duplicateFiles(err); e != nil {
-		return ref, e
+		return ref, false, e
 	}
 	if err != nil {
-		return ref, writeError(err)
+		return ref, false, writeError(err)
 	}
-	return resolved, nil
+	return resolved, found, nil
 }
 
 // resolveChanges expands reference shorthand in set mutations for one item.

@@ -161,8 +161,11 @@ echo 'Long description' | bl new 'Write docs' --body -
 - [Quick-add tokens](query.md#shared-quick-add-parser) set fields. `@me` uses
   `me.default`.
 - `^` and `<` references accept ID shorthand and store the target's real ID
-  (`<1` stores `BL-1`, or `BL-001` if that file exists). A missing target is
-  stored as written; `bl check` reports it.
+  (`<1` stores `BL-1`, or `BL-001` if that file exists). An unqualified ID
+  missing from `--source` but found in exactly one other native source is
+  stored qualified (`<API-1` stores `api:API-1`). A missing target is stored as
+  written; `bl check` reports it, and `bl new` warns about a blocker that
+  matches no item or several.
 - Each `--ac` adds one criterion; commas stay in the text.
 - `--status` takes a status key. `--status draft` creates an item that is never
   ready. An unknown key exits 5 and lists the allowed keys. The default is the

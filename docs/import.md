@@ -77,7 +77,7 @@ Text, order, and checked state are kept; fenced code is untouched.
 | Source | `{id: tasks, type: native, path: backlog}` |
 | Prefix | `task_prefix` upper-cased; else the first active task ID, then any archived task ID, else `TASK` |
 | Statuses | `draft` first, then each source status, plus any required standard status |
-| `ready.statuses` | The generated To Do-category keys |
+| `ready.statuses`, `ready.satisfiedBy` | The default categories, `[todo]` and `[done, canceled]` |
 | `ready.excludeLabels` | `blocked` and `deferred`, if configured as labels |
 | Project name, `labels` | Copied |
 | `defaults.dod` | `definition_of_done` |

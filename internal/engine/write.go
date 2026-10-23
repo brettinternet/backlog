@@ -18,8 +18,11 @@ import (
 
 const WriteFields = "title status type priority assignees labels milestone parent blocked_by related duplicate_of rank due refs files"
 
-// ResolveRef expands an item reference using the same shorthand rules as CLI writes.
-func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, error) {
+// ResolveRef expands an item reference using the same shorthand rules as CLI
+// writes, and reports whether it names exactly one existing item. An
+// unqualified ref missing locally takes the qualified ID of the only other
+// native source that has it; otherwise it stays local.
+func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, bool, error) {
 	if ref.Source == sourceID {
 		ref.Source = ""
 	}
@@ -29,11 +32,29 @@ func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 	}
 	matches, err := ReadDetail(ctx, cfg, lookup+":"+ref.ID)
 	if err != nil {
-		return ref, err
+		return ref, false, err
 	}
 	if len(matches) == 1 {
 		ref.ID = matches[0].Ref.ID
-		return ref, nil
+		return ref, true, nil
+	}
+	if ref.Source == "" {
+		var found []model.Ref
+		for _, c := range cfg.Sources {
+			if c.ID == sourceID || c.Type != "native" {
+				continue
+			}
+			other, err := ReadDetail(ctx, cfg, c.ID+":"+ref.ID)
+			if err != nil {
+				return ref, false, err
+			}
+			for _, item := range other {
+				found = append(found, model.Ref{Source: c.ID, ID: item.Ref.ID})
+			}
+		}
+		if len(found) == 1 {
+			return found[0], true, nil
+		}
 	}
 	if _, err := strconv.ParseUint(ref.ID, 10, 64); err == nil {
 		for _, c := range cfg.Sources {
@@ -42,7 +63,7 @@ func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 			}
 		}
 	}
-	return ref, nil
+	return ref, false, nil
 }
 
 func ListField(field string) bool {
@@ -59,7 +80,7 @@ func ResolveChanges(ctx context.Context, cfg project.Config, sourceID string, ch
 		if source, id, ok := strings.Cut(value, ":"); ok {
 			ref = model.Ref{Source: source, ID: id}
 		}
-		resolved, err := ResolveRef(ctx, cfg, sourceID, ref)
+		resolved, _, err := ResolveRef(ctx, cfg, sourceID, ref)
 		if resolved.Source != "" {
 			return resolved.Source + ":" + resolved.ID, err
 		}

@@ -70,7 +70,8 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 	if len(settings.Milestones) != 2 || !settings.Milestones[0].Archived && !settings.Milestones[1].Archived {
 		t.Fatalf("milestones were not imported with archive state: %+v", settings.Milestones)
 	}
-	if strings.Join(settings.Ready.ExcludeLabels, ",") != "blocked,deferred" {
+	// Readiness compares categories; generated keys like to-do never matched.
+	if strings.Join(settings.Ready.Statuses, ",") != "todo" || strings.Join(settings.Ready.SatisfiedBy, ",") != "done,canceled" || strings.Join(settings.Ready.ExcludeLabels, ",") != "blocked,deferred" {
 		t.Fatalf("ready labels not mapped: %+v", settings.Ready)
 	}
 

@@ -26,10 +26,11 @@ web:WEB-2  ready    low · unblocks 0
 api:API-1  todo  medium  Add the orders endpoint
 ```
 
-New items need `--source`. Qualify blockers in another queue:
+New items need `--source`. A blocker found only in another queue is stored
+qualified, so `<API-1` stores `api:API-1`:
 
 ```sh
-bl new 'Show tracking link <api:API-1' --source web
+bl new 'Show tracking link <API-1' --source web
 bl done API-1
 bl next -n 0
 ```
@@ -42,8 +43,9 @@ web:WEB-2  todo  low   Fix the footer on mobile
 web:WEB-3  todo        Show tracking link
 ```
 
-An unqualified `<API-1` means `web:API-1`, which doesn't exist, so the blocker
-is unknown and the item is never ready. `bl check` reports it.
+A blocker that matches no queue, or several, is stored as written with a
+warning. Qualify it to choose one.
 
 Any source type can join the list; add a GitHub source from
-[example 08](../08-github-issues) and its issues rank alongside these.
+[example 08](../08-github-issues) and its issues rank alongside these. A native
+item waits on one with `blocked_by: [issues:128]`.

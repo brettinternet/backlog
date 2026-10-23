@@ -113,13 +113,13 @@ Keep the header fields synchronous; only the body waits.
 
 Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md).
 
-References are local by default. `source:ID` names another source in the same project. In a [workspace](design.md#5-projects-configuration-and-trust), `source:ID` resolves only when one loaded item matches; to name another project, qualify the source with its escaped project ID:
+References are local by default, and a local reference must be a native ID. `source:ID` names another source in the same project, using that source's own ID: `api:API-1`, `issues:128`, `jira:10001`. In a [workspace](design.md#5-projects-configuration-and-trust), `source:ID` resolves only when one loaded item matches; to name another project, qualify the source with its escaped project ID:
 
 ```yaml
 blocked_by: [BL-3, docs:DOC-1, "github.com%2Facme%2Fapp/tasks:BL-1"]
 ```
 
-Missing or ambiguous targets are `unknown`. Opening a workspace never rewrites files.
+Missing, unloaded, or ambiguous targets are `unknown`. Opening a workspace never rewrites files.
 
 ### IDs
 

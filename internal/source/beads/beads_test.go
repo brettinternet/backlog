@@ -63,10 +63,21 @@ func TestBDHelper(t *testing.T) {
 		data, _ := os.ReadFile("rows.json")
 		var rows []map[string]any
 		json.Unmarshal(data, &rows)
+		fields := 0
 		for _, arg := range args {
 			if strings.HasPrefix(arg, "--title=") {
 				rows[0]["title"] = strings.TrimPrefix(arg, "--title=")
 			}
+			if strings.HasPrefix(arg, "--set-labels=") {
+				rows[0]["labels"] = strings.Split(strings.TrimPrefix(arg, "--set-labels="), ",")
+			}
+			if strings.HasPrefix(arg, "--title=") || strings.HasPrefix(arg, "--status=") {
+				fields++
+			}
+		}
+		// bd 1.3.0 refuses guards unless a field other than labels changes.
+		if command == "update" && strings.Contains(joined, "--if-status=") && fields == 0 {
+			os.Exit(26)
 		}
 		if command == "comment" {
 			rows[0]["comment_count"] = 1
@@ -170,6 +181,11 @@ func TestVersionCheckedWrites(t *testing.T) {
 	if err != nil || after.Title != "--status=closed" || after.Version == before.Version {
 		t.Fatalf("update: %+v %v", after, err)
 	}
+	labeled, err := s.Apply(ctx, model.Mutation{Ref: after.Ref, ExpectedVersion: after.Version, Op: model.Set, Field: "labels", Value: []string{"auth"}})
+	if err != nil || len(labeled.Labels) != 1 || labeled.Labels[0] != "auth" {
+		t.Fatalf("label-only update: %+v %v", labeled, err)
+	}
+	after = labeled
 	comment := model.Mutation{Ref: after.Ref, ExpectedVersion: after.Version, Op: model.AppendComment, Comment: model.Comment{Body: "a comment"}}
 	result, err := s.Apply(ctx, comment)
 	if err != nil || result.Version == after.Version {
@@ -230,6 +246,11 @@ func TestProviderRoundTrip(t *testing.T) {
 	if err != nil || updated.Title != "Updated issue" || updated.Status != "in_progress" {
 		t.Fatalf("update: %+v %v", updated, err)
 	}
+	labeled, err := s.Apply(ctx, model.Mutation{Ref: updated.Ref, ExpectedVersion: updated.Version, Op: model.Set, Field: "labels", Value: []string{"three"}})
+	if err != nil || len(labeled.Labels) != 1 || labeled.Labels[0] != "three" {
+		t.Fatalf("label-only update: %+v %v", labeled, err)
+	}
+	updated = labeled
 	commented, err := s.Apply(ctx, model.Mutation{Ref: updated.Ref, ExpectedVersion: updated.Version, Op: model.AppendComment, Comment: model.Comment{Author: "Round trip author", Body: "Round trip comment"}})
 	if err != nil || commented.Version == updated.Version {
 		t.Fatalf("comment: %+v %v", commented, err)

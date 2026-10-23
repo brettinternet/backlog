@@ -302,14 +302,14 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	}
 	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due}
 	if args.Parent != "" {
-		parent, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: args.Parent})
+		parent, _, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: args.Parent})
 		if err != nil {
 			return failed[any](reason(err), err.Error())
 		}
 		item.Parent = &parent
 	}
 	for _, ref := range args.BlockedBy {
-		blocked, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: ref})
+		blocked, _, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: ref})
 		if err != nil {
 			return failed[any](reason(err), err.Error())
 		}

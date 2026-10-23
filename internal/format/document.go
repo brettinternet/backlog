@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/brettinternet/backlog/internal/model"
@@ -187,8 +188,7 @@ func Parse(data []byte) (*Document, error) {
 				nodes = f.value.Content
 			}
 			for _, n := range nodes {
-				r := parseRef(n.Value)
-				if !idPattern.MatchString(r.ID) {
+				if !validRef(parseRef(n.Value)) {
 					return nil, fmt.Errorf("invalid-value: %s reference at line %d", key, n.Line)
 				}
 			}
@@ -330,6 +330,15 @@ func (d *Document) FieldLine(key string) int {
 	return 1
 }
 
+// validRef requires the native grammar for local refs. A qualified ref keeps
+// the named source's own ID (issues:128, jira:10001), which may be any
+// provider's format, so it only has to be a non-empty single-line token.
+func validRef(r model.Ref) bool {
+	if r.Source == "" {
+		return idPattern.MatchString(r.ID)
+	}
+	return r.ID != "" && strings.TrimSpace(r.ID) == r.ID && strings.IndexFunc(r.ID, unicode.IsControl) < 0
+}
 func parseRef(s string) model.Ref {
 	source, id, ok := strings.Cut(s, ":")
 	if !ok {
