@@ -9,7 +9,9 @@ mise install
 task init      # toolchain, Go modules, Git hooks
 ```
 
-`mise.toml` pins Go, Staticcheck, govulncheck, Task, Lefthook, Betterleaks, git-cliff, Worktrunk and Worklease. `task init` is repeatable: it downloads modules and installs/updates hooks without uninstalling them first. Worktrunk's pre-start hook runs the same initialization for new checkouts.
+`mise.toml` pins Go, Staticcheck, govulncheck, Task, Lefthook, Betterleaks,
+git-cliff, Worktrunk, and Worklease. `task init` is safe to rerun, and
+Worktrunk's pre-start hook runs it in new checkouts.
 
 ## Build and run
 
@@ -39,34 +41,32 @@ Use the smallest check that covers your change.
 
 ## Repository backlog
 
-This repository tracks work in native `backlog/BL-N.md` files, not the import
-provider. From any checkout, use `task backlog:cli -- instructions workflow`
-and follow the repository's AGENTS.md claim protocol. `task backlog:next` is
-read-only; `task backlog:cli -- next --claim --start --session SESSION --json`
-selects, claims, and starts. Native coordination is enabled and uses Worklease's
-generic policy with source `github.com/brettinternet/backlog`, never the
-`backlog-md` policy. Keep one stable distinct session per loop, heartbeat through
-`task backlog:cli -- heartbeat --session SESSION` at least every 7 minutes and
-before half TTL, and finish through `task backlog:cli -- done ID --session SESSION`.
-Done waits for caller-managed release. On uncertainty, retain the session and
-recover its pending request rather than selecting new work.
+This repository's own tasks are native `backlog/BL-N.md` files. Agents follow
+the claim protocol in AGENTS.md:
 
-The wrapper builds an archived snapshot of committed primary `main`, not dirty
-primary files or the invoking worktree, into
-`<git-common-dir>/backlog-cli/<key>/bl` under a cross-process build lock. The
-key hashes the committed tree without `backlog/`, so task-state commits reuse the
-build, and a new build removes older ones.
-Primary must be on `main`. Changing CLI code requires merging it before the
-shared backlog can use it. `task backlog:test` checks this build boundary.
-Acceptance checks use `ac ID check N --evidence 'COMMAND: RESULT'`; use the
-version from `show --json` with `--if-version` for index-based changes.
+```sh
+task backlog:cli -- instructions workflow
+task backlog:cli -- next --claim --start --session SESSION --json
+task backlog:cli -- heartbeat --session SESSION   # every ≤ 7 min
+task backlog:cli -- ac BL-12 check 1 --evidence 'COMMAND: RESULT' --if-version VERSION
+task backlog:cli -- done BL-12 --session SESSION
+```
 
-Legacy Backlog.md CLI/MCP, status-only claiming, and launchers deriving
-`backlog-md:` keys are disabled locally. Do not resume a pre-cutover supervisor;
-start a fresh native loop using AGENTS.md. Backlog.md remains an import/adapter
-format supported by the product, not a development dependency. The pre-cutover
-backlog remains recoverable from Git history; any rollback requires stopping all
-writers and reconciling native changes first, not starting both providers.
+`task backlog:next` is read-only. Claims use Worklease's generic policy with
+source `github.com/brettinternet/backlog`. Keep one session per loop; after an
+uncertain result, reuse it to recover the pending request instead of picking new
+work.
+
+The wrapper builds committed primary `main`, never dirty files or the current
+worktree, into `<git-common-dir>/backlog-cli/<key>/bl` under a build lock. The
+key hashes the tree without `backlog/`, so task commits reuse the build. CLI
+changes reach the shared backlog only after merging. `task backlog:test` checks
+this.
+
+Backlog.md is an import format here, not a dev dependency: its CLI, MCP,
+status-as-claim, and `backlog-md:` launchers are disabled. Don't resume a
+pre-cutover supervisor. The old backlog is in Git history; rolling back means
+stopping all writers and reconciling native changes first.
 
 ## Tests
 
@@ -92,42 +92,39 @@ To upgrade tools, run `task setup:upgrade`, review the `mise.toml` diff, and run
 
 ## Releases
 
-`task release:snapshot` builds nonpublishing archives in `dist/` for Darwin and
-Linux, arm64 and amd64. Each contains a static `bl` with version and full commit
-metadata; `checksums.txt` records SHA-256 hashes. `task release:test` exercises
-the fail-closed CI gate and installer against local fixtures. It also runs in
-`task ci`. No sibling repositories or release credentials are needed locally.
+`task release:snapshot` builds unpublished archives in `dist/` for Darwin and
+Linux on arm64 and amd64: a static `bl` with version and commit, plus
+`checksums.txt`. `task release:test` (also in `task ci`) tests the CI gate and
+installer against local fixtures. Neither needs credentials or sibling
+repositories.
 
-The tag-triggered release workflow checks the latest main-push `CI` run for the
-exact tag commit before building and again immediately before publishing. Missing,
-pending, failed, wrong-commit, fork, and pull-request runs cannot authorize a
-release. It generates notes with git-cliff and publishes the four archives and
-checksums. If CI has not finished, rerun the release workflow after CI passes.
+Pushing a tag runs the release workflow. It publishes only if the latest
+main-push `CI` run for that exact commit passed, checked before building and
+again before publishing. If CI hadn't finished, rerun the workflow after it
+passes. Notes come from git-cliff.
 
 Owner checklist:
 
-- [ ] Merge the intended release commit to `main` and wait for its CI to pass.
-- [ ] Run `task ci`, `task release:snapshot`, and `task release:test` locally.
-- [ ] Choose an unused `vMAJOR.MINOR.PATCH` tag (optional `-PRERELEASE` suffix,
-  published as a GitHub prerelease that the installer's `latest` skips),
-  create it on that exact commit, and explicitly push the tag to trigger release.
-- [ ] Inspect the GitHub release notes, four archives, and checksums; verify
-  `bl version` reports the intended version and commit after installation.
-- [ ] Optionally update the Homebrew tap with the published archive URLs and
-  checksums. This is a separate owner action, not part of this pipeline.
+- [ ] Merge the release commit to `main` and wait for CI.
+- [ ] Run `task ci`, `task release:snapshot`, and `task release:test`.
+- [ ] Tag that commit with an unused `vMAJOR.MINOR.PATCH` (a `-PRERELEASE` suffix
+  publishes a prerelease that the installer's `latest` skips) and push the tag.
+- [ ] Check the notes, four archives, and checksums; after installing, check
+  `bl version`.
+- [ ] Optionally update the Homebrew tap (separate owner step).
 
-Install a published release (requires curl, tar, and sha256sum or shasum):
+Install (needs curl, tar, and sha256sum or shasum):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/brettinternet/backlog/main/install.sh -o /tmp/bl-install.sh
 sh /tmp/bl-install.sh
+BL_VERSION=v1.2.3 BL_INSTALL_DIR=/opt/bin sh /tmp/bl-install.sh
 ```
 
-The installer verifies the selected archive's SHA-256 before extraction or
-replacement. Defaults: latest release, `$HOME/.local/bin`. Set `BL_VERSION=v1.2.3`
-and/or `BL_INSTALL_DIR` to override. `BL_RELEASE_BASE_URL` selects a trusted release
-mirror using GitHub's `latest/download` and `download/TAG` layout; checksums protect
-against corruption, not a compromised mirror. Add the install directory to PATH.
+It verifies the archive's SHA-256 before installing to `$HOME/.local/bin` (add
+it to `PATH`). `BL_RELEASE_BASE_URL` selects a mirror with GitHub's
+`latest/download` and `download/TAG` layout; checksums catch corruption, not a
+compromised mirror.
 
 ## Commit messages
 

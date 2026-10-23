@@ -1,63 +1,13 @@
-# Remote source boundary
+# Remote sources
 
-[GitHub Issues and Projects v2](github.md) and [Linear](linear.md) are available
-through the configured source registry. `internal/source/remote` supplies their
-shared scheduler, credentials, sanitization and SQLite cache. Jira remains upcoming. Native sources keep
-their stat cache and directory watcher. The engine accepts both through the
-existing source registry, without network I/O on the Bubble Tea update loop.
+[GitHub](github.md) and [Linear](linear.md) share the remote boundary in
+`internal/source/remote`: one request scheduler per account, credential
+resolution, redaction, and a SQLite cache. Jira isn't available yet. No network
+I/O runs on the Bubble Tea update loop.
 
-## Adapter contract
+## Accounts
 
-After checking the configured source's project trust declaration, wrap its
-`source.Source` with `remote.New(backend, cache.Store, secrets)`. Share a
-`remote.Secrets` and `remote.Credentials` across the client's adapters. Use the
-same host and verified account principal for every `remote.Client` sharing a
-quota. The default scheduler is process-wide; separate accounts run concurrently.
-
-`Load(ctx, since)` receives the last committed opaque cursor. Its response uses:
-
-- `Coverage`: complete, partial, or unknown.
-- `Incremental`: changes since the cursor, rather than a full enumeration.
-- `Stale`: refs whose freshness is unproven, even if their status is known.
-- `Cursor`: the next resumable cursor; an empty cursor on an incomplete response
-  preserves the previous cursor. Errors never commit rows or advance a cursor.
-
-Only a fresh complete enumeration can delete unseen rows. Partial responses
-retain unseen rows as stale; complete incremental responses keep unchanged rows.
-An incremental response over an incomplete base cannot establish full coverage.
-Rows, freshness, and cursors share one SQLite transaction. A per-source file lock
-serializes the read/network/commit cycle across processes without holding a
-SQLite transaction during network I/O. WAL warm readers do not take that lock.
-Warm loading decodes at most two 128-row batches and marks every row stale.
-An unavailable or damaged cache falls back to an uncursored provider load.
-Nothing in the cache is required for correctness.
-
-CLI lists, read-only and claimed `next`, and the Go To catalog accept partial
-observations without claiming a complete inventory. Fresh rows can be candidates;
-retained stale rows remain visible but never ready, and stale or missing blockers
-remain unknown, including in workspace projections. Unknown coverage and error
-findings or duplicate identities still fail these reads closed (including
-malformed native files).
-Archive requests are forwarded independently of the durable sync cursor; cached
-archive rows do not leak into active-only lists. Event/deletion reconciliation
-still requires complete coverage.
-
-The wrapper prepares common Set/Batch field edits and provider-level inverses
-without converting remote IDs or raw fields into native Markdown. Adapters
-implementing other operations must supply their own preparation. Every provider
-`Apply` must atomically enforce `ExpectedVersion` where the provider supports it,
-not rely on the wrapper's preceding Read. APIs without compare-and-swap (GitHub and Linear)
-require a fresh provider preflight immediately before a single mutation and must
-document the remaining concurrent-write race. The framework never retries a write
-whose remote outcome could be uncertain.
-
-Optional `Delta.TextSearch` supplies text predicate candidates. Errors or missing
-local matches disable the narrowing; the shared evaluator removes false
-positives. Other predicates remain in-memory until an adapter exercises them.
-
-## Credentials and HTTP
-
-Accounts exist only in the user's config, not committed project config:
+Accounts live only in user config, never in committed project config:
 
 ```yaml
 accounts:
@@ -73,57 +23,88 @@ accounts:
     - name: oauth-work
       host: github.com
       user: alice
-      oauth: true # only when this in-tree provider flow is registered
+      oauth: true
 ```
 
-A user account selects one helper argv, one explicit environment variable, or
-`oauth: true`; the choices are mutually exclusive. OAuth is opt-in only in the
-user config, and the current production provider registry is empty until BL-61/62.
-`bl auth login PROVIDER ACCOUNT` requires a terminal and begins with read-only
-scopes. `bl auth login PROVIDER ACCOUNT --write` performs a separate explicit
-write-scope upgrade. `bl auth logout PROVIDER ACCOUNT` deletes the owner's stored
-tokens and purges cache rows for that principal, revoking remotely when its
-registered public-client flow supports it; otherwise it reports the manual
-provider-settings revocation step. No OAuth endpoint/client can be configured by
-a user, and an unavailable provider never falls back to helper/environment
-credentials. OAuth tokens live in the owner-private XDG state store (0700
-folders, 0600 fsynced records), are never in the disposable cache, and refresh is
-serialized per account across processes, starting one minute before expiry. The provider principal and scopes are
-verified after login and each rotation; capabilities are rediscovered after
-consent changes. Existing helper/environment accounts remain memory-only.
+Each account uses exactly one of:
 
-`Credentials.Resolve` verifies helper/environment credentials against `user` using the
-provider's authenticated identity endpoint. Refresh immediately before writes.
-Helpers run without a shell in a minimal environment, with a 15-second timeout,
-4-KiB stdout/stderr limits, and descendant cancellation. Helper and verifier
-errors never echo their output. Credential values stay in memory, format as
-`[REDACTED]`, and are omitted from JSON. The remote source boundary redacts provider
-rows, findings and errors before cache, event or hook consumers receive them;
-a credential-bearing cursor is refused rather than replayed. Hook environments
-retain the existing allowlist, never account environment variables.
+| Method | Notes |
+| --- | --- |
+| `credential: [argv]` | Helper runs without a shell, minimal environment, 15 s timeout, 4 KiB output limits. Its output is never echoed. |
+| `env: NAME` | Read from that variable |
+| `oauth: true` | `bl auth login`; see [OAuth](oauth.md). Never falls back to the other methods. |
 
-`Client.Do` requires HTTPS on the configured host, explicit authorization, and
-an account. GitHub uses Bearer authorization; Linear personal API keys use raw
-authorization. It disables redirects, bounds responses to 8 MiB, consumes the body
-inside the serialized account slot, and never exposes credential-bearing request
-objects or raw transport errors. Queues are bounded and context-cancelable.
-`Retry-After` seconds/HTTP dates, `X-RateLimit-Remaining/Reset` epoch headers,
-`RateLimit-Remaining/Reset` relative headers, and Linear's
-`X-RateLimit-Requests/Complexity-Remaining/Reset` millisecond epochs set the account retry deadline,
-even on successful responses. Before that deadline requests fail with a
-`ScheduleDiagnostic` carrying `RetryAt`, rather than sleeping or retrying writes.
-GET ETags are memory-only and partitioned by account, credential, URL and Accept.
-A 304 is not an empty enumeration: the adapter must reuse its representation,
-or treat a conditional request only as a hint and independently enumerate (GitHub).
+The credential must authenticate as `user`; it's checked against the provider's
+identity endpoint and refreshed before writes. Credentials stay in memory,
+print as `[REDACTED]`, and are left out of JSON. Rows, findings, and errors are
+redacted before reaching the cache, events, or hooks; a cursor containing a
+credential is refused. Hook environments never get account variables.
 
-The scheduler and credential helper behavior derives from Worklease v1.9.3
-`internal/queue/scheduler.go`, `credential_helper.go`, and the GitHub quota/ETag
-paths. Receipt and recovery journals are intentionally absent (D24).
+## HTTP
 
-## Verification
+- HTTPS to the configured host only; redirects off; responses capped at 8 MiB.
+- GitHub uses Bearer authorization. Linear API keys use raw authorization;
+  Linear OAuth uses Bearer.
+- Each account has one bounded, cancelable queue. Separate accounts run
+  concurrently.
+- `Retry-After`, `X-RateLimit-Remaining/Reset`, `RateLimit-Remaining/Reset`,
+  and Linear's `X-RateLimit-Requests/Complexity-Remaining/Reset` set a retry
+  deadline, even on success. Until then, requests fail fast with a
+  `ScheduleDiagnostic` carrying `RetryAt`; nothing sleeps or retries writes.
+- ETags are memory-only, per account, credential, URL, and `Accept`. A `304` is
+  not an empty list: the adapter reuses its data or enumerates anyway.
 
-`task cli:test PKG='./internal/source/remote ./internal/engine ./internal/tui ./internal/hooks'`
-covers fake HTTPS quotas and account isolation, credential canaries, durable
-cursors, stale dependency safety, bounded warm reads, source isolation and actual
-TUI paint before a blocked network response. `BenchmarkRemoteWarmCache10k`
-reports the warm read cost without an absolute timing assertion.
+This scheduler and helper handling come from Worklease v1.9.3, without its
+receipt and recovery journals (D24).
+
+## Sync contract
+
+`Load(ctx, since)` gets the last committed cursor and returns:
+
+| Field | Meaning |
+| --- | --- |
+| `Coverage` | `complete`, `partial`, or `unknown` |
+| `Incremental` | Changes since the cursor, not a full list |
+| `Stale` | Refs whose freshness isn't proven |
+| `Cursor` | Next cursor. Empty on an incomplete response keeps the old one. |
+
+- Only a fresh, complete, full enumeration removes unseen rows. A partial
+  response marks unseen rows stale; a complete incremental response keeps
+  unchanged rows. An incremental response over an incomplete base can't become
+  complete.
+- Rows, freshness, and the cursor commit in one SQLite transaction. Errors
+  commit nothing. A per-source file lock serializes read, network, and commit
+  across processes, without holding a transaction during network I/O.
+- A warm start decodes at most two 128-row batches and marks them stale. A
+  missing or damaged cache falls back to a full provider load. Correctness never
+  depends on the cache.
+
+Reads accept partial data honestly. `ls`, `next` (plain or claimed), and go-to
+use fresh rows; stale rows show but are never ready, and stale or missing
+blockers are unknown, in workspaces too. Unknown coverage, error findings, and
+duplicate IDs still fail the read. Archived rows load only when requested.
+Events and deletion still need complete coverage.
+
+## Writing an adapter
+
+1. After checking trust, wrap the backend: `remote.New(backend, cache.Store, secrets)`.
+2. Share one `remote.Secrets` and `remote.Credentials` across a client's
+   adapters, and use one host and verified principal per `remote.Client` quota.
+3. The wrapper prepares common Set and Batch edits and their inverses without
+   touching raw fields. Other operations need their own preparation.
+4. `Apply` must enforce `ExpectedVersion` atomically where the provider can.
+   Without compare-and-swap (GitHub, Linear), reread immediately before one
+   mutation, document the remaining race, and never retry an uncertain write.
+5. Optionally return `Delta.TextSearch` candidates for `text:`; the evaluator
+   rechecks them, and a failure or missed match disables narrowing.
+
+## Tests
+
+```sh
+task cli:test PKG='./internal/source/remote ./internal/engine ./internal/tui ./internal/hooks'
+```
+
+Covers quotas and account isolation over fake HTTPS, credential canaries,
+durable cursors, stale-dependency safety, bounded warm reads, source isolation,
+and a real TUI paint while the network is blocked. `BenchmarkRemoteWarmCache10k`
+reports warm read cost.

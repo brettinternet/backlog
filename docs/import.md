@@ -1,67 +1,128 @@
 # Backlog.md import
 
-[Standalone cutover rehearsal](#standalone-cutover-rehearsal) covers backup,
-comparison, agent routing, and rollback without importing a real project.
+```text
+bl import backlog-md [PATH] [--to DIR] [--dry-run] [--json]
+```
 
-`bl import backlog-md` reads Backlog.md files directly; it does not run or shell out to the Backlog.md CLI. The source may be a Backlog.md directory, a repository root with `backlog/config.yml`, or a repository root with `backlog.config.yml`. The root config's relative `backlog_directory` selects the source directory (`backlog` by default).
+Reads Backlog.md files directly (never the Backlog.md CLI) and writes a new
+native project. The source is never changed.
 
-The destination is a project directory, not a `backlog/` subdirectory. It must be absent or empty, including for `--dry-run`. A successful import writes `.config/backlog.yaml`, active items to `backlog/<ID>.md`, and archived items to `backlog/archive/<ID>.md`. Dry-run performs the same source parsing, mapping, and validation and reports the planned paths and counts, without creating or changing the destination. A non-empty destination is refused.
+| Input | Accepted |
+| --- | --- |
+| PATH | A Backlog.md directory, or a repository root with `backlog/config.yml` or `backlog.config.yml` (honoring a relative `backlog_directory`) |
+| `--to` | A project directory that is empty or absent, even for `--dry-run` |
+
+Output:
+
+```text
+DIR/.config/backlog.yaml
+DIR/backlog/<ID>.md
+DIR/backlog/archive/<ID>.md
+```
+
+`--dry-run` parses, maps, and validates everything and reports the planned paths
+and counts without writing. To rehearse a full cutover, see
+[below](#standalone-cutover-rehearsal).
 
 ## Item mapping
 
-| Backlog.md field or content | Native output |
+| Backlog.md | Native |
 | --- | --- |
-| `id` | `id`, upper-cased while preserving zero padding and dotted suffixes (`task-012.3` becomes `TASK-012.3`). Drafts outside the native prefix get new IDs, described below. |
-| `title`, `type`, `priority`, `labels`, `milestone` | Same-named native fields; source status names become the generated status keys in `.config/backlog.yaml` |
-| `due_date` (or legacy `due`) | Native `due` date |
-| `assignee` | `assignees` list |
-| `dependencies` | `blocked_by`; IDs and `parent_task_id` references are upper-cased and rewritten to match imported IDs, including archived items |
+| `id` | `id`, upper-cased, keeping padding and dots (`task-012.3` → `TASK-012.3`). Drafts may be renumbered (below). |
+| `title`, `type`, `priority`, `labels`, `milestone` | Same names. Status names become generated status keys. |
+| `due_date` (or `due`) | `due` |
+| `assignee` | `assignees` |
+| `dependencies` | `blocked_by`, rewritten to imported IDs (including archived) |
 | `parent_task_id` | `parent` |
-| `ordinal` | Spaced, lexically ordered `rank` keys. Ordinals sort numerically; equal or missing ordinals use source-path order. The gaps leave room for later rank insertions. |
-| `references`, `documentation` | Appended to `refs`, preserving both lists and their order |
+| `ordinal` | Spaced `rank` keys in numeric ordinal order; ties and missing ordinals follow source path |
+| `references`, `documentation` | `refs`, both lists in order |
 | `modified_files` | `files` |
-| `created_date`, `updated_date` | `created`, `updated` in UTC at whole-second precision. Offset-bearing timestamps are converted to UTC; timestamps without a timezone are interpreted as UTC. If a date is absent, the importer uses the other date or the source file modification time and reports the decision. Invalid dates are refused. |
-| Any other task frontmatter key | Retained as a native unknown field with its value |
-| Description, Acceptance Criteria, Definition of Done, Plan / Implementation Plan, Notes / Implementation Notes, Summary / Final Summary | Corresponding native body sections. Structural HTML markers such as `<!-- AC:BEGIN -->` and `<!-- SECTION:DESCRIPTION:END -->` are removed. In Acceptance Criteria and Definition of Done task-list entries, one leading generated `#N ` index is also removed; remaining text, order, and checked state are retained (`#1 #12 regression` becomes `#12 regression`). Fenced code and other sections are unchanged. |
-| Backlog.md Comments block | Native timestamped comments. `author` and `created` are converted from each legacy entry; unstructured comment text is retained under an `unknown` author. |
-| Other level-two body sections | Retained under Description with their heading and contents. |
+| `created_date`, `updated_date` | `created`, `updated` in UTC to the second. No time zone means UTC. A missing date uses the other date or the file's mtime (reported). Invalid dates fail. |
+| Other frontmatter | Kept as unknown fields |
+| Description, Acceptance Criteria, Definition of Done, (Implementation) Plan, (Implementation) Notes, (Final) Summary | Matching native sections |
+| Comments block | Native comments; unstructured text gets author `unknown` |
+| Other `##` sections | Appended to Description with their heading |
 
-Tasks in `completed/` receive the `done` status. Files in `archive/tasks/` and `archive/drafts/` are written under `backlog/archive/`. Drafts receive the `draft` status, whose category is `backlog`; archived drafts retain that status. A native ID never changes when a draft is promoted, so drafts whose prefix isn't the native prefix (Backlog.md's `DRAFT-1`) are numbered after the highest ID in that prefix, active and archived, in draft ID order, as `backlog draft promote` would: with `TASK-20` as the highest task, `DRAFT-1` becomes `TASK-21`. References to a draft follow its new ID, and the draft's file report shows it. IDs that collide after upper-casing or native padded-ID lookup normalization are refused rather than silently merged. Each output item is reparsed before anything is written; if source text would change native structure, the import is refused and names the file. For example, a comment line shaped like a native comment header (`### 2026-01-02T03:04:00Z name`) would otherwise split the comment and attribute its text to another author. Edit the source text, for instance by indenting that line, and import again.
+Backlog.md markers like `<!-- AC:BEGIN -->` are removed, as is one generated
+`#N ` index per criterion:
 
-## Project configuration and milestones
+```text
+- [ ] #1 #12 regression      →      - [ ] #12 regression
+```
 
-The importer writes a native `tasks` source at `backlog`, a `draft` status first, then a status entry for each source status and any required standard status, the source project's name, all configured labels, and `defaults.dod` from Backlog.md's `definition_of_done`. Backlog.md's `task_prefix` is upper-cased and written as the native source prefix (for example, `task` becomes `TASK`); if absent, the importer infers it from the first non-archived, non-draft task ID, then any archived task ID, or uses `TASK` when there are only drafts or no items. `ready.statuses` contains generated To Do-category keys. Configured `blocked` and `deferred` labels are copied to `ready.excludeLabels`. The source config's `default_status` has no native project-wide equivalent and is reported as skipped.
+Text, order, and checked state are kept; fenced code is untouched.
 
-Every `milestones/*.md` and `archive/milestones/*.md` file becomes a project milestone: frontmatter `id` to `key`, `title` to `name`, Description section to `description`, and archived-file location to `archived: true`. A task milestone matching an imported key or unique title is rewritten to that key. An unresolved or ambiguous value is kept as written and reported.
+### Status, archives, and drafts
 
-## Report and skipped material
+- Tasks in `completed/` get `done`.
+- `archive/tasks/` and `archive/drafts/` go to `backlog/archive/`.
+- Drafts get the `draft` status (category `backlog`), archived or not.
+- Native IDs don't change on promotion, so drafts outside the task prefix are
+  renumbered after the highest task ID, in draft order, as
+  `backlog draft promote` would. With `TASK-20` the highest, `DRAFT-1` becomes
+  `TASK-21`. References follow, and the report shows the new ID.
 
-The JSON-serializable report contains per-source-file, per-field original and output values; configuration mappings; output paths and counts; dry-run state; mapping decisions (including generated criterion-index removal); skipped paths/settings; and unresolved milestones. Task and milestone files are listed separately, while their output path points into the native project. Paths in `outputPaths` are absolute; per-file `outputPath` values are relative to the destination.
+### Refusals
 
-The importer does not import Backlog.md documentation, decisions, locks, or unsupported archive partitions. It reports these paths and source configuration settings without native equivalents under `skipped`. Unsupported files inside task or milestone partitions (including symlinks and non-Markdown files) are also reported. It never edits the source directory.
+- IDs that collide after upper-casing or padding normalization.
+- Text that would change native structure. Every output item is reparsed first.
+  For example, a comment line shaped like a native header
+  (`### 2026-01-02T03:04:00Z name`) would split the comment; indent it in the
+  source and import again. The error names the file.
+
+## Project config
+
+| Generated | From |
+| --- | --- |
+| Source | `{id: tasks, type: native, path: backlog}` |
+| Prefix | `task_prefix` upper-cased; else the first active task ID, then any archived task ID, else `TASK` |
+| Statuses | `draft` first, then each source status, plus any required standard status |
+| `ready.statuses` | The generated To Do-category keys |
+| `ready.excludeLabels` | `blocked` and `deferred`, if configured as labels |
+| Project name, `labels` | Copied |
+| `defaults.dod` | `definition_of_done` |
+| `default_status` | Skipped (no native equivalent) and reported |
+
+Every `milestones/*.md` and `archive/milestones/*.md` becomes a milestone: `id` →
+`key`, `title` → `name`, the Description section → `description`, and the
+archive location → `archived: true`. A task milestone matching a key or a unique
+title becomes that key; an unresolved or ambiguous one is kept as written and
+reported.
+
+## Report
+
+The report (human-readable, or JSON in the envelope's `data`) lists, per source
+file, each field's original and output value, plus config mappings, output
+paths and counts, the dry-run flag, mapping decisions (such as criterion-index
+removal), skipped paths and settings, and unresolved milestones. `outputPaths`
+are absolute; each file's `outputPath` is relative to the destination.
+
+Skipped and reported: documentation, decisions, locks, unsupported archive
+folders, symlinks or non-Markdown files in task and milestone folders, and
+config settings without a native equivalent.
 
 ## Standalone cutover rehearsal
 
-Run `task docs:test` from this repository. `TestMigrationRehearsal` executes the
-shell blocks below against `internal/doctest/testdata/migration`, a synthetic
-Backlog.md project. It supplies an empty temporary `BL_REHEARSAL_DIR`, a built
-`bl`, isolated HOME/XDG directories with synthetic identity `@example`, and the existing
-fake Worklease executable.
-No sibling checkout, credentials, service, real-project data, global skill edits,
-or real-provider opt-in is required. The fake is a test fixture, not a production
-claim authority. These blocks run together in that harness, not in a real project.
+`task docs:test` runs `TestMigrationRehearsal`, which executes the four `sh`
+blocks below, in order, against the synthetic Backlog.md project in
+`internal/doctest/testdata/migration`. The harness provides an empty
+`BL_REHEARSAL_DIR`, a built `bl`, isolated HOME and XDG with identity
+`@example`, and a fake Worklease. No real project, credential, or service is
+involved. The blocks are written for that harness, not for a real project.
 
-### Freeze, back up, and import
+### 1. Freeze, back up, and import
 
-Before a real, separately authorized cutover, stop **all** writers: agents,
-supervisors, CLI/MCP servers, editor integrations, hooks, scheduled jobs, and CI
-jobs that write tasks. Reconcile and release outstanding claims using their old
-provider workflow. Record the source revision and inventory task/draft/archive
-files, milestones, labels, and configuration. Copy the whole source, including
-docs and decisions that import skips. Verify the backup before proceeding. Do
-not use a status change as a lock or run old and new writers together.
+Before a real cutover, which needs its own owner approval:
 
-The rehearsal starts with no writers or claims:
+1. Stop **every** writer: agents, supervisors, CLI and MCP servers, editor
+   integrations, hooks, scheduled jobs, and CI jobs that write tasks.
+2. Reconcile and release outstanding claims through the old workflow.
+3. Record the source revision and inventory tasks, drafts, archives,
+   milestones, labels, and config.
+4. Copy the whole source, including the docs and decisions import skips, and
+   verify the copy.
+
+A status change is not a lock, and old and new writers never run together.
 
 ```sh
 cp -R internal/doctest/testdata/migration "$BL_REHEARSAL_DIR/legacy"
@@ -78,34 +139,30 @@ bl -C native show TASK-3 --json > relationships.json
 diff -r legacy legacy-backup
 ```
 
-Inspect every report mapping, decision, skipped setting/path, and unresolved
-milestone before approving cutover. Compare source and destination inventories,
-body sections, criterion text/checks, comments, dates, custom metadata, assignees,
-references, files, relationships, labels, and milestones (including archived
-state). Expect the documented ID/status/index/rank transformations, not byte
-identity. The test compares these synthetic values before any task mutation and
-checks the archived task too. Keep the backup and reports outside the destination;
-a non-empty destination is refused, including for dry-run.
+Review every mapping, decision, skipped item, and unresolved milestone. Compare
+inventories, sections, criteria and their checks, comments, dates, custom
+fields, assignees, references, files, relationships, labels, and milestones
+(including archived ones). Expect the documented ID, status, index, and rank
+changes, not byte identity. The test checks these values, including the
+archived task, before any mutation. Keep the backup and reports outside the
+destination.
 
-### Switch the provider and complete a native loop
+### 2. Switch and run one native loop
 
-Only after comparison passes, change the project's local instructions, launcher,
-and CI routing to the native project. Native projects use `bl instructions
-workflow` and `bl next --claim --start --session SESSION`; all contenders use the
-same project identity, authority, control root, and the exact resource from
-`bl show --json`. Do not derive alternate Worklease keys. In a repository with a
-native wrapper (like this one), use that wrapper instead of these bare `bl`
-commands. Do not restart a legacy supervisor after cutover.
+Only after the comparison passes, point local instructions, launchers, and CI at
+the native project. Use `bl instructions workflow` and
+`bl next --claim --start --session SESSION`. Every contender must share the
+project ID, authority, control root, and the exact resource from
+`bl show --json`; never derive another Worklease key. Repositories with a
+wrapper (like this one) use it instead of bare `bl`. Don't restart a legacy
+supervisor.
 
-**Unmigrated Backlog.md projects retain their existing Backlog.md CLI/MCP and
-coordination workflow.** Presence of a legacy config alone is not authorization
-to import or switch providers. Resolve the project's declared provider and read
-its instructions first; for mixed sources, route by the selected item's source,
-not its ID spelling. Do not apply this repository's native override globally or
-edit shared skills. The unchanged `legacy` fixture represents that route until
-cutover, and `restored` represents it again after rollback.
-
-The harness enables fake coordination only in the temporary native project:
+**Unmigrated Backlog.md projects keep their existing Backlog.md workflow.** A
+legacy config alone doesn't authorize importing or switching. Read the
+project's declared provider and instructions first. With mixed sources, route
+by the item's source, not its ID spelling. Don't apply this repository's native
+override globally or edit shared skills. In the rehearsal, `legacy` and later
+`restored` stand for that route.
 
 ```sh
 printf '\ncoordination:\n  worklease: {}\n' >> native/.config/backlog.yaml
@@ -119,19 +176,15 @@ bl -C native done TASK-1 --session rehearsal-single --json > done.json
 bl -C native show TASK-1 --json > after-loop.json
 ```
 
-Use one stable, distinct session per loop; renew before half TTL. Inspect both
-status and claim outcomes, including on failure. An uncertain acquisition must
-recover with the **same** session, never a new session or key. A failed status
-write may retain a claim; a failed release may leave the status written. A
-verified supervised run owns renewal/release instead of its worker. Record
-criterion evidence with the current version; finish only after required checks
-and delivery. `done` writes then releases before returning.
+The [agent loop rules](guide.md#agent-loop) apply: one stable session per loop,
+heartbeat before half TTL, check both outcomes, recover uncertainty with the same
+session, and finish only after verification.
 
-### Two independent loops
+### 3. Two independent loops
 
 With TASK-1 done, TASK-2 and the now-unblocked TASK-3 are ready. The fake's
-barrier forces both processes to contend on the first ranked candidate, proving
-that selection skips confirmed contention rather than treating status as a claim:
+barrier makes both loops contend for the first candidate, proving selection
+skips contention instead of treating status as a claim:
 
 ```sh
 BL_FAKE_BARRIER=1 bl -C native next --claim --start --session rehearsal-a --json > a.json &
@@ -147,20 +200,21 @@ bl -C native done "$first_item" --session rehearsal-a --json
 bl -C native done "$second_item" --session rehearsal-b --json
 ```
 
-### Stop and roll back
+### 4. Stop and roll back
 
-For a real rollback, quiesce native writers and reconcile/release their claims
-first. Preserve the native project and event/evidence reports. Compare all changes
-since cutover and explicitly translate any work to the old provider before
-restarting it: copying the old backup alone loses post-cutover progress. Restore
-the verified backup to a separate location, validate it with the old provider,
-switch local instructions/launchers back, then enable only the old writers.
-Never run both providers to resolve divergence.
+For a real rollback:
 
-The rehearsal deliberately retains the completed native project alongside the
-byte-identical restored legacy source. Its three synthetic completions and
-criterion evidence stay in `native`; they are **not** silently reverse-imported.
-The restore models a rollback that quarantines native progress for reconciliation:
+1. Stop native writers and reconcile or release their claims.
+2. Keep the native project and its event and evidence reports.
+3. Compare every change since cutover and translate that work to the old
+   provider. Restoring the backup alone loses it.
+4. Restore the backup to a separate location and validate it with the old
+   provider.
+5. Switch instructions and launchers back, then start only the old writers.
+
+Never run both providers to resolve divergence. The rehearsal keeps the native
+project, with its three completions and evidence, beside a byte-identical
+restored source. Nothing is reverse-imported:
 
 ```sh
 cp -R legacy-backup restored
@@ -169,6 +223,5 @@ diff -r legacy legacy-backup
 bl -C native check --json
 ```
 
-The test verifies zero retained fake claims before restore and retained native
-progress afterwards. Temporary projects are removed by the test harness. No real
-migration is a release prerequisite; each needs separate owner authorization.
+The test checks that no fake claims remain before the restore and that native
+progress survives it. The harness deletes the temporary projects.

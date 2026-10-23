@@ -1,7 +1,7 @@
 # Beads
 
-`bl` reads and updates a local embedded-Dolt Beads checkout through **bd 1.3.0**.
-Install that version and put `bd` on PATH. No Beads daemon is required.
+`bl` reads and updates a local embedded-Dolt Beads checkout through **bd 1.3.0**
+on `PATH`. No Beads daemon is needed.
 
 ```yaml
 sources:
@@ -18,75 +18,79 @@ ready:
   satisfiedBy: [done, canceled]
 ```
 
-Relative paths resolve from the control root. Project-origin executable sources
-require `bl trust` before use. Detection alone does not enable a source. Configure
-custom statuses explicitly; unknown statuses default to backlog (never ready).
+Relative paths resolve from the control root. Project-declared Beads sources
+need `bl trust`. A detected `.beads/` isn't loaded until configured. Declare
+custom statuses; unknown ones are `backlog` and never ready. Server mode and
+Dolt remotes (`sync.remote`) are refused.
 
-## Reads and mapping
+## Reads
 
-Construction checks the version, embedded-Dolt metadata, and empty `sync.remote`.
-Server mode and configured Dolt remotes are refused. A refresh runs exactly one
-`bd --json --readonly --sandbox -C CHECKOUT list --all --limit 0`, regardless of
-item count. The full list retains bodies and version fields, unlike `--brief`.
-Polling runs on the source worker every 15 seconds, not on the UI update loop.
-Details use the same bulk schema: `bd show` nests dependencies differently.
-There is no per-item refresh process or provider-reported readiness lookup.
-`bl` computes readiness from its own configured statuses and dependency graph.
+Each refresh runs one command, whatever the item count:
 
-| Beads field | `bl` field |
+```text
+bd --json --readonly --sandbox -C CHECKOUT list --all --limit 0
+```
+
+It polls every 15 seconds on the source worker. Detail uses the same data (`bd
+show` nests dependencies differently). `bl` computes readiness itself from its
+statuses and the dependency graph.
+
+| Beads | `bl` |
 | --- | --- |
-| `id` | Source-qualified issue ID; never reallocated |
+| `id` | Issue ID, never reallocated |
 | `title`, `issue_type`, `status` | Title, type, raw status |
-| `open`, `in_progress`, `closed`, `tombstone` | todo, active, done, canceled unless configured otherwise |
-| `blocked`, `deferred`, unknown status | backlog unless configured otherwise |
-| Priority 0, 1, 2, 3 or 4 | urgent, high, medium, low (raw priority retained) |
+| `open`, `in_progress`, `closed`, `tombstone` | todo, active, done, canceled (unless configured) |
+| `blocked`, `deferred`, unknown | backlog (unless configured) |
+| Priority 0–4 | urgent, high, medium, low, low (raw value kept) |
 | `assignee` | Zero or one assignee |
-| `labels`, `description`, `notes` | Labels, description, notes |
-| `created_at`, `updated_at` | Created and updated timestamps |
-| All JSON fields, including unmapped fields | Raw `fields` |
-| Canonical full issue JSON | SHA-256 opaque version, including dependency changes and comment count |
+| `labels`, `description`, `notes` | Same |
+| `created_at`, `updated_at` | Created, updated |
+| Every JSON field | Raw `fields` |
+| Full issue JSON, canonicalized | SHA-256 version (covers dependencies and comment count) |
 
-| `dependencies[].type` | `bl` edge |
+| `dependencies[].type` | Edge |
 | --- | --- |
-| `blocks` | **Only hard edge**: `issue_id` depends on prerequisite `depends_on_id` |
-| `parent-child` | Issue's parent is `depends_on_id`; informational for readiness |
-| Every other type, including `discovered-from`, `related`, `tracks`, and unknown types | Related/informational; original type retained in raw fields |
+| `blocks` | **The only hard edge:** `issue_id` is blocked by `depends_on_id` |
+| `parent-child` | Parent is `depends_on_id` (not a blocker) |
+| Anything else (`discovered-from`, `related`, `tracks`, …) | Related; type kept in raw fields |
 
-Missing arrays with a positive dependency count, malformed dependencies, duplicate
-IDs, null lists, and invalid JSON fail the whole refresh. They never establish
-complete coverage or prove deletion. Empty arrays are complete empty snapshots.
+Malformed output fails the whole refresh: a positive dependency count without
+the array, bad dependencies, duplicate IDs, null lists, or invalid JSON. A
+failed refresh never counts as complete or proves deletion. Empty arrays are a
+valid empty snapshot.
 
 ## Writes
 
-Supported operations are field sets (title, status, type, priority, assignees,
-labels), same-issue batches of those sets, and appended comments. Unsupported
-fields and operations fail before writing. Low priority writes as Beads priority 3;
-priority 4 remains visible in raw fields. Comments are appended with `bl comment`;
-comment history is not loaded into the item detail.
+```sh
+bl set issues:bd-12 status=in_progress priority=high --if-version VERSION
+bl comment issues:bd-12 'Progress update'
+```
 
-Every write requires the version that was read. Preflight rereads the full issue
-JSON and refuses missing or stale versions with `conflict`. Updates additionally
-use Beads' `--if-status` and `--if-assignee` guards; a failed guard reports a
-conflict. `bd` has no full-revision compare-and-swap: another uncoordinated writer
-can still change other fields between preflight and update, or append a comment
-between preflight and comment. Worklease coordination remains advisory and must
-use the same source identity across workers. Beads assignment is not a claim.
+Supported: setting title, status, type, priority, assignees, and labels (several
+at once on one issue), and appending comments. Anything else fails before
+writing. `low` writes as priority 3. Comment history isn't shown in detail.
 
-Writes invoke `bd update` or `bd comment` with `--sandbox --dolt-auto-commit=on`,
-without `--readonly`, and reread after success. They create a **local Dolt commit**,
-not a Git commit, and disable remote auto-push. With `export.auto=true`, Beads may
-also update `.beads/issues.jsonl`. `bl` does not sync, push, retry ambiguous writes,
-or keep a receipt/recovery journal. A command or read-back failure must be
-reconciled by rereading before attempting another comment.
+Every write rereads the issue and refuses a missing or stale version
+(`conflict`). Updates also pass `--if-status` and `--if-assignee`. `bd` has no
+full compare-and-swap, so another writer can still change other fields, or add
+a comment, between the check and the write. Beads assignment isn't a claim;
+Worklease coordination is advisory and needs the same source identity across
+workers.
 
-## Verification
+Writes run `bd update` or `bd comment` with `--sandbox --dolt-auto-commit=on`
+and reread afterward. That makes a **local Dolt commit**, not a Git commit, with
+auto-push off. With `export.auto=true`, Beads may also update
+`.beads/issues.jsonl`. `bl` doesn't sync, push, or retry. After a failed command
+or reread, reread before trying again, especially before another comment.
+
+## Tests
 
 ```sh
 task cli:test PKG=./internal/source/beads -- -count=1
 BL_PROVIDER_TESTS=1 task cli:test PKG=./internal/source/beads -- -run TestProviderRoundTrip -count=1 -v
 ```
 
-The opt-in test initializes a disposable Git/Beads checkout under the OS temporary
-directory, creates two issues and a hard edge, then updates fields and appends a
-comment. It never opens an existing user database. If PATH uses a tool shim that
-is unavailable after test isolation, pass `BL_TEST_BD_BINARY=/absolute/path/to/bd`.
+The opt-in test builds a disposable Git and Beads checkout in the temp
+directory, creates two issues and a blocking edge, edits fields, and comments.
+It never opens an existing database. If a `PATH` shim breaks under test
+isolation, set `BL_TEST_BD_BINARY=/absolute/path/to/bd`.

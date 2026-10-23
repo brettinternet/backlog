@@ -110,43 +110,33 @@ Keep the header fields synchronous; only the body waits.
 | `created` | timestamp | yes | RFC 3339 UTC to the second. Set on create. |
 | `updated` | timestamp | yes | RFC 3339 UTC to the second. Set on every write. |
 
-Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md). An ID reference may name another source as `source:ID`. Bare IDs remain local to the referring project/source. In a workspace an explicit `source:ID` resolves only when unique among loaded items; missing or ambiguous targets remain `unknown`. To disambiguate a workspace edge, use `url.QueryEscape(project.id)/source-id:ID`, for example `github.com%2Facme%2Fapp/tasks:BL-1`. This qualified form is preserved in the file and is unknown when its project is outside the loaded scope. Ordinary project files and provider identities are not rewritten just by opening a workspace.
+Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md).
+
+References are local by default. `source:ID` names another source in the same project. In a [workspace](design.md#5-projects-configuration-and-trust), `source:ID` resolves only when one loaded item matches; to name another project, qualify the source with its escaped project ID:
+
+```yaml
+blocked_by: [BL-3, docs:DOC-1, "github.com%2Facme%2Fapp/tasks:BL-1"]
+```
+
+Missing or ambiguous targets are `unknown`. Opening a workspace never rewrites files.
 
 ### IDs
 
 - Grammar: `^[A-Z][A-Z0-9]*-[0-9]+(\.[0-9]+)*$`.
 - Comparison is natural: prefix, then each numeric segment as an integer. `BL-9 < BL-10`, and `BL-007` equals `BL-7` for lookup.
-- New IDs are `PREFIX-N`, with no padding and no dotted segments (design.md D6). `bl import` keeps imported IDs exactly, including padding and dots.
-- The allocator holds `<git-common-dir>/backlog/lock` (flock) and stores a counter at `<git-common-dir>/backlog/next/<source-id>`. The next number is the greater of the counter and one more than the highest number among active and archived items. Outside Git, the lock and counter live under XDG state, keyed by project ID.
+- New IDs are `PREFIX-N`, never padded or dotted (design.md D6). Import keeps IDs exactly, including padding and dots.
+- The allocator locks `<git-common-dir>/backlog/lock` (flock) and keeps a counter in `<git-common-dir>/backlog/next/<source-id>`. The next number is the larger of the counter and one more than the highest existing number, active or archived (for imported dotted IDs, the first number counts). Outside Git, both live in `$XDG_STATE_HOME/backlog/projects/<SHA-256 of project ID>/`.
+- Creation reserves the ID durably before writing the item, so a failed create can leave a gap.
 
-### Native source I/O
+### Loading and writing files
 
-The native source loads only regular files with native ID filenames directly in
-its source directory. It ignores other files, nested directories, and symlinks.
-Archive loading is opt-in; `Read` can find active or archived items. Malformed
-items, filename/status mismatches, and unreadable files (code `unreadable`)
-produce per-file findings and partial coverage without hiding successfully
-parsed items. Loads use at most GOMAXPROCS
-parsers. The configured source path is resolved against the control root before
-opening the source; Git discovery never runs a subprocess.
-
-Every existing-item mutation requires its current content hash. Missing or stale
-versions return reason `conflict` before writing. ID changes require renumbering,
-not field edits. Creation allocates and durably reserves an ID before publishing
-the item; failed creates may leave gaps. The allocator also checks active and
-archived filenames on each reservation, including imported padded or dotted IDs
-(the first numeric component advances the sequential counter). Outside Git,
-state is under `$XDG_STATE_HOME/backlog/projects/<SHA-256 of project ID>/`.
-
-Item writes and counter updates use a same-directory temporary file, fsync,
-rename, and directory fsync, under the shared lock. Existing file permissions
-are retained. Failures before rename leave the original intact and remove owned
-temporary files. A directory-fsync error after rename is reported, but the new
-bytes are already visible and durability is uncertain; callers must reread
-rather than retry blindly. Archive/unarchive require the same version guard,
-refuse occupied targets, and fsync both directories without rewriting bytes or
-changing the version. The source currently supports local Unix flock semantics;
-filesystem watching is a separate optional capability.
+- Only regular files named `<ID>.md` directly in the source directory load. Other files, nested directories, and symlinks are ignored. Archives load on request; `Read` finds both.
+- A malformed or misnamed file, an unknown status, or an unreadable file (`unreadable`) produces a finding and partial coverage; other items still load.
+- The source path resolves against the control root. Parsing uses up to `GOMAXPROCS` workers.
+- Every write to an existing item needs its current content hash; a missing or stale one is a `conflict`. Changing an ID needs `bl renumber`.
+- Writes go to a temp file in the same directory, then fsync, rename, and directory fsync, all under the lock. File permissions are kept. A failure before the rename leaves the original intact. A directory-fsync failure after the rename is reported: the new bytes are visible but may not be durable, so reread rather than retry.
+- Archive and unarchive take the same version check, refuse an occupied target, and fsync both directories without changing bytes.
+- Locking uses local Unix flock.
 
 ### Body sections
 
@@ -169,14 +159,26 @@ filesystem watching is a separate optional capability.
 
 ### Writing
 
-- An edit rewrites only the lines that represent changed values. Every other byte stays identical, including key order, comments, quoting, and list style. Golden tests enforce this.
-- New keys and new files use the canonical key order from the table above, then unknown keys.
-- New lists use flow style (`[a, b]`). Empty lists and unset optional values are removed, not written as empty.
-- Strings in new fields/files are written plain when YAML allows it, and quoted otherwise (the YAML emitter may use single quotes). Existing scalar quote style and list flow/block style are retained on edits where applicable. List add/remove operations keep the quoting of existing elements.
-- Every write updates `updated` and is atomic (design.md D8). The pure codec takes an explicit clock and returns bytes; the native source owns the lock, fsync, and rename.
-- `Document.Bytes()` losslessly serializes an existing document. `Serialize(Item)` creates a canonical new file: it emits known keys in table order, unknown keys in lexical order, and nonempty sections in the order above. Unstructured text among criteria or before the first comment header is preserved by document edits, not reconstructed from an Item.
-- Replacing a section with empty text removes its heading. A new file with an empty description starts its first section after one blank line. Text written into a section, note, comment, or new file must not add, remove, or hide a recognized section (for example a pasted `## Summary` heading or an unclosed fence), and a comment body must not contain a comment header; such writes are rejected as `invalid-value`. Added criteria are single-line.
-- Applying a mutation returns a representation-exact inverse bound to the resulting content hash. Applying that inverse refuses a version mismatch and restores the original bytes except for `updated`; undo also returns a redo inverse. Unknown keys and unedited sections are never reserialized.
+An edit rewrites only the lines whose values changed. Golden tests hold every other byte identical, including key order, comments, quoting, and list style:
+
+```diff
+ status: todo
+-priority: medium
++priority: high
+ labels: [tui, perf]
+-updated: 2026-10-22T09:15:42Z
++updated: 2026-10-23T08:00:00Z
+```
+
+- Every write sets `updated` and is atomic (design.md D8).
+- New keys and new files use the table's key order, then unknown keys (lexical in new files). Sections follow the order above.
+- New lists use flow style (`[a, b]`). Empty lists and unset values are removed.
+- New strings are plain when YAML allows, otherwise quoted. Edits keep each existing value's quoting and list style, including for list adds and removes.
+- Clearing a section removes its heading.
+- Text written into a section, note, comment, or new file can't add, remove, or hide a section (a pasted `## Summary`, an unclosed fence), and a comment can't contain a comment header. Such writes fail with `invalid-value`. Added criteria are one line.
+- Each mutation returns an exact inverse bound to the new content hash. Applying it checks the version and restores the original bytes except `updated`.
+
+In code, the pure codec takes a clock and returns bytes; the native source owns locking and I/O. `Document.Bytes()` reproduces an existing file exactly. `Serialize(Item)` writes a canonical new file, so text that the Item model doesn't hold (such as loose lines among criteria) survives only document edits.
 
 ## Validation
 

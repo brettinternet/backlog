@@ -1,85 +1,26 @@
 # MCP server
 
-`bl mcp` serves the Model Context Protocol over stdio. Configure the client to
-launch the `bl` binary from the project directory; stdout is reserved for MCP
-frames. Project and user configuration are resolved once when the process starts.
-Caller ownership is request-scoped: the server never reads session, handle, or run
-selectors from its environment or retains them from a previous call.
+`bl mcp` serves the Model Context Protocol over stdio. Launch it from the
+project directory; stdout carries only MCP frames. Config loads once at startup.
 
-## Tools
+## Setup
 
-All writes use the item `version` returned by `show` as an optional optimistic
-concurrency guard. If it is stale, the tool returns a `conflict` reason and does
-not write. Errors are tool results with `isError: true` and JSON text containing
-`reason` and `message`.
-
-- `next` accepts `limit` (zero or omitted means all) and returns ready items in
-  readiness order. Optional `claim` and `start` select/claim one item and then
-  start it; `start` requires `claim`. Claimed calls require explicit `session`
-  and accept optional `run`, with the same attempts, resume behavior, and
-  separate claim/status outcomes as CLI `next --claim --start`.
-- `query` accepts `query`, using the same expression language as `bl ls`.
-- `show` accepts `id` and returns the complete item, including its version, plus
-  `resource` when coordination is enabled.
-- `create` accepts `title`, optional configured `status`, `type`, `priority`,
-  `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`,
-  `blocked_by`, and `source`. Reference values use the same numeric shorthand as
-  `bl new`; use `status: draft` to create an open item that is not ready.
-- `update` accepts `id`, `version`, and either `fields`, a mapping of field names
-  and values accepted by `bl set`, or `operation: archive|unarchive`. List fields
-  use suffixes `+` and `-` to add/remove values. Use `operation: replace_section`
-  with an editable `section` (`description`, `criteria`, `dod`, `plan`, `notes`,
-  or `summary`) and replacement `text` to edit content. `start` and `done` are
-  status field updates, matching the configured CLI workflow statuses. When
-  coordination is on, a status update requires `session` and accepts optional
-  `run`; ownership is validated before writing. Results report separate `transition`
-  claim/status outcomes, including a retained acquisition or failed release.
-- `append` accepts `id`, `version`, `kind` (`note` or `comment`), `text`, and
-  optional `author` for comments (otherwise `me.default` is used).
-- `criteria` accepts `id`, `version`, and `operation` (`check`, `uncheck`,
-  `add`, or `remove`), with `index` for check/uncheck/remove and `text` for add;
-  `evidence` may accompany check.
-
-- `claim` and `release` accept `id`, required `session`, and optional `run`.
-- `heartbeat` accepts required `session` and optional `run`, returning `expiresAt`.
-
-A run is verified through the coordinator for the exact caller and resource.
-Run-managed claims are never acquired, renewed, or released. A missing session
-returns `session-required`; mismatched run evidence returns `run-mismatch` before
-any write or release. A caller-managed session cannot borrow the server's run.
-Plain `next` does not claim. Claimed selection checks the session first, resumes
-held open items, replays pending acquire exactly, and only walks one ranked
-snapshot when the session is confirmed empty. Confirmed contention skips an item;
-unknown-outcome stops immediately without trying another. Closed held items,
-missing items, or unresolved ownership refuse fresh selection. Keep the same
-stable distinct session for the loop; never switch sessions to bypass recovery.
-A verified run returns only its item without a walk. Renew caller-managed claims
-with heartbeat before half TTL. A done status update completes matching release
-before returning, permitting the same session's next selection. The [provider-evidence requirements](cli.md#provider-evidence-and-recovery)
-also apply to MCP; unresolved/redacted evidence never authorizes side effects.
-
-The `bl://instructions` resource publishes `bl instructions` overview guidance.
-
-## pi
-
-Register the server globally with pi:
+pi, globally:
 
 ```sh
 pi mcp add backlog --cwd /path/to/project -- /absolute/path/to/bl mcp
 ```
 
-Use `pi mcp add backlog --local ...` from the project root for a trusted,
-project-scoped `.pi/mcp.json` entry. Check the connection with `pi mcp list`.
+Add `--local` from the project root for a project-scoped `.pi/mcp.json` entry.
+Check with `pi mcp list`.
 
-## Claude Code
-
-Register the project-scoped server from the repository root:
+Claude Code, from the repository root:
 
 ```sh
 claude mcp add --transport stdio backlog -- /absolute/path/to/bl mcp
 ```
 
-Alternatively add this entry to `.mcp.json`:
+Or in `.mcp.json`:
 
 ```json
 {
@@ -91,3 +32,58 @@ Alternatively add this entry to `.mcp.json`:
   }
 }
 ```
+
+The `bl://instructions` resource serves the `bl instructions` overview.
+
+## Tools
+
+| Tool | Arguments | CLI equivalent |
+| --- | --- | --- |
+| `next` | `limit` (0 or omitted: all), `claim`, `start`, `session`, `run` | `bl next`, `bl next --claim --start` |
+| `query` | `query` | `bl ls` |
+| `show` | `id` | `bl show` (adds `resource` with coordination) |
+| `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `source` | `bl new` |
+| `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run` | `bl set`, `bl archive`, `bl edit --section` |
+| `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
+| `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`remove`), `index`, `text`, `evidence` | `bl ac` |
+| `action` | `name`, `id`, `confirm` | `bl action` |
+| `claim`, `release` | `id`, `session`, `run` | `bl claim`, `bl release` |
+| `heartbeat` | `session`, `run` | `bl heartbeat` |
+
+```json
+{"name":"update","arguments":{"id":"12","version":"VERSION","fields":{"status":"in-progress","labels+":["bug"]}}}
+{"name":"criteria","arguments":{"id":"12","version":"VERSION","operation":"check","index":1,"evidence":"go test ./... passed"}}
+```
+
+- `version` is optional on writes; a stale one returns `conflict` and writes
+  nothing.
+- `fields` takes `bl set` names. Suffix a list field with `+` or `-` to add or
+  remove. `start` and `done` are status updates to the workflow statuses.
+- Editable sections: `description`, `criteria`, `dod`, `plan`, `notes`,
+  `summary`.
+- References accept the same shorthand as `bl new`. `status: draft` creates an
+  item that is never ready.
+- Comment `author` defaults to `me.default`.
+- Errors are tool results with `isError: true` and JSON `reason` and `message`.
+
+## Claims
+
+The server never takes a session, handle, or run from its environment or an
+earlier call, because one server can outlive the agent loop that started it.
+Pass `session` (required) and `run` (optional) on every call that can claim,
+renew, or release: `next` with `claim`, `claim`, `release`, `heartbeat`, and a
+status `update` while coordination is on.
+
+| Problem | Result |
+| --- | --- |
+| No session | `session-required`, nothing written |
+| Run doesn't verify for this caller and resource | `run-mismatch`, nothing written |
+
+Behavior matches the [CLI](cli.md#coordination): claimed `next` resumes the
+session's open item, replays a pending acquire, or walks one ranked snapshot,
+skipping contention and stopping on an unknown outcome. Run-managed claims are
+never acquired, renewed, or released. Results report claim and status outcomes
+separately. A done update releases before returning. Renew with `heartbeat`
+before half the TTL. Keep one session per loop and never switch sessions to get
+past recovery. Unresolved or redacted [evidence](cli.md#provider-evidence-and-recovery)
+never authorizes side effects.

@@ -2,71 +2,8 @@
 
 ## Setup
 
-Use immutable organization, team, optional project, and viewer UUIDs, not team
-names or display identifiers. Configure the account only in the user file
-(`~/.config/backlog/config.yaml`):
-
-```yaml
-accounts:
-  linear:
-    - name: work
-      user: VIEWER_UUID
-      credential: [security, find-generic-password, -s, linear-api, -w]
-      # Alternatively, replace credential with env: BL_WORK_LINEAR_API_KEY
-```
-
-Create a personal API key in Linear Settings → Security & access → Personal API
-keys. Give it read access to the selected team. For writes, enable issue update
-and comment creation permissions (or the full write permission offered by your
-workspace). Restrict the key's team access to the teams needed. The test setup
-also needs create/delete issue and relation permissions in the disposable Test
-team. Organization/team restrictions and user permissions still apply; a helper
-cannot grant access the key lacks. Personal API keys use raw Authorization;
-opt-in OAuth accounts use Bearer authorization.
-
-Store the key in your credential manager, never in committed config, command
-arguments, screenshots or logs. The helper is an argv array, runs without a shell,
-and must print one token line. It is bounded to 15 seconds and 4 KiB. The returned
-credential must authenticate as `user`; every refresh and write checks the viewer,
-organization and team. Credentials remain in memory and are redacted before cache,
-events or hooks. See [remote.md](remote.md) for the shared boundary.
-
-### OAuth login
-
-Alternatively, replace `credential`/`env` in the user account with `oauth: true`
-and keep `user: VIEWER_UUID`. Run from an interactive terminal:
-
-```sh
-bl auth login linear work
-bl auth login linear work --write  # separate read consent, then write consent
-bl auth logout linear work
-```
-
-Open the displayed Linear URL in your browser. The built-in public application
-uses user authorization (`actor=user`), S256 PKCE and random state, with callback
-`http://127.0.0.1:47653/oauth/callback`. The local IPv4 listener exists only during
-login (up to five minutes); the port must be free. No client secret, client
-credentials grant, webhook or hosted callback service is used. This works on the
-machine running the browser; remote/headless sessions do not have a callback
-forwarding mechanism. Unattended commands never initiate authorization.
-
-Login requests only `read`. Explicit `--write` adds `write` for issue updates and
-comments, never `admin`. Source `allowWrites: true` and provider permissions are
-also required; a read-only token never advertises or dispatches writes. If Linear
-returns an older broader grant during read-only login, login refuses it: revoke
-the old grant in Linear settings and retry. Each successful login/refresh checks
-the immutable viewer UUID; source access also verifies organization and team,
-including on reuse of an unexpired token. Normal workspace/team restrictions apply.
-
-Access and rotating refresh tokens live only in the owner-private XDG state
-OAuth store (0700 directory, 0600 atomic records). Refresh is serialized across
-processes and the rotated pair and granted scopes are durably stored before
-validation. Logout revokes the refresh grant, removes local credentials and
-purges the account cache; if remote revocation fails, the output requests manual
-revocation in Linear settings. Helper/environment accounts are unchanged. See
-[OAuth qualification](oauth.md) for diagnostics and the evidence boundary.
-
-In the committed `.config/backlog.yaml`:
+Use immutable UUIDs for the organization, team, optional project, viewer, and
+states, never names or display IDs. Project config (`.config/backlog.yaml`):
 
 ```yaml
 sources:
@@ -74,9 +11,9 @@ sources:
     type: linear
     site: ORGANIZATION_UUID
     team: TEAM_UUID
-    # project: PROJECT_UUID  # optional additional scope
+    # project: PROJECT_UUID  # optional extra scope
     account: work
-    allowWrites: true       # default false; requires re-trust when changed
+    allowWrites: true       # default false; changing it needs re-trust
 statuses:
   - {key: TODO_STATE_UUID, name: Todo, category: todo}
   - {key: ACTIVE_STATE_UUID, name: In Progress, category: active}
@@ -84,61 +21,115 @@ statuses:
 workflow: {start: ACTIVE_STATE_UUID, done: DONE_STATE_UUID}
 ```
 
-Run `bl trust` before contacting a committed network source. Obtain UUIDs through
-Linear's GraphQL API using your private helper: `viewer { id organization { id } }`,
-`teams { nodes { id name } }`, and `team(id:TEAM_UUID) { states { nodes { id name type } } }`.
-Configure status keys and workflow transitions with state UUIDs from that team.
-`backlog`, `unstarted`, `started`, `completed`, and `canceled`/`duplicate` map to
-backlog, todo, active, done, and canceled categories respectively. Raw state names,
-types, priority, organization/team/project UUIDs and issue UUIDs remain in fields.
-Display IDs such as `ENG-431` stay separate from immutable issue identity.
+User config (`~/.config/backlog/config.yaml`):
 
-## Sync and relations
+```yaml
+accounts:
+  linear:
+    - name: work
+      user: VIEWER_UUID
+      credential: [security, find-generic-password, -s, linear-api, -w]
+      # or: env: BL_WORK_LINEAR_API_KEY
+```
 
-Pages never request more than **250** items. The shared remote worker polls each
-minute; network work never runs on the UI loop. Between reconciliations, refresh
-reads only issues updated since the last committed scan's start minus a
-**two-minute overlap**. Detail and both initial relation directions are batched
-in groups of **10 issues**, with **25 relations per direction** per issue.
-Additional relation pages use the normal 250-row paginated reads.
+Then run `bl trust`. Find the UUIDs with GraphQL:
 
-At startup and every **hour**, reconciliation enumerates all issues (including
-archived issues) and refreshes every in-scope issue and both relation directions,
-even when `updatedAt` is unchanged. It also scans a **30-day overlap** from the
-previous committed scan's start, retaining Worklease v1.9.3's moving-cursor
-recovery policy. The overlap is not a retention limit: reconciliation includes
-older issues. A relation-only edit becomes visible by the next successful
-reconciliation. The schedule persists with the cursor across process restarts;
-changing archive visibility or loading a legacy cursor forces reconciliation.
+```graphql
+{ viewer { id organization { id } } }
+{ teams { nodes { id name } } }
+{ team(id: "TEAM_UUID") { states { nodes { id name type } } } }
+```
 
-Request budget (excluding explicit detail reads/writes):
-- An empty change window costs **2 requests**: identity/scope verification and
-  one change-list page, independent of cached issue count.
-- A window containing C issues costs **1 + max(1, ceil(C / 250)) +
-  ceil(C / 10)** requests, plus relation overflow pages. Overlapping recent
-  updates can be reread; older unchanged issues incur no detail/relation reads.
-- Reconciliation costs identity verification, full-list and recovery-window
-  pages, and **ceil(N / 10)** batched detail/relation requests, plus overflow.
-  With 1,000 issues, an empty recovery window and no relation overflow, this is
-  **106 requests once per hour**, rather than 3,000+ requests every minute.
-  Large or relation-heavy teams can still reach complexity or request quotas;
-  the shared scheduler honors both limits and fails closed until reset.
+Linear state types map to categories: `backlog` → backlog, `unstarted` → todo,
+`started` → active, `completed` → done, `canceled` and `duplicate` → canceled.
+Raw names, types, priority, and UUIDs stay in item fields. Display IDs like
+`ENG-431` are separate from the issue UUID.
 
-A moving `updatedAt` traversal and filtered visibility cannot prove absence.
-Coverage remains partial. Successful change windows preserve cached freshness
-for unchanged rows; they never refresh an already stale row. Reconciliation
-marks unseen cached rows stale, not deleted or considered ready. Cursors and
-reconciliation timestamps commit with rows only after successful scans.
-Missing/repeated cursors, unknown states/relations and incomplete nested reads
-fail closed. Labels over the 250-label complete-read limit are refused. Relations
-and comments have separately paged, bounded reads.
+### API key
 
-Only incoming `blocks` relations are hard prerequisites (`blockedBy`). Outgoing
-`blocks` populate `blocks`, never this issue's prerequisites. `related`, `similar`
-and `duplicate` are informational. Parent is hierarchy only. Cross-team/project
-edges retain explicit external refs, so an unloaded blocker remains unknown,
-never silently satisfied. Relation scans run independently because relation edits
-do **not** reliably bump issue `updatedAt`.
+Create a personal API key in Linear Settings → Security & access → Personal API
+keys, limited to the teams you need. Give it read access, plus issue update and
+comment creation for writes. (The live test also needs issue and relation
+create/delete in the Test team.) Workspace and team restrictions still apply.
+
+Keep the key in a credential manager, never in config, arguments, screenshots,
+or logs. The helper must print one line within 15 seconds and 4 KiB. Every
+refresh and write checks that the key belongs to `user` and can see the
+organization and team. See [remote sources](remote.md).
+
+### OAuth login
+
+Replace `credential`/`env` with `oauth: true` (keep `user`), then from a
+terminal:
+
+```sh
+bl auth login linear work
+bl auth login linear work --write  # adds write after read consent
+bl auth logout linear work
+```
+
+Open the URL in a browser on the same machine. `bl` uses user authorization
+(`actor=user`) with S256 PKCE and a random state, and listens on
+`http://127.0.0.1:47653/oauth/callback` for up to five minutes; the port must be
+free. There's no client secret or hosted callback, so remote or headless sessions
+can't complete login. Unattended commands never start it.
+
+Login asks only for `read`. `--write` adds `write` (never `admin`); writes also
+need `allowWrites: true` and Linear permission. If Linear returns an older,
+broader grant to a read-only login, login refuses it: revoke that grant in
+Linear settings and retry. Each login and refresh checks the viewer UUID; source
+use also checks the organization and team.
+
+Tokens rotate under a cross-process lock and are stored, with granted scopes, in
+owner-only XDG state before validation. Logout revokes the refresh grant,
+deletes local tokens, and clears the account's cache; if revocation fails, it
+says to revoke in Linear settings. See [OAuth](oauth.md).
+
+## Sync
+
+| Scan | When | Reads |
+| --- | --- | --- |
+| Change window | Every minute | Issues updated since the last scan's start, minus two minutes |
+| Reconciliation | Startup and hourly | Every issue (including archived) and both relation directions, plus a 30-day overlap |
+
+Pages hold at most **250** items. Details and initial relations are batched
+**10 issues** at a time, **25 relations** per direction per issue, with further
+relation pages at 250.
+
+Requests per scan, excluding detail reads and writes:
+
+| Scan | Requests |
+| --- | --- |
+| Empty change window | 2 (identity check, one page), regardless of cache size |
+| Window with C changed issues | 1 + max(1, ⌈C/250⌉) + ⌈C/10⌉, plus relation overflow |
+| Reconciliation of N issues | Identity, list and overlap pages, ⌈N/10⌉, plus overflow |
+
+With 1,000 issues, an empty overlap, and no overflow, reconciliation costs **106
+requests an hour**, instead of 3,000+ a minute. Large or relation-heavy teams can
+still hit quotas; the scheduler honors both request and complexity limits and
+refuses requests until the reset.
+
+Relation edits don't reliably bump `updatedAt`, so they appear at the next
+reconciliation. The 30-day overlap recovers issues missed by a moving cursor
+(as in Worklease v1.9.3); it isn't a retention limit. The schedule survives
+restarts with the cursor. Changing archive visibility or loading an old cursor
+forces reconciliation.
+
+A moving `updatedAt` scan can't prove absence, so coverage stays partial.
+Reconciliation marks unseen rows stale, not deleted or ready. Cursors commit
+only after a successful scan. Missing or repeated cursors, unknown states or
+relation types, and incomplete nested reads fail closed. Teams with more than
+250 labels are refused.
+
+| Relation | Meaning |
+| --- | --- |
+| Incoming `blocks` | Blocker (`blockedBy`); the only hard edge |
+| Outgoing `blocks` | `blocks` |
+| `related`, `similar`, `duplicate` | Informational |
+| Parent | Hierarchy only |
+
+Edges to other teams or projects stay as external references, so an unloaded
+blocker is unknown, never satisfied.
 
 ## Writes and claims
 
@@ -150,56 +141,50 @@ bl set eng:ENG-431 labels=bug --if-version VERSION
 bl comment eng:ENG-431 'Progress update' --if-version VERSION
 ```
 
-Writes require explicit `allowWrites: true`, an active freshly verified principal,
-and provider authorization. The opt-in is **not** evidence of API-key scope or
-permission: Linear can still refuse a mutation. With the gate off, Set and Comment
-capabilities are unavailable. Unknown operations and fields are denied. Creation,
-archive, batch and arbitrary body/title editing are not advertised.
+Writes need `allowWrites: true`, a freshly verified user, and Linear's
+permission; `allowWrites` doesn't prove the key can write. Without it, set and
+comment are unavailable. Create, archive, batches, and title or body edits
+aren't offered.
 
-Each Set changes one field in one mutation. State must be a state UUID of the bound
-team. Assignees replace the single slot with zero or one user UUID; an empty list
-clears it. Priority accepts urgent/high/medium/low or empty (no priority), mapping
-to Linear 1/2/3/4/0. Labels replace the list using exact names resolved to team or
-workspace label UUIDs; missing/ambiguous names are rejected. Empty labels clear
-all labels. Comments append once and are not undoable.
+| Field | Accepts |
+| --- | --- |
+| `status` | A state UUID from the bound team |
+| `assignees` | Zero or one user UUID; empty clears |
+| `priority` | `urgent`, `high`, `medium`, `low` → 1–4; empty → 0 (none) |
+| `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
+| Comment | Appends once; can't be undone |
 
-Missing or stale expected versions report `conflict`. A fresh composite fingerprint
-covers issue fields and independently read relationships, including relation-only
-changes. Linear has no compare-and-swap for these mutations: another writer can
-still race between preflight and dispatch. Mutations are never automatically
-retried. After a network or read-back failure, refresh and inspect before another
-edit, especially a comment. No unsupported atomicity or recovery journal is implied.
+Each write changes one field in one mutation. A fresh fingerprint of the issue
+and its relations is checked first; missing or stale versions fail with
+`conflict`. Linear has no compare-and-swap, so another writer can still race
+between check and write. Mutations are never retried; after a network or reread
+failure, refresh and look before editing again.
 
-Claims use Worklease's `linear` policy with the organization UUID as source and
-issue UUID as item, independent of source aliases, mutable identifiers, team moves,
-status, title and credentials. Use the resource returned by `bl show --json`.
+Claims use Worklease's `linear` key from the organization UUID and issue UUID,
+so they survive renames, team moves, and status changes. Use the `resource` from
+`bl show --json`.
 
-## Verification
+## Tests
 
 ```sh
 task cli:test PKG='./internal/source/linear ./internal/source/remote ./internal/project ./internal/engine ./internal/worklease'
 ```
 
-Fake HTTPS regressions cover the 250 page cap, recovery of an actually omitted
-moving-cursor row, relation-only reconciliation, directional blockers, conflicts,
-capability/identity gates and state/assignee/priority/label/comment round trips.
-Provider JSON has a fuzz target. Shared scheduler tests cover Linear's request and
-complexity quotas with millisecond reset epochs and preserve GitHub Bearer auth.
+Fake HTTPS tests cover the 250-item page cap, recovering an issue missed by a
+moving cursor, relation-only changes, blocker direction, conflicts, capability
+and identity checks, and every write. Provider JSON is fuzzed. Scheduler tests
+cover Linear's request and complexity quotas.
 
-The opt-in live test accepts only the explicitly authorized **Test** team. It
-creates two synthetic issues, a blocks relation and a comment; edits only those
-issues; explicitly deletes the relation, comment and issues in cleanup; logs
-non-secret artifact IDs and cleanup results. It requires existing
-todo/active/done states and at least one existing workspace/team label. It does not
-change team configuration or existing issues/labels.
+The live test runs only against a team named **Test**. It creates two issues, a
+blocking relation, and a comment, edits only those, and deletes them all,
+logging artifact IDs. It needs existing todo, active, and done states and at
+least one label, and changes no team settings or existing data:
 
 ```sh
 BL_PROVIDER_TESTS=1 BL_LINEAR_TEST_TEAM=Test \
   task cli:test PKG=./internal/source/linear -- -run '^TestLiveRoundTrip$' -count=1 -v
 ```
 
-The default helper is the Keychain argv above. `BL_LINEAR_TEST_HELPER` may contain
-an alternative JSON argv array referencing a private credential manager, **never
-a token**. Without `BL_PROVIDER_TESTS=1`, no live request is made. A skipped test
-does not satisfy the live acceptance criterion. See [linear-verification.md](linear-verification.md)
-for the passing authorized run and cleanup receipts.
+It uses the Keychain helper above; `BL_LINEAR_TEST_HELPER` may hold another JSON
+argv (**never a token**). Without `BL_PROVIDER_TESTS=1`, nothing contacts Linear,
+and a skipped test isn't a pass. See the [recorded run](linear-verification.md).

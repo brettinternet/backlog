@@ -2,11 +2,27 @@
 
 **Status:** Frozen.
 
-One syntax serves the TUI filter bar, CLI arguments (`bl ls QUERY`, `bl next QUERY`), saved views, hooks (`if:`), actions (`when:`), and MCP `query`. It reads like GitHub and Linear search.
+One syntax serves the TUI filter bar, `bl ls` and `bl next`, saved views, hook
+`if:`, action `when:`, and MCP `query`. It reads like GitHub and Linear search:
 
 ```text
 is:open label:tui,perf -label:wontfix priority:>=high assignee:me updated:<7d "detail pane"
 ```
+
+| Example | Matches |
+| --- | --- |
+| `label:tui,perf` | Label `tui` or `perf` |
+| `label:tui label:perf` | Both labels |
+| `-label:wontfix` | Not labeled `wontfix` |
+| `priority:>=high` | Urgent or high |
+| `assignee:none` | Unassigned |
+| `updated:<7d` | Updated in the last seven days |
+| `due:<today` | Overdue |
+| `detail pane` | ID or title contains `detail` and `pane` |
+| `"detail pane"` | ID or title contains `detail pane` |
+| `text:debounce` | Title or body contains `debounce` |
+| `field.estimate:3` | Raw frontmatter `estimate` is `3` |
+| `sort:priority,-updated group:label` | Sort and group (not a filter) |
 
 ## Grammar
 
@@ -20,72 +36,144 @@ phrase  = DQUOTE *( char | escape ) DQUOTE
 escape  = BACKSLASH char                    ; includes quotes and backslashes
 ```
 
-A leading `-` negates the term. Empty queries match all items. Whitespace separates terms outside quotes; quoted and bare segments can be concatenated. A backslash escapes the next character, inside or outside quotes (including quotes, backslashes, whitespace, and commas). A trailing backslash or unterminated quote is an error. Empty values are errors. A quoted or escaped field prefix is literal free text. Commas delimit alternatives only in field values, not free text.
+- An empty query matches everything. `-` negates a term.
+- Whitespace separates terms outside quotes. Quoted and bare pieces can be
+  joined into one value.
+- `\` escapes the next character anywhere, including quotes, whitespace, and
+  commas. A trailing `\` or unclosed quote is an error, as is an empty value.
+- A quoted or escaped field prefix is plain text (`"label:tui"`).
+- Commas separate alternatives only in field values.
 
-Field names, `is:`/`has:` values, categories, statuses, priorities, claim values, and outcomes are case-insensitive. Other exact values (including labels, handles, and IDs) are case-sensitive. `none` is a case-insensitive reserved value for an unset scalar or empty list where listed below. Raw field suffixes match frontmatter keys case-insensitively, like other field names.
+Field names, `is:`/`has:` values, categories, statuses, priorities, claim
+values, and outcomes ignore case. Labels, handles, IDs, and other exact values
+don't. `none` (any case) means unset or empty where the table allows it.
 
-Free text is a case-insensitive **literal substring** of the ID or title. `text:` is a case-insensitive literal substring of the title or body: description, criteria, DoD, plan, notes, summary, and comment bodies, joined with newlines. Neither mode tokenizes, stems, interprets wildcards, nor uses a search-engine query grammar. The SQLite FTS5 trigram index narrows `text:` candidates using Go-lowercased text; the evaluator then checks the literal substring. Queries shorter than three Unicode code points, queries containing NUL, and unavailable or stale indexes use the in-memory evaluator. Both paths return the same results. Remote adapters can supply `text:` candidate
-pushdown through the same source search seam. Candidates are post-filtered
-locally; a failed search or any missing local match disables pushdown for that
-snapshot, so provider search semantics cannot hide a matching item.
+## Text matching
+
+Bare words and phrases match a case-insensitive substring of the ID or title.
+`text:` matches a substring of the title or body (description, criteria, DoD,
+plan, notes, summary, and comment bodies). Neither tokenizes, stems, or treats
+wildcards specially.
+
+A SQLite FTS5 trigram index narrows `text:` candidates, then the literal check
+runs. Queries under three characters or containing NUL, and missing or stale
+indexes, use the in-memory path. Results are identical either way. Remote
+adapters may narrow `text:` with provider search; results are rechecked locally,
+and if provider search fails or misses a local match, it's skipped for that
+snapshot.
 
 ## Fields
 
 | Field | Values |
 | --- | --- |
-| `id` | Exact ID or numeric shorthand; `id:BL-1,BL-2`. Numeric shorthand matches the last hyphen-separated component, ignoring zero padding. `source:ID` disambiguates a ref. Workspace source values use `url.QueryEscape(project.id)/source-id` (format.md); use that full value in `id:` or `source:` predicates to distinguish identical source/ID pairs across projects. |
+| `id` | ID or number: `id:BL-1,BL-2`, `id:12`. A number matches the last hyphenated part, ignoring padding. `source:ID` picks a source; in a workspace use the full source key (`github.com%2Facme%2Fapp/tasks:BL-1`). |
 | `status` | Status key or name |
 | `category` | `backlog`, `todo`, `active`, `done`, `canceled` |
-| `priority` | `urgent`, `high`, `medium`, `low`, `none`; ordered, so `priority:>=high` works |
+| `priority` | `urgent`, `high`, `medium`, `low`, `none`; ordered |
 | `assignee` | Handle, `me`, or `none` |
 | `label`, `type`, `milestone`, `source` | Exact value, or `none` |
 | `parent` | ID, or `none` |
 | `blocked-by`, `blocks` | ID |
-| `created`, `updated`, `due` | `YYYY-MM-DD`, `today`, or nonnegative integer relative age (`7d`, `12h`, `2w`), ordered; `due:<today`. Absolute dates compare calendar dates in the injected clock's location. Relative ages compare elapsed age: `updated:<7d` means newer than seven days ago; `updated:>7d` means older. Hours/days/weeks are fixed durations. Without an operator, equality is used. Missing timestamps and invalid/unset item due dates do not match. |
-| `text` | Literal word or phrase matched against the title and body (equivalent results when cached) |
-| `field.NAME` | Exact string representation of a raw frontmatter/provider scalar, or membership in a raw list (format.md). `none` matches a missing or null field. No ordered operators. |
-| `claimed` | `me`, `others`, or `none` (requires coordination) |
-| `is` | `open` (backlog, todo, or active), `closed`, `ready`, `blocked`, `waiting`, `unknown`, `mine`, `claimed`, `archived`, `pending` (unsynced local edit) |
+| `created`, `updated`, `due` | Ordered. See [Dates](#dates). |
+| `text` | Word or phrase in the title or body |
+| `field.NAME` | Exact string form of a raw scalar, or membership in a raw list. `none` matches missing or null. Not ordered. |
+| `claimed` | `me`, `others`, `none` (needs coordination) |
+| `is` | `open` (backlog, todo, or active), `closed`, `ready`, `blocked`, `waiting`, `unknown`, `mine`, `claimed`, `archived`, `pending` (unconfirmed local edit) |
 | `has` | `parent`, `children`, `blockers`, `assignee`, `due`, `criteria`, `claim` |
-| `changed` | Field name, or `readiness`. Hook `if:` only. True when the event changed that field. |
-| `hook`, `action` | Name. Hook `if:` only. Matches the hook or action that produced a `hook.finished` or `action.finished` event. |
-| `outcome` | `ok`, `failed`, `timeout`, `refused`. Hook `if:` only, for `*.finished` events. |
+| `changed` | Field name or `readiness`. Hooks only: the event changed it. |
+| `hook`, `action` | Name. Hooks only: matches `hook.finished` or `action.finished` from it. |
+| `outcome` | `ok`, `failed`, `timeout`, `refused`. Hooks only, for `*.finished` events. |
 
-`is:ready` and related readiness values use the engine's design.md §6 assessment, not a second readiness calculation. `is:mine` matches any configured caller handle against assignees. Claims, archive state, pending state, and readiness are injected snapshot overlays. Missing readiness is unknown; missing claim state is not known-free. Stale cached
-items have unknown readiness, and a stale dependency target remains unknown even
-when its cached status is done. Claim predicates require coordination to be enabled. `has:blockers` means the item has dependency references, regardless of their readiness; `has:criteria` refers to acceptance criteria, not DoD.
+Notes:
 
-Event predicates require explicit hook parsing mode. With no event context they are false (before negation). `hook:` and `action:` only match their corresponding finished event types; `outcome:` only matches a hook/action finished event. `changed:` matches changed field names case-insensitively, including `readiness`.
+- `is:ready` and the other readiness values come from the engine
+  ([readiness](readiness.md)). Stale items and stale blockers are `unknown`,
+  even if the cached status is done.
+- `is:mine` matches any of your configured handles.
+- `has:blockers` means the item lists blockers, satisfied or not.
+  `has:criteria` means acceptance criteria, not DoD.
+- Claim terms use the bulk claim list. An expired claim is free. A failed or
+  redacted list is unknown, so `claimed:none` never matches then.
+- Hook-only terms need hook parsing mode and are false outside an event.
+- `bl ls` and views add `is:open` when the query has no `is:` term.
+  `is:archived` loads `archive/`. The parser itself adds nothing and does no I/O.
 
-With no `is:` term, a view or `bl ls` adds `is:open`. `is:archived` loads `archive/` on demand. These are caller responsibilities: the pure parser adds no terms and performs no I/O.
+### Dates
+
+| Value | Meaning |
+| --- | --- |
+| `due:2026-11-01` | That calendar day, in the clock's time zone |
+| `due:<today` | Before today |
+| `updated:<7d` | Less than seven days old |
+| `updated:>2w` | More than two weeks old |
+| `created:>=12h` | At least twelve hours old |
+
+Relative ages use whole `h`, `d`, or `w` as fixed durations. Without an
+operator, equality applies. Items with no timestamp, or an invalid or unset due
+date, don't match.
 
 ## Sort and group
 
-Sort and group are separate view parameters. The filter bar also accepts them inline as `sort:` and `group:` terms:
+Views take `sort` and `group` parameters; the filter bar also accepts inline
+`sort:` and `group:` terms, each at most once and never negated.
 
-| Parameter | Syntax | Notes |
-| --- | --- | --- |
-| `sort` | `field[,field…]` | Prefix `-` to reverse. Keys: `next` (injected complete engine design.md §6 order), `priority` (urgent first), `rank` (ascending, unset last), `updated` (newest first), `created` (oldest first), `due` (earliest first, unset last), `id` (natural numeric order), `title` (case-insensitive ascending), `status` (workflow order). Ties always break by `next`, then natural `id`, then source identity. Reversal applies to the named key only. Missing next ranks follow known ranks, then break by ID. |
-| `group` | One key | `status`, `category`, `priority`, `assignee`, `label`, `milestone`, `type`, `parent`, `source`, `none`. An item with several labels or assignees appears in each corresponding group. Groups follow configured status order, category order (`backlog`, `todo`, `active`, `done`, `canceled`), priority order (`urgent`, `high`, `medium`, `low`, then unset), catalog order for declared milestones including archived ones (design.md §5), and case-sensitive value order otherwise. Undeclared statuses/milestones follow declared ones in value order. Parent group keys are source-qualified. An empty group value represents an unset field. Input sort order is preserved within groups. |
+| Sort key | Order |
+| --- | --- |
+| `next` | Engine ranking ([readiness](readiness.md)); the default |
+| `priority` | Urgent first |
+| `rank` | Ascending, unset last |
+| `updated` | Newest first |
+| `created` | Oldest first |
+| `due` | Earliest first, unset last |
+| `id` | Natural |
+| `title` | Case-insensitive |
+| `status` | Workflow order |
 
-`sort:` and `group:` are each allowed at most once and cannot be negated. `group:` takes exactly one key. They are projection parameters, not match predicates; omitted sort uses `next`, and omitted group is `none`.
+Separate keys with commas; `-` reverses one key (`sort:priority,-updated`). Ties
+break by `next`, then ID, then source. Items without a `next` rank follow ranked
+ones.
+
+`group:` takes one of `status`, `category`, `priority`, `assignee`, `label`,
+`milestone`, `type`, `parent`, `source`, or `none` (the default). Items with
+several labels or assignees appear in each group. Groups follow status order,
+category order, priority order (unset last), or milestone catalog order
+(including archived milestones); undeclared values follow, then other keys sort
+by value. An empty group value is unset. Sort order holds within each group.
 
 ## Errors
 
-A malformed query returns a positioned error with a close-name suggestion when available, for example parsing `x      lable:tui` returns `unknown field "lable" at 7; did you mean "label"?`. Positions are zero-based UTF-8 byte offsets into the original input; terms and values retain their positions in the AST. The TUI keeps the last valid result while you type.
+Errors give a zero-based UTF-8 byte position and a suggestion when one is close:
 
-An unknown value for a known field, such as a status that doesn't exist, is an error in the CLI and an inline warning in the TUI. Syntax validates fixed vocabularies immediately; separate snapshot validation checks status keys/names, labels, types, milestones, sources, and assignees against config and values in use. Unknown IDs/raw fields/free text are legal and simply may not match. Ordered operators are allowed only on priority and dates.
+```text
+x      lable:tui
+unknown field "lable" at 7; did you mean "label"?
+```
+
+The TUI keeps the last valid result while you type. Ordered operators work only
+on priority and dates. Unknown statuses, labels, types, milestones, sources, and
+assignees are errors in the CLI and warnings in the TUI. Unknown IDs, raw
+fields, and text are fine; they just may not match.
 
 ## Completion
 
-The TUI completes field names first (including `field.NAME:` for raw keys in use, lowercased), then values from the loaded snapshot and config: statuses, labels, assignees, milestones (with their names), IDs, and titles. Declared labels and unarchived milestones come first, then deduplicated values in use in case-sensitive value order. Labels are plain strings in the current config and have no archive flag. Milestone candidates carry their display names; an archived catalog entry is not offered solely because it is declared (but remains discoverable if in use). Status candidates carry names too. Candidates are semantic values, not insertion text; the caller quotes/escapes punctuation as needed. Hook-only field names are offered only in hook mode. Free-text matches highlight in the list (rendering belongs to the TUI).
+The TUI completes field names (including `field.NAME:` for raw keys in use,
+lowercased), then values from config and the loaded items: statuses (with
+names), labels, assignees, milestones (with names), IDs, and titles. Declared
+labels and unarchived milestones come first, then values in use. An archived
+milestone is offered only if an item uses it. Hook-only fields appear only in
+hook mode. Candidates are values; the caller quotes them as needed.
 
 ## Shared quick-add parser
 
-`internal/query.QuickAdd` implements [tui.md quick-add](tui.md#quick-add) without defaults, ID allocation, or I/O. Quotes and escapes use the same decoding as query values. A token whose first character is quoted or escaped becomes literal title text; quotes inside a metadata token allow spaces in its value (`#"two words"`). Title words are joined with single spaces. A nonempty title is required.
+`internal/query.QuickAdd` parses [quick-add](tui.md#quick-add) text without
+defaults, ID allocation, or I/O. It's shared by the TUI, `bl new`, and MCP.
 
-Priority prefixes are case-insensitive and must uniquely identify urgent/high/medium/low. `@me` resolves to the caller-supplied handle and errors if none was supplied. Other handles retain `@`. List tokens accumulate without duplicates; repeated scalar tokens use the last value. Parent and blocker tokens accept `source:ID`. Empty metadata values, invalid priorities, unfinished quotes, and unfinished escapes produce positioned errors. The caller validates source-specific field values and reference identities.
-
-Claim predicates consume the bulk coordination overlay. Expired claims are known
-free, evaluated under the projection's clock without a provider call. Failed or
-redacted overlay responses remain unknown; they never make `claimed:none` true.
+- Quoting and escaping work as in queries. A token starting with a quote or
+  escape is title text; quotes inside a token allow spaces (`#"two words"`).
+- Title words join with single spaces. A title is required.
+- Priority prefixes ignore case and must be unique (`!h`).
+- `@me` needs a caller handle. Other handles keep their `@`.
+- List tokens collect without duplicates; a repeated scalar token keeps the
+  last value. `^` and `<` accept `source:ID`.
+- Empty values, invalid priorities, and unfinished quotes or escapes fail with
+  a position. The caller validates field values and references.

@@ -1,26 +1,14 @@
-# OAuth qualification
+# OAuth
 
-## Shared lifecycle status
+| Provider | Login | Status |
+| --- | --- | --- |
+| Linear | Authorization code, S256 PKCE, loopback callback | Available ([setup](linear.md#oauth-login)) |
+| GitHub (github.com) | Device flow with separate read and write GitHub Apps | Available ([setup](github.md#oauth-login)) |
+| Jira Cloud | — | Excluded: 3LO needs a client secret. Use a helper or API token. |
+| External adapters | — | The adapter owns authentication ([protocol](external-adapter-protocol.md#compatibility-obligations)) |
+| Native, Backlog.md, Beads | — | Local; no auth |
 
-BL-60 implements the shared opt-in account manager, protected token store,
-serialized refresh, principal checks, logout/cache purge and a provider contract.
-BL-62 registers Linear user authorization with S256 PKCE, secret-free exchange
-and rotating refresh, using the owner-approved public application and loopback
-callback. BL-61 registers github.com GitHub App device authorization with separate
-owner-approved read-only/write Apps. See [Linear setup](linear.md#oauth-login) and
-[GitHub setup](github.md#oauth-login). Unsupported providers fail safely with `oauth-provider-unavailable` without contacting a provider. There is no user-configurable arbitrary OAuth endpoint or
-client-secret path. Jira is explicitly excluded by the owner; use its future
-helper/API-token path only. External adapters continue to own their private
-authentication. Existing helper/environment accounts are unchanged.
-
-The contract supports in-tree providers and test-injected fake servers. A
-provider must qualify public-client authorization, return granted scopes and an
-immutable principal, implement refresh/rotation and capability rediscovery, and
-classify provider failures using the shared safe diagnostic codes. Login always
-authorizes read access first. `bl auth login PROVIDER ACCOUNT --write` performs
-a separate explicit write upgrade after the read grant is verified. For GitHub,
-this uses a second App authorization, not an OAuth resource-scope request.
-OAuth accounts are declared only in user config, for example:
+OAuth is opt-in per account, in user config only:
 
 ```yaml
 accounts:
@@ -30,108 +18,105 @@ accounts:
       oauth: true
 ```
 
-For providers other than Linear and github.com GitHub, keep `credential: [...]` or `env:` in place
-instead of setting `oauth: true`. These choices are mutually exclusive;
-OAuth never silently falls back to a helper or environment token.
+`oauth: true` excludes `credential` and `env`, and never falls back to them.
+Other providers keep using a helper or environment variable. There's no
+user-configurable endpoint, client, or secret; an unsupported provider fails
+with `oauth-provider-unavailable` before contacting anything.
 
-This is BL-59's documentation-based qualification for BL-53, checked **2026-10-23**.
-The provider matrix records research, not live authorization. BL-62 implements
-Linear with an owner-supplied public client ID and accepted callback registration;
-fake-server tests verify the protocol, not a completed live user authorization. Jira's documented secret requirement remains
-ineligible under D17. BL-61 qualifies GitHub device authorization using the
-owner-supplied public read/write App registrations and fake-server checks; no
-completed live user authorization is claimed.
+## Lifecycle
 
-## Provider evidence matrix
+```sh
+bl auth login linear work          # read
+bl auth login linear work --write  # read, then a separate write grant
+bl auth logout linear work
+```
+
+- **Login** needs a terminal. It always gets read access first and verifies it;
+  `--write` then asks for write separately (on GitHub, by authorizing a second
+  App). MCP, hooks, actions, and claims never start a login.
+- **Storage:** tokens and granted scopes live in owner-only XDG state (0700
+  directory, 0600 records written atomically and fsynced). Never in config,
+  cache, argv, logs, events, MCP output, hooks, or actions.
+- **Refresh** starts a minute before expiry, under a per-account cross-process
+  lock. The rotated pair is stored durably before the lock is released, then the
+  immutable user ID (and source binding) is rechecked. A mismatch disables the
+  affected sources. Capabilities are rediscovered after consent changes.
+- **Logout** deletes local tokens and the account's cached rows, revokes
+  remotely where a public client can (Linear), and otherwise tells you to revoke
+  in provider settings (GitHub).
+
+## Errors
+
+| Reason | Meaning |
+| --- | --- |
+| `authentication-required` | No grant yet; run `bl auth login` |
+| `token-expired` | The access token expired and couldn't refresh; log in again |
+| `grant-revoked` | The grant was revoked; log in again |
+| `insufficient-scope` | The grant lacks permission; use `--write` or fix App permissions |
+| `principal-mismatch` | The token belongs to someone else; the source is disabled until fixed |
+| `sso-required` | The organization requires SSO or SAML authorization for the app |
+| `rate-limited` | Retry after the reported time |
+| `provider-unavailable` | The provider is down, or its response couldn't be classified |
+| `oauth-provider-unavailable` | No OAuth flow exists for this provider |
+| `oauth-not-opted-in` | The account lacks `oauth: true` |
+| `credential-store-unavailable` | The token store can't be used; check its permissions and free space |
+| `interactive-login-required` | Login needs a terminal |
+
+Messages never include provider response bodies or tokens. Workspace and team
+binding is checked separately from token validity. A broader earlier grant is
+never accepted as read-only consent.
+
+## Registrations
+
+**Linear:** public client ID `6eaa52fb21a79f49ba564d31ee0bab91`, callback
+`http://127.0.0.1:47653/oauth/callback`, approved by the owner. Login requests
+`read`, then `write` after explicit consent. Granted scopes come from the token
+response (including the older array form). No actor/bot auth, client
+credentials, webhooks, or custom redirects.
+
+**GitHub:** `bl-cli-read` (`Iv23lixJ0srsgnPbExrP`) and `bl-cli`
+(`Iv23liwvINakcZA9rAst`), approved by the owner. Two Apps are needed because
+GitHub can't downscope a write App's user token. Both enable device flow and
+expiring user tokens, with OAuth-during-installation off. Neither uses
+Contents, enterprise permissions, webhooks, a callback server, a client secret,
+or a private key. A private registration may limit who can install it. The
+stored `read`/`write` label selects the App on refresh; it isn't a GitHub scope.
+
+Fake authorization servers test both flows. No live user login has been
+recorded.
+
+## Provider evidence
+
+Checked against official documentation on **2026-10-23** (BL-59). Recheck
+expiry, refresh, and scope behavior when integrating a provider or an Enterprise
+version.
 
 | Candidate | Secret-free native flow | Read first; writes only after opt-in | Lifetime and refresh | Revocation | Principal verification |
 | --- | --- | --- | --- | --- | --- |
-| Linear | **Eligible in documentation:** authorization code with PKCE; secret optional at code exchange and refresh for PKCE tokens [L1]. Use S256 and random state, `actor=user`, not client credentials. | `read` initially; add `comments:create` for comment-only writes or `write` for supported issue updates. No `admin` [L1]. | Access token 24 hours; refresh returns a replacement pair. Lost refresh response can replay the original request for 30 minutes. Refresh-token absolute/inactivity lifetime is not stated in L1; do not invent one. | `POST https://api.linear.app/oauth/revoke`, token in form body, optional `token_type_hint`; documented 200/400/401 outcomes [L1]. | GraphQL `viewer { id }` [L2]; also validate organization/team binding as the existing adapter does. Compare immutable UUIDs, never names. |
-| GitHub OAuth app | **Eligible flow, limited read-only scope:** device authorization, explicitly enabled on app registration, no secret for token exchange or device-issued refresh [G1]. | No scope reads public information; `read:project` reads Projects. `repo` (private repositories) and `public_repo` include writes: neither is a read-only scope [G2]. Do not silently request them for read-only setup. | Expiring access tokens: 8 hours, refresh 6 months without use; `offline_access` opts a sign-in into expiry. Rotation invalidates the old pair; scopes cannot change through refresh. Non-expiring/older Enterprise responses may omit refresh tokens [G1]. | Application token/grant deletion requires client ID **and secret** [G3]; a public client cannot use it. Delete local tokens and direct the user to GitHub's authorized-app settings to revoke access [G4]; never report local deletion as remote revocation. | `GET /user` after each token acquisition [G1]; compare configured login and bind stable user ID for stored credentials. Existing adapter verifies GraphQL `viewer.login`. |
-| GitHub App | **Implemented for github.com (BL-61):** device-issued user tokens and refresh require no secret [G5, G6]. | Fine-grained permissions belong to app registration, not OAuth scopes [G5]. A read-only installation can use Issues read and required Projects read permissions; writes require installation permission approval, not a `scope=repo` workaround. Plain login uses owner-approved `bl-cli-read`; explicit writes separately authorize `bl-cli` for the same immutable user. Read App grants with any write permission are rejected. Live installation/repository grants, user role and project `viewerCanUpdate` gate writes. Personal Projects and Enterprise remain helper-only. | Expiring user tokens: 8 hours, refresh 6 months; refresh replaces and invalidates the old pair [G6]. Handle actual expiry fields and disabled expiration; `offline_access` is not a resource permission. | Token/grant deletion has the same confidential app-auth requirement [G3]. User revocation remains necessary without an eligible secret-free revocation endpoint. | Verify authenticated user with the new token, bind immutable ID and login, and rediscover installation/repository permissions; user access is the intersection of app and user permissions [G5]. |
-| Jira Cloud 3LO | **Not eligible under the current evidence:** documented code exchange and refresh require `client_secret` [J1]. No secret-free PKCE/device alternative is established by these sources. Do not embed a secret or add a proxy service. | If a native flow becomes eligible: classic `read:jira-work` plus `read:jira-user` for issues/current user; `write:jira-work` only for enabled writes. Check each endpoint's scopes, or choose its granular alternative [J2, J3]. | Use returned `expires_in` (J1 does not promise a fixed access lifetime); `offline_access` enables rotating refresh. Documented refresh inactivity expiry 90 days, reuse leeway 10 minutes [J1]. These do not make a secret-requiring refresh eligible. | Users can revoke their grant [J1]. A secret-free programmatic revocation endpoint is **unknown** here; do not promise one. | Discover allowed site/cloud ID with `accessible-resources` [J1], then `GET /rest/api/3/myself`, compare immutable `accountId` and configured site [J3]. Site discovery alone is not user authentication. |
-| External adapters | **Not a host OAuth candidate in protocol v1:** no login or credential-delivery method; the adapter owns authentication [E1]. | Provider-specific; no generic scope contract. Never forward tokens through argv, config, action environments or protocol frames. | Provider/adapter-owned, no host refresh/rotation contract. | Provider/adapter-owned, no host revocation contract. | Adapter-owned, no host principal-verification contract. A concrete provider and separately versioned protocol evidence are required before extending host auth. |
+| Linear | **Yes:** authorization code with PKCE; no secret at exchange or refresh for PKCE tokens [L1]. Use S256, random state, `actor=user`. | `read`; then `comments:create` for comments only, or `write` for issue updates. No `admin` [L1]. | Access 24 h; refresh returns a new pair. A lost refresh response can be replayed for 30 min. Refresh-token lifetime isn't documented. | `POST https://api.linear.app/oauth/revoke` with the token in the form body [L1]. | GraphQL `viewer { id }` [L2], plus organization and team binding, by UUID. |
+| GitHub OAuth app | **Yes,** device flow without a secret [G1], but scopes are coarse. | No scope reads public data; `read:project` reads Projects. `repo` and `public_repo` include writes [G2], so no private read-only scope exists. | Expiring tokens: 8 h, refresh 6 months; rotation invalidates the old pair; scopes can't change on refresh [G1]. | Needs client ID **and secret** [G3]. Users revoke in settings [G4]. | `GET /user` after each token [G1]; bind the stable user ID. |
+| GitHub App | **Yes,** implemented (BL-61): device-issued user tokens and refresh need no secret [G5, G6]. | Permissions come from the App registration, not scopes [G5]. Read App for reads; separate write App after opt-in. Live installation grants, user role, and `viewerCanUpdate` gate writes. | 8 h, refresh 6 months; refresh replaces the pair [G6]. Handle non-expiring tokens too. | Same secret requirement as OAuth apps [G3]; users revoke manually. | Verify the user with the new token, bind ID and login, and rediscover installation permissions; access is the intersection of App and user [G5]. |
+| Jira Cloud 3LO | **No:** exchange and refresh require `client_secret` [J1]. No embedded secret or proxy. | If ever eligible: `read:jira-work`, `read:jira-user`; `write:jira-work` for writes [J2, J3]. | `expires_in`; `offline_access` enables rotating refresh; 90-day inactivity expiry [J1]. | Users revoke [J1]; no known secret-free API. | `accessible-resources` for the site, then `GET /rest/api/3/myself` and compare `accountId` [J1, J3]. |
+| External adapters | **No** host method in protocol v1; the adapter authenticates [E1]. | Provider-specific. Never pass tokens through argv, config, environments, or frames. | Adapter-owned | Adapter-owned | Adapter-owned. Needs a concrete provider and a new protocol version first. |
 
-## Implementation gates
+## Adding a provider
 
-BL-60 implements the shared seam; BL-62 adds Linear and BL-61 adds GitHub App
-device login. BL-63 records Jira/external boundaries, with
-Jira native OAuth explicitly excluded by the owner. BL-53 remains open until all
-its acceptance criteria are satisfied; BL-60 alone does not deliver a usable
-provider login.
+- Register an owner-approved public client. Loopback flows need S256, state
+  checks, a bounded listener, and explicit consent; device flows must honor the
+  polling interval, `slow_down`, denial, and code expiry.
+- Reuse the account config, resolver, redaction, principal checks, token store,
+  and per-account refresh lock. Persist each rotated pair before releasing the
+  lock; provider grace periods don't replace serialization.
+- Discover granted scopes, request writes only after opt-in, and rediscover
+  capabilities afterward. Map failures to the codes above.
+- Revoke remotely only through a public-client endpoint; never acquire a secret
+  just to revoke.
+- Test against fake servers: state and PKCE checks, login, rotation, concurrent
+  refresh, denial, revocation, principal mismatch, unattended refusal, and
+  canary-token leaks into config, argv, hooks, actions, logs, events, MCP, and
+  cache.
 
-Linear uses public client ID `6eaa52fb21a79f49ba564d31ee0bab91` and callback
-`http://127.0.0.1:47653/oauth/callback`, approved by the owner. Tokens and secrets
-are not registration metadata and must never be supplied through config or argv.
-Login requests `read`; a second explicit consent adds `write`. Granted scopes
-come from the token response (including older array-form scope responses), are
-stored alongside the rotated pair, and are rediscovered by source initialization.
-The built-in application does not use app/bot actor authentication, client
-credentials, webhooks, arbitrary redirect URIs or configurable network endpoints.
-
-Authentication failures use safe structured codes: `authentication-required`,
-`token-expired`, `grant-revoked`, `insufficient-scope`, `principal-mismatch`,
-`sso-required` for explicit SSO/SAML refusals, `rate-limited` with retry time,
-and `provider-unavailable`. Unclassified/malformed responses fail closed as
-provider unavailable rather than exposing provider text. Workspace/team binding
-is enforced independently of OAuth token validity. A broader prior grant is not
-accepted as read-only consent. Logout attempts refresh-token revocation; any
-failure is reported as requiring manual revocation while local deletion proceeds.
-
-GitHub uses public client IDs `Iv23lixJ0srsgnPbExrP` (`bl-cli-read`) and
-`Iv23liwvINakcZA9rAst` (`bl-cli`), supplied and approved by the owner. Both enable
-device flow and expiring user tokens. Separate installations preserve true
-read-only login because GitHub cannot downscope a write App's user token.
-An explicit write upgrade requires installing/approving and authorizing the write
-App; the stored internal read/write labels select the originating App on refresh,
-not classic OAuth scopes. Each rotated pair is durably stored before validating
-principal and permissions. Source use checks live app and selected-repository
-permissions even when an access token has not expired. Local logout cannot revoke
-either grant remotely: manually revoke both in Authorized GitHub Apps settings.
-
-For additional eligible providers:
-
-- Register an owner-approved public application and obtain its public client ID.
-  Qualify redirect registration and loopback callback support for Linear; require
-  S256, state validation, bounded listener lifetime and explicit interactive consent.
-  GitHub device authorization must honor polling interval, `slow_down`, denial and
-  code expiry. Neither path may start from MCP, hooks, actions or unattended claims.
-- Preserve GitHub's separate read/write App boundary. Classic OAuth cannot
-  satisfy private read-only access with `repo`; requesting it is not a fallback.
-  Organization Projects v2 is supported through live App installation permissions;
-  personal Projects v2 and Enterprise remain on the helper path.
-- Extend existing account configuration, resolver, redaction and principal checks.
-  Linear needs explicit Bearer-token handling distinct from its raw personal API
-  key path. Keep non-opt-in helper/environment accounts unchanged. Verify principal
-  and binding after login and **every refresh**; mismatch disables those sources.
-- BL-60 establishes D17's owner-private state store and serialized-refresh
-  contract. Provider children must preserve its per-account lock, durably persist
-  each rotated pair before release, re-read under lock, and never send tokens to
-  config, argv, logs, hooks/actions, events, MCP output or disposable cache. The existing resolver's process-local lock is not sufficient. Provider
-  grace periods are recovery aids, not substitutes for serialization.
-- Discover actual granted scopes/permissions, request writes only after explicit
-  opt-in, then rediscover capabilities. Distinguish expiry, revocation, insufficient
-  scope, SSO/SAML policy, rate limits and downtime in structured diagnostics.
-- Logout deletes stored credentials and purges that principal's cached rows.
-  Revoke remotely where a qualified public-client endpoint exists; otherwise
-  clearly report the manual revocation step. Do not acquire a client secret just
-  to call a confidential revocation API.
-- Exercise fake authorization servers for state/PKCE validation, login, rotation,
-  concurrent refresh, denial, revocation, principal mismatch, unattended refusal,
-  and canary-token leaks across config, argv, hooks/actions, logs/events, MCP and
-  cache. Provider documentation does not replace executable security evidence.
-
-Jira stays helper/API-token based when its adapter ships, unless official evidence
-establishes a secret-free native code exchange **and refresh**. BL-40/BL-41 remain
-separate dependencies for Jira API behavior. External host OAuth waits for a
-concrete eligible consumer and a compatible, versioned authentication contract;
-protocol v1 must not gain invented auth methods. Native, Backlog.md and Beads are
-local and need no OAuth.
-
-## Official sources
-
-Links and claims were checked on 2026-10-23. Expiry, refresh and scope behavior
-must be rechecked when integrating a provider or qualifying an Enterprise version.
+## Sources
 
 - **L1:** [Linear OAuth 2.0](https://linear.app/developers/oauth-2-0-authentication): PKCE code exchange, secret-free PKCE refresh, scopes, expiry, rotation grace period and revocation.
 - **L2:** [Linear GraphQL getting started](https://linear.app/developers/graphql): OAuth Bearer authorization versus raw personal API key, and viewer identity query.

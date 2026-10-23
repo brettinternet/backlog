@@ -5,15 +5,13 @@
 <h1 align="center">backlog</h1>
 
 `bl` is a keyboard-first terminal backlog for people and coding agents. Tasks are
-Markdown files in Git; linked worktrees share one live queue.
+Markdown files in Git, and every worktree of a repository shares one live queue.
 
 ![TUI demo](docs/demo.gif)
 
 ## Quickstart
 
-Install a binary with the [user guide](docs/guide.md#install), or build from source
-with [Development](docs/development.md#setup). Inside a Git repository, with `bl`
-on PATH:
+[Install `bl`](docs/guide.md#install), then run this inside a Git repository:
 
 ```sh
 bl init
@@ -23,38 +21,53 @@ bl show BL-1 --json
 bl next --explain --json
 ```
 
-Run `bl` in a terminal. `j`/`k` move, `enter` opens detail, `gt` switches views,
-`5` opens the board, `/` filters, `n` creates, `?` shows keys, and `q` quits.
-CLI commands return a versioned envelope with `--json`; `bl instructions workflow`
-prints the installed version's agent protocol.
+Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
+`?` lists every key, `q` quits. Every command accepts `--json`, and
+`bl instructions workflow` prints the agent loop for the installed version.
 
-Native files, [direct Backlog.md editing](docs/backlog-md.md), Backlog.md import,
-local Beads, GitHub Issues with Projects v2, [Linear](docs/linear.md), external
-adapters, CLI/MCP, the TUI, hooks, actions, and optional Worklease coordination
-are available. Detected Backlog.md projects open read-only until configured.
-The Jira adapter is still being implemented; see [remote adapter status](docs/remote.md).
+## Sources
+
+| Source | Support |
+| --- | --- |
+| [Native files](docs/format.md) | Full read and write |
+| [Backlog.md](docs/backlog-md.md) | Edit in place, or [import](docs/import.md) |
+| [Beads](docs/beads.md) | Local checkout through `bd` 1.3.0 |
+| [GitHub Issues and Projects v2](docs/github.md) | Single-field edits and comments |
+| [Linear](docs/linear.md) | Single-field edits and comments |
+| [External adapters](docs/external-adapter-protocol.md) | JSON-RPC over stdio |
+| Jira Cloud | Not yet available ([status](docs/remote.md)) |
+
+Around the backlog: [MCP](docs/mcp.md), [hooks and actions](docs/automation.md),
+an [event stream](docs/events.md), and optional Worklease claims.
 
 ## Docs
 
-- [User guide](docs/guide.md): install, import, TUI, agents, configuration, automation
-- [Design](docs/design.md): decisions, architecture, budgets, milestones
-- [Native format](docs/format.md)
-- [Query language](docs/query.md)
-- [CLI commands](docs/cli.md)
+Using `bl`:
+
+- [User guide](docs/guide.md): install, import, TUI, configuration, agents, automation
+- [CLI](docs/cli.md)
 - [TUI and keymap](docs/tui.md)
+- [Query language](docs/query.md)
 - [Readiness and ranking](docs/readiness.md)
+- [MCP](docs/mcp.md)
+- [Hooks, actions, and agent handoff](docs/automation.md)
+- [Events](docs/events.md)
+- Config schemas: [project](docs/schemas/project-config.json), [user](docs/schemas/user-config.json)
+
+Sources:
+
+- [Native format](docs/format.md)
 - [Backlog.md source](docs/backlog-md.md) and [import](docs/import.md)
 - [Beads](docs/beads.md)
-- [Remote adapters](docs/remote.md) and [OAuth login](docs/oauth.md) (Linear PKCE and GitHub App device flow)
-- [GitHub setup](docs/github.md) and [live verification](docs/github-verification.md)
-- [Linear setup](docs/linear.md) and [live verification](docs/linear-verification.md)
-- [External adapter protocol v1](docs/external-adapter-protocol.md) and [wire schema](docs/external-adapter/v1/schema.json)
-- [MCP](docs/mcp.md)
-- [Events](docs/events.md)
-- [Hooks, actions, and agent handoff](docs/automation.md)
-- [Performance measurements](docs/benchmarks.md)
-- [TUI stack spike](docs/spikes/tui-stack.md)
+- [Remote sources](docs/remote.md) and [OAuth](docs/oauth.md)
+- [GitHub](docs/github.md) ([live verification](docs/github-verification.md))
+- [Linear](docs/linear.md) ([live verification](docs/linear-verification.md))
+- [External adapter protocol v1](docs/external-adapter-protocol.md) ([schema](docs/external-adapter/v1/schema.json))
+
+Project:
+
+- [Design](docs/design.md): decisions, architecture, budgets
 - [Development and releases](docs/development.md)
-- [Project config schema](docs/schemas/project-config.json)
-- [User config schema](docs/schemas/user-config.json)
-- [Demo tape](docs/demo.tape) and [recording instructions](docs/guide.md#demo)
+- [Benchmarks](docs/benchmarks.md)
+- [TUI stack spike](docs/spikes/tui-stack.md)
+- [Demo tape](docs/demo.tape) ([recording](docs/guide.md#demo))

@@ -1,6 +1,6 @@
 # Design
 
-**Status:** Accepted direction. This is the plan of record for `bl`. Backlog tasks cite decision IDs (`D#`). If you change a decision, update this register and the affected sections in the same commit. Until the task that ships an interface freezes it, command names, configuration keys, and wire shapes here are illustrative.
+**Status:** Plan of record. Backlog tasks cite decision IDs (`D#`). Changing a decision means updating this register and the affected sections in the same commit. Interfaces not yet frozen in [cli.md](cli.md) are illustrative here.
 
 Companion specs:
 
@@ -80,15 +80,15 @@ Non-goals:
 | D19 | **Agent interface.** Short verbs, numeric ID shorthand, and `--json` on every command, with one versioned envelope and stable exit codes (§7). Read command names `ls`, `show`, and read-only `next`, and write command names `new`, `set`, `start`, `done`, `note`, `comment`, `ac`, `edit`, `archive`, and `unarchive`, are frozen with their data shapes in [cli.md](cli.md). Long text comes from stdin. MCP tools mirror the CLI operations. `bl instructions` prints guidance matched to the installed version. |
 | D20 | **Coordination.** `bl` knows about claims, not about Worklease. Claims are a typed engine input, not a hook: per-item claim state, plus acquire, release, and list with the outcomes `acquired`, `contended` (with holder), `uncertain`, and `unavailable`. Readiness and `next --claim` branch on those outcomes, and exit-code hooks cannot express them. Worklease is the only implementation, through its stable `--json` CLI (§9). `bl` never implements claims, and Worklease never depends on `bl`. A public coordinator protocol on the BL-42 framing waits for a second claim system (D18). **Claim rules attach to status transitions in the engine**, so the CLI, TUI, and MCP behave identically. Entering an active category acquires first, and on contention nothing is written. Entering a closed category releases the session's claim after the write. Workflow around claims, such as launching agents or creating worktrees, uses hooks and actions, not built-in behavior. **One key per item.** In a `bl` project, every client claims the key `bl` reports for the item (§9). Worklease's `backlog-md` policy derives a different, host-local key, and claims on different keys never contend. **One handle per session.** `bl` runs Worklease from the control root (D5) with an explicit caller context, so a session finds its claim from every worktree and from MCP. Resource keys use Worklease's matching provider policy (`github`, `linear`) so claims contend with any other Worklease client on the same issue. Every other source uses `generic` with a stable source identity and item key: the project ID and item ID for native and Backlog.md items, and provider-stable IDs for remote items (never a key that changes when an issue moves). |
 | D21 | **Terminal and process safety.** Terminal control sequences are stripped from all displayed provider text. Hooks and actions receive context through environment variables and stdin JSON, never through a shell. Argv and `cwd` placeholders are limited to `{id}`, `{ref}`, `{source}`, `{url}`, `{root}`, `{branch}`, `{resource}`, and `{result.KEY}` (§8). Every expanded value is checked: no control characters, no leading `-`, at most 1 KiB. A failed check refuses the run. |
-| D27 | **Automation model.** Hooks react to item changes, derived readiness changes, and the outcomes of other hooks and actions. Chains are explicit (`on: action.finished`), carry results as bounded JSON, and are capped by a causal depth of 3. The event log is the only dedupe point, so each event is emitted once across processes without a daemon (§8). |
 | D22 | **Local state.** The ID allocator and write lock live in the Git common directory. Events, UI state, and trust records live in XDG state. The cache lives in XDG cache and is disposable. Nothing `bl` keeps outside the repository is required for correctness. |
 | D23 | **Cache.** A disposable SQLite cache (`modernc.org/sqlite`, WAL) gives every source a warm start, provides FTS search, and holds remote sync cursors. Native sources validate cached rows by file stat and reparse only changed files. Refresh is single-flight per source across processes. |
 | D24 | **Backends**, in delivery order: native, Backlog.md (file adapter), Beads (`bd` 1.3.0 JSON CLI), GitHub Issues (with Projects v2 status), Linear, Jira Cloud, external. Port from Worklease v1.9.3 where it applies, but drop Worklease's receipt and recovery journal; D15 replaces it. |
 | D25 | **Worklease becomes claims-only.** Worklease TASK-156 removes its work queue. Its provider probe evidence stays referenced at tag `v1.9.3` (§10). |
 | D26 | **Budgets.** The §11 budgets are acceptance criteria, measured on the reference host (Apple M5 Max, 64 GiB; updated with owner approval in BL-12) with the deterministic fixture generator. CI tracks relative regressions only and never asserts absolute latency. In BL-25 the owner clarified idle CPU at 10k as ≤ 2% of one core (not host-normalized), retaining the two-second native stat sweep. |
+| D27 | **Automation model.** Hooks react to item changes, derived readiness changes, and the outcomes of other hooks and actions. Chains are explicit (`on: action.finished`), carry results as bounded JSON, and are capped by a causal depth of 3. The event log is the only dedupe point, so each event is emitted once across processes without a daemon (§8). |
 | D28 | **Evidence and merges.** Evidence for a criterion is written under that criterion, never in Notes by number, so it can't point at the wrong one after a renumber. A file with conflict markers fails to parse with `merge-conflict`. `bl check --fix` resolves the two conflicts that every edit and comment produce, `updated` and appended comments, and leaves anything else for you. `bl` doesn't install a Git merge driver, because a driver needs per-clone Git config and runs without the project's lock. |
-| D30 | **Workspaces.** Compose independently resolved project contexts, including statuses, trust, events and claims. In composed views only, source keys are `url.QueryEscape(project.id)/source-id`, giving stable identity even when projects reuse source and item IDs. Bare relation IDs stay project/source local; explicit `source:ID` edges resolve only when unique in the loaded scope. Ambiguous or absent targets remain unknown. Workspace scope is a worker projection, not a merged project configuration. |
 | D29 | **Drafts.** A draft is an item in a `backlog`-category status, so it is open but never ready. `bl init` and `bl import backlog-md` configure a `draft` status, and `bl new --status draft` creates one without a moment in which it is ready to claim. Native IDs never change on promotion, so the importer numbers Backlog.md drafts in the source prefix, as `backlog draft promote` would. A Backlog.md source keeps its folders: changing a status to or from draft moves the file between `drafts/` and `tasks/` and allocates an ID there, as `draft promote` and `task demote` do, and also rewrites references, which Backlog.md 1.52 leaves dangling. |
+| D30 | **Workspaces.** Compose independently resolved project contexts, including statuses, trust, events and claims. In composed views only, source keys are `url.QueryEscape(project.id)/source-id`, giving stable identity even when projects reuse source and item IDs. Bare relation IDs stay project/source local; explicit `source:ID` edges resolve only when unique in the loaded scope. Ambiguous or absent targets remain unknown. Workspace scope is a worker projection, not a merged project configuration. |
 
 ## 4. Architecture
 
@@ -185,31 +185,15 @@ Undo applies the stored inverse mutation through the same pipeline.
 
 ## 5. Projects, configuration, and trust
 
-**Implementation boundary.** `internal/project` resolves XDG paths, discovers
-Git metadata without spawning Git, resolves the shared control root and project
-identity, and loads all D16 file layers with per-value provenance. Mappings merge
-by key; lists replace (including empty lists), and omitted booleans differ from
-explicit `false`. `BL_HIGH_CONTRAST` and `--high-contrast` are the current environment
-and flag overrides. `root: primary` is the default; `root: checkout` in the invoking
-or primary project config opts out of sharing. Only the selected checkout supplies
-project facts. Origin identity ignores transport, credentials, ports, and `.git`;
-without an origin, or with a local-path origin, it is the absolute control-root path, marked host-local.
+**Loading.** `internal/project` resolves XDG paths, reads Git metadata without spawning Git, finds the control root and identity, and loads the D16 layers with per-value provenance. Mappings merge by key; lists replace, including with an empty list. An omitted boolean differs from an explicit `false`. `BL_HIGH_CONTRAST` and `--high-contrast` are the environment and flag overrides. `root: checkout` in the invoking or primary checkout's config opts out of the shared control root.
 
-Files are strict single-document YAML, limited to 1 MiB; unknown keys, duplicate
-keys and milestone keys, and YAML aliases/anchors are rejected with file, line,
-and key diagnostics. Editor schemas are [schemas/user-config.json](schemas/user-config.json)
-and [schemas/project-config.json](schemas/project-config.json). `bl config show --json`
-prints effective non-secret settings, discovery, provenance, and a trust marker
-for each privileged entry. Credentials are retained in memory but omitted from
-output. Loading never writes, executes programs, or contacts providers. Project
-privileged entries remain inert until a root-bound trust grant matches their canonical digest. Trust grants and doctor diagnostics are documented in [cli.md](cli.md).
-Workspace declarations compose each listed project with its own independently resolved configuration. `--workspace NAME` explicitly selects one; the TUI finds the first workspace containing the invoking project, initially in project scope. Outside a repository it opens `defaultWorkspace`, initially in workspace scope. Paths expand `~/`; relative paths resolve against the user config directory. Duplicate project identities are rejected. `W` toggles scope on the projection worker and keeps stable selection when visible. Workspace source keys and relation ambiguity follow D30; writes, trust and claims route back to the original project and source. The TUI builds a separate
-additive saved-view catalog (built-ins, project, user, user per-project) without
-changing list replacement in effective settings; see [tui.md](tui.md#views-and-layouts).
+Config files are strict single-document YAML up to 1 MiB. Unknown keys, duplicate keys or milestone keys, and aliases or anchors are rejected with file, line, and key. Loading never writes, runs programs, or contacts providers. Credentials stay in memory and never appear in output. See [cli.md](cli.md#bl-config-show) for `config show`, `trust`, and `doctor`.
+
+**Workspaces** list project paths in user config (`~/` expands; relative paths resolve from the user config directory; duplicate project IDs are rejected). Each project loads its own configuration. Writes, trust, and claims route to the item's own project and source (D30). Saved-view tabs add up across layers without changing list replacement in effective settings ([tui.md](tui.md#views-and-layouts)).
 
 **Discovery.** Walk up from the working directory to the Git root, then resolve the control root (D5). The project config is `.config/backlog.yaml` at the control root. Without it, detect `backlog/config.yml` or `backlog.config.yml` (Backlog.md) and `.beads/` (Beads). Open Backlog.md read-only, and detect Beads, suggesting `bl import` or an explicit source. Backlog.md source behavior and supported edits are specified in [backlog-md.md](backlog-md.md). Outside any repository, open the user's default workspace, if configured.
 
-**Identity.** `project.id` defaults to the normalized `origin` remote (`github.com/owner/repo`). If there is no remote, or `origin` is a local path or `file://` URL, it falls back to the control root path, marked host-local, and claims show as host-local. The project ID keys caches, trust, events, and claim resources.
+**Identity.** `project.id` defaults to the normalized `origin` remote (`github.com/owner/repo`), ignoring transport, credentials, port, and `.git`. If there is no remote, or `origin` is a local path or `file://` URL, it falls back to the control root path, marked host-local, and claims show as host-local. The project ID keys caches, trust, events, and claim resources.
 
 **Files.**
 
@@ -299,10 +283,7 @@ The pure engine's input contract, reason codes, tie fallbacks, and graph semanti
 
 ## 7. Agent interface
 
-The bootstrap implements `version`/`--version`, `config show`, and an empty TUI (`bl` or `bl tui`). These operations use the envelope below when `--json`/`-j` is requested; interactive TUI plus JSON is a usage error. Help remains plain text. Bare `bl` falls back to help off-terminal; explicit `bl tui` exits 6 off-terminal. Usage errors exit 2, invalid user configuration exits 5 (`invalid-config`), and internal failures exit 1. All reason mappings below are implemented; beyond these and the frozen read/write interface, the remaining operations are backlog work, not stub commands. Global `-C DIR` resolves an absolute invocation directory without changing the process working directory. `config show` reports it as `directory` in JSON and `Directory:` in text; user XDG paths are unaffected.
-
-**Frozen read interface:** `ls`, `show`, and read-only `next` are implemented; their flags and JSON `data` shapes are specified in [cli.md](cli.md). **Frozen write interface:** `new`, `set`, `start`, `done`, `note`, `comment`, `ac`, `edit`, `archive`, and `unarchive` are implemented with the synchronous, version-checked mutation path and documented in [cli.md](cli.md). Claimed next-item selection (`next --claim [--start]`), explicit claim/release/heartbeat,
-and the engine status gate are implemented. See §9 for ownership and recovery evidence requirements.
+The read commands (`ls`, `show`, `next`) and write commands (`new`, `set`, `start`, `done`, `note`, `comment`, `ac`, `edit`, `archive`, `unarchive`) are frozen; [cli.md](cli.md) specifies their flags and JSON shapes. Bare `bl` prints help off a terminal; `bl tui` exits 6 there, and the TUI with `--json` is a usage error. Help is plain text, even with `--json`. Global `-C DIR` sets the invocation directory without changing the process working directory.
 
 Commands:
 
@@ -467,32 +448,7 @@ reading private files or inventing request inputs.
 
 Port the adapter code from `internal/queue` at that tag.
 
-**OAuth qualification (BL-59, 2026-10-23).** The [provider evidence matrix](oauth.md)
-records native/public-client flows, scopes, token lifetimes and rotation,
-revocation, principal verification, and implementation gates for BL-53. Linear
-PKCE and GitHub device flows have documented secret-free exchange and refresh;
-BL-61 qualifies GitHub private read-only access and explicit write upgrade using
-separate owner-approved GitHub App registrations, not coarse classic OAuth scopes.
-Jira's documented 3LO requires a client secret, and external protocol v1 has no
-host authentication method. BL-60 ships the shared opt-in lifecycle and protected
-store. BL-62 registers Linear user authorization with S256 PKCE and an
-owner-approved public client ID, using a five-minute IPv4 loopback callback at
-`http://127.0.0.1:47653/oauth/callback`. It requests read scope first, then write
-only after explicit consent, verifies immutable viewer and source binding, stores
-actual granted scopes with each rotated token pair, and revokes the refresh grant
-on logout. Linear OAuth uses Bearer while API-key helpers retain raw authorization.
-Fake-server checks qualify the protocol; no live user authorization is claimed.
-BL-61 registers github.com device login: plain login uses `bl-cli-read`, and
-explicit `--write` separately authorizes `bl-cli` for the same immutable user.
-Read App installations with any write permission are refused. Source use discovers
-live installation/repository grants; issue writes require app consent and the user's
-repository role, and project writes also require organization Projects write,
-`viewerCanUpdate` and `allowWrites`. Personal Projects v2 and Enterprise remain
-helper-only. Refresh uses the originating App without a secret, preserves consent
-and durably rotates tokens before principal validation. Logout deletes local state
-and reports manual revocation of both Apps; no public-client revocation API is
-claimed. See [GitHub setup](github.md#oauth-login). Jira remains excluded per owner.
-Existing helper/environment authentication remains unchanged unless an account opts in.
+**OAuth** (D17) is opt-in per user account. Linear uses user authorization with S256 PKCE and a loopback callback; github.com uses device login with separate read-only and write GitHub Apps. Both request read access first and write only after explicit consent. Jira stays on helpers because its 3LO needs a client secret; external adapters own their authentication. [oauth.md](oauth.md) holds the provider evidence; [linear.md](linear.md#oauth-login) and [github.md](github.md#oauth-login) cover setup.
 
 ## 11. Performance
 

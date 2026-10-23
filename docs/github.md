@@ -2,32 +2,7 @@
 
 ## Setup
 
-Choose [native device login](#oauth-login) or the existing credential helper below.
-
-Configure credentials only in the user config (`~/.config/backlog/config.yaml`):
-
-```yaml
-accounts:
-  github:
-    - name: personal
-      host: github.com
-      user: alice
-      credential: [gh, auth, token, --hostname, github.com, --user, alice]
-```
-
-Use a classic OAuth token authenticated by `gh auth login`: `repo` for private
-repositories and issue writes (`public_repo` suffices for public-only writes),
-`read:project` for Projects v2 reads, and **`project`** for project status writes.
-Authorize organization SAML SSO when required. Refresh through
-`gh auth refresh --hostname github.com --scopes repo,project`; never put a token
-in project config or command arguments. The helper's principal must match `user`.
-Helper-account project writes require the response's OAuth scopes to include
-`project`; missing scope evidence fails closed. Native OAuth uses live GitHub App
-installation grants instead; it never treats a classic scope header as app consent. Repository writes also require the current
-`viewerPermission` to be TRIAGE, WRITE, MAINTAIN or ADMIN; provider permissions
-remain authoritative for each operation.
-
-In `.config/backlog.yaml`:
+Project config (`.config/backlog.yaml`):
 
 ```yaml
 sources:
@@ -41,92 +16,110 @@ statuses:
   - {key: closed, name: Closed, category: done}
 ```
 
-Run `bl trust` before contacting a committed network source. Enterprise hosts use
-HTTPS `/api/graphql` and `/api/v3`. The source opens lazily on its worker, never
-on the Bubble Tea update loop. Account and configuration partition the disposable
-shared cache; cached startup rows remain stale until refreshed.
-
-## OAuth login
-
-Declare the account only in `~/.config/backlog/config.yaml`:
+User config (`~/.config/backlog/config.yaml`), with a `gh` credential helper:
 
 ```yaml
 accounts:
   github:
     - name: personal
       host: github.com
-      user: YOUR_LOGIN
-      oauth: true
+      user: alice
+      credential: [gh, auth, token, --hostname, github.com, --user, alice]
 ```
 
-Remove `credential`/`env` from this account; other helper accounts are unchanged.
-Install **bl-cli-read** on selected repositories, then run from a terminal:
+Or use [device login](#oauth-login). Then run `bl trust`.
+
+The helper's token must belong to `user`. Classic OAuth scopes from
+`gh auth login`:
+
+| Scope | Allows |
+| --- | --- |
+| `repo` | Private repositories and issue writes (`public_repo` for public only) |
+| `read:project` | Projects v2 reads |
+| `project` | Projects v2 status writes; required, or project writes fail closed |
 
 ```sh
-bl auth login github personal
+gh auth refresh --hostname github.com --scopes repo,project
 ```
 
-Open the displayed GitHub device URL and enter its one-time user code. Plain
-login uses the owner-approved read-only App `bl-cli-read` (public client ID
-`Iv23lixJ0srsgnPbExrP`). For writes, separately install **bl-cli** on the desired
-repositories, approve its Issues/organization Projects write permissions, then:
+Authorize SAML SSO for the organization if required. Repository writes also need
+TRIAGE, WRITE, MAINTAIN, or ADMIN permission; GitHub still decides each request.
+Enterprise hosts use `/api/graphql` and `/api/v3` over HTTPS.
 
-```sh
-bl auth login github personal --write
-```
+## OAuth login
 
-This first obtains a read grant, then starts a separate device authorization for
-`bl-cli` (public client ID `Iv23liwvINakcZA9rAst`), verifying the same immutable
-GitHub user. A failed upgrade leaves the read-only grant. Plain login again
-replaces the local write grant with a read grant; it does not revoke the prior
-app authorization on GitHub.
+Device login uses two owner-approved GitHub Apps, so read-only access is truly
+read-only:
 
-App registration, not OAuth scopes, determines permissions. Two registrations
-preserve provider-enforced read-first access: `bl-cli-read` must have Metadata
-and Issues read-only and, where used, organization Projects read-only; any write
-permission on that read App makes login/source use fail closed. `bl-cli` needs
-Issues read/write for issue edits and organization Projects read/write for project
-status edits. Neither app needs Contents, enterprise permissions, webhooks or
-event subscriptions. Enable device flow and expiring user tokens; leave OAuth
-during installation off. No callback server, client secret or private key is used.
+| App | Client ID | Permissions | Used by |
+| --- | --- | --- | --- |
+| `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects: read | `bl auth login` |
+| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects: read/write | `bl auth login --write` |
 
-Installation approval is distinct from user authorization. Live installation and
-selected-repository permissions are rediscovered before source use and writes;
-GitHub still enforces the intersection with the user's permissions. Project writes
-also require `allowWrites: true` and the current project's `viewerCanUpdate`.
-Internal stored `read`/`write` labels identify the authorized App, not GitHub OAuth
-scopes. No `repo`, `public_repo` or `project` scope is requested by device login.
-Organization policy/SSO can still deny access; authorize the app with the org.
+1. Declare the account with `oauth: true` instead of `credential` or `env`:
 
-This native flow is qualified only for github.com and organization-owned Projects
-v2. Personal Projects v2 and GitHub Enterprise Server remain on the helper path;
-repository Projects permissions do not grant Projects v2 access. Classic OAuth's
-`repo`/`public_repo` scopes include writes, so they are not a private read-only
-fallback. The built-in apps must be installable on the target account (a private
-registration may restrict installation to its owner).
+   ```yaml
+   accounts:
+     github:
+       - name: personal
+         host: github.com
+         user: YOUR_LOGIN
+         oauth: true
+   ```
 
-Tokens use the shared owner-private XDG state store (0700 directory, 0600 records),
-never config/cache. Expiring user tokens normally last eight hours; refresh tokens
-last six months and rotate under the per-account cross-process lock. Non-expiring
-responses are supported without inventing an expiry/refresh token. Expired refresh
-grants require explicit device login. MCP, hooks, actions and claims never log in.
+2. Install `bl-cli-read` on the repositories you need, then:
+
+   ```sh
+   bl auth login github personal
+   ```
+
+   Open the URL shown and enter the code.
+
+3. For writes, install `bl-cli` and approve its permissions, then:
+
+   ```sh
+   bl auth login github personal --write
+   ```
+
+   This authorizes `bl-cli` separately and checks it's the same GitHub user. If
+   it fails, the read grant stays. Running plain login again switches back to
+   read-only locally without revoking `bl-cli` on GitHub.
+
+Permissions come from the App installations, not scopes; no `repo`,
+`public_repo`, or `project` scope is requested. Before use and before each
+write, `bl` rechecks installation and repository permissions, and GitHub
+enforces the intersection with your own. A read App with any write permission is
+refused. Project writes also need `allowWrites: true` and the project's
+`viewerCanUpdate`. Organization policy or SSO can still deny access.
+
+Supported for github.com and organization Projects v2. Personal Projects v2 and
+GitHub Enterprise Server need a helper. Classic `repo` scopes include writes, so
+they're not a read-only fallback.
+
+Tokens live in owner-only XDG state. User tokens last eight hours and refresh
+tokens six months; refresh rotates both under a cross-process lock. An expired
+refresh token needs a new login. MCP, hooks, actions, and claims never log in.
 
 ```sh
 bl auth logout github personal
 ```
 
-Logout deletes the local pair and purges that account's cache. Remote revocation
-requires app-secret authentication, so logout reports manual revocation: remove
-**both** app authorizations in GitHub Settings → Applications → Authorized GitHub
-Apps. Remove their installations too if you want to withdraw repository access.
-No secret is acquired to automate revocation. Fake-server tests qualify the device
-protocol and permission gates; they do not claim a completed live user login.
+Logout deletes local tokens and the account's cache. GitHub can't revoke without
+an app secret, so remove **both** apps under Settings → Applications →
+Authorized GitHub Apps, and uninstall them to withdraw repository access.
+Fake-server tests cover the protocol and permission checks; a live login hasn't
+been recorded.
 
 ## Project status
 
-Find IDs with `gh project view NUMBER --owner OWNER --format json` and
-`gh project field-list NUMBER --owner OWNER --format json`. Bind exactly one
-single-select field by immutable ID. For example, add this to the source:
+Bind one single-select field by ID. Find the IDs with:
+
+```sh
+gh project view NUMBER --owner OWNER --format json
+gh project field-list NUMBER --owner OWNER --format json
+```
+
+Add to the source, and list the option IDs as statuses:
 
 ```yaml
     githubProject:
@@ -139,13 +132,6 @@ single-select field by immutable ID. For example, add this to the source:
         option-todo-id: todo
         option-active-id: active
         option-done-id: done
-```
-
-Mapping values are `backlog`, `todo`, `active`, `done`, or `canceled`. Add matching
-option IDs to project `statuses` for CLI/TUI transitions, and select the desired
-IDs in `workflow.start` / `workflow.done` when using `start` / `done`:
-
-```yaml
 statuses:
   - {key: open, name: Open, category: todo}
   - {key: closed, name: Closed, category: done}
@@ -155,16 +141,22 @@ statuses:
 workflow: {start: option-active-id, done: closed}
 ```
 
-Project status changes do not change issue state. `status=closed` closes completed;
-`status=open` reopens; `status=OPTION_ID` changes only the bound project field.
-Closed issues remain terminal regardless of an outdated project option.
-Unmapped/unset status or an issue absent from the project is conservatively
-`backlog`, never ready. Raw project status and binding IDs remain in item fields.
-Each refresh independently enumerates all project items and all issues, including
-`blockedBy` and parent/sub-issue edges. A REST newest-issue ETag/304 is only a
-hint: it never skips reconciliation. This catches project-only edits and removed
-dependencies even when issue `updatedAt` is unchanged. Inaccessible or incomplete
-reads fail rather than claiming complete coverage or deleting unseen rows.
+Option values are categories: `backlog`, `todo`, `active`, `done`, `canceled`.
+
+| Write | Effect |
+| --- | --- |
+| `status=closed` | Closes the issue as completed |
+| `status=open` | Reopens it |
+| `status=OPTION_ID` | Changes only the project field |
+
+A closed issue is closed whatever its project option says. An unmapped or unset
+option, or an issue not in the project, is `backlog` and never ready. Raw
+project values stay in item fields.
+
+Each refresh lists every project item and every issue, with `blockedBy` and
+sub-issue edges, so project-only edits and removed dependencies show up even
+when the issue's `updatedAt` doesn't change. A REST ETag `304` is only a hint.
+Inaccessible or incomplete reads fail rather than claim completeness.
 
 ## Writes and claims
 
@@ -175,43 +167,37 @@ bl set issues:123 assignees=alice
 bl comment issues:123 'Progress update'
 ```
 
-Use one field assignment per command. Batch, issue creation, arbitrary body/title
-editing, additive/removal mutations and archive operations are unavailable.
-Labels and assignees replace their respective lists in one REST request. Comments
-append one new issue comment and are not undoable. Every mutation refreshes credentials, verifies the
-principal, checks repository capability and a **fresh composite version** of the
-issue, relationships and project item (including project item `updatedAt`).
-Missing or stale expected versions fail with `conflict`; unknown operations and
-unconfigured project options are refused before dispatch.
+One field per command. Labels and assignees replace the whole list. Comments
+append and can't be undone. Creating issues, editing title or body, `+=`/`-=`,
+batches, and archiving aren't available.
 
-GitHub provides no conditional/CAS write for these operations. A concurrent edit
-between fresh preflight and mutation can still race; `If-Match` is not advertised
-or assumed. Mutations are sent exactly once, never replayed automatically. A
-network/read-back failure after dispatch has an uncertain outcome: refresh and
-inspect before issuing another edit, especially a comment. GitHub read-back is
-eventually consistent. No multi-request operation is advertised as atomic.
+Before each write, `bl` refreshes credentials, checks the user and permission,
+and compares a fresh composite version of the issue, its relationships, and its
+project item. Missing or stale versions fail with `conflict`.
 
-Claims use Worklease's `github` policy on `HOST/OWNER/REPO` and the decimal issue
-number, independent of source aliases, project membership, status, title and
-credential. Repository and issue node identities are verified on every read;
-redirects, transfers or binding drift fail closed. Use only the resource reported
-by `bl show --json` for coordination.
+GitHub has no conditional write here, so an edit between that check and the
+mutation can still race. Each mutation is sent once. If the network or reread
+fails afterward, the outcome is unknown: refresh and look before editing again,
+especially before commenting. Reads after writes are eventually consistent.
 
-## Verification
+Claims use Worklease's `github` key from `HOST/OWNER/REPO` and the issue number,
+so they don't depend on aliases, project, status, title, or credential. Node
+IDs are checked on every read; transfers or binding changes fail closed. Use the
+`resource` from `bl show --json`.
+
+## Tests
 
 ```sh
 task cli:test PKG='./internal/source/github ./internal/source/remote'
 ```
 
-Provider JSON has a fuzz target (`FuzzProviderJSON`). The opt-in live test requires
-an explicitly authorized test repository and a newly created disposable project
-whose title begins `bl-provider-test-`; it creates only a synthetic issue, comment
-and project entry and deletes those artifacts in cleanup. Create/delete the
-disposable project separately; do not point it at existing user projects.
+`FuzzProviderJSON` fuzzes provider JSON. The live test needs an authorized test
+repository and a new disposable project titled `bl-provider-test-…`. It creates
+one issue, comment, and project entry, and deletes them during cleanup:
 
 ```sh
 gh project create --owner OWNER --title bl-provider-test-roundtrip --format json
-# Inspect its new ID/number and field/option IDs, then:
+# Read its ID, number, field ID, and option IDs, then:
 BL_PROVIDER_TESTS=1 \
 BL_GITHUB_TEST_REPO=OWNER/REPO BL_GITHUB_TEST_USER=OWNER \
 BL_GITHUB_TEST_PROJECT_NUMBER=NUMBER BL_GITHUB_TEST_PROJECT_ID=PVT_ID \
@@ -219,10 +205,9 @@ BL_GITHUB_TEST_FIELD_ID=PVTSSF_ID \
 BL_GITHUB_TEST_TODO_OPTION=TODO_ID BL_GITHUB_TEST_ACTIVE_OPTION=ACTIVE_ID \
 BL_GITHUB_TEST_LABEL=EXISTING_LABEL \
 task cli:test PKG=./internal/source/github -- -run TestLiveRoundTrip -count=1 -v
-# After confirming zero remaining items:
+# After confirming the project is empty:
 gh project delete NUMBER --owner OWNER
 ```
 
-The label must already exist; the test changes only its own issue's labels.
-Cleanup logs contain artifact IDs, never credentials. Live cleanup evidence for
-BL-38 is in [github-verification.md](github-verification.md).
+The label must already exist. Logs include artifact IDs, never credentials. See
+the [recorded run](github-verification.md).
