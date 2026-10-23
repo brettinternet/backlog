@@ -51,9 +51,21 @@ jobs:
           path: |
             ${{ steps.go-cache.outputs.build }}
             ${{ steps.go-cache.outputs.modules }}
-          key: ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('go.sum') }}
+          # Cache entries are immutable: include the commit so source builds refresh.
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-
             ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-
 
-      - name: Run CI
-        run: task ci
+      # Keep these phases in sync with task ci; separate steps expose timings.
+      - name: Security
+        run: task security
+      - name: Checks
+        run: task check
+      - name: Tests
+        run: task test
+      - name: Race detection
+        run: task race
+      - name: Smoke test
+        run: task smoke
