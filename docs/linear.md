@@ -21,8 +21,8 @@ and comment creation permissions (or the full write permission offered by your
 workspace). Restrict the key's team access to the teams needed. The test setup
 also needs create/delete issue and relation permissions in the disposable Test
 team. Organization/team restrictions and user permissions still apply; a helper
-cannot grant access the key lacks. OAuth tokens are not supported by this adapter:
-personal API keys use raw Authorization, not a Bearer prefix.
+cannot grant access the key lacks. Personal API keys use raw Authorization;
+opt-in OAuth accounts use Bearer authorization.
 
 Store the key in your credential manager, never in committed config, command
 arguments, screenshots or logs. The helper is an argv array, runs without a shell,
@@ -30,6 +30,41 @@ and must print one token line. It is bounded to 15 seconds and 4 KiB. The return
 credential must authenticate as `user`; every refresh and write checks the viewer,
 organization and team. Credentials remain in memory and are redacted before cache,
 events or hooks. See [remote.md](remote.md) for the shared boundary.
+
+### OAuth login
+
+Alternatively, replace `credential`/`env` in the user account with `oauth: true`
+and keep `user: VIEWER_UUID`. Run from an interactive terminal:
+
+```sh
+bl auth login linear work
+bl auth login linear work --write  # separate read consent, then write consent
+bl auth logout linear work
+```
+
+Open the displayed Linear URL in your browser. The built-in public application
+uses user authorization (`actor=user`), S256 PKCE and random state, with callback
+`http://127.0.0.1:47653/oauth/callback`. The local IPv4 listener exists only during
+login (up to five minutes); the port must be free. No client secret, client
+credentials grant, webhook or hosted callback service is used. This works on the
+machine running the browser; remote/headless sessions do not have a callback
+forwarding mechanism. Unattended commands never initiate authorization.
+
+Login requests only `read`. Explicit `--write` adds `write` for issue updates and
+comments, never `admin`. Source `allowWrites: true` and provider permissions are
+also required; a read-only token never advertises or dispatches writes. If Linear
+returns an older broader grant during read-only login, login refuses it: revoke
+the old grant in Linear settings and retry. Each successful login/refresh checks
+the immutable viewer UUID; source access also verifies organization and team,
+including on reuse of an unexpired token. Normal workspace/team restrictions apply.
+
+Access and rotating refresh tokens live only in the owner-private XDG state
+OAuth store (0700 directory, 0600 atomic records). Refresh is serialized across
+processes and the rotated pair and granted scopes are durably stored before
+validation. Logout revokes the refresh grant, removes local credentials and
+purges the account cache; if remote revocation fails, the output requests manual
+revocation in Linear settings. Helper/environment accounts are unchanged. See
+[OAuth qualification](oauth.md) for diagnostics and the evidence boundary.
 
 In the committed `.config/backlog.yaml`:
 

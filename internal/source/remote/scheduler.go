@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/brettinternet/backlog/internal/oauth"
 )
 
 // ScheduleDiagnostic reports backoff to the source worker instead of sleeping
@@ -65,12 +67,18 @@ type Client struct {
 	Secrets       *Secrets
 	// RawAuthorization is required by Linear personal API keys (not OAuth).
 	RawAuthorization bool
+	OAuth            bool
 }
 
 // Do serializes requests through body consumption. It never retries a write,
 // follows a redirect, returns raw network errors, or persists authorization.
 func (c Client) Do(ctx context.Context, request *http.Request, credential Credential) (Response, error) {
-	fail := func(code string) (Response, error) { return Response{}, fmt.Errorf("remote HTTP: %s", code) }
+	fail := func(code string) (Response, error) {
+		if c.OAuth {
+			return Response{}, oauth.Failure(oauth.CodeProviderDown, time.Time{})
+		}
+		return Response{}, fmt.Errorf("remote HTTP: %s", code)
+	}
 	if request == nil || request.URL == nil || request.URL.Scheme != "https" || request.URL.User != nil || !strings.EqualFold(request.URL.Host, c.Host) || c.Account == "" || c.Secrets == nil || credential.token == "" {
 		return fail("HTTPS host, account and explicit credential required")
 	}
@@ -96,6 +104,9 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 		return fail("canceled")
 	}
 	if q.retryAt.After(s.now()) {
+		if c.OAuth {
+			return Response{}, oauth.Failure(oauth.CodeRateLimited, q.retryAt)
+		}
 		return Response{}, ScheduleDiagnostic{Code: "rate-limited", RetryAt: q.retryAt}
 	}
 	req := request.Clone(ctx)
@@ -141,9 +152,26 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 		q.retryAt = until
 	}
 	if limited {
+		if c.OAuth {
+			return Response{}, oauth.Failure(oauth.CodeRateLimited, q.retryAt)
+		}
 		return Response{}, ScheduleDiagnostic{Code: "rate-limited", RetryAt: q.retryAt}
 	}
 	if response.StatusCode >= 300 && response.StatusCode != http.StatusNotModified {
+		if c.OAuth {
+			code := oauth.CodeProviderDown
+			if response.StatusCode == 401 {
+				code = oauth.CodeGrantRevoked
+			}
+			if response.StatusCode == 403 {
+				code = oauth.CodeInsufficientScope
+				text := strings.ToLower(string(raw))
+				if strings.Contains(text, "saml") || strings.Contains(text, "sso") {
+					code = oauth.CodeSSORequired
+				}
+			}
+			return Response{}, oauth.Failure(code, time.Time{})
+		}
 		return fail("provider refused request")
 	}
 	if cacheable && response.StatusCode == http.StatusOK {

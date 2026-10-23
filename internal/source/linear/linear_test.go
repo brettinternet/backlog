@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
@@ -35,6 +37,7 @@ type fixture struct {
 	t                                                                              *testing.T
 	moving, block, active, wrongOrg, brokenPage, missingRelations, failWrite, bulk bool
 	writes, full, overlap, relations                                               int
+	oauth                                                                          bool
 	state, assignee                                                                string
 	priority                                                                       int
 	labels                                                                         []string
@@ -93,8 +96,12 @@ func (f *fixture) row(n int) map[string]any {
 	return r
 }
 func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "linear-canary-secret" {
-		f.t.Error("Linear personal key must use raw authorization")
+	authorization := "linear-canary-secret"
+	if f.oauth {
+		authorization = "Bearer " + authorization
+	}
+	if r.Header.Get("Authorization") != authorization {
+		f.t.Error("Linear credential used the wrong authorization scheme")
 		w.WriteHeader(401)
 		return
 	}
@@ -469,6 +476,88 @@ func TestIncompletePaginationDoesNotAdvance(t *testing.T) {
 	d, err := s.Load(context.Background(), source.Cursor{})
 	if err != nil || len(d.Items) != 3 || len(d.Items[0].BlockedBy) != 1 || len(d.Items[0].Blocks) != 1 || f.relations-reads != 2 {
 		t.Fatalf("batched relation overflow lost edges: %+v %v", d.Items, err)
+	}
+}
+
+type scopeProvider struct{}
+
+func (scopeProvider) ID() string                         { return "linear" }
+func (scopeProvider) ReadScopes(oauth.Account) []string  { return []string{"read"} }
+func (scopeProvider) WriteScopes(oauth.Account) []string { return []string{"write"} }
+func (scopeProvider) Authorize(_ context.Context, _ oauth.Account, scopes []string, _ *oauth.Tokens, _ oauth.Interaction) (oauth.Tokens, error) {
+	return oauth.Tokens{AccessToken: "linear-canary-secret", GrantedScopes: scopes}, nil
+}
+func (scopeProvider) Refresh(context.Context, oauth.Account, oauth.Tokens) (oauth.Tokens, error) {
+	panic("non-expiring fixture")
+}
+func (scopeProvider) Verify(context.Context, oauth.Account, string) (oauth.Principal, error) {
+	return oauth.Principal{ID: userID, Login: userID}, nil
+}
+func (scopeProvider) Rediscover(context.Context, oauth.Account, string) error { return nil }
+func (scopeProvider) Revoke(context.Context, oauth.Account, oauth.Tokens) (bool, error) {
+	return false, nil
+}
+
+// Read-only OAuth cannot inherit source allowWrites. After explicit consent,
+// both fresh and already-running adapters rediscover scopes and use Bearer;
+// repeated resolves must still verify organization, team and active principal.
+func TestOAuthScopesGateLinearWrites(t *testing.T) {
+	s, f := fixtureSource(t)
+	f.oauth = true
+	ctx := context.Background()
+	account := oauth.Account{Provider: "linear", Name: "work", User: userID, OptIn: true}
+	manager := oauth.NewManager(oauth.Store{StateDir: filepath.Join(t.TempDir(), "state")}, "", oauth.Registry{"linear": scopeProvider{}}, s.o.Secrets)
+	interaction := oauth.Interaction{In: strings.NewReader(""), Out: &strings.Builder{}}
+	if err := manager.Login(ctx, account, interaction); err != nil {
+		t.Fatal(err)
+	}
+	o := s.o
+	o.Account = project.AccountConfig{Provider: "linear", Name: "work", User: userID, OAuth: true}
+	o.Credentials = &remote.Credentials{Secrets: o.Secrets, OAuth: manager}
+	s, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.Info().Capabilities.Allows(model.Set) {
+		t.Fatal("read-only grant advertised writes")
+	}
+	mutation := model.Mutation{Ref: model.Ref{Source: "lin", ID: "TEST-1"}, Op: model.Set, Field: "priority", Value: "high"}
+	if _, err = s.Apply(ctx, mutation); err == nil || f.writes != 0 {
+		t.Fatal("read-only grant dispatched a write")
+	}
+	if err = manager.EnableWrites(ctx, account, interaction); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Info().Capabilities.Allows(model.Set) {
+		t.Fatal("write consent not rediscovered")
+	}
+	fresh, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = fresh.Initialize(ctx); err != nil || !fresh.Info().Capabilities.Allows(model.Set) {
+		t.Fatalf("fresh process scope discovery: %v", err)
+	}
+	item, err := s.Read(ctx, "TEST-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation.ExpectedVersion = item.Version
+	if _, err = s.Apply(ctx, mutation); err != nil || f.writes != 1 {
+		t.Fatalf("authorized write failed: %v writes=%d", err, f.writes)
+	}
+	f.wrongOrg = true
+	if _, err = s.Read(ctx, "TEST-1"); err == nil {
+		t.Fatal("usable token skipped organization verification")
+	}
+	if s.Info().Capabilities.Allows(model.Set) {
+		t.Fatal("failed identity check retained write capabilities")
 	}
 }
 

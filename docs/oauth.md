@@ -4,15 +4,16 @@
 
 BL-60 implements the shared opt-in account manager, protected token store,
 serialized refresh, principal checks, logout/cache purge and a provider contract.
-The production registry is intentionally empty: there is no working `bl` OAuth
-provider until BL-61/62 register and verify its flow. `bl auth login` therefore
-fails safely with `oauth-provider-unavailable` today; it does not contact a
-provider or prompt. There is no user-configurable arbitrary OAuth endpoint or
+BL-62 registers Linear user authorization with S256 PKCE, secret-free exchange
+and rotating refresh, using the owner-approved public application and loopback
+callback. See [Linear setup](linear.md#oauth-login). GitHub remains unavailable
+until BL-61 qualifies and registers its GitHub App flow; unsupported providers
+fail safely with `oauth-provider-unavailable` without contacting a provider. There is no user-configurable arbitrary OAuth endpoint or
 client-secret path. Jira is explicitly excluded by the owner; use its future
 helper/API-token path only. External adapters continue to own their private
 authentication. Existing helper/environment accounts are unchanged.
 
-The contract is provider-injected for tests and future in-tree integrations. A
+The contract supports in-tree providers and test-injected fake servers. A
 provider must qualify public-client authorization, return granted scopes and an
 immutable principal, implement refresh/rotation and capability rediscovery, and
 classify provider failures using the shared safe diagnostic codes. Login always
@@ -28,14 +29,15 @@ accounts:
       oauth: true
 ```
 
-Until a built-in provider is available, keep `credential: [...]` or `env:` in
-place instead of setting `oauth: true`. These choices are mutually exclusive;
+For providers other than Linear, keep `credential: [...]` or `env:` in place
+instead of setting `oauth: true`. These choices are mutually exclusive;
 OAuth never silently falls back to a helper or environment token.
 
 This is BL-59's documentation-based qualification for BL-53, checked **2026-10-23**.
-The provider matrix records research, not live authorization, registered
-applications or production support. Jira's documented secret requirement remains
-ineligible under D17. The candidate provider flows below remain gates for BL-61/62.
+The provider matrix records research, not live authorization. BL-62 implements
+Linear with an owner-supplied public client ID and accepted callback registration;
+fake-server tests verify the protocol, not a completed live user authorization. Jira's documented secret requirement remains
+ineligible under D17. GitHub qualification below remains a gate for BL-61.
 
 ## Provider evidence matrix
 
@@ -49,13 +51,31 @@ ineligible under D17. The candidate provider flows below remain gates for BL-61/
 
 ## Implementation gates
 
-BL-60 implements only the shared seam; provider registrations and flows remain
-BL-61 (GitHub) and BL-62 (Linear). BL-63 records Jira/external boundaries, with
+BL-60 implements the shared seam; BL-62 adds Linear. GitHub registration and
+flow qualification remain BL-61. BL-63 records Jira/external boundaries, with
 Jira native OAuth explicitly excluded by the owner. BL-53 remains open until all
 its acceptance criteria are satisfied; BL-60 alone does not deliver a usable
 provider login.
 
-Before registering any eligible flow:
+Linear uses public client ID `6eaa52fb21a79f49ba564d31ee0bab91` and callback
+`http://127.0.0.1:47653/oauth/callback`, approved by the owner. Tokens and secrets
+are not registration metadata and must never be supplied through config or argv.
+Login requests `read`; a second explicit consent adds `write`. Granted scopes
+come from the token response (including older array-form scope responses), are
+stored alongside the rotated pair, and are rediscovered by source initialization.
+The built-in application does not use app/bot actor authentication, client
+credentials, webhooks, arbitrary redirect URIs or configurable network endpoints.
+
+Authentication failures use safe structured codes: `authentication-required`,
+`token-expired`, `grant-revoked`, `insufficient-scope`, `principal-mismatch`,
+`sso-required` for explicit SSO/SAML refusals, `rate-limited` with retry time,
+and `provider-unavailable`. Unclassified/malformed responses fail closed as
+provider unavailable rather than exposing provider text. Workspace/team binding
+is enforced independently of OAuth token validity. A broader prior grant is not
+accepted as read-only consent. Logout attempts refresh-token revocation; any
+failure is reported as requiring manual revocation while local deletion proceeds.
+
+For additional eligible providers:
 
 - Register an owner-approved public application and obtain its public client ID.
   Qualify redirect registration and loopback callback support for Linear; require

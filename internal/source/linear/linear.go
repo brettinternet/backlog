@@ -14,9 +14,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
@@ -33,10 +35,11 @@ type Options struct {
 	Now                             func() time.Time
 }
 type Source struct {
-	o      Options
-	client remote.Client
-	mu     sync.Mutex
-	active bool
+	o          Options
+	client     remote.Client
+	mu         sync.Mutex
+	active     bool
+	writeScope atomic.Bool
 }
 
 func New(o Options) (*Source, error) {
@@ -46,7 +49,7 @@ func New(o Options) (*Source, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Source{o: o, client: remote.Client{Host: "api.linear.app", Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets, RawAuthorization: true}}, nil
+	return &Source{o: o, client: remote.Client{Host: "api.linear.app", Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets, RawAuthorization: !o.Account.OAuth, OAuth: o.Account.OAuth}}, nil
 }
 func uuid(s string) bool {
 	if len(s) != 36 {
@@ -66,7 +69,8 @@ func uuid(s string) bool {
 	return true
 }
 func (s *Source) Info() source.Info {
-	return source.Info{ID: s.o.ID, Kind: "linear", Display: s.o.Team, Capabilities: model.Capabilities{model.Set: s.o.AllowWrites, model.AppendComment: s.o.AllowWrites}}
+	writes := s.o.AllowWrites && (!s.o.Account.OAuth || s.writeScope.Load())
+	return source.Info{ID: s.o.ID, Kind: "linear", Display: s.o.Team, Capabilities: model.Capabilities{model.Set: writes, model.AppendComment: writes}}
 }
 func (s *Source) query(ctx context.Context, c remote.Credential, q string, v any, out any) error {
 	raw, err := json.Marshal(map[string]any{"query": q, "variables": v})
@@ -97,8 +101,20 @@ func decode(raw []byte, out any) error {
 
 const identityQuery = `query($team:String!){viewer{id active organization{id}} team(id:$team){id}}`
 
+// Initialize discovers OAuth write capabilities before CLI/store validation.
+func (s *Source) Initialize(ctx context.Context) error {
+	if !s.o.Account.OAuth {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.authenticate(ctx)
+	return err
+}
+
 func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 	s.active = false
+	s.writeScope.Store(false)
 	return s.o.Credentials.Resolve(ctx, s.o.Account, func(ctx context.Context, c remote.Credential) (string, error) {
 		var r struct {
 			Viewer *struct {
@@ -112,9 +128,13 @@ func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 			return "", err
 		}
 		if r.Viewer == nil || r.Viewer.Organization == nil || r.Viewer.Organization.ID != s.o.Organization || r.Team == nil || r.Team.ID != s.o.Team {
+			if s.o.Account.OAuth {
+				return "", oauth.Failure(oauth.CodePrincipalMismatch, time.Time{})
+			}
 			return "", source.Refuse("unavailable", "Linear identity or scope changed")
 		}
 		s.active = r.Viewer.Active
+		s.writeScope.Store(s.active && c.HasScope("write"))
 		return r.Viewer.ID, nil
 	})
 }
