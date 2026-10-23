@@ -240,8 +240,8 @@ func TestBulkOverlayExpiryAndReadiness(t *testing.T) {
 	}
 }
 
-// A superseding projection must retry a canceled startup lookup or refresh,
-// rather than retaining an unavailable warning and losing the claim overlay.
+// A superseding projection must recover from a canceled startup lookup or
+// refresh without retaining an unavailable warning or losing the claim overlay.
 type canceledListCoordinator struct {
 	coordinator
 	cancelCall int
@@ -308,6 +308,94 @@ func TestProjectionRetriesCanceledClaimLookup(t *testing.T) {
 				t.Fatalf("claim overlay not recovered: %+v", result)
 			}
 		})
+	}
+}
+
+type slowRefreshCoordinator struct {
+	coordinator
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *slowRefreshCoordinator) List(ctx context.Context) ([]model.ClaimInfo, error) {
+	if c.calls.Add(1) > 1 {
+		select {
+		case c.started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return c.coordinator.List(ctx)
+}
+
+// An external status change during a slow claim poll must reach the board
+// without a second blocking lookup, while retaining claims until the next poll.
+func TestProjectionStatusRefreshDoesNotWaitForCanceledClaimPoll(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := &slowRefreshCoordinator{
+		coordinator: coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent", Host: "host", ExpiresAt: time.Now().Add(time.Hour)}}},
+		started:     make(chan struct{}, 1),
+		release:     make(chan struct{}),
+	}
+	ctx = engine.WithCoordination(ctx, c, model.CallerContext{Session: "loop"})
+	cfg := coordinationConfig()
+	backend := fakeSource(t, "tasks")
+	store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
+	defer store.Close()
+	snapshot := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	projector := engine.NewProjector(ctx, cfg)
+	defer projector.Close()
+	await := func(request uint64, status, claim string) {
+		t.Helper()
+		select {
+		case result := <-projector.Results():
+			if result.Request != request || result.Error != nil || result.Warning != nil || len(result.Groups) != 1 || len(result.Groups[0].Rows) != 1 {
+				t.Fatalf("projection: %+v", result)
+			}
+			row := result.Groups[0].Rows[0]
+			if result.Groups[0].Value != status || row.Status != status || row.Claim != claim {
+				t.Fatalf("status/claim overlay: %+v", row)
+			}
+		case <-ctx.Done():
+			t.Fatal("status projection blocked on claim provider")
+		}
+	}
+	const query = "is:open group:status"
+	await(projector.Request(snapshot, query), "todo", "agent@host")
+	projector.RefreshClaims(snapshot, query)
+	select {
+	case <-c.started:
+	case <-ctx.Done():
+		t.Fatal("claim poll did not start")
+	}
+	backend.mu.Lock()
+	item := backend.current()
+	item.Status, item.Category, item.Version = "doing", model.Active, "external-v2"
+	backend.items = []model.Item{item}
+	backend.mu.Unlock()
+	store.Refresh()
+	snapshot = awaitSnapshot(t, store, func(s *engine.Snapshot) bool {
+		updated, _, ok := s.Get(item.Ref)
+		return ok && updated.Version == item.Version
+	})
+	await(projector.Request(snapshot, query), "doing", "agent@host")
+	if c.calls.Load() != 2 {
+		t.Fatal("source update retried the slow claim poll")
+	}
+	c.mu.Lock()
+	c.claims = nil
+	c.mu.Unlock()
+	close(c.release)
+	await(projector.RefreshClaims(snapshot, query), "doing", "")
+	if c.calls.Load() != 3 {
+		t.Fatal("next explicit poll did not refresh claims")
 	}
 }
 

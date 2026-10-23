@@ -259,17 +259,20 @@ func (p *Projector) run() {
 			now := p.now()
 			refresh := coordination && (!claimsLoaded || req.refreshClaims)
 			if refresh {
+				var nextClaims []model.ClaimInfo
+				var nextErr error
 				if coordinator == nil {
-					claimErr = fmt.Errorf("coordination unavailable")
+					nextErr = fmt.Errorf("coordination unavailable")
 				} else {
-					claims, claimErr = coordinator.List(req.ctx)
+					nextClaims, nextErr = coordinator.List(req.ctx)
 				}
-				// Superseded requests must not cache a canceled lookup, even
-				// when this was an explicit refresh of an already loaded overlay.
+				// A source update must not wait for another provider call after
+				// canceling a poll. Retain the last completed overlay until the
+				// next explicit refresh; an unfinished startup lookup still retries.
 				if req.ctx.Err() != nil {
-					claimsLoaded = false
 					continue
 				}
+				claims, claimErr = nextClaims, nextErr
 				claimsLoaded = true
 			}
 			expired := !claimExpiry.IsZero() && !claimExpiry.After(now)
