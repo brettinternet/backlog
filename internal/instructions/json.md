@@ -26,9 +26,15 @@ Exit codes and reasons:
 - 2: usage (including invalid query, command, or flag).
 - 3: not-found.
 - 4: conflict (stale version or occupied target).
-- 5: rejected or invalid-config.
-- 6: unavailable (unsupported source or incomplete load).
+- 5: rejected, invalid-config, or oauth-not-opted-in.
+- 6: unavailable (unsupported source or incomplete load), unknown-outcome (a
+  write that may have applied), and provider reasons such as
+  authentication-required, token-expired, insufficient-scope, rate-limited, and
+  provider-unavailable.
 - 7: contention (claimed by another holder).
+
+Login reasons need a person to run `bl auth login`; rate-limited reports
+error.details.retryAt.
 
 Session-required (2), claim-held/run-mismatch (4), and contention (7) are
 coordination reasons. Claim/release/heartbeat return separate claim outcomes;
