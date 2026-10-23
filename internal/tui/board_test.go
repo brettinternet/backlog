@@ -185,14 +185,14 @@ func TestBoardCaptureStatus(t *testing.T) {
 	m.query = "is:open group:status"
 	m = prepareBoard(m)
 	m = send(m, "l", "n")
-	m.capture.line = "New card"
+	m.capture.line = newLine("New card")
 	m.expandCapture(false)
 	item, err := captureItem(m.capture.fields, "tasks")
 	if err != nil || item.Status != "active" {
 		t.Fatalf("column default: %+v %v", item, err)
 	}
 	m.query = "is:open group:priority"
-	m.capture.line = "Another"
+	m.capture.line = newLine("Another")
 	m.expandCapture(false)
 	item, err = captureItem(m.capture.fields, "tasks")
 	if err != nil || item.Status != "todo" {

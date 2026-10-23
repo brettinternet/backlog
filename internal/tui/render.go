@@ -764,11 +764,10 @@ func (m Model) statusBar() string {
 		if m.save.busy {
 			left = t.muted.render("Saving view…")
 		} else {
-			left = t.accent.render("Save view ›") + " " + textutil.Line(m.save.name) + t.accent.render("▏") + "  " + t.muted.render("to "+destination+" · tab "+other)
+			left = t.accent.render("Save view ›") + " " + m.save.name.view(t.accent.render("▏")) + "  " + t.muted.render("to "+destination+" · tab "+other)
 		}
 	case m.editor.open:
-		e := m.editor
-		left = t.accent.render("/") + " " + textutil.Line(e.text[:e.cursor]) + t.accent.render("▏") + textutil.Line(e.text[e.cursor:])
+		left = t.accent.render("/") + " " + m.editor.view(t.accent.render("▏"))
 	case m.queryError != "":
 		left = t.red.render("! " + m.queryError)
 	case m.notice != "":

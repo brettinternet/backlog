@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/query"
@@ -32,15 +31,15 @@ func zCommand(value string) bool {
 // Candidates stay on screen while the next ones load, so typing never flashes
 // the list. Only candidates computed for the current text can be inserted.
 type queryEditor struct {
-	open           bool
-	text, original string
-	cursor         int // UTF-8 byte offset
-	candidates     []query.Candidate
-	candidate      int
-	field          string // what the candidates complete: a field, or "" for field names
-	current        bool   // the candidates are for the current text and cursor
-	chosen         bool   // a candidate was picked since the last edit
-	unfinished     bool   // the word at the cursor is incomplete or unknown
+	lineInput
+	open       bool
+	original   string
+	candidates []query.Candidate
+	candidate  int
+	field      string // what the candidates complete: a field, or "" for field names
+	current    bool   // the candidates are for the current text and cursor
+	chosen     bool   // a candidate was picked since the last edit
+	unfinished bool   // the word at the cursor is incomplete or unknown
 }
 
 // highlighted reports the candidate enter inserts: one picked, or the first
@@ -234,7 +233,7 @@ func quoteQuery(s string) string {
 	return s
 }
 func (m *Model) editQuery(text string) {
-	m.editor = queryEditor{open: true, text: text, original: m.query, cursor: len(text)}
+	m.editor = queryEditor{lineInput: newLine(text), open: true, original: m.query}
 	m.prefix = ""
 	m.count = 0
 	m.inputSerial++
@@ -288,45 +287,8 @@ func (m Model) updateQuery(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		e.move(-1)
 	case "down":
 		e.move(1)
-	case "left":
-		if e.cursor > 0 {
-			_, size := utf8.DecodeLastRuneInString(e.text[:e.cursor])
-			e.cursor -= size
-			m.changedQuery()
-		}
-	case "right":
-		if e.cursor < len(e.text) {
-			_, size := utf8.DecodeRuneInString(e.text[e.cursor:])
-			e.cursor += size
-			m.changedQuery()
-		}
-	case "home", "ctrl+a":
-		e.cursor = 0
-		m.changedQuery()
-	case "end", "ctrl+e":
-		e.cursor = len(e.text)
-		m.changedQuery()
-	case "ctrl+u":
-		e.text = e.text[e.cursor:]
-		e.cursor = 0
-		m.changedQuery()
-	case "backspace":
-		if e.cursor > 0 {
-			_, size := utf8.DecodeLastRuneInString(e.text[:e.cursor])
-			e.text = e.text[:e.cursor-size] + e.text[e.cursor:]
-			e.cursor -= size
-			m.changedQuery()
-		}
-	case "delete":
-		if e.cursor < len(e.text) {
-			_, size := utf8.DecodeRuneInString(e.text[e.cursor:])
-			e.text = e.text[:e.cursor] + e.text[e.cursor+size:]
-			m.changedQuery()
-		}
 	default:
-		if key.Text != "" && !strings.ContainsAny(key.Text, "\x00\x1b\r\n") {
-			e.text = e.text[:e.cursor] + key.Text + e.text[e.cursor:]
-			e.cursor += len(key.Text)
+		if handled, _ := e.edit(key.String(), key.Text); handled {
 			m.changedQuery()
 		}
 	}

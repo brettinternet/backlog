@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/model"
@@ -151,7 +150,7 @@ func (m Model) listWidth() int {
 
 type savePrompt struct {
 	open, project, busy bool
-	name                string
+	name                lineInput
 }
 type viewSaved struct {
 	view  project.SavedView
@@ -168,15 +167,8 @@ func (m Model) updateSave(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.save = savePrompt{}
 	case "tab":
 		m.save.project = !m.save.project
-	case "ctrl+u":
-		m.save.name = ""
-	case "backspace":
-		if len(m.save.name) > 0 {
-			_, n := utf8.DecodeLastRuneInString(m.save.name)
-			m.save.name = m.save.name[:len(m.save.name)-n]
-		}
 	case "enter":
-		name := strings.TrimSpace(m.save.name)
+		name := strings.TrimSpace(m.save.name.text)
 		if name == "" {
 			m.notice = "view name must not be empty"
 			return m, nil
@@ -197,8 +189,9 @@ func (m Model) updateSave(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return viewSaved{view: v, state: state, err: err}
 		}
 	default:
-		if key.Text != "" && !strings.ContainsAny(key.Text, "\x00\x1b\r\n") && len(m.save.name)+len(key.Text) <= 200 {
-			m.save.name += key.Text
+		name := m.save.name
+		if name.edit(key.String(), key.Text); len(name.text) <= 200 {
+			m.save.name = name
 		}
 	}
 	return m, nil

@@ -89,7 +89,8 @@ Run `bl` (or `bl tui`) in a terminal.
 | Quit | `q` or `ctrl-c` |
 
 Emacs keys work too: `ctrl-n`, `ctrl-v`/`alt-v`, `alt-<`/`alt->`, `ctrl-g`,
-and `alt-x`.
+and `alt-x`. Text fields take shell-prompt editing keys, and menus also move
+with `ctrl-j`/`ctrl-k`.
 
 Built-in views are Next, Active, Mine, Open, and Board; Board hides drafts until
 `fb`. `T` and `B` switch the current view to a tree or board. The filter bar

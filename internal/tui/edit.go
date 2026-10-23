@@ -91,7 +91,8 @@ type pickerChoice struct {
 type pickerState struct {
 	open, loading, multi, free, inputOnly, remove bool
 	kind                                          pickerKind
-	title, query                                  string
+	title                                         string
+	query                                         lineInput
 	choices, filtered                             []pickerChoice
 	byValue                                       map[string]pickerChoice
 	selected                                      map[string]bool
@@ -237,7 +238,7 @@ func (m *Model) beginPicker(kind pickerKind) tea.Cmd {
 		p.free = true
 	case pickerTitle:
 		p.inputOnly = true
-		p.query = item.Title
+		p.query = newLine(item.Title)
 	}
 	if kind == pickerTitle {
 		m.picker = p
@@ -518,7 +519,7 @@ func (m *Model) filterPicker() tea.Cmd {
 	generation := m.pickerSerial
 	m.picker.generation = generation
 	m.picker.loading = true
-	choices, text := p.choices, p.query
+	choices, text := p.choices, p.query.text
 	return func() tea.Msg {
 		matches := make([]pickerChoice, 0, len(choices))
 		scores := make(map[string]int)
@@ -567,26 +568,8 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 		}
 		return nil
 	}
-	if key == "backspace" {
-		if p.query == "" {
-			return nil
-		}
-		characters := []rune(p.query)
-		p.query = string(characters[:len(characters)-1])
-		if p.inputOnly || p.loading && len(p.choices) == 0 {
-			return nil
-		}
-		return m.filterPicker()
-	}
-	if key == "ctrl+u" {
-		p.query = ""
-		if p.inputOnly {
-			return nil
-		}
-		return m.filterPicker()
-	}
 	if key == "space" || key == " " {
-		if p.multi && p.query == "" {
+		if p.multi && p.query.text == "" {
 			if p.cursor >= 0 && p.cursor < len(p.filtered) {
 				value := p.filtered[p.cursor].value
 				p.selected[value] = !p.selected[value]
@@ -595,7 +578,7 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 		}
 		key = " "
 	}
-	if p.kind == pickerPriority && p.query == "" && !p.loading {
+	if p.kind == pickerPriority && p.query.text == "" && !p.loading {
 		values := map[string]string{"u": "urgent", "h": "high", "m": "medium", "l": "low", "n": ""}
 		if value, ok := values[key]; ok && choiceIndex(p.choices, value) >= 0 {
 			action, _ := pickerAction(pickerPriority, value, false)
@@ -614,7 +597,7 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 			return nil
 		}
 		if p.inputOnly {
-			action := editAction{kind: editSimple, op: model.Set, field: "title", value: p.query}
+			action := editAction{kind: editSimple, op: model.Set, field: "title", value: p.query.text}
 			m.picker = pickerState{}
 			m.startEdit(action)
 			return m.editCommand(action, false)
@@ -626,14 +609,14 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 					selected[value] = true
 				}
 			}
-			if p.query != "" {
-				if choice, ok := p.byValue[strings.ToLower(p.query)]; ok && !selected[choice.value] {
+			if p.query.text != "" {
+				if choice, ok := p.byValue[strings.ToLower(p.query.text)]; ok && !selected[choice.value] {
 					selected[choice.value] = true
 				} else if !ok && len(p.filtered) > 0 {
 					index := max(0, min(p.cursor, len(p.filtered)-1))
 					selected[p.filtered[index].value] = true
 				} else if p.free && !ok {
-					selected[strings.TrimSpace(p.query)] = true
+					selected[strings.TrimSpace(p.query.text)] = true
 				}
 			}
 			parts := make([]editPart, 0)
@@ -667,8 +650,8 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 		found := p.cursor >= 0 && p.cursor < len(p.filtered)
 		if found {
 			choice = p.filtered[p.cursor]
-		} else if p.free && strings.TrimSpace(p.query) != "" {
-			choice = pickerChoice{value: strings.TrimSpace(p.query), label: strings.TrimSpace(p.query)}
+		} else if p.free && strings.TrimSpace(p.query.text) != "" {
+			choice = pickerChoice{value: strings.TrimSpace(p.query.text), label: strings.TrimSpace(p.query.text)}
 			found = true
 		}
 		if !found {
@@ -685,14 +668,10 @@ func (m *Model) updatePickerKey(key string) tea.Cmd {
 		m.startEdit(action)
 		return m.editCommand(action, false)
 	}
-	if !strings.HasPrefix(key, "ctrl+") && len(key) > 0 && len([]rune(key)) == 1 {
-		p.query += key
-		if p.inputOnly || p.loading && len(p.choices) == 0 {
-			return nil
-		}
-		return m.filterPicker()
+	if _, changed := p.query.edit(key, ""); !changed || p.inputOnly || p.loading && len(p.choices) == 0 {
+		return nil
 	}
-	return nil
+	return m.filterPicker()
 }
 
 func (m *Model) reloadPickerChoices() tea.Cmd {

@@ -362,8 +362,12 @@ there; `ctrl-c` quits.
 
 Emacs aliases: `ctrl+n` down, `ctrl+v`/`alt+v` page, `alt+<`/`alt+>` first or
 last row, `ctrl+g` cancel, `alt+x` palette. `ctrl+p` stays go-to. Prompts,
-pickers, and menus take `ctrl+g`, `ctrl+n`, and `ctrl+p` too. Alt keys need a
-terminal that sends Option/Alt as Meta.
+pickers, and menus take `ctrl+g` to cancel and `ctrl+n`/`ctrl+p` or
+`ctrl+j`/`ctrl+k` to move. Text fields edit like a shell prompt: `ctrl+a`/`ctrl+e`
+start and end, `ctrl+b`/`ctrl+f` and `alt+b`/`alt+f` move by character and
+word, `ctrl+d`/`alt+d` delete forward, `ctrl+w`/`alt+backspace` delete a word
+back, and `ctrl+u` deletes to the start. As in fzf, `ctrl+k` moves up instead of
+deleting to the end. Alt keys need a terminal that sends Option/Alt as Meta.
 
 Remap in user config by action ID. An override replaces every default binding;
 an empty value unbinds. `ctrl+` takes a letter or arrow; `alt+` takes any

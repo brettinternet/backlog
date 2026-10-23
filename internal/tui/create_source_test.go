@@ -51,7 +51,7 @@ func TestMultiSourceCaptureChoosesSourceAndChildUsesParent(t *testing.T) {
 	if m.capture.source != "other" {
 		t.Fatalf("picked %q, want other", m.capture.source)
 	}
-	m.capture.line = "Other item"
+	m.capture.line = newLine("Other item")
 	command := m.updateCapture("enter")
 	if command == nil || command().(editResultMsg).message != "Item saved." {
 		t.Fatal("picker creation failed")
@@ -71,7 +71,7 @@ func TestMultiSourceCaptureChoosesSourceAndChildUsesParent(t *testing.T) {
 	if !m.capture.open || m.capture.choosing || m.capture.source != "tasks" {
 		t.Fatalf("child source: %+v; notice: %s; view: %s", m.capture, m.notice, m.View().Content)
 	}
-	m.capture.line = "Child item"
+	m.capture.line = newLine("Child item")
 	command = m.updateCapture("enter")
 	if command == nil || command().(editResultMsg).message != "Item saved." {
 		t.Fatal("child creation failed")

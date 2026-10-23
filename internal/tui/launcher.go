@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
@@ -23,7 +22,8 @@ type launcherRow struct {
 }
 type launcherState struct {
 	open, help, goTo, loading bool
-	query, err                string
+	query                     lineInput
+	err                       string
 	cursor                    int
 	rows, all                 []launcherRow
 }
@@ -181,7 +181,7 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) filterLauncher() tea.Cmd {
-	rows, query, serial, ordered := m.launcher.all, m.launcher.query, m.launcherSerial, m.launcher.help
+	rows, query, serial, ordered := m.launcher.all, m.launcher.query.text, m.launcherSerial, m.launcher.help
 	return func() tea.Msg {
 		type scored struct {
 			row   launcherRow
@@ -258,28 +258,16 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 			return m.prepareConfiguredActionForID(strings.TrimPrefix(row.action.id, "action:"), row.actionRef)
 		}
 		return m.executeAction(row.action)
-	case "backspace":
-		if len(m.launcher.query) == 0 {
-			return m, nil
-		}
-		_, size := utf8.DecodeLastRuneInString(m.launcher.query)
-		m.launcher.query = m.launcher.query[:len(m.launcher.query)-size]
-	case "ctrl+u":
-		m.launcher.query = ""
 	default:
-		if text == "" && len([]rune(key)) == 1 {
-			text = key
-		}
-		if text == "" || strings.ContainsAny(text, "\x00\x1b\r\n") {
+		if _, changed := m.launcher.query.edit(key, text); !changed {
 			return m, nil
 		}
-		m.launcher.query += text
 	}
 	m.launcherSerial++
 	m.launcher.loading = true
 	m.launcher.err = ""
 	if m.launcher.goTo {
-		m.goToWorker.submit(goToRequest{serial: m.launcherSerial, query: m.launcher.query, catalog: m.goToSession})
+		m.goToWorker.submit(goToRequest{serial: m.launcherSerial, query: m.launcher.query.text, catalog: m.goToSession})
 		return m, nil
 	}
 	return m, m.filterLauncher()

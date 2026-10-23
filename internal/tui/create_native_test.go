@@ -66,7 +66,7 @@ func TestNativeCaptureCreateAndEditAllFields(t *testing.T) {
 		"plan": "next plan", "notes": "next notes", "summary": "next summary",
 	}
 	for i := range m.capture.fields {
-		m.capture.fields[i].value = changes[m.capture.fields[i].name]
+		m.capture.fields[i].value = newLine(changes[m.capture.fields[i].name])
 	}
 	want, err := captureItem(m.capture.fields, "tasks")
 	if err != nil {

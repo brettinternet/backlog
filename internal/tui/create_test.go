@@ -23,7 +23,7 @@ func TestQuickAddExpandsToSameItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(Options{Me: "alice", Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}})
-	m.capture = captureState{open: true, line: line, source: "tasks"}
+	m.capture = captureState{open: true, line: newLine(line), source: "tasks"}
 	m.expandCapture(false)
 	if m.capture.errorText != "" {
 		t.Fatal(m.capture.errorText)
@@ -62,7 +62,7 @@ func TestFullFormFieldsAndInlineValidation(t *testing.T) {
 	m.capture = captureState{open: true, full: true, source: "tasks", fields: c.fields}
 	for i := range m.capture.fields {
 		if m.capture.fields[i].name == "title" {
-			m.capture.fields[i].value = " "
+			m.capture.fields[i].value = newLine(" ")
 		}
 	}
 	m.updateCapture("enter")
@@ -106,7 +106,7 @@ func TestBacklogMDUnsupportedChoices(t *testing.T) {
 		t.Fatal("source chooser did not open")
 	}
 	m.updateCapture("enter")
-	m.capture.line = "New task"
+	m.capture.line = newLine("New task")
 	m.expandCapture(false)
 	for _, field := range m.capture.fields {
 		if field.name == "rank" {

@@ -756,13 +756,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pickerChoicesMsg:
 		if m.picker.open && msg.generation == m.picker.generation {
 			updatePickerChoices(&m.picker, msg)
-			if m.picker.query != "" {
+			if m.picker.query.text != "" {
 				return m, m.filterPicker()
 			}
 		}
 		return m, nil
 	case pickerFilterMsg:
-		if m.picker.open && msg.generation == m.picker.generation && msg.query == m.picker.query {
+		if m.picker.open && msg.generation == m.picker.generation && msg.query == m.picker.query.text {
 			m.picker.filtered = msg.choices
 			m.picker.loading = false
 			m.picker.cursor = msg.cursor
@@ -854,8 +854,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // Prompts, pickers and menus own their keys, so the keymap's Emacs aliases
-// don't reach them; these translate to the keys every input handles.
-var emacsInputKeys = map[string]rune{"ctrl+g": tea.KeyEscape, "ctrl+n": tea.KeyDown, "ctrl+p": tea.KeyUp}
+// don't reach them; these translate to the keys every input handles. ctrl+j
+// and ctrl+k move as in fzf.
+var emacsInputKeys = map[string]rune{"ctrl+g": tea.KeyEscape, "ctrl+n": tea.KeyDown, "ctrl+p": tea.KeyUp, "ctrl+j": tea.KeyDown, "ctrl+k": tea.KeyUp}
 
 // modalOpen reports an input or prompt that takes every key and the mouse.
 func (m Model) modalOpen() bool {
@@ -910,7 +911,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		s = "ctrl+u"
 	}
 	if s == "ctrl+s" {
-		m.save = savePrompt{open: true, name: m.views[m.view].Config.Name}
+		m.save = savePrompt{open: true, name: newLine(m.views[m.view].Config.Name)}
 		m.notice = ""
 		return m, nil
 	}

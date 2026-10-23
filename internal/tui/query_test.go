@@ -373,3 +373,30 @@ func TestQueryLatest50k(t *testing.T) {
 	slices.Sort(samples)
 	t.Logf("50k filter keystroke-to-list n=%d p95=%s budget=80ms", len(samples), samples[(len(samples)*95-1)/100])
 }
+
+// Catches readline motions splitting multibyte runes or stopping at the wrong
+// word boundary, which would corrupt the draft or panic on a slice.
+func TestLineInputReadlineKeys(t *testing.T) {
+	t.Parallel()
+	l := newLine("fix \u00fcn\u00efcode-bug now")
+	for _, step := range []struct{ key, text, before string }{
+		{"alt+b", "fix \u00fcn\u00efcode-bug now", "fix \u00fcn\u00efcode-bug "},
+		{"alt+b", "fix \u00fcn\u00efcode-bug now", "fix \u00fcn\u00efcode-"},
+		{"alt+b", "fix \u00fcn\u00efcode-bug now", "fix "},
+		{"ctrl+f", "fix \u00fcn\u00efcode-bug now", "fix \u00fc"},
+		{"alt+f", "fix \u00fcn\u00efcode-bug now", "fix \u00fcn\u00efcode"},
+		{"alt+d", "fix \u00fcn\u00efcode now", "fix \u00fcn\u00efcode"},
+		{"ctrl+w", "fix  now", "fix "},
+		{"ctrl+e", "fix  now", "fix  now"},
+		{"alt+backspace", "fix  ", "fix  "},
+		{"ctrl+a", "fix  ", ""},
+		{"ctrl+d", "ix  ", ""},
+		{"x", "xix  ", "x"},
+		{"ctrl+b", "xix  ", ""},
+	} {
+		l.edit(step.key, "")
+		if l.text != step.text || l.text[:l.cursor] != step.before {
+			t.Fatalf("after %s: %q with %q before the cursor, want %q with %q", step.key, l.text, l.text[:l.cursor], step.text, step.before)
+		}
+	}
+}

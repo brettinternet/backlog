@@ -14,7 +14,8 @@ import (
 
 type captureState struct {
 	open, full, child, choosing bool
-	line, errorText             string
+	line                        lineInput
+	errorText                   string
 	sources                     []string
 	fields                      []captureField
 	cursor                      int
@@ -22,7 +23,10 @@ type captureState struct {
 	version                     string
 	source                      string
 }
-type captureField struct{ name, value string }
+type captureField struct {
+	name  string
+	value lineInput
+}
 
 var captureNames = []string{"title", "status", "type", "priority", "rank", "assignees", "labels", "milestone", "due", "parent", "blocked_by", "related", "duplicate_of", "refs", "files", "description", "criteria", "dod", "plan", "notes", "summary"}
 
@@ -97,7 +101,7 @@ func (c *captureState) loadFields(item model.Item, backlogMD bool) {
 		if backlogMD && name == "rank" {
 			continue
 		}
-		c.fields = append(c.fields, captureField{name, captureValue(item, name)})
+		c.fields = append(c.fields, captureField{name, newLine(captureValue(item, name))})
 	}
 }
 func captureValue(item model.Item, name string) string {
@@ -222,7 +226,7 @@ func parseRef(value, source string) model.Ref {
 func captureItem(fields []captureField, source string) (model.Item, error) {
 	item := model.Item{Ref: model.Ref{Source: source}}
 	for _, f := range fields {
-		v := strings.TrimSpace(f.value)
+		v := strings.TrimSpace(f.value.text)
 		switch f.name {
 		case "title":
 			item.Title = v
@@ -265,13 +269,13 @@ func captureItem(fields []captureField, source string) (model.Item, error) {
 				item.Related = append(item.Related, parseRef(s, source))
 			}
 		case "description":
-			item.Description = strings.ReplaceAll(f.value, `\n`, "\n")
+			item.Description = strings.ReplaceAll(f.value.text, `\n`, "\n")
 		case "plan":
-			item.Plan = strings.ReplaceAll(f.value, `\n`, "\n")
+			item.Plan = strings.ReplaceAll(f.value.text, `\n`, "\n")
 		case "notes":
-			item.Notes = strings.ReplaceAll(f.value, `\n`, "\n")
+			item.Notes = strings.ReplaceAll(f.value.text, `\n`, "\n")
 		case "summary":
-			item.Summary = strings.ReplaceAll(f.value, `\n`, "\n")
+			item.Summary = strings.ReplaceAll(f.value.text, `\n`, "\n")
 		case "criteria":
 			item.Criteria = parseChecklist(v)
 		case "dod":
@@ -287,10 +291,10 @@ func captureItem(fields []captureField, source string) (model.Item, error) {
 // expandCapture moves quick-add into the full form. Tab may open the form
 // before a title is typed (untitled); its title field takes the title there.
 func (m *Model) expandCapture(untitled bool) {
-	item, err := query.QuickAdd(m.capture.line, m.opts.Me)
+	item, err := query.QuickAdd(m.capture.line.text, m.opts.Me)
 	if err != nil && untitled {
 		// Only a missing title fails if a placeholder title alone parses.
-		if parsed, retry := query.QuickAdd("x "+m.capture.line, m.opts.Me); retry == nil && parsed.Title == "x" {
+		if parsed, retry := query.QuickAdd("x "+m.capture.line.text, m.opts.Me); retry == nil && parsed.Title == "x" {
 			item, err = parsed, nil
 			item.Title = ""
 		}
@@ -414,11 +418,11 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		if c.version != "" {
 			changes := []model.Mutation{}
 			for _, f := range c.fields {
-				if f.value == captureValue(c.original, f.name) {
+				if f.value.text == captureValue(c.original, f.name) {
 					continue
 				}
 				if section, ok := map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}[f.name]; ok {
-					text := strings.ReplaceAll(f.value, `\n`, "\n")
+					text := strings.ReplaceAll(f.value.text, `\n`, "\n")
 					if f.name == "criteria" || f.name == "dod" {
 						var criteria []model.Criterion
 						if f.name == "criteria" {
@@ -547,38 +551,12 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 			}
 			return editResultMsg{message: "Item saved."}
 		}
-	case "backspace":
-		if c.full {
-			r := []rune(c.fields[c.cursor].value)
-			if len(r) > 0 {
-				c.fields[c.cursor].value = string(r[:len(r)-1])
-			}
-		} else {
-			r := []rune(c.line)
-			if len(r) > 0 {
-				c.line = string(r[:len(r)-1])
-			}
-		}
-		c.errorText = ""
-		return nil
-	case "ctrl+u":
-		if c.full {
-			c.fields[c.cursor].value = ""
-		} else {
-			c.line = ""
-		}
-		c.errorText = ""
-		return nil
 	}
-	if key == "space" {
-		key = " "
+	line := &c.line
+	if c.full {
+		line = &c.fields[c.cursor].value
 	}
-	if len([]rune(key)) == 1 && !strings.HasPrefix(key, "ctrl+") {
-		if c.full {
-			c.fields[c.cursor].value += key
-		} else {
-			c.line += key
-		}
+	if _, changed := line.edit(key, ""); changed {
 		c.errorText = ""
 	}
 	return nil

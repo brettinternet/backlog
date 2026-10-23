@@ -137,7 +137,7 @@ func BenchmarkGoTo50k(b *testing.B) {
 	samples := map[string][]time.Duration{}
 	b.ResetTimer()
 	for b.Loop() {
-		m.launcher.query = ""
+		m.launcher.query = lineInput{}
 		for _, key := range strings.Split("B L - 5 0 0 0 0", " ") {
 			started := time.Now()
 			next, _ = m.Update(tea.KeyPressMsg{Code: []rune(key)[0], Text: key})
@@ -145,7 +145,7 @@ func BenchmarkGoTo50k(b *testing.B) {
 			next, _ = m.Update(m.waitGoTo()())
 			m = next.(Model)
 			_ = m.View()
-			samples[m.launcher.query] = append(samples[m.launcher.query], time.Since(started))
+			samples[m.launcher.query.text] = append(samples[m.launcher.query.text], time.Since(started))
 		}
 		if len(m.launcher.rows) == 0 || m.launcher.rows[0].item.Ref.ID != "BL-50000" {
 			b.Fatal("archived target missing")

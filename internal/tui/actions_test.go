@@ -58,7 +58,7 @@ func TestActionDiscoverySurvivesEarlyTyping(t *testing.T) {
 	}
 	next, _ = m.Update(filter())
 	m = next.(Model)
-	if len(m.launcher.rows) != 1 || m.launcher.rows[0].actionRef != "tasks:BL-1" || m.launcher.query != "w" {
+	if len(m.launcher.rows) != 1 || m.launcher.rows[0].actionRef != "tasks:BL-1" || m.launcher.query.text != "w" {
 		t.Fatalf("lost catalog or captured target: %+v", m.launcher)
 	}
 }

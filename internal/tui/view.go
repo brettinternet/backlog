@@ -510,7 +510,7 @@ func (m Model) pickerSheet() []string {
 	if target := m.targetLabel(); target != "" {
 		title += " · " + target
 	}
-	input := t.accent.render("›") + " " + textutil.Line(p.query) + t.accent.render("▏")
+	input := t.accent.render("›") + " " + p.query.view(t.accent.render("▏"))
 	body := []string{input}
 	if p.inputOnly {
 		return m.sheet(title, body, m.width)
@@ -518,8 +518,8 @@ func (m Model) pickerSheet() []string {
 	switch {
 	case p.loading:
 		body = append(body, t.muted.render("  Loading…"))
-	case len(p.filtered) == 0 && p.free && p.query != "":
-		body = append(body, "  "+t.accent.render("+")+" "+textutil.Line(p.query))
+	case len(p.filtered) == 0 && p.free && p.query.text != "":
+		body = append(body, "  "+t.accent.render("+")+" "+textutil.Line(p.query.text))
 	case len(p.filtered) == 0:
 		body = append(body, t.muted.render("  No matches"))
 	default:

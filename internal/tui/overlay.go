@@ -56,7 +56,7 @@ func (m Model) launcherLayout() (body []string, head, start, end, width int) {
 	width = min(max(40, m.width*3/5), 88, m.width-2)
 	inner := width - 4
 	visible := max(1, min(14, m.height-7))
-	body = []string{t.accent.render("›") + " " + textutil.Line(m.launcher.query) + t.accent.render("▏"), ""}
+	body = []string{t.accent.render("›") + " " + m.launcher.query.view(t.accent.render("▏")), ""}
 	switch {
 	case m.launcher.loading && len(m.launcher.rows) == 0:
 		body = append(body, t.muted.render("Searching…"))
@@ -161,7 +161,7 @@ func (m Model) helpBody(width, rows int) []string {
 	if rows == 0 {
 		return out
 	}
-	out[0] = fit(" "+t.title.render("Keys")+"  "+t.accent.render("›")+" "+textutil.Line(m.launcher.query)+t.accent.render("▏"), width)
+	out[0] = fit(" "+t.title.render("Keys")+"  "+t.accent.render("›")+" "+m.launcher.query.view(t.accent.render("▏")), width)
 	sections, columns, limit := helpLayout(m.launcher.rows, width)
 	if len(sections) == 0 {
 		if rows > 2 {
@@ -252,7 +252,7 @@ func (m Model) captureOverlay(lines []string) []string {
 		title += " · " + textutil.Line(c.source)
 	}
 	if !c.full {
-		body := []string{t.accent.render("›") + " " + textutil.Line(c.line) + t.accent.render("▏"), "  " + m.captureChips()}
+		body := []string{t.accent.render("›") + " " + c.line.view(t.accent.render("▏")), "  " + m.captureChips()}
 		if c.errorText != "" {
 			body[1] = "  " + t.red.render("! "+textutil.Line(c.errorText))
 		}
@@ -276,10 +276,10 @@ func (m Model) captureOverlay(lines []string) []string {
 	for i := start; i < min(len(c.fields), start+visible); i++ {
 		f := c.fields[i]
 		name := t.muted.render(cellRight(strings.ReplaceAll(f.name, "_", " "), nameWidth))
-		value := textutil.Line(f.value)
+		value := textutil.Line(f.value.text)
 		if i == c.cursor {
 			name = t.accent.render(cellRight(strings.ReplaceAll(f.name, "_", " "), nameWidth))
-			value += t.accent.render("▏")
+			value = f.value.view(t.accent.render("▏"))
 		}
 		body = append(body, name+"  "+value)
 	}
@@ -293,7 +293,7 @@ func (m Model) captureOverlay(lines []string) []string {
 // by typing. An empty line shows the available tokens.
 func (m Model) captureChips() string {
 	t := m.theme
-	line := m.capture.line
+	line := m.capture.line.text
 	if strings.TrimSpace(line) == "" {
 		return t.faint.render("!priority  @assignee  #label  ~milestone  :type  ^parent  <blocker")
 	}
