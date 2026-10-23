@@ -467,6 +467,16 @@ reading private files or inventing request inputs.
 
 Port the adapter code from `internal/queue` at that tag.
 
+**OAuth qualification (BL-59, 2026-10-23).** The [provider evidence matrix](oauth.md)
+records native/public-client flows, scopes, token lifetimes and rotation,
+revocation, principal verification, and implementation gates for BL-53. Linear
+PKCE and GitHub device flows have documented secret-free exchange and refresh;
+GitHub's private read-only and permission-upgrade design still needs qualification.
+Jira's documented 3LO requires a client secret, and external protocol v1 has no
+host authentication method. These are research outcomes, not shipped login
+support. D17 remains unchanged until BL-60 introduces protected persistence;
+existing helper/environment authentication remains authoritative.
+
 ## 11. Performance
 
 All budgets are measured on the reference host with the fixture generator (BL-12). D26 applies.
