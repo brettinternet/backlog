@@ -28,9 +28,12 @@ func detailFixture(t *testing.T, count int, render func(string, int) (string, er
 				Milestone: "m-1", Description: "# Description\n\nA **selected** item. 修正 🚀", Criteria: []model.Criterion{{Text: "Keep input responsive", Checked: true, Evidence: "counter"}}, DoD: []model.Criterion{{Text: "CI passes"}}, Plan: "Implement detail", Notes: "Verified asynchronously", Comments: []model.Comment{{Author: "brett", Body: "Looks good"}}}, nil
 		}})
 	m.width = 120
+	group := engine.RowGroup{Value: "todo"}
 	for i := 0; i < count; i++ {
-		m.data.rows = append(m.data.rows, screenRow{row: engine.Row{Ref: model.Ref{Source: "tasks", ID: fmt.Sprintf("BL-%d", i+1)}, Version: "v1", Title: fmt.Sprintf("Item %d", i+1), Status: "todo", Priority: model.High, Readiness: engine.Ready, ReadinessReason: "all readiness checks pass"}})
+		group.Rows = append(group.Rows, engine.Row{Ref: model.Ref{Source: "tasks", ID: fmt.Sprintf("BL-%d", i+1)}, Version: "v1", Title: fmt.Sprintf("Item %d", i+1), Status: "todo", Category: model.Todo, Priority: model.High, Readiness: engine.Ready, ReadinessReason: "all readiness checks pass"})
 	}
+	m.data = prepareGroupedRows([]engine.RowGroup{group}, nil, false, "", nil)
+	m.data.widths = measure(m.data.rows, nil)
 	return m
 }
 func detailKey(m Model, code rune, mod tea.KeyMod) (Model, tea.Cmd) {
@@ -45,7 +48,7 @@ func settleDetail(t *testing.T, m Model) Model {
 	if !ok {
 		t.Fatal("no selected item")
 	}
-	result := m.detailWorker.prepare(m.opts.Context, detailRequest{generation: m.detailGeneration, row: row, width: m.detailWidth() - 4, tab: m.detailTab, expanded: m.detailExpanded, milestones: m.opts.Milestones})
+	result := m.detailWorker.prepare(m.opts.Context, m.detailRequest(row))
 	next, _ := m.Update(detailResultMsg(result))
 	m = next.(Model)
 	if m.detailError != "" {
@@ -69,10 +72,10 @@ func TestDetailHeldNavigation(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("held navigation spawned extra settle timers")
 		}
-		if !strings.Contains(m.detailHeader(), fmt.Sprintf("BL-%d · Item %d", i+1, i+1)) {
+		if header := detailHeader(m); !strings.Contains(header, fmt.Sprintf("BL-%d ", i+1)) || !strings.Contains(header, fmt.Sprintf("Item %d", i+1)) {
 			t.Fatal("header lagged selection")
 		}
-		if m.selected >= m.top+m.height-5 {
+		if m.selected >= m.top+m.page() {
 			t.Fatal("cursor left viewport")
 		}
 	}
@@ -161,7 +164,6 @@ func TestDetailLargeBodyInput(t *testing.T) {
 		return model.Item{Ref: ref, Version: "v1", Description: strings.Repeat("large paragraph\n", 70000)}, nil
 	}
 	m, _ = detailKey(m, tea.KeyEnter, 0)
-	m, _ = detailKey(m, tea.KeyTab, 0)
 	next, _ := m.Update(detailDue(m.detailGeneration))
 	m = next.(Model)
 	select {
@@ -175,7 +177,7 @@ func TestDetailLargeBodyInput(t *testing.T) {
 	m, _ = detailKey(m, 'j', 0) // scroll input while renderer is held
 	m, _ = detailKey(m, 'h', 0)
 	m, _ = detailKey(m, 'j', 0)
-	if m.selected != 1 || !strings.Contains(m.detailHeader(), "BL-2") {
+	if m.selected != 1 || !strings.Contains(detailHeader(m), "BL-2") {
 		t.Fatal("input blocked by renderer")
 	}
 	close(release)
@@ -184,10 +186,10 @@ func TestDetailLargeBodyInput(t *testing.T) {
 	if len(m.detailLines) != 0 {
 		t.Fatal("old large body replaced new selection")
 	}
-	m.detailTab = tabDescription
+	m.detailTab = tabOverview
 	_ = m.scheduleDetail()
 	m = settleDetail(t, m)
-	if !m.detailTruncated || !strings.Contains(m.View().Content, "m show more") {
+	if !m.detailTruncated || !strings.Contains(m.View().Content, "m more") {
 		t.Fatal("missing visible expansion control")
 	}
 	m, _ = detailKey(m, tea.KeyTab, 0) // focus detail without changing tab
@@ -206,7 +208,7 @@ func TestDetailTabGoldens(t *testing.T) {
 	for _, width := range []int{120, 80} {
 		m := detailFixture(t, 2, RenderMarkdown)
 		m.width = width
-		m.data.rows[0].row.Relations = []engine.Relation{{Kind: "blocked by", Ref: model.Ref{Source: "tasks", ID: "BL-2"}, Status: "active", Title: "Dependency"}, {Kind: "children", Ref: model.Ref{Source: "tasks", ID: "BL-3"}, Status: "done", Title: "Child"}}
+		m.data.rows[0].row.Relations = []engine.Relation{{Kind: "blocked by", Ref: model.Ref{Source: "tasks", ID: "BL-2"}, Status: "active", Category: model.Active, Title: "Dependency"}, {Kind: "children", Ref: model.Ref{Source: "tasks", ID: "BL-3"}, Status: "done", Category: model.Done, Title: "Child"}}
 		m, _ = detailKey(m, tea.KeyEnter, 0)
 		var transcript strings.Builder
 		for tab := tabOverview; tab <= tabRelations; tab++ {
@@ -237,7 +239,7 @@ func TestDetailTabGoldens(t *testing.T) {
 	_ = m.scheduleDetail()
 	m = settleDetail(t, m)
 	body := strings.Join(m.detailLines, "\n")
-	if !strings.Contains(body, "Milestone: m-1\n") || strings.Contains(body, "TUI") {
+	if !strings.Contains(body, "Milestone  m-1\n") || strings.Contains(body, "TUI") {
 		t.Fatal("undeclared milestone was not raw")
 	}
 }
@@ -322,7 +324,7 @@ func TestDetailExternalRelations(t *testing.T) {
 	m, _ = detailKey(m, tea.KeyEnter, 0)
 	m = settleDetail(t, m)
 	before := strings.Join(m.detailLines, "\n")
-	if !strings.Contains(before, "active — Blocker") || !strings.Contains(before, "todo — Child") {
+	if !strings.Contains(before, "BL-2  Blocker  active") || !strings.Contains(before, "BL-3  Child  todo") {
 		t.Fatal(before)
 	}
 	backend.mu.Lock()
@@ -342,7 +344,12 @@ func TestDetailExternalRelations(t *testing.T) {
 	m = next.(Model)
 	m = settleDetail(t, m)
 	after := strings.Join(m.detailLines, "\n")
-	if !strings.Contains(after, "done — Blocker") || !strings.Contains(after, "done — Child") {
+	if !strings.Contains(after, "BL-2  Blocker  done") || !strings.Contains(after, "BL-3  Child  done") {
 		t.Fatal(after)
 	}
+}
+
+// detailHeader is the plain text of the detail pane's ID, status and title rows.
+func detailHeader(m Model) string {
+	return ansi.Strip(strings.Join(m.detailPane(m.detailWidth(), 2), "\n"))
 }

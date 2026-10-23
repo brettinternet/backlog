@@ -1,24 +1,31 @@
 package tui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/brettinternet/backlog/internal/query"
 )
 
 // The menu table is shared by dispatch and the which-key popup.
 type queryBinding struct{ key, label, value string }
 
+// Menus follow Vim where it has a meaning: z folds and scrolls, so grouping by
+// category and type take the capitals.
 var queryMenus = map[string][]queryBinding{
-	"f": {{"s", "status", "status"}, {"p", "priority", "priority"}, {"a", "assignee", "assignee"}, {"l", "label", "label"}, {"t", "type", "type"}, {"m", "milestone", "milestone"}, {"r", "ready only", "is:ready"}, {"d", "show done", "is:open,closed"}, {"c", "clear", ""}},
-	"o": {{"n", "next", "next"}, {"p", "priority", "priority"}, {"r", "rank", "rank"}, {"u", "updated", "updated"}, {"c", "created", "created"}, {"d", "due", "due"}, {"i", "ID", "id"}, {"o", "reverse", "reverse"}},
-	"z": {{"s", "status", "status"}, {"c", "category", "category"}, {"p", "priority", "priority"}, {"A", "assignee", "assignee"}, {"l", "label", "label"}, {"m", "milestone", "milestone"}, {"t", "type", "type"}, {"P", "parent", "parent"}, {"n", "none", "none"}, {"a", "toggle fold", "fold"}, {"M", "fold all", "fold-all"}, {"R", "unfold all", "unfold-all"}},
+	"f": {{"s", "Status", "status"}, {"p", "Priority", "priority"}, {"a", "Assignee", "assignee"}, {"l", "Label", "label"}, {"t", "Type", "type"}, {"m", "Milestone", "milestone"}, {"r", "Ready only", "is:ready"}, {"d", "Show done", "is:open,closed"}, {"c", "Clear", ""}},
+	"o": {{"n", "Next", "next"}, {"p", "Priority", "priority"}, {"r", "Rank", "rank"}, {"u", "Updated", "updated"}, {"c", "Created", "created"}, {"d", "Due", "due"}, {"i", "ID", "id"}, {"o", "Reverse", "reverse"}},
+	"z": {{"s", "Status", "status"}, {"C", "Category", "category"}, {"p", "Priority", "priority"}, {"A", "Assignee", "assignee"}, {"l", "Label", "label"}, {"m", "Milestone", "milestone"}, {"T", "Type", "type"}, {"P", "Parent", "parent"}, {"n", "None", "none"},
+		{"a", "Toggle fold", "fold"}, {"o", "Open fold", "fold-open"}, {"c", "Close fold", "fold-close"}, {"M", "Fold all", "fold-all"}, {"R", "Unfold all", "unfold-all"},
+		{"t", "Scroll to top", "scroll-top"}, {"z", "Scroll to center", "scroll-center"}, {"b", "Scroll to bottom", "scroll-bottom"}},
+}
+
+// zCommand reports a z binding that folds or scrolls instead of grouping.
+func zCommand(value string) bool {
+	return strings.HasPrefix(value, "fold") || strings.HasPrefix(value, "unfold") || strings.HasPrefix(value, "scroll")
 }
 
 type queryEditor struct {
@@ -29,8 +36,6 @@ type queryEditor struct {
 	candidate      int
 	ready          uint64
 }
-
-func (m Model) queryText() string { return m.query }
 
 // tokenSpans preserves source text, including quoted whitespace and escapes.
 func tokenSpans(s string) [][2]int {
@@ -287,24 +292,17 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 			}
 			m.query = setQueryField(m.query, "sort", value)
 		case "z":
-			switch key {
-			case "a":
-				if m.isTree() {
-					return true, m.toggleTree()
-				}
-				if len(m.data.rows) > 0 && !m.ungrouped {
-					r := m.data.rows[m.selected]
-					m.folded = &foldState{group: r.value, previous: m.folded}
-					m.selected = m.data.starts[r.group]
-					m.serial++
-					return true, m.prepare()
-				}
-				return true, nil
-			case "M", "R":
+			switch binding.value {
+			case "fold", "fold-open", "fold-close":
+				return true, m.fold(binding.value)
+			case "fold-all", "unfold-all":
 				m.folded = nil
-				m.foldAll = key == "M"
+				m.foldAll = binding.value == "fold-all"
 				m.serial++
 				return true, m.prepare()
+			case "scroll-top", "scroll-center", "scroll-bottom":
+				m.scrollTo(binding.value)
+				return true, nil
 			default:
 				m.query = setQueryField(m.query, "group", binding.value)
 				m.folded = nil
@@ -319,76 +317,44 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 	}
 	return false, nil
 }
-func (m Model) queryOverlay(index int) (string, bool) {
-	if menu, ok := queryMenus[m.prefix]; ok {
-		if index == 0 {
-			return m.prefix + " · choose a key · esc cancel", true
-		}
-		if index <= len(menu) {
-			b := menu[index-1]
-			return fmt.Sprintf(" %s  %s", b.key, b.label), true
-		}
-		return "", true
+
+// fold toggles, opens or closes the selected group, or the selected branch in
+// a tree.
+func (m *Model) fold(how string) tea.Cmd {
+	if m.selected < 0 || m.selected >= len(m.data.rows) {
+		return nil
 	}
-	if m.editor.open && index >= max(0, m.height-9) {
-		n := index - max(0, m.height-9)
-		if n == 0 {
-			return "tab complete · ↑/↓ choose · enter apply · esc restore", true
+	r := m.data.rows[m.selected]
+	if m.isTree() {
+		if !r.branch || how == "fold-open" && !r.collapsed || how == "fold-close" && r.collapsed {
+			return nil
 		}
-		c := m.editor.candidate + n - 1
-		if c < len(m.editor.candidates) {
-			candidate := m.editor.candidates[c]
-			marker := "  "
-			if n == 1 {
-				marker = "> "
-			}
-			return marker + candidate.Value + " " + candidate.Name, true
-		}
-		return "", true
+		return m.toggleTree()
 	}
-	return "", false
+	if m.ungrouped || m.isBoard() {
+		return nil
+	}
+	// Only a header can be collapsed; an item row's group is open.
+	collapsed := r.header != "" && r.collapsed
+	if how == "fold-open" && !collapsed || how == "fold-close" && collapsed {
+		return nil
+	}
+	m.folded = &foldState{group: r.value, previous: m.folded}
+	m.selected = m.data.starts[r.group]
+	m.serial++
+	return m.prepare()
 }
-func (m Model) highlightLine(line string) string {
-	if m.opts.NoColor || len(m.highlights) == 0 {
-		return line
+
+// scrollTo places the cursor row at the top, center or bottom of the list.
+func (m *Model) scrollTo(where string) {
+	page := m.page()
+	switch where {
+	case "scroll-top":
+		m.top = m.selected
+	case "scroll-center":
+		m.top = m.selected - page/2
+	case "scroll-bottom":
+		m.top = m.selected - page + 1
 	}
-	style := lipgloss.NewStyle().Bold(true).Underline(true)
-	// Work only on the already sanitized, clipped viewport. Decode runes so a
-	// Unicode case mapping cannot turn lowercase byte offsets into broken UTF-8.
-	runes := []rune(line)
-	marked := make([]bool, len(runes))
-	for _, term := range m.highlights {
-		needle := []rune(strings.ToLower(term))
-		if len(needle) == 0 {
-			continue
-		}
-		for i := 0; i+len(needle) <= len(runes); i++ {
-			match := true
-			for j, r := range needle {
-				if unicode.ToLower(runes[i+j]) != r {
-					match = false
-					break
-				}
-			}
-			if match {
-				for j := range needle {
-					marked[i+j] = true
-				}
-			}
-		}
-	}
-	var out strings.Builder
-	for i := 0; i < len(runes); {
-		end := i + 1
-		for end < len(runes) && marked[end] == marked[i] {
-			end++
-		}
-		s := string(runes[i:end])
-		if marked[i] {
-			s = style.Render(s)
-		}
-		out.WriteString(s)
-		i = end
-	}
-	return out.String()
+	m.top = max(0, min(m.top, max(0, len(m.data.rows)-page)))
 }

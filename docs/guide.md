@@ -59,7 +59,8 @@ terminal; `bl tui` refuses. The [demo](#demo) records a disposable fixture proje
 | Goal | Keys |
 | --- | --- |
 | Move; jump first/last | `j`/`k`, `gg`/`G` |
-| Open detail; switch detail tab; close | `enter`, `tab`, `esc` |
+| Open detail; switch detail tab; close | `enter` or `l`, `tab`, `esc` |
+| Next or previous item, even in detail | `J`/`K` |
 | Next view; board | `gt`, `5` |
 | Board column; move card status | `h`/`l`, `<`/`>` |
 | Filter; clear; save view | `/`, `F`, `ctrl-s` |
@@ -69,10 +70,11 @@ terminal; `bl tui` refuses. The [demo](#demo) records a disposable fixture proje
 | Mark; repeat; undo; redo | `space`, `.`, `u`, `ctrl-r` |
 | Quit | `q` or `ctrl-c` |
 
-Next, Active, Mine, All, and Board are built in. Save a view with `layout: tree`
-for parent/child navigation. CLI queries and the filter bar share the
-[query language](query.md). Detail has Overview, Description, Criteria, Plan/Notes,
-Comments, and Relations; unsupported edits are disabled. Writes are optimistic;
+Next, Active, Mine, Open, and Board are built in; `T` and `B` switch the
+current view to a tree or board. Save a view with `layout: tree` to keep the
+parent/child navigation. CLI queries and the filter bar share the
+[query language](query.md). Detail has Overview, Criteria, Notes, Comments, and
+Relations; unsupported edits are disabled. Writes are optimistic;
 errors and conflicts remain visible. Long text opens `$EDITOR`. See
 [TUI](tui.md) for the full keymap, conflict handling, and persisted state.
 
@@ -188,7 +190,7 @@ and [Events](events.md) for the resumable stream.
 
 `demo.tape` uses the BL-12 generator: 48 items, seed 1, fixed fixture timestamps,
 isolated HOME/XDG, no provider data, fixed viewport, theme and key sequence.
-It shows All, detail, Board, and searchable help without modifying real tasks.
+It shows Open, detail, Board, and searchable help without modifying real tasks.
 Build `bin/bl` with `task cli:build`, then run `task docs:demo` from the repository
 root. Recording requires VHS 0.11.0, FFmpeg, ttyd, Go, and the VHS default monospace
 font; install these separately. `task docs:test` runs every `sh` block in README

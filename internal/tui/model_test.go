@@ -28,7 +28,7 @@ func shellFixture(count int) Model {
 		m.groups = append(m.groups, group)
 	}
 	m.data = prepareRows(m.groups, nil)
-	m.badges = "tasks ✓ synced"
+	m.sources = []sourceBadge{{id: "tasks", state: "synced"}}
 	return m
 }
 func send(m Model, keys ...string) Model {
@@ -83,7 +83,7 @@ func TestTrustBannerSurvivesNavigation(t *testing.T) {
 	m.width, m.height = 100, 24
 	m = send(m, "j")
 	view := m.View().Content
-	if !strings.Contains(view, m.opts.TrustWarning) || strings.Contains(view, "tasks ✓ synced") {
+	if !strings.Contains(view, m.opts.TrustWarning) || strings.Contains(view, "✓ tasks") {
 		t.Fatal(view)
 	}
 }
@@ -100,8 +100,8 @@ func TestShellNavigation(t *testing.T) {
 		{"down", []string{"j", "down"}, 2}, {"up", []string{"j", "j", "k", "up"}, 0},
 		{"count", []string{"5", "j"}, 5}, {"first", []string{"G", "g", "g"}, 0},
 		{"last", []string{"G"}, 62}, {"numbered", []string{"2", "5", "G"}, 24},
-		{"half", []string{"ctrl+d", "ctrl+d", "ctrl+u"}, 9},
-		{"full", []string{"ctrl+f", "ctrl+f", "ctrl+b"}, 19},
+		{"half", []string{"ctrl+d", "ctrl+d", "ctrl+u"}, 10},
+		{"full", []string{"ctrl+f", "ctrl+f", "ctrl+b"}, 21},
 		{"groups", []string{"]", "]", "["}, 21},
 	}
 	var transcript strings.Builder
@@ -157,7 +157,7 @@ func TestShellNavigation(t *testing.T) {
 	m = send(m, "?")
 	fmt.Fprintf(&transcript, "== help ==\n%s\n", m.View().Content)
 	m = send(m, "esc")
-	if m.showHelp {
+	if m.launcher.open {
 		t.Fatal("help did not close")
 	}
 	for _, q := range []string{"q", "ctrl+c"} {
@@ -181,7 +181,12 @@ func TestShellNavigation(t *testing.T) {
 // markers, and secondary columns surviving the narrow breakpoint.
 func TestShellRendering(t *testing.T) {
 	t.Parallel()
-	for _, width := range []int{79, 80, 160} {
+	// Secondary columns give way to the title as the terminal narrows.
+	for _, tc := range []struct {
+		width   int
+		updated bool
+	}{{50, false}, {80, false}, {160, true}} {
+		width := tc.width
 		m := shellFixture(3)
 		m.groups[0].Rows[0].Title = "safe\x1b[2J\x1b]52;c;bad\a\n修正 🚀"
 		m.data = prepareRows(m.groups, nil)
@@ -196,7 +201,7 @@ func TestShellRendering(t *testing.T) {
 				t.Fatalf("%d: row width %d", width, ansi.StringWidth(line))
 			}
 		}
-		if strings.Contains(content, "Status") != (width >= 80) {
+		if strings.Contains(content, "Updated") != tc.updated {
 			t.Fatal("secondary columns")
 		}
 		golden(t, fmt.Sprintf("width-%d", width), content)

@@ -204,7 +204,7 @@ func TestQueryMenuKeys(t *testing.T) {
 	cases := []struct{ prefix, key, field, value string }{
 		{"f", "s", "picker", "status"}, {"f", "p", "picker", "priority"}, {"f", "a", "picker", "assignee"}, {"f", "l", "picker", "label"}, {"f", "t", "picker", "type"}, {"f", "m", "picker", "milestone"}, {"f", "r", "is", "ready"}, {"f", "d", "is", "open,closed"}, {"f", "c", "clear", ""},
 		{"o", "n", "sort", "next"}, {"o", "p", "sort", "priority"}, {"o", "r", "sort", "rank"}, {"o", "u", "sort", "updated"}, {"o", "c", "sort", "created"}, {"o", "d", "sort", "due"}, {"o", "i", "sort", "id"}, {"o", "o", "sort", "-next"},
-		{"z", "s", "group", "status"}, {"z", "c", "group", "category"}, {"z", "p", "group", "priority"}, {"z", "A", "group", "assignee"}, {"z", "l", "group", "label"}, {"z", "m", "group", "milestone"}, {"z", "t", "group", "type"}, {"z", "P", "group", "parent"}, {"z", "n", "group", "none"}, {"z", "a", "fold", ""}, {"z", "M", "fold-all", ""}, {"z", "R", "unfold-all", ""},
+		{"z", "s", "group", "status"}, {"z", "C", "group", "category"}, {"z", "p", "group", "priority"}, {"z", "A", "group", "assignee"}, {"z", "l", "group", "label"}, {"z", "m", "group", "milestone"}, {"z", "T", "group", "type"}, {"z", "P", "group", "parent"}, {"z", "n", "group", "none"}, {"z", "a", "fold", ""}, {"z", "M", "fold-all", ""}, {"z", "R", "unfold-all", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.prefix+tc.key, func(t *testing.T) {
@@ -220,8 +220,8 @@ func TestQueryMenuKeys(t *testing.T) {
 					t.Fatal("picker not opened")
 				}
 			case "clear":
-				if m.query != "sort:next group:status" {
-					t.Fatalf("clear lost sort/group: %s", m.query)
+				if m.query != "sort:next" {
+					t.Fatalf("clear lost sort: %s", m.query)
 				}
 			case "fold", "fold-all", "unfold-all":
 				next, _ := m.Update(m.prepare()())
@@ -244,7 +244,7 @@ func TestQueryMenuKeys(t *testing.T) {
 		})
 	}
 	m := queryKey(shellFixture(3), "F")
-	if m.query != "sort:next group:status" {
+	if m.query != "sort:next" {
 		t.Fatal("F must clear predicates")
 	}
 	m = queryKey(shellFixture(3), "z")
@@ -277,8 +277,7 @@ func TestQueryMenuKeys(t *testing.T) {
 func TestQueryMatchGolden(t *testing.T) {
 	t.Parallel()
 	m := queryFixture(t, 3)
-	m.opts.NoColor = false
-	m.opts.HighContrast = true
+	m.theme = newTheme(false, true, nil, nil)
 	m = queryKey(m, "/")
 	m = queryKey(m, "ctrl+u")
 	m = queryType(m, "修正")
@@ -286,11 +285,11 @@ func TestQueryMatchGolden(t *testing.T) {
 	m = queryKey(m, "enter")
 	m = settleQuery(t, m)
 	content := m.View().Content
-	if !strings.Contains(content, "\x1b[1;4;") || !strings.Contains(content, "修") {
+	if !strings.Contains(content, "\x1b[1;4m修正") {
 		t.Fatalf("missing match highlight: %q", content)
 	}
 	golden(t, "query-highlight", content)
-	m.opts.NoColor = true
+	m.theme = newTheme(true, false, nil, nil)
 	if strings.Contains(m.View().Content, "\x1b") {
 		t.Fatal("NO_COLOR emitted styling")
 	}
@@ -312,7 +311,7 @@ func TestQueryLatest50k(t *testing.T) {
 	}
 	next, _ := m.Update(projectionMsg(engine.Projection{Request: stale, Groups: shellFixture(1).groups}))
 	m = next.(Model)
-	if m.request != latest || len(m.data.rows) != 50_001 {
+	if m.request != latest || len(m.data.rows) != 50_000 {
 		t.Fatal("stale projection changed rows")
 	}
 	m = settleQuery(t, m)

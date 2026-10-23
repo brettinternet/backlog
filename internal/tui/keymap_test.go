@@ -40,7 +40,7 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 		}
 	}
 	m := shellFixture(10)
-	m.keymap, m.keyError = buildKeymap(map[string]string{"move-down": "J", "first": "v v"})
+	m.keymap, m.keyError = buildKeymap(map[string]string{"move-down": "M", "first": "v v"})
 	if m.keyError != nil {
 		t.Fatal(m.keyError)
 	}
@@ -48,7 +48,7 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 	if m.selected != 0 {
 		t.Fatal("old key still active")
 	}
-	m = send(m, "J")
+	m = send(m, "M")
 	if m.selected != 1 {
 		t.Fatal("override not applied")
 	}
@@ -83,7 +83,6 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 		// Serial invalidation belongs to the launcher, not action semantics.
 		want.launcherSerial = got.launcherSerial
 		want.launcher = got.launcher
-		want.showHelp = got.showHelp
 		if (want.query != got.query || want.view != got.view || want.detailOpen != got.detailOpen || want.detailTab != got.detailTab) || want.selected != got.selected || want.prefix != got.prefix || want.count != got.count || want.picker.kind != got.picker.kind || want.capture.open != got.capture.open || want.notice != got.notice || (dcmd == nil) != (acmd == nil) {
 			t.Fatalf("palette differs for %s", row.action.id)
 		}
@@ -112,7 +111,7 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 		}
 	}
 	// Exercise physical sequence and palette, not just the shared executor.
-	direct := send(m, "J")
+	direct := send(m, "M")
 	next, _ = m.openActions(false)
 	palette = next.(Model)
 	for i, r := range palette.launcher.rows {
@@ -127,11 +126,11 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 	}
 	next, _ = m.openActions(true)
 	help := next.(Model)
-	next, cmd := help.updateLauncher("", "workflow")
+	next, cmd := help.updateLauncher("", "markdown")
 	help = next.(Model)
 	next, _ = help.Update(cmd())
 	help = next.(Model)
-	if len(help.launcher.rows) == 0 || !strings.Contains(help.launcher.rows[0].label, "workflow") {
+	if len(help.launcher.rows) == 0 || !strings.Contains(help.launcher.rows[0].label, "Markdown") {
 		t.Fatal("help is not searchable")
 	}
 }

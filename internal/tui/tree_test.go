@@ -120,6 +120,7 @@ func TestTreeFilteredAncestorsAndProgress(t *testing.T) {
 	viewModel := New(Options{NoColor: true, HighContrast: true})
 	viewModel.views[viewModel.view].Config.Layout = "tree"
 	viewModel.data = p
+	viewModel.data.widths = measure(p.rows, nil)
 	view := viewModel.View().Content
 	if !strings.Contains(view, "· Tree item") || !strings.Contains(view, "▣ 1/3") || strings.Contains(view, "unavailable") {
 		t.Fatal(view)

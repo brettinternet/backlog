@@ -16,6 +16,7 @@ type GoToItem = engine.Row
 
 type launcherRow struct {
 	label, binding, reason string
+	group                  string // help section
 	actionRef              string
 	action                 action
 	item                   *GoToItem
@@ -160,14 +161,17 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	m.count = 0
 	m.inputSerial++
 	rows := make([]launcherRow, 0, len(m.keymap))
+	group := ""
 	for _, a := range m.keymap {
+		if a.group != "" {
+			group = a.group
+		}
 		if strings.HasPrefix(a.id, "action:") {
 			continue
 		}
-		rows = append(rows, launcherRow{label: a.label + " [" + a.id + "]", binding: strings.Join(a.bindings, ", "), reason: m.disabledReason(a), action: a})
+		rows = append(rows, launcherRow{label: a.label, binding: a.id + " " + strings.Join(a.bindings, " "), reason: m.disabledReason(a), action: a, group: group})
 	}
 	m.launcher = launcherState{open: true, help: help, rows: rows, all: rows}
-	m.showHelp = help
 	if m.opts.Automation != nil && len(m.opts.Automation.Actions) > 0 {
 		m.launcherSerial++
 		m.actionCatalogSerial++
@@ -177,7 +181,7 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) filterLauncher() tea.Cmd {
-	rows, query, serial := m.launcher.all, m.launcher.query, m.launcherSerial
+	rows, query, serial, ordered := m.launcher.all, m.launcher.query, m.launcherSerial, m.launcher.help
 	return func() tea.Msg {
 		type scored struct {
 			row   launcherRow
@@ -190,7 +194,10 @@ func (m Model) filterLauncher() tea.Cmd {
 				found = append(found, scored{r, score})
 			}
 		}
-		sort.SliceStable(found, func(i, j int) bool { return found[i].score < found[j].score })
+		// Help keeps catalog order so matches stay in their sections.
+		if !ordered {
+			sort.SliceStable(found, func(i, j int) bool { return found[i].score < found[j].score })
+		}
 		result := make([]launcherRow, 0, len(found))
 		for _, f := range found {
 			result = append(result, f.row)
@@ -202,7 +209,6 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "ctrl+c":
 		m.launcher = launcherState{}
-		m.showHelp = false
 		m.launcherSerial++
 		return m, nil
 	case "down", "tab":
@@ -210,6 +216,12 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up", "shift+tab":
 		m.launcher.cursor = max(0, m.launcher.cursor-1)
+		return m, nil
+	case "pagedown":
+		m.launcher.cursor = min(max(0, len(m.launcher.rows)-1), m.launcher.cursor+10)
+		return m, nil
+	case "pageup":
+		m.launcher.cursor = max(0, m.launcher.cursor-10)
 		return m, nil
 	case "enter":
 		if m.launcher.loading || len(m.launcher.rows) == 0 {
@@ -224,7 +236,6 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.launcher = launcherState{}
-		m.showHelp = false
 		m.launcherSerial++
 		if row.item != nil {
 			item := *row.item
@@ -262,53 +273,4 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, m.filterLauncher()
-}
-func (m Model) launcherView() tea.View {
-	title := "Commands"
-	if m.launcher.help {
-		title = "Help"
-	}
-	if m.launcher.goTo {
-		title = "Go to item"
-	}
-	lines := []string{title, "> " + textutil.Line(m.launcher.query) + "▏"}
-	page := max(0, m.height-3)
-	start := max(0, m.launcher.cursor-page+1)
-	for i := 0; i < page; i++ {
-		line := ""
-		index := start + i
-		if m.launcher.loading && i == 0 {
-			line = "⠋ Searching…"
-		} else if index < len(m.launcher.rows) {
-			row := m.launcher.rows[index]
-			marker := "  "
-			if index == m.launcher.cursor {
-				marker = "> "
-			}
-			line = marker + row.label
-			if row.binding != "" {
-				line += " · " + row.binding
-			}
-			if row.reason != "" {
-				line += " · disabled: " + row.reason
-			}
-		} else if i == 0 {
-			line = "No matches."
-		}
-		lines = append(lines, line)
-	}
-	footer := "↑/↓ choose · enter run · esc back"
-	if m.launcher.help {
-		footer = "↑/↓ scroll · type to search · esc back"
-	}
-	if m.launcher.err != "" {
-		footer = "! " + m.launcher.err
-	}
-	lines = append(lines, footer)
-	for i := range lines {
-		lines[i] = cell(lines[i], m.width)
-	}
-	v := tea.NewView(strings.Join(lines[:min(len(lines), m.height)], "\n"))
-	v.AltScreen = true
-	return v
 }

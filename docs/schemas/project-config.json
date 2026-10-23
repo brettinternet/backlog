@@ -252,7 +252,7 @@
           },
           "columns": {
             "type": "array",
-            "items": {"enum": ["id", "priority", "status", "blockers", "children", "title"]}
+            "items": {"enum": ["id", "priority", "status", "blockers", "children", "claim", "assignee", "updated", "title"]}
           }
         },
         "required": [

@@ -3,20 +3,16 @@ package tui
 
 import (
 	"context"
-	"fmt"
+	"image/color"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type Options struct {
@@ -24,7 +20,7 @@ type Options struct {
 	WorkspaceScope                          bool
 	Automation                              *project.Config
 	HighContrast, NoColor                   bool
-	Project                                 string
+	Project                                 string // display name
 	Store                                   *engine.Store
 	Projector                               *engine.Projector
 	Context                                 context.Context
@@ -55,10 +51,17 @@ type Options struct {
 }
 
 type screenRow struct {
-	row                        engine.Row
-	group                      int
-	value                      string // group value; folds and selection survive live projections
-	header                     string
+	row   engine.Row
+	group int
+	value string // group value; folds and selection survive live projections
+	// header is the display label of a group header row; empty for items.
+	header   string
+	groupKey string // query group field of a header
+	category model.StatusCategory
+	count    int // items in a header's group
+	ordinal  int // 1-based item position, including folded items
+	// guide is a tree row's ancestor connectors, prepared off the update loop.
+	guide                      string
 	depth, parent              int
 	branch, collapsed, context bool
 }
@@ -67,10 +70,11 @@ type prepared struct {
 	starts          []int
 	pending, failed int
 	items           int
+	widths          widths
 }
 type snapshotMsg struct {
 	snapshot *engine.Snapshot
-	badges   string
+	sources  []sourceBadge
 	syncing  bool
 }
 type projectionMsg engine.Projection
@@ -95,9 +99,10 @@ type Model struct {
 	claimTimerAt             time.Time
 	width, height            int
 	opts                     Options
-	title                    lipgloss.Style
-	showHelp                 bool
+	theme                    theme
+	fg, bg                   color.Color
 	query                    string
+	shown                    query.Query // parsed query of the displayed rows
 	editor                   queryEditor
 	queryError, queryWarning string
 	highlights               []string
@@ -112,7 +117,8 @@ type Model struct {
 	folded                   *foldState
 	data                     prepared
 	loading                  bool
-	badges, failure          string
+	failure                  string
+	sources                  []sourceBadge
 	syncing                  bool
 	snapshots                <-chan *engine.Snapshot
 	snapshot                 *engine.Snapshot
@@ -126,6 +132,8 @@ type Model struct {
 	detailLoading            bool
 	detailTruncated          bool
 	detailLines              []string
+	detailCriteria           []int // detailLines index of each criterion
+	detailCounts             tabCounts
 	detailError              string
 	detailScroll             int
 	criteriaCursor           int
@@ -161,36 +169,26 @@ type Model struct {
 	mouse                    mouseState
 }
 
-var viewNames = []string{"Next", "Active", "Mine", "All", "Board"}
-var viewQueries = []string{"is:ready sort:next group:status", "category:active group:status", "assignee:me group:status", "is:open group:status", "is:open group:status"}
+// Next is a ranked list, so it is never grouped; Board hides the closed
+// columns its open-only query cannot fill.
+var viewNames = []string{"Next", "Active", "Mine", "Open", "Board"}
+var viewQueries = []string{"is:ready sort:next", "category:active group:status", "assignee:me is:open group:status", "is:open group:status", "is:open group:status"}
 
 func New(opts Options) Model {
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}
-	if opts.Render == nil {
-		opts.Render = RenderMarkdown
-	}
-	style := lipgloss.NewStyle()
-	if !opts.NoColor {
-		style = style.Bold(true)
-		if opts.HighContrast {
-			style = style.Underline(true)
-		} else {
-			style = style.Foreground(lipgloss.Color("6"))
-		}
-	}
-	model := Model{baseContext: opts.Context, width: 80, height: 24, opts: opts, title: style, folded: nil, loading: opts.Store != nil, query: viewQueries[0], marks: newMarkSet()}
+	model := Model{baseContext: opts.Context, width: 80, height: 24, opts: opts, folded: nil, loading: opts.Store != nil, query: viewQueries[0], marks: newMarkSet()}
+	model.theme = newTheme(opts.NoColor, opts.HighContrast, nil, nil)
 	if opts.Read != nil {
-		theme := "color"
-		if opts.NoColor {
-			theme = "no-color"
-		} else if opts.HighContrast {
-			theme = "high-contrast"
+		render := renderMarkdown
+		if custom := opts.Render; custom != nil {
+			render = func(body string, width int, _ string) (string, error) { return custom(body, width) }
 		}
-		model.detailWorker = newDetailWorker(opts.Context, opts.Read, opts.Render, theme)
+		model.detailWorker = newDetailWorker(opts.Context, opts.Read, render)
 	}
 	model.initViews()
+	model.shown, _ = query.Parse(model.query, query.Options{})
 	model.notice = opts.Warning
 	var configured []project.ActionConfig
 	if opts.Automation != nil {
@@ -209,6 +207,10 @@ func (m *Model) Bind(ch <-chan *engine.Snapshot) { m.snapshots = ch }
 func (m Model) Init() tea.Cmd {
 	var commands []tea.Cmd
 	commands = append(commands, m.claimPoll())
+	if !m.opts.NoColor {
+		// Neutral shades are mixed from the terminal's own colors once known.
+		commands = append(commands, tea.RequestBackgroundColor, tea.RequestForegroundColor)
+	}
 	if m.opts.Store != nil {
 		commands = append(commands, m.waitSnapshot(), m.waitProjection())
 	}
@@ -227,24 +229,23 @@ func (m Model) waitSnapshot() tea.Cmd {
 		case <-m.opts.Context.Done():
 			return nil
 		case s := <-m.snapshots:
-			badges := make([]string, 0, len(m.opts.Sources))
+			sources := make([]sourceBadge, 0, len(m.opts.Sources))
 			syncing := false
 			for _, id := range m.opts.Sources {
 				status := s.Source(id)
-				label := "✓ synced"
-				if status.Coverage != "complete" {
-					label = "~ partial"
+				badge := sourceBadge{id: id, state: "synced"}
+				switch {
+				case status.Error != "":
+					badge.state, badge.err = "error", status.Error
+				case status.Coverage == "unknown":
+					badge.state = "syncing"
+					syncing = true
+				case status.Coverage != "complete":
+					badge.state = "partial"
 				}
-				if status.Coverage == "unknown" {
-					label = "⠋ syncing"
-					syncing = syncing || status.Error == ""
-				}
-				if status.Error != "" {
-					label = "! error: " + textutil.Line(status.Error)
-				}
-				badges = append(badges, textutil.Line(id)+" "+label)
+				sources = append(sources, badge)
 			}
-			return snapshotMsg{s, strings.Join(badges, " · "), syncing}
+			return snapshotMsg{s, sources, syncing}
 		}
 	}
 }
@@ -295,6 +296,8 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	row, ok := m.selectedRow()
 	m.detailIdentity = identityFor(row, ok)
 	m.detailLines = nil
+	m.detailCriteria = nil
+	m.detailCounts = tabCounts{}
 	m.detailScroll = 0
 	m.detailTruncated = false
 	m.detailError = ""
@@ -322,10 +325,15 @@ func (m *Model) submitDetail() {
 		return
 	}
 	m.detailLoading = true
-	m.detailWorker.submit(detailRequest{
-		generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-4),
+	m.detailWorker.submit(m.detailRequest(row))
+}
+
+func (m Model) detailRequest(row engine.Row) detailRequest {
+	return detailRequest{
+		generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, milestones: m.opts.Milestones,
-	})
+		statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
+	}
 }
 
 // Flattening and folding are commands: even a single giant group cannot put
@@ -335,12 +343,14 @@ func (m Model) prepare() tea.Cmd {
 	foldAll, ungrouped := m.foldAll, m.ungrouped
 	board, statusGroup := m.isBoard(), m.boardStatusGroup()
 	tree, snapshot := m.isTree(), m.snapshot
-	var statuses []string
-	if board {
-		for _, s := range m.opts.Statuses {
-			statuses = append(statuses, s.Key)
-		}
+	groupKey, statuses := m.shown.Group, m.opts.Statuses
+	if groupKey == "" && !ungrouped {
+		groupKey = "status"
 	}
+	if board && statusGroup {
+		groupKey = "status"
+	}
+	showEmpty := board && boardShowsEmpty(m.shown)
 	var anchor screenRow
 	if m.loading || from >= len(m.data.rows) {
 		from = -1 // a new view starts at the top
@@ -364,13 +374,14 @@ func (m Model) prepare() tea.Cmd {
 			states[f.group] = !states[f.group]
 		}
 		if board {
-			groups = boardGroups(groups, statuses, statusGroup)
+			groups = boardGroups(groups, statuses, statusGroup, showEmpty)
 			states = nil // board columns never fold
 		}
-		data := prepareGroupedRows(groups, states, board || !ungrouped)
+		data := prepareGroupedRows(groups, states, board || !ungrouped, groupKey, statuses)
 		if tree {
 			data = prepareTree(groups, snapshot, folded, foldAll)
 		}
+		data.widths = measure(data.rows, statusNames(statuses))
 		selected := -1
 		for i, r := range data.rows {
 			matches := (board || tree || r.value == anchor.value) && r.row.Ref == anchor.row.Ref && (r.header == "") == (anchor.header == "")
@@ -389,21 +400,34 @@ func (m Model) prepare() tea.Cmd {
 	}
 }
 func prepareRows(groups []engine.RowGroup, folded map[string]bool) prepared {
-	return prepareGroupedRows(groups, folded, true)
+	p := prepareGroupedRows(groups, folded, true, "status", nil)
+	p.widths = measure(p.rows, nil)
+	return p
 }
-func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, grouped bool) prepared {
+func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, grouped bool, groupKey string, statuses []project.StatusConfig) prepared {
 	p := prepared{}
+	categories := make(map[string]model.StatusCategory, len(statuses))
+	for _, s := range statuses {
+		categories[s.Key] = model.StatusCategory(s.Category)
+	}
 	for g, group := range groups {
-		p.items += len(group.Rows)
 		p.starts = append(p.starts, len(p.rows))
-		glyph := "▾"
-		if folded[group.Value] {
-			glyph = "▸"
-		}
 		if grouped {
-			p.rows = append(p.rows, screenRow{group: g, value: group.Value, header: fmt.Sprintf("%s %s (%d)", glyph, textutil.Line(group.Value), len(group.Rows))})
+			label := textutil.Line(group.Value)
+			if label == "" {
+				label = "None"
+			}
+			header := screenRow{group: g, value: group.Value, header: label, groupKey: groupKey, count: len(group.Rows), collapsed: folded[group.Value], ordinal: p.items + min(1, len(group.Rows))}
+			if groupKey == "status" {
+				header.category = categories[group.Value]
+				if len(group.Rows) > 0 {
+					header.category = group.Rows[0].Category
+				}
+			}
+			p.rows = append(p.rows, header)
 		}
 		for _, row := range group.Rows {
+			p.items++
 			if row.Pending {
 				p.pending++
 			}
@@ -411,7 +435,7 @@ func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, groupe
 				p.failed++
 			}
 			if !grouped || !folded[group.Value] {
-				p.rows = append(p.rows, screenRow{row: row, group: g, value: group.Value})
+				p.rows = append(p.rows, screenRow{row: row, group: g, value: group.Value, ordinal: p.items})
 			}
 		}
 	}
@@ -477,6 +501,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseMsg:
 		return m.updateMouse(msg)
+	case tea.BackgroundColorMsg:
+		m.bg = msg.Color
+		return m, m.retheme()
+	case tea.ForegroundColorMsg:
+		m.fg = msg.Color
+		return m, m.retheme()
 	case tea.WindowSizeMsg:
 		oldDetailWidth := m.detailWidth()
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
@@ -502,7 +532,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshClaims()
 		return m, nil
 	case snapshotMsg:
-		m.snapshot, m.badges, m.syncing = msg.snapshot, msg.badges, msg.syncing
+		m.snapshot, m.sources, m.syncing = msg.snapshot, msg.sources, msg.syncing
 		m.project()
 		return m, m.waitSnapshot()
 	case projectionMsg:
@@ -519,6 +549,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			m.queryError = textutil.Line(msg.Error.Error())
 			m.loading = false
+			// Nothing is in flight: the last valid rows stay, without a spinner.
+			m.prepared = m.serial
 			return m, m.waitProjection()
 		}
 		m.queryError = ""
@@ -531,6 +563,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text = m.editor.text
 		}
 		parsed, _ := query.Parse(text, query.Options{})
+		m.shown = parsed
 		m.highlights = nil
 		for _, term := range parsed.Terms {
 			if term.Field == "" && !term.Negated {
@@ -591,8 +624,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailLoading = false
 			m.detailError = result.err
 			m.detailLines = result.lines
+			m.detailCriteria = result.criteria
+			m.detailCounts = result.counts
 			m.detailTruncated = result.truncated
 			m.detailScroll = 0
+			m.keepCriterionVisible()
 		}
 		return m, m.waitDetail()
 	case pickerChoicesMsg:
@@ -638,6 +674,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Any new input supersedes action preparation still running on a worker.
 		// In particular, Enter in a newer modal must never confirm an older action.
 		m.actionSerial++
+		// A notice lasts until the next key, then the query shows again.
+		m.notice = ""
 		s := msg.String()
 		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.editor.open) {
 			return m, tea.Quit
@@ -685,7 +723,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.dispatchKey(s)
 	}
 	m.keepBoardVisible()
-	page := max(1, m.height-5)
+	m.keepSelectionVisible()
+	return m, nil
+}
+
+// retheme rebuilds the palette once the terminal reports its colors. Rendered
+// detail lines embed theme colors, so an open detail is prepared again.
+func (m *Model) retheme() tea.Cmd {
+	previous := m.theme.key()
+	m.theme = newTheme(m.opts.NoColor, m.opts.HighContrast, m.fg, m.bg)
+	if m.detailOpen && m.theme.key() != previous {
+		return m.scheduleDetail()
+	}
+	return nil
+}
+
+// keepSelectionVisible scrolls the list viewport to the cursor.
+func (m *Model) keepSelectionVisible() {
+	page := m.page()
 	if m.selected < m.top {
 		m.top = m.selected
 	}
@@ -693,7 +748,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.top = m.selected - page + 1
 	}
 	m.top = max(0, min(m.top, max(0, len(m.data.rows)-page)))
-	return m, nil
 }
 
 // canonicalKey keeps the established contextual action semantics in one place.
@@ -764,6 +818,10 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			m.count = 0
 			m.inputSerial++
 			return m, nil
+		case "B", "T":
+			m.count = 0
+			m.inputSerial++
+			return m, m.toggleLayout(map[string]string{"B": "board", "T": "tree"}[s])
 		case "F":
 			m.query = clearQuery(m.query)
 			m.queryError = ""
@@ -773,21 +831,12 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	if s == "?" {
-		m.showHelp = !m.showHelp
-		return m, nil
+	if s == "J" || s == "K" {
+		return m, m.stepItem(s == "J")
 	}
 	if s == "esc" {
-		if m.showHelp {
-			m.showHelp = false
-			return m, nil
-		}
 		if m.detailOpen {
-			m.detailOpen = false
-			m.detailFocus = false
-			m.detailGeneration++
-			m.detailLoading = false
-			m.detailLines = nil
+			m.closeDetail()
 			return m, nil
 		}
 		m.count = 0
@@ -803,20 +852,18 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	if m.detailOpen && m.detailFocus {
 		switch s {
 		case "h", "left":
-			if m.width >= 120 {
-				m.detailFocus = false
-				if m.goToSelection != nil {
-					m.goToSelection = nil
-					return m, m.scheduleDetail()
-				}
+			if !m.split() {
+				m.closeDetail()
+				return m, nil
+			}
+			m.detailFocus = false
+			if m.goToSelection != nil {
+				m.goToSelection = nil
+				return m, m.scheduleDetail()
 			}
 			return m, nil
 		case "q", "enter":
-			m.detailOpen = false
-			m.detailFocus = false
-			m.detailGeneration++
-			m.detailLoading = false
-			m.detailLines = nil
+			m.closeDetail()
 			return m, nil
 		case "tab":
 			m.detailTab = (m.detailTab + 1) % detailTab(len(detailTabNames))
@@ -859,25 +906,46 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			}
 			m.scrollDetail(-1)
 		case "ctrl+d", "pagedown":
-			m.scrollDetail(max(1, (m.height-6)/2))
+			m.scrollDetail(max(1, m.detailVisible()/2))
 		case "ctrl+u", "pageup":
-			m.scrollDetail(-max(1, (m.height-6)/2))
+			m.scrollDetail(-max(1, m.detailVisible()/2))
 		case "ctrl+f":
-			m.scrollDetail(max(1, m.height-6))
+			m.scrollDetail(m.detailVisible())
 		case "ctrl+b":
-			m.scrollDetail(-max(1, m.height-6))
+			m.scrollDetail(-m.detailVisible())
+		case "g":
+			if m.prefix == "g" {
+				m.prefix = ""
+				m.detailScroll = 0
+				m.criteriaCursor = 0
+			} else {
+				m.prefix = "g"
+			}
+		case "G":
+			m.scrollDetail(len(m.detailLines))
+			m.criteriaCursor = max(0, len(m.detailCriteria)-1)
 		}
 		return m, nil
 	}
-	if s == "enter" {
-		m.detailOpen = !m.detailOpen
-		m.detailFocus = m.detailOpen
-		if m.detailOpen {
+	// enter, l and right open detail from a list; they never close it.
+	openDetail := s == "enter" || !m.isTree() && !m.isBoard() && (s == "l" || s == "right")
+	if openDetail {
+		if _, ok := m.selectedRow(); !ok && !m.detailOpen {
+			// A group header has no item to open; enter folds it.
+			if s == "enter" && m.selected < len(m.data.rows) && m.data.rows[m.selected].header != "" {
+				return m, m.fold("fold")
+			}
+			return m, nil
+		}
+		opened := !m.detailOpen
+		m.detailOpen, m.detailFocus = true, true
+		if opened {
 			return m, m.scheduleDetail()
 		}
-		m.detailGeneration++
-		m.detailLoading = false
-		m.detailLines = nil
+		return m, nil
+	}
+	if m.detailOpen && !m.isTree() && !m.isBoard() && (s == "h" || s == "left") {
+		m.closeDetail()
 		return m, nil
 	}
 	if s == "tab" || s == "shift+tab" {
@@ -917,13 +985,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			m.count = 0
 			m.inputSerial++
 			cmd := m.navigateTree(s)
-			page := max(1, m.height-5)
-			if m.selected < m.top {
-				m.top = m.selected
-			}
-			if m.selected >= m.top+page {
-				m.top = m.selected - page + 1
-			}
+			m.keepSelectionVisible()
 			return m, cmd
 		}
 		if m.isBoard() && (s == "h" || s == "l" || s == "left" || s == "right") {
@@ -953,7 +1015,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	m.inputSerial++
 	prefix := m.prefix
 	m.prefix = ""
-	page := max(1, m.height-5)
+	page := m.page()
 	if m.isBoard() && m.navigateBoard(s, n, hadCount, prefix) {
 		if m.detailOpen && m.selected != previousSelection {
 			return m, m.scheduleDetail()
@@ -961,7 +1023,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch {
-	case prefix == "g" && s == "g":
+	case prefix == "g" && s == "g", s == "home":
 		m.selected = 0
 	case prefix == "g" && s == "t":
 		m.switchView((m.view + 1) % len(m.views))
@@ -977,6 +1039,8 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		m.selected += n
 	case s == "k" || s == "up":
 		m.selected -= n
+	case s == "end":
+		m.selected = len(m.data.rows) - 1
 	case s == "G":
 		if hadCount {
 			m.selected = n - 1
@@ -1007,365 +1071,75 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.selected = max(0, min(m.selected, len(m.data.rows)-1))
-	if m.selected < m.top {
-		m.top = m.selected
-	}
-	if m.selected >= m.top+page {
-		m.top = m.selected - page + 1
-	}
+	m.keepSelectionVisible()
 	if m.detailOpen && m.selected != previousSelection {
 		return m, m.scheduleDetail()
 	}
 	m.keepBoardVisible()
-	page = max(1, m.height-5)
-	if m.selected < m.top {
-		m.top = m.selected
-	}
-	if m.selected >= m.top+page {
-		m.top = m.selected - page + 1
-	}
-	m.top = max(0, min(m.top, max(0, len(m.data.rows)-page)))
+	m.keepSelectionVisible()
 	return m, nil
+}
+
+// toggleLayout switches the current view between list and layout. The view's
+// session state keeps the choice.
+func (m *Model) toggleLayout(layout string) tea.Cmd {
+	v := &m.views[m.view].Config
+	if v.Layout == layout {
+		v.Layout = "list"
+	} else {
+		v.Layout = layout
+	}
+	m.board = boardState{}
+	m.serial++
+	return m.prepare()
+}
+
+func (m *Model) closeDetail() {
+	m.detailOpen = false
+	m.detailFocus = false
+	m.detailGeneration++
+	m.detailLoading = false
+	m.detailLines = nil
+	m.detailCriteria = nil
+}
+
+// stepItem moves to the next or previous item, skipping group headers, without
+// changing focus, so detail can page through items in place.
+func (m *Model) stepItem(forward bool) tea.Cmd {
+	m.count = 0
+	m.inputSerial++
+	if m.goToSelection != nil {
+		return nil
+	}
+	previous := m.selected
+	if m.isBoard() {
+		key := "k"
+		if forward {
+			key = "j"
+		}
+		m.navigateBoard(key, 1, false, "")
+	} else {
+		step := -1
+		if forward {
+			step = 1
+		}
+		for i := m.selected + step; i >= 0 && i < len(m.data.rows); i += step {
+			if m.data.rows[i].header == "" {
+				m.selected = i
+				break
+			}
+		}
+		m.keepSelectionVisible()
+	}
+	if m.detailOpen && m.selected != previous {
+		return m.scheduleDetail()
+	}
+	return nil
 }
 func identityForSelected(m Model) detailIdentity {
 	row, ok := m.selectedRow()
 	return identityFor(row, ok)
 }
 func (m *Model) scrollDetail(delta int) {
-	visible := max(1, m.height-6)
-	m.detailScroll = max(0, min(m.detailScroll+delta, max(0, len(m.detailLines)-visible)))
-}
-
-func cell(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	s = ansi.Truncate(textutil.Line(s), width, "…")
-	return s + strings.Repeat(" ", max(0, width-ansi.StringWidth(s)))
-}
-func priority(p model.Priority) string {
-	switch p {
-	case model.Urgent:
-		return "▲▲"
-	case model.High:
-		return "▲"
-	case model.Medium:
-		return "■"
-	case model.Low:
-		return "▼"
-	}
-	return "─"
-}
-func (m Model) View() tea.View {
-	if m.launcher.open {
-		return m.launcherView()
-	}
-	lines := make([]string, 0, m.height)
-	tabs := make([]string, len(m.views))
-	for i, v := range m.views {
-		name := textutil.Line(v.Config.Name)
-		tabs[i] = name
-		if i == m.view {
-			tabs[i] = "[" + name + "]"
-		}
-	}
-	scope := m.opts.Project
-	if m.hasWorkspace() && m.opts.WorkspaceScope {
-		scope = m.opts.Workspace.Workspace.Name
-	}
-	header := "backlog · " + textutil.Line(scope) + " · " + strings.Join(tabs, "  ")
-	badges := m.badges
-	if m.opts.TrustWarning != "" {
-		badges = m.opts.TrustWarning
-	}
-	lines = append(lines, m.title.Render(cell(header, m.width)), cell(badges, m.width))
-	listWidth := m.width
-	if m.detailOpen && m.width >= 120 {
-		listWidth = m.listWidth()
-	}
-	wide := listWidth >= 80
-	columns := "  ID           Title"
-	if wide {
-		columns = "  ID           P  Status         ⊘   ▣       Title"
-		if c, _ := engine.Coordination(m.opts.Context); c != nil {
-			columns = "  ID           P  Status         ⊘   ▣       Claim             Title"
-		}
-	}
-	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
-		columns = "  " + strings.Join(custom, "  ")
-	}
-	if m.hasWorkspace() && m.opts.WorkspaceScope && listWidth >= 80 {
-		columns = "  " + cell("Project", 18) + " " + cell("Source", 12) + " " + strings.TrimPrefix(columns, "  ")
-	}
-	if m.isBoard() {
-		columns = m.boardLine(-1)
-	}
-	if m.detailOpen && m.width >= 120 {
-		detailWidth := m.detailWidth()
-		lines = append(lines, cell(columns, listWidth)+"│"+cell(m.detailHeader(), detailWidth))
-		page := max(0, m.height-5)
-		for i := 0; i < page; i++ {
-			left := m.treeContext(m.top+i, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), listWidth))
-			if m.isBoard() {
-				left = m.boardLine(i)
-			}
-			right := m.detailPaneLine(i)
-			lines = append(lines, left+"│"+cell(right, detailWidth))
-		}
-	} else if m.detailOpen {
-		lines = append(lines, cell(m.detailHeader(), m.width), cell(m.detailTabs(), m.width))
-		for i := 0; i < max(0, m.height-6); i++ {
-			lines = append(lines, cell(m.detailContentLine(i), m.width))
-		}
-	} else {
-		lines = append(lines, cell(columns, m.width))
-		for i := 0; i < max(0, m.height-5); i++ {
-			line := m.treeContext(m.top+i, m.highlightListCell(m.top+i, m.listLine(m.top+i, wide), m.width))
-			if m.isBoard() {
-				line = m.boardLine(i)
-			}
-			lines = append(lines, line)
-		}
-	}
-	lines = append(lines, strings.Repeat("─", m.width))
-	footer := fmt.Sprintf("%s · %d pending · %d failed · ? help · q quit", m.queryText(), m.data.pending, m.data.failed)
-	if m.detailOpen {
-		footer = "tab next · shift-tab previous · j/k scroll · h list · esc/q back"
-		if !m.detailFocus {
-			footer = "j/k select · tab focus · enter close · q quit"
-		}
-		if m.detailTruncated {
-			if m.detailExpanded {
-				footer = "m show less · " + footer
-			} else {
-				footer = "m show more · " + footer
-			}
-		}
-	}
-	if m.visual {
-		footer += " · visual range"
-	}
-	if m.marks != nil && m.marks.size() > 0 {
-		footer += fmt.Sprintf(" · %d marked", m.marks.size())
-	}
-	if m.notice != "" {
-		footer = "warning: " + m.notice + " · " + footer
-	}
-	if layout := m.views[m.view].Config.Layout; layout != "" && layout != "list" && layout != "board" && layout != "tree" {
-		footer = layout + " unavailable; list · " + footer
-	}
-	if m.capture.open {
-		return m.captureFormView()
-	}
-	if m.longEdit.choice != "" {
-		return m.longEditView()
-	}
-	if m.picker.open || m.archiveConfirm {
-		return m.editView()
-	}
-	if m.save.open {
-		destination := "user"
-		if m.save.project {
-			destination = "project"
-		}
-		footer = "Save view (" + destination + ", tab destination, ctrl-u clear): " + m.save.name
-		if m.save.busy {
-			footer = "Saving view…"
-		}
-	}
-	if m.editor.open {
-		footer = "/ " + m.editor.text[:m.editor.cursor] + "▏" + m.editor.text[m.editor.cursor:]
-	}
-	if m.queryError != "" {
-		footer = "! " + m.queryError + " · " + footer
-	} else if m.queryWarning != "" {
-		footer = "warning: " + m.queryWarning + " · " + footer
-	}
-	if m.count > 0 {
-		footer += " · " + strconv.Itoa(m.count) + m.prefix
-	}
-	if m.actionConfirm != nil {
-		footer = "Run " + textutil.Line(m.actionConfirm.Name) + " on " + textutil.Line(m.actionConfirm.Invocation.Event.Ref) + "? y/enter · n/esc"
-	}
-	lines = append(lines, cell(footer, m.width))
-	if len(lines) > m.height {
-		lines = lines[:m.height]
-	}
-	v := tea.NewView(strings.Join(lines, "\n"))
-	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
-	return v
-}
-func (m Model) listLine(index int, wide bool) string {
-	if line, ok := m.queryOverlay(index - m.top); ok {
-		return line
-	}
-	if lines := m.prefixLines(); len(lines) > 0 {
-		if index-m.top < len(lines) {
-			return lines[index-m.top]
-		}
-		return ""
-	}
-	if m.loading {
-		if index == 0 {
-			return "⠋ Loading…"
-		}
-		return ""
-	}
-	if m.failure != "" {
-		if index == 0 {
-			return "! " + m.failure
-		}
-		return ""
-	}
-	if len(m.data.rows) == 0 {
-		if index == 0 && (m.applied != m.request || m.prepared != m.serial || m.syncing) {
-			return "\u280b Loading\u2026" // not empty yet: a newer result is pending
-		}
-		if index == 0 {
-			return "No matching items."
-		}
-		return ""
-	}
-	if index >= len(m.data.rows) {
-		return ""
-	}
-	r := m.data.rows[index]
-	if m.isTree() {
-		r.row.Title = m.treeTitle(r)
-	}
-	marker := "  "
-	if r.header != "" {
-		if index == m.selected {
-			marker = "> "
-		}
-		return marker + r.header
-	}
-	if m.isMarked(index, r.row.Ref) {
-		marker = "* "
-	}
-	if index == m.selected {
-		if marker == "* " {
-			marker = "*>"
-		} else {
-			marker = "> "
-		}
-	}
-	state := ""
-	if r.row.Pending {
-		state = "● "
-	}
-	if r.row.Error != "" {
-		state = "! "
-	}
-	if m.hasWorkspace() && m.opts.WorkspaceScope && wide {
-		marker += cell(textutil.Line(r.row.Project), 18) + " " + cell(textutil.Line(r.row.Source), 12) + " "
-	}
-	if custom := m.views[m.view].Config.Columns; wide && len(custom) > 0 {
-		values := make([]string, 0, len(custom))
-		for _, column := range custom {
-			switch column {
-			case "id":
-				values = append(values, cell(r.row.Ref.ID, 12))
-			case "priority":
-				values = append(values, cell(priority(r.row.Priority), 2))
-			case "status":
-				values = append(values, cell(r.row.Status, 14))
-			case "blockers":
-				values = append(values, strconv.Itoa(r.row.OpenBlockers))
-			case "children":
-				values = append(values, fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal))
-			case "claim":
-				values = append(values, cell(r.row.Claim, 16))
-			case "title":
-				values = append(values, state+textutil.Line(r.row.Title))
-			}
-		}
-		return marker + strings.Join(values, "  ")
-	}
-	line := marker + cell(r.row.Ref.ID, 12) + " "
-	if wide {
-		line += cell(priority(r.row.Priority), 2) + " " + cell(r.row.Status, 14) + " "
-		blockers, children := "─", "─"
-		if r.row.OpenBlockers > 0 {
-			blockers = strconv.Itoa(r.row.OpenBlockers)
-		}
-		if r.row.ChildrenTotal > 0 {
-			children = fmt.Sprintf("%d/%d", r.row.ChildrenDone, r.row.ChildrenTotal)
-		}
-		line += cell(blockers, 3) + " " + cell(children, 7) + " "
-		if c, _ := engine.Coordination(m.opts.Context); c != nil {
-			line += cell(textutil.Line(r.row.Claim), 16) + " "
-		}
-	}
-	return line + state + textutil.Line(r.row.Title)
-}
-func (m Model) detailHeader() string {
-	row, ok := m.selectedRow()
-	if !ok {
-		return "Detail · no item selected"
-	}
-	parts := []string{row.Ref.ID, row.Title, row.Status, string(row.Priority)}
-	if row.Milestone != "" {
-		parts = append(parts, "milestone "+row.Milestone)
-	}
-	return strings.Join(parts, " · ")
-}
-func (m Model) detailTabs() string {
-	tabs := make([]string, len(detailTabNames))
-	for i, name := range detailTabNames {
-		if detailTab(i) == m.detailTab {
-			tabs[i] = "[" + name + "]"
-		} else {
-			tabs[i] = name
-		}
-	}
-	text := strings.Join(tabs, "  ")
-	if ansi.StringWidth(text) > m.detailWidth() {
-		return "[" + detailTabNames[m.detailTab] + "] · tab/shift-tab to switch"
-	}
-	return text
-}
-func (m Model) detailPaneLine(index int) string {
-	if index == 0 {
-		return m.detailTabs()
-	}
-	return m.detailContentLine(index - 1)
-}
-func (m Model) detailContentLine(index int) string {
-	if row, ok := m.selectedRow(); ok && row.Error != "" {
-		if index == 0 {
-			return "! " + textutil.Line(row.Error)
-		}
-		if index == 1 && (row.ErrorLocalVersion != "" || row.ErrorRemoteVersion != "") {
-			return fmt.Sprintf("Conflict versions: local %s · source %s", row.ErrorLocalVersion, row.ErrorRemoteVersion)
-		}
-		index--
-	}
-	line := m.detailScroll + index
-	if m.detailTab == tabCriteria && m.criteriaCursor >= 0 && criteriaLineAt(m.detailLines, m.criteriaCursor) == line && line < len(m.detailLines) {
-		return "> " + m.detailLines[line]
-	}
-	if !m.detailIdentity.Valid {
-		if index == 0 {
-			return "Select an item to view details."
-		}
-		return ""
-	}
-	if m.detailError != "" {
-		if index == 0 {
-			return "! " + m.detailError
-		}
-		return ""
-	}
-	if m.detailLoading && len(m.detailLines) == 0 {
-		if index == 0 {
-			return "⠋ Loading full detail…"
-		}
-		return ""
-	}
-	if line >= len(m.detailLines) {
-		return ""
-	}
-	return m.detailLines[line]
+	m.detailScroll = max(0, min(m.detailScroll+delta, max(0, len(m.detailLines)-m.detailVisible())))
 }

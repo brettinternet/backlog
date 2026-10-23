@@ -75,7 +75,7 @@ func viewOptions(cfg project.Config) Options {
 func TestViewsRestoreSession(t *testing.T) {
 	cfg := viewConfig(t)
 	m := viewRows(New(viewOptions(cfg)), "BL-1", "BL-2", "BL-3")
-	if !strings.Contains(m.View().Content, "[Next]  Active  Mine  All  Board  Shared  Personal") {
+	if !strings.Contains(m.View().Content, "[Next]  Active   Mine   Open   Board   Shared   Personal") {
 		t.Fatal(m.View().Content)
 	}
 	m = send(m, "j", "j") // BL-2
@@ -93,7 +93,7 @@ func TestViewsRestoreSession(t *testing.T) {
 	// The query is the single source of sort/group, as in the editor and menus.
 	m = send(m, "o", "u", "z", "p")
 	m.detailOpen = true
-	m.detailTab = tabDescription
+	m.detailTab = tabNotes
 	m.splitWidth = 65
 	if err := m.SaveSession(cfg); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestViewsRestoreSession(t *testing.T) {
 	// It must not consume the restart selection anchor.
 	again := viewRows(New(opts))
 	again = viewRows(again, "BL-3", "BL-2", "BL-1")
-	if again.view != 5 || again.query != m.query || !strings.Contains(again.query, "sort:updated") || !strings.Contains(again.query, "group:priority") || again.detailTab != tabDescription || again.splitWidth != 65 || !again.detailOpen || again.views[5].Config.Layout != "tree" || strings.Join(again.views[5].Config.Columns, ",") != "id,title" {
+	if again.view != 5 || again.query != m.query || !strings.Contains(again.query, "sort:updated") || !strings.Contains(again.query, "group:priority") || again.detailTab != tabNotes || again.splitWidth != 65 || !again.detailOpen || again.views[5].Config.Layout != "tree" || strings.Join(again.views[5].Config.Columns, ",") != "id,title" {
 		t.Fatalf("incomplete restore: %+v", restored)
 	}
 	if row, ok := again.selectedRow(); !ok || row.Ref.ID != "BL-3" {
@@ -187,7 +187,8 @@ func TestSaveViewRestart(t *testing.T) {
 		t.Fatal(ids)
 	}
 	again := New(viewOptions(cfg2))
-	if !strings.Contains(again.View().Content, "Shared  Saved  Personal  Saved") {
+	again.width = 120
+	if !strings.Contains(again.View().Content, "Shared   Saved   Personal   Saved") {
 		t.Fatal(again.View().Content)
 	}
 	raw, err := os.ReadFile(cfg.Paths.ConfigFile)

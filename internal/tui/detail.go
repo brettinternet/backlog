@@ -3,28 +3,30 @@ package tui
 import (
 	"container/list"
 	"context"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type detailTab uint8
 
 const (
 	tabOverview detailTab = iota
-	tabDescription
 	tabCriteria
-	tabPlanNotes
+	tabNotes
 	tabComments
 	tabRelations
 )
 
-var detailTabNames = [...]string{"Overview", "Description", "Criteria", "Plan/Notes", "Comments", "Relations"}
+var detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations"}
 
 type detailIdentity struct {
 	Ref              model.Ref
@@ -52,14 +54,42 @@ type detailRequest struct {
 	tab        detailTab
 	expanded   bool
 	milestones []project.Milestone
+	statuses   []project.StatusConfig
+	theme      theme
+	now        time.Time
 }
 type detailResult struct {
 	generation uint64
 	identity   detailIdentity
 	lines      []string
+	criteria   []int // line index of each criterion, for the Criteria cursor
+	counts     tabCounts
 	truncated  bool
 	err        string
 }
+
+// tabCounts label detail tabs from the item, such as "2/5" criteria.
+type tabCounts [len(detailTabNames)]string
+
+func itemCounts(item model.Item) tabCounts {
+	var c tabCounts
+	if total := len(item.Criteria) + len(item.DoD); total > 0 {
+		done := 0
+		for _, list := range [][]model.Criterion{item.Criteria, item.DoD} {
+			for _, criterion := range list {
+				if criterion.Checked {
+					done++
+				}
+			}
+		}
+		c[tabCriteria] = strconv.Itoa(done) + "/" + strconv.Itoa(total)
+	}
+	if n := len(item.Comments); n > 0 {
+		c[tabComments] = strconv.Itoa(n)
+	}
+	return c
+}
+
 type detailResultMsg detailResult
 
 type renderKey struct {
@@ -77,6 +107,8 @@ type itemKey struct {
 }
 type rendered struct {
 	lines     []string
+	criteria  []int
+	counts    tabCounts
 	truncated bool
 	size      int
 }
@@ -211,8 +243,7 @@ func itemSize(item model.Item) int {
 type detailWorker struct {
 	ctx      context.Context
 	read     func(context.Context, model.Ref) (model.Item, error)
-	render   func(string, int) (string, error)
-	theme    string
+	render   func(body string, width int, theme string) (string, error)
 	requests chan detailRequest
 	results  chan detailResult
 	mu       sync.Mutex
@@ -221,9 +252,9 @@ type detailWorker struct {
 	cache    detailCache
 }
 
-func newDetailWorker(ctx context.Context, read func(context.Context, model.Ref) (model.Item, error), render func(string, int) (string, error), theme string) *detailWorker {
+func newDetailWorker(ctx context.Context, read func(context.Context, model.Ref) (model.Item, error), render func(string, int, string) (string, error)) *detailWorker {
 	return &detailWorker{
-		ctx: ctx, read: read, render: render, theme: theme,
+		ctx: ctx, read: read, render: render,
 		requests: make(chan detailRequest, 1), results: make(chan detailResult, 1), cache: newDetailCache(),
 	}
 }
@@ -290,9 +321,9 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	result := detailResult{generation: request.generation, identity: identity}
 	version := request.row.Version
 	dependency := detailDependency(request.row, request.tab)
-	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: worker.theme, Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
+	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: request.theme.key(), Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
 	if value, ok := worker.cache.render(key); ok {
-		result.lines, result.truncated = value.lines, value.truncated
+		result.lines, result.criteria, result.counts, result.truncated = value.lines, value.criteria, value.counts, value.truncated
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
@@ -324,31 +355,21 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	key.Version = version
 	if value, ok := worker.cache.render(key); ok {
 		result.identity.Version = version
-		result.lines, result.truncated = value.lines, value.truncated
+		result.lines, result.criteria, result.counts, result.truncated = value.lines, value.criteria, value.counts, value.truncated
 		return result
 	}
-	body, truncated := detailBody(item, request.row, request.tab, request.milestones, request.expanded)
-	text, err := worker.render(body, max(1, request.width))
+	page, err := detailPage(ctx, item, request, worker.render)
 	if err != nil {
 		result.err = textutil.Line(err.Error())
 		return result
 	}
-	if ctx.Err() != nil {
-		result.err = textutil.Line(ctx.Err().Error())
-		return result
+	if len(page.lines) == 0 {
+		page.lines = []string{request.theme.muted.render("Nothing here yet.")}
 	}
-	text = textutil.Sanitize(text)
-	if len(text) > renderLimit {
-		text = truncateUTF8(text, renderLimit) + "\n… rendered output capped"
-		truncated = true
-	}
-	lines := strings.Split(text, "\n")
-	if len(lines) == 0 || len(lines) == 1 && lines[0] == "" {
-		lines = []string{"(no content)"}
-	}
+	page.counts = itemCounts(item)
 	result.identity.Version = version
-	result.lines, result.truncated = lines, truncated
-	worker.cache.putRender(key, rendered{lines: lines, truncated: truncated, size: len(text)})
+	result.lines, result.criteria, result.counts, result.truncated = page.lines, page.criteria, page.counts, page.truncated
+	worker.cache.putRender(key, page)
 	return result
 }
 func detailDependency(row engine.Row, tab detailTab) string {
@@ -390,128 +411,322 @@ func (body *cappedBody) write(value string) {
 	body.builder.WriteString(truncateUTF8(value, max(0, remaining)))
 	body.full = true
 }
-func (body *cappedBody) line(values ...string) {
-	for _, value := range values {
-		body.write(value)
-	}
-	body.write("\n")
-}
-func (body *cappedBody) list(label string, values []string) {
-	if len(values) == 0 {
-		return
-	}
-	body.write(label)
-	for index, value := range values {
-		if index > 0 {
-			body.write(", ")
-		}
-		body.write(value)
-		if body.full {
-			return
-		}
-	}
-	body.write("\n")
-}
-func detailBody(item model.Item, row engine.Row, tab detailTab, milestones []project.Milestone, expanded bool) (string, bool) {
+
+// detailPage builds one tab. Fields and graphs are laid out directly; prose is
+// rendered as Markdown in a single renderer call, capped before rendering.
+func detailPage(ctx context.Context, item model.Item, request detailRequest, render func(string, int, string) (string, error)) (rendered, error) {
+	t, width := request.theme, max(1, request.width)
 	limit := bodyLimit
-	if expanded {
+	if request.expanded {
 		limit = bodyMoreLimit
 	}
 	body := cappedBody{limit: limit}
-	switch tab {
+	var page rendered
+	switch request.tab {
 	case tabOverview:
-		body.line("## ", row.Ref.ID, " · ", item.Title)
-		body.line("- Type: ", item.Type)
-		body.line("- Status: ", item.Status)
-		body.line("- Category: ", string(item.Category))
-		body.line("- Priority: ", string(item.Priority))
-		body.list("- Assignees: ", item.Assignees)
-		body.list("- Labels: ", item.Labels)
-		if item.Milestone != "" {
-			body.line("- Milestone: ", milestoneName(item.Milestone, milestones))
-		}
-		if item.Due != "" {
-			body.line("- Due: ", item.Due)
-		}
-		if item.URL != "" {
-			body.line("- URL: ", item.URL)
-		}
-		body.line("- Readiness: ", string(row.Readiness))
-		body.line("- Reason: ", row.ReadinessReason)
-	case tabDescription:
-		body.write(item.Description)
+		page.lines = overviewLines(item, request)
 		if item.Description == "" {
-			body.write("(No description.)")
+			page.lines = append(page.lines, "", t.muted.render("No description."))
 		}
+		body.write(item.Description)
 	case tabCriteria:
-		body.line("## Acceptance criteria")
-		writeCriteria(&body, item.Criteria)
-		body.line("## Definition of done")
-		writeCriteria(&body, item.DoD)
-	case tabPlanNotes:
-		body.line("## Plan")
-		body.write(item.Plan)
-		if item.Plan == "" {
-			body.write("(No plan.)")
+		page.lines, page.criteria = criteriaLines(item, t, width)
+	case tabNotes:
+		for _, section := range []struct{ name, text string }{{"Plan", item.Plan}, {"Notes", item.Notes}, {"Summary", item.Summary}} {
+			if section.text == "" {
+				continue
+			}
+			body.write("## " + section.name + "\n\n")
+			body.write(section.text)
+			body.write("\n\n")
 		}
-		body.write("\n\n## Notes\n")
-		body.write(item.Notes)
-		if item.Notes == "" {
-			body.write("(No notes.)")
+		if item.Plan == "" && item.Notes == "" && item.Summary == "" {
+			page.lines = []string{t.muted.render("No plan or notes.")}
 		}
 	case tabComments:
 		if len(item.Comments) == 0 {
-			body.write("(No comments.)")
+			page.lines = []string{t.muted.render("No comments.")}
 		}
 		for _, comment := range item.Comments {
 			if body.full {
 				break
 			}
-			if comment.Time.IsZero() {
-				body.line("## ", comment.Author)
-			} else {
-				body.line("## ", comment.Time.Format("2006-01-02 15:04"), " · ", comment.Author)
+			header := "### " + comment.Author
+			if !comment.Time.IsZero() {
+				header += " · " + comment.Time.Format("2006-01-02 15:04")
 			}
+			body.write(header + "\n\n")
 			body.write(comment.Body)
 			body.write("\n\n")
 		}
 	case tabRelations:
-		if len(row.Relations) == 0 {
-			body.write("(No relations.)")
+		page.lines = relationLines(item, request.row, statusNames(request.statuses), t, width)
+	}
+	page.truncated = body.full
+	if text := body.builder.String(); text != "" {
+		out, err := render(text, width, t.name)
+		if err != nil {
+			return rendered{}, err
 		}
-		lastKind := ""
-		for _, relation := range row.Relations {
-			if body.full {
-				break
-			}
-			if relation.Kind != lastKind {
-				body.line("## ", strings.ToUpper(relation.Kind))
-				lastKind = relation.Kind
-			}
-			body.line("- ", relation.Ref.ID, " · ", relation.Status, " — ", relation.Title)
+		if ctx.Err() != nil {
+			return rendered{}, ctx.Err()
+		}
+		out = strings.TrimRight(out, "\n ")
+		if len(out) > renderLimit {
+			out = truncateUTF8(out, renderLimit) + "\n… rendered output capped"
+			page.truncated = true
+		}
+		if request.tab == tabOverview {
+			page.lines = append(page.lines, "")
+		}
+		for _, line := range strings.Split(out, "\n") {
+			page.lines = append(page.lines, strings.TrimRight(line, " "))
 		}
 	}
-	return body.builder.String(), body.full
+	for _, line := range page.lines {
+		page.size += len(line) + 1
+	}
+	return page, nil
 }
-func writeCriteria(body *cappedBody, criteria []model.Criterion) {
-	if len(criteria) == 0 {
-		body.line("(None.)")
-		return
+
+const propertyWidth = 11
+
+func property(t theme, label, value string) string {
+	return t.muted.render(cell(label, propertyWidth)) + value
+}
+
+// overviewLines is a property sheet: only fields with values, aligned labels.
+func overviewLines(item model.Item, request detailRequest) []string {
+	t, row := request.theme, request.row
+	var lines []string
+	add := func(label, value string) {
+		if value != "" {
+			lines = append(lines, property(t, label, value))
+		}
 	}
-	for _, criterion := range criteria {
-		if body.full {
+	join := func(values []string, prefix string) string {
+		parts := make([]string, len(values))
+		for i, v := range values {
+			parts[i] = prefix + textutil.Line(v)
+		}
+		return strings.Join(parts, "  ")
+	}
+	add("Assignees", join(item.Assignees, ""))
+	add("Labels", t.muted.render(join(item.Labels, "#")))
+	if item.Milestone != "" {
+		add("Milestone", textutil.Line(milestoneName(item.Milestone, request.milestones)))
+	}
+	add("Due", textutil.Line(item.Due))
+	add("Type", textutil.Line(item.Type))
+	if item.Parent != nil {
+		add("Parent", textutil.Line(item.Parent.ID))
+	}
+	if row.Readiness != "" && row.Category != model.Done && row.Category != model.Canceled {
+		add("Readiness", readinessText(t, row))
+	}
+	if !item.Updated.IsZero() {
+		add("Updated", age(item.Updated, request.now)+t.muted.render(" · "+item.Updated.Local().Format("2006-01-02 15:04")))
+	}
+	if !item.Created.IsZero() {
+		add("Created", age(item.Created, request.now)+t.muted.render(" · "+item.Created.Local().Format("2006-01-02 15:04")))
+	}
+	if item.URL != "" {
+		add("URL", t.link.render(textutil.Line(item.URL)))
+	}
+	return lines
+}
+
+func readinessGlyph(t theme, r engine.Readiness) string {
+	switch r {
+	case engine.Ready:
+		return t.green.render("✓")
+	case engine.Blocked:
+		return t.red.render("⊘")
+	case engine.Waiting:
+		return t.yellow.render("◷")
+	case engine.Ineligible:
+		return t.muted.render("–")
+	}
+	return t.muted.render("?")
+}
+func readinessText(t theme, row engine.Row) string {
+	text := readinessGlyph(t, row.Readiness) + " " + string(row.Readiness)
+	if row.Readiness != engine.Ready && row.ReadinessReason != "" {
+		text += t.muted.render(" · " + textutil.Line(row.ReadinessReason))
+	}
+	return text
+}
+
+// progress draws a fixed-width bar so completion is visible at a glance.
+func progress(t theme, done, total, width int) string {
+	if total <= 0 || width <= 0 {
+		return ""
+	}
+	filled := done * width / total
+	if done > 0 && filled == 0 {
+		filled = 1
+	}
+	bar := t.green.render(strings.Repeat("▰", filled)) + t.faint.render(strings.Repeat("▱", width-filled))
+	return bar
+}
+
+func criteriaLines(item model.Item, t theme, width int) ([]string, []int) {
+	var lines []string
+	var criteria []int
+	section := func(name string, list []model.Criterion) {
+		done := 0
+		for _, c := range list {
+			if c.Checked {
+				done++
+			}
+		}
+		head := t.bold.render(name)
+		if len(list) > 0 {
+			head += "  " + t.muted.render(strconv.Itoa(done)+"/"+strconv.Itoa(len(list))) + "  " + progress(t, done, len(list), 10)
+		}
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, head)
+		if len(list) == 0 {
+			lines = append(lines, t.muted.render("  None"))
 			return
 		}
-		checked := " "
-		if criterion.Checked {
-			checked = "x"
-		}
-		body.line("- [", checked, "] ", criterion.Text)
-		if criterion.Evidence != "" {
-			body.line("  Evidence: ", criterion.Evidence)
+		for _, c := range list {
+			box, style := "☐", paint{}
+			if c.Checked {
+				box, style = t.green.render("✓"), t.muted
+			}
+			text := ansi.Wrap(textutil.Line(c.Text), max(1, width-4), "")
+			for i, part := range strings.Split(text, "\n") {
+				if i == 0 {
+					criteria = append(criteria, len(lines))
+					lines = append(lines, "  "+box+" "+style.render(part))
+				} else {
+					lines = append(lines, "    "+style.render(part))
+				}
+			}
+			if c.Evidence != "" {
+				evidence := ansi.Wrap(textutil.Line(c.Evidence), max(1, width-6), "")
+				for i, part := range strings.Split(evidence, "\n") {
+					prefix := "    ↳ "
+					if i > 0 {
+						prefix = "      "
+					}
+					lines = append(lines, t.muted.render(prefix+part))
+				}
+			}
 		}
 	}
+	section("Acceptance criteria", item.Criteria)
+	section("Definition of done", item.DoD)
+	return lines, criteria
 }
+
+// relationLines draws the dependency flow (blockers → item → blocked) and the
+// hierarchy, each relation with live status from the projection.
+func relationLines(item model.Item, row engine.Row, names map[string]string, t theme, width int) []string {
+	byKind := map[string][]engine.Relation{}
+	for _, r := range row.Relations {
+		byKind[r.Kind] = append(byKind[r.Kind], r)
+	}
+	var lines []string
+	entry := func(r engine.Relation, connector string) string {
+		icon := t.categoryIcon(r.Category)
+		status := r.Status
+		if name, ok := names[status]; ok {
+			status = name
+		}
+		if r.Status == "missing" {
+			icon = t.red.render("?")
+		}
+		head := t.faint.render(connector) + " " + icon + " " + t.muted.render(textutil.Line(r.Ref.ID)) + "  "
+		used := ansi.StringWidth(ansi.Strip(head))
+		tail := "  " + status
+		room := max(1, width-used-ansi.StringWidth(tail))
+		title := ansi.Truncate(textutil.Line(r.Title), room, "…")
+		style := paint{}
+		if r.Category == model.Done || r.Category == model.Canceled {
+			style = t.muted
+		}
+		return head + style.render(title) + t.muted.render(textutil.Line(tail))
+	}
+	group := func(label string, relations []engine.Relation, summary string) {
+		lines = append(lines, t.bold.render(label)+summary)
+		for i, r := range relations {
+			connector := "├─"
+			if i == len(relations)-1 {
+				connector = "└─"
+			}
+			lines = append(lines, entry(r, connector))
+		}
+	}
+	closed := func(rs []engine.Relation) int {
+		n := 0
+		for _, r := range rs {
+			if r.Category == model.Done || r.Category == model.Canceled {
+				n++
+			}
+		}
+		return n
+	}
+	blockers, blocking := byKind["blocked by"], byKind["blocking"]
+	if len(blockers) > 0 || len(blocking) > 0 {
+		arrow := func() {
+			lines = append(lines, t.faint.render("   │"), t.faint.render("   ▼"))
+		}
+		if len(blockers) > 0 {
+			open := len(blockers) - closed(blockers)
+			summary := "  " + t.green.render("all done")
+			if open > 0 {
+				summary = "  " + t.red.render(strconv.Itoa(open)+" open")
+			}
+			group("Blocked by", blockers, summary)
+			arrow()
+		}
+		self := t.accent.render("◆") + " " + t.bold.render(textutil.Line(row.Ref.ID)) + "  " + ansi.Truncate(textutil.Line(row.Title), max(1, width-ansi.StringWidth(row.Ref.ID)-4), "…")
+		lines = append(lines, self)
+		if len(blocking) > 0 {
+			arrow()
+			group("Blocks", blocking, "")
+		}
+	}
+	if parents := byKind["parent"]; len(parents) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		group("Parent", parents, "")
+	}
+	if children := byKind["children"]; len(children) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		done := closed(children)
+		summary := "  " + t.muted.render(strconv.Itoa(done)+"/"+strconv.Itoa(len(children))) + "  " + progress(t, done, len(children), 10)
+		group("Children", children, summary)
+	}
+	var related []string
+	for _, r := range item.Related {
+		related = append(related, textutil.Line(r.ID))
+	}
+	if item.DuplicateOf != nil {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, t.bold.render("Duplicate of")+"  "+t.muted.render(textutil.Line(item.DuplicateOf.ID)))
+	}
+	if len(related) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, t.bold.render("Related")+"  "+t.muted.render(strings.Join(related, "  ")))
+	}
+	if len(lines) == 0 {
+		lines = []string{t.muted.render("No relations.")}
+	}
+	return lines
+}
+
 func milestoneName(key string, milestones []project.Milestone) string {
 	for _, milestone := range milestones {
 		if milestone.Key == key && milestone.Name != "" {

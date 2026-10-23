@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--width', type=int, default=80)
     parser.add_argument('--height', type=int, default=24)
     parser.add_argument('--timeout', type=float, default=15)
+    parser.add_argument('--ansi', action='store_true', help='keep color and style escapes')
     parser.add_argument('--keys', nargs='*', default=[], help='tmux keys sent after the first paint')
     parser.add_argument('command', nargs=argparse.REMAINDER, help='-- bin/bl -C FIXTURE tui')
     args = parser.parse_args()
@@ -38,19 +39,24 @@ def main():
         tmux('set-option', '-g', 'status', 'off')
         deadline = time.monotonic() + args.timeout
         keys_sent = False
-        previous = None
+        previous, stable = None, 0
+        capture = ['capture-pane', '-p', '-t', 'snapshot:0.0'] + (['-e'] if args.ansi else [])
         while time.monotonic() < deadline:
-            pane = tmux('capture-pane', '-p', '-t', 'snapshot:0.0').stdout
-            ready = ('q quit' in pane or 'esc/q back' in pane or 'esc back' in pane) and 'Loading' not in pane and '⠋ syncing' not in pane and '⠋ Searching' not in pane
+            pane = tmux(*capture).stdout
+            # Settled: painted, with nothing loading, syncing or searching.
+            ready = pane.strip() != '' and not any(busy in pane for busy in ('Loading', '\u21bb', 'Searching'))
             if ready and not keys_sent and args.keys:
                 tmux('send-keys', '-t', 'snapshot:0.0', *args.keys)
                 keys_sent = True
-                previous = None
+                previous, stable = None, 0
             elif ready and pane == previous:
-                sys.stdout.write(pane)
-                return 0
+                # Unchanged for 0.5s, so pending key timeouts have fired.
+                stable += 1
+                if stable >= 10:
+                    sys.stdout.write(pane)
+                    return 0
             else:
-                previous = pane
+                previous, stable = pane, 0
             threading.Event().wait(0.05)
         raise RuntimeError('render did not settle before timeout; last capture:\n' + (previous or ''))
     finally:

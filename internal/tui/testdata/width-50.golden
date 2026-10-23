@@ -1,0 +1,24 @@
+ fixture  [Next]  Active   Mine   Open   Board    
+       ID      Status    Title                    
+▌ ▾ · To Do  3                                    
+   ▲   BL-1    · To Do   safe 修正 🚀             
+   ▲   BL-2 ●  · To Do   修正 🚀 selection        
+   ▲   BL-3 !  · To Do   修正 🚀 selection        
+  ▾ · Active  3                                   
+   ▲   BL-4    · Active  修正 🚀 selection        
+   ▲   BL-5 ●  · Active  修正 🚀 selection        
+   ▲   BL-6 !  · Active  修正 🚀 selection        
+  ▾ · Done  3                                     
+   ▲   BL-7    · Done    修正 🚀 selection        
+   ▲   BL-8 ●  · Done    修正 🚀 selection        
+   ▲   BL-9 !  · Done    修正 🚀 selection        
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+ is:ready sort:next               ● 3  ! 3    1/9 

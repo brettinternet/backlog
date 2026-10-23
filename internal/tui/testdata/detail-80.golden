@@ -1,33 +1,11 @@
 == Overview ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
+ fixture  [Next]  Active   Mine   Open   Board                                  
+  BL-1  ○ todo  ▲ high                                                          
+  Item 1                                                                        
+  [Overview] Criteria 1/2  Notes  Comments 1  Relations 2                       
                                                                                 
-BL-1 · Item 1 · todo · high                                                     
-[Overview]  Description  Criteria  Plan/Notes  Comments  Relations              
-                                                                                
-  ## BL-1 · Detail fixture                                                      
-                                                                                
-  • Type:                                                                       
-  • Status: todo                                                                
-  • Category: todo                                                              
-  • Priority: high                                                              
-  • Milestone: m-1 — TUI                                                        
-  • Readiness: ready                                                            
-  • Reason: all readiness checks pass                                           
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-────────────────────────────────────────────────────────────────────────────────
-tab next · shift-tab previous · j/k scroll · h list · esc/q back                
-== Description ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
-                                                                                
-BL-1 · Item 1 · todo · high                                                     
-Overview  [Description]  Criteria  Plan/Notes  Comments  Relations              
+  Milestone  m-1 — TUI                                                          
+  Readiness  ✓ ready                                                            
                                                                                 
   # Description                                                                 
                                                                                 
@@ -44,24 +22,19 @@ Overview  [Description]  Criteria  Plan/Notes  Comments  Relations
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-────────────────────────────────────────────────────────────────────────────────
-tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+ is:ready sort:next                                                         1/2 
 == Criteria ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
+ fixture  [Next]  Active   Mine   Open   Board                                  
+  BL-1  ○ todo  ▲ high                                                          
+  Item 1                                                                        
+   Overview [Criteria 1/2] Notes  Comments 1  Relations 2                       
                                                                                 
-BL-1 · Item 1 · todo · high                                                     
-Overview  Description  [Criteria]  Plan/Notes  Comments  Relations              
+  Acceptance criteria  1/1  ▰▰▰▰▰▰▰▰▰▰                                          
+▌   ✓ Keep input responsive                                                     
+      ↳ counter                                                                 
                                                                                 
-  ## Acceptance criteria                                                        
-                                                                                
->   [x] Keep input responsive                                                   
-  Evidence: counter                                                             
-                                                                                
-  ## Definition of done                                                         
-                                                                                
-  [ ] CI passes                                                                 
+  Definition of done  0/1  ▱▱▱▱▱▱▱▱▱▱                                           
+    ☐ CI passes                                                                 
                                                                                 
                                                                                 
                                                                                 
@@ -71,13 +44,15 @@ Overview  Description  [Criteria]  Plan/Notes  Comments  Relations
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-tab next · shift-tab previous · j/k scroll · h list · esc/q back                
-== Plan/Notes ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
                                                                                 
-BL-1 · Item 1 · todo · high                                                     
-Overview  Description  Criteria  [Plan/Notes]  Comments  Relations              
+                                                                                
+                                                                                
+ is:ready sort:next                                                         1/2 
+== Notes ==
+ fixture  [Next]  Active   Mine   Open   Board                                  
+  BL-1  ○ todo  ▲ high                                                          
+  Item 1                                                                        
+   Overview  Criteria 1/2 [Notes] Comments 1  Relations 2                       
                                                                                 
   ## Plan                                                                       
                                                                                 
@@ -96,15 +71,15 @@ Overview  Description  Criteria  [Plan/Notes]  Comments  Relations
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+                                                                                
+ is:ready sort:next                                                         1/2 
 == Comments ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
+ fixture  [Next]  Active   Mine   Open   Board                                  
+  BL-1  ○ todo  ▲ high                                                          
+  Item 1                                                                        
+   Overview  Criteria 1/2  Notes [Comments 1] Relations 2                       
                                                                                 
-BL-1 · Item 1 · todo · high                                                     
-Overview  Description  Criteria  Plan/Notes  [Comments]  Relations              
-                                                                                
-  ## brett                                                                      
+  ### brett                                                                     
                                                                                 
   Looks good                                                                    
                                                                                 
@@ -121,24 +96,22 @@ Overview  Description  Criteria  Plan/Notes  [Comments]  Relations
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+                                                                                
+ is:ready sort:next                                                         1/2 
 == Relations ==
-backlog · fixture · [Next]  Active  Mine  All  Board                            
+ fixture  [Next]  Active   Mine   Open   Board                                  
+  BL-1  ○ todo  ▲ high                                                          
+  Item 1                                                                        
+   Overview  Criteria 1/2  Notes  Comments 1 [Relations 2]                      
                                                                                 
-BL-1 · Item 1 · todo · high                                                     
-Overview  Description  Criteria  Plan/Notes  Comments  [Relations]              
+  Blocked by  1 open                                                            
+  └─ ◐ BL-2  Dependency  active                                                 
+     │                                                                          
+     ▼                                                                          
+  ◆ BL-1  Item 1                                                                
                                                                                 
-  ## BLOCKED BY                                                                 
-                                                                                
-  • BL-2 · active — Dependency                                                  
-                                                                                
-  ## CHILDREN                                                                   
-                                                                                
-  • BL-3 · done — Child                                                         
-                                                                                
-                                                                                
-                                                                                
+  Children  1/1  ▰▰▰▰▰▰▰▰▰▰                                                     
+  └─ ✓ BL-3  Child  done                                                        
                                                                                 
                                                                                 
                                                                                 
@@ -146,5 +119,7 @@ Overview  Description  Criteria  Plan/Notes  Comments  [Relations]
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-tab next · shift-tab previous · j/k scroll · h list · esc/q back                
+                                                                                
+                                                                                
+                                                                                
+ is:ready sort:next                                                         1/2 

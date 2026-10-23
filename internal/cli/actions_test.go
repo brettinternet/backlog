@@ -149,7 +149,10 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 	if err := pty.WaitFor("disabled:", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pty.KeyToOutput("\x1b", "is:ready sort:next", 5*time.Second); err != nil {
+	if err := pty.Write("\x1b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pty.WaitGone("disabled:", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	// A blocked detached action must not hold the terminal or the update loop.
@@ -160,7 +163,7 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 	if _, err := pty.KeyToOutput("\x05", "Action started.", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pty.KeyToOutput("?", "Move down / scroll detail", 5*time.Second); err != nil {
+	if _, err := pty.KeyToOutput("?", "Move down", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	var gateFD int
@@ -175,7 +178,10 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 	}
 	_, _ = syscall.Write(gateFD, []byte("release\n"))
 	_ = syscall.Close(gateFD)
-	if _, err := pty.KeyToOutput("\x1b", "is:ready sort:next", 5*time.Second); err != nil {
+	if err := pty.Write("\x1b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pty.WaitGone("Move down", 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := pty.Write("q"); err != nil {

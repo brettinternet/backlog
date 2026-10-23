@@ -78,8 +78,14 @@ const (
 	pickerTitle     pickerKind = "title"
 )
 
+var pickerTitles = map[pickerKind]string{
+	pickerStatus: "Status", pickerPriority: "Priority", pickerAssignees: "Assignees", pickerLabels: "Labels",
+	pickerMilestone: "Milestone", pickerBlocker: "Add blocker", pickerParent: "Parent", pickerTitle: "Title",
+}
+
 type pickerChoice struct {
 	value, label string
+	hint         string // secondary text, such as a key that differs from its name
 	current      bool
 }
 type pickerState struct {
@@ -219,7 +225,7 @@ func (m *Model) beginPicker(kind pickerKind) tea.Cmd {
 		m.notice = "The selected item is no longer available."
 		return nil
 	}
-	p := pickerState{open: true, kind: kind, title: string(kind), selected: map[string]bool{}}
+	p := pickerState{open: true, kind: kind, title: pickerTitles[kind], selected: map[string]bool{}}
 	switch kind {
 	case pickerAssignees, pickerLabels:
 		p.multi, p.free = true, true
@@ -227,15 +233,7 @@ func (m *Model) beginPicker(kind pickerKind) tea.Cmd {
 		p.free = true
 	case pickerTitle:
 		p.inputOnly = true
-		p.title, p.query = "Title", item.Title
-	case pickerBlocker:
-		p.title = "Add blocker"
-	case pickerParent:
-		p.title = "Set parent"
-	case pickerStatus:
-		p.title = "Set status"
-	case pickerPriority:
-		p.title = "Set priority"
+		p.query = item.Title
 	}
 	if kind == pickerTitle {
 		m.picker = p
@@ -328,7 +326,10 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 			if label == "" {
 				label = status.Key
 			}
-			add(status.Key, label+" ("+status.Key+")", current.Status)
+			add(status.Key, label, current.Status)
+			if index := choiceIndex(choices, status.Key); index >= 0 && label != status.Key {
+				choices[index].hint = status.Key
+			}
 		}
 		add(current.Status, current.Status, current.Status)
 	case pickerPriority:
@@ -399,7 +400,10 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 			if label == "" {
 				label = milestone.Key
 			}
-			add(milestone.Key, label+" ("+milestone.Key+")", current.Milestone)
+			add(milestone.Key, label, current.Milestone)
+			if index := choiceIndex(choices, milestone.Key); index >= 0 && label != milestone.Key {
+				choices[index].hint = milestone.Key
+			}
 			delete(values, milestone.Key)
 		}
 		for _, value := range sortedKeys(values) {

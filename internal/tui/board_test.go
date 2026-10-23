@@ -67,7 +67,7 @@ func TestBoardNavigation(t *testing.T) {
 		golden(t, fmt.Sprintf("board-%d", width), m.View().Content)
 	}
 	// Help replaces the board; the column header must not repeat its first action.
-	if help := send(m, "?").View().Content; strings.Count(help, "Move down / scroll detail [move-down]") != 1 {
+	if help := send(m, "?").View().Content; strings.Count(help, "Move down") != 1 {
 		t.Fatalf("help header duplicated:\n%s", help)
 	}
 }
@@ -186,14 +186,14 @@ func TestBoardCaptureStatus(t *testing.T) {
 	m = prepareBoard(m)
 	m = send(m, "l", "n")
 	m.capture.line = "New card"
-	m.expandCapture()
+	m.expandCapture(false)
 	item, err := captureItem(m.capture.fields, "tasks")
 	if err != nil || item.Status != "active" {
 		t.Fatalf("column default: %+v %v", item, err)
 	}
 	m.query = "is:open group:priority"
 	m.capture.line = "Another"
-	m.expandCapture()
+	m.expandCapture(false)
 	item, err = captureItem(m.capture.fields, "tasks")
 	if err != nil || item.Status != "todo" {
 		t.Fatalf("non-status default: %+v %v", item, err)

@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -197,7 +198,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				err := project.SaveView(path, !shared, v)
 				return project.SavedView{ID: scope + ":" + v.Name, ViewConfig: v}, err
 			},
-			Context: session, Store: store, Projector: projector, Sources: sources, Project: cfg.Project.ID,
+			Context: session, Store: store, Projector: projector, Sources: sources, Project: cmp.Or(cfg.Project.Name, cfg.Project.ID),
 			Statuses: cfg.Statuses, Workflow: cfg.Workflow, Labels: cfg.Labels, Milestones: cfg.Milestones, Me: cfg.Me.Default,
 			Read: func(readCtx context.Context, ref model.Ref) (model.Item, error) {
 				return engine.ReadItem(readCtx, cfg, ref)
