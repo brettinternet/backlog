@@ -248,7 +248,7 @@ func maintenanceSources(cfg project.Config) ([]*native.Source, error) {
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(cfg.Discovery.ControlRoot, path)
 		}
-		backend, err := native.New(native.Options{ID: configured.ID, Path: path, Prefix: configured.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses})
+		backend, err := native.New(native.Options{ID: configured.ID, Path: path, Prefix: configured.Prefix, CommonDir: cfg.Discovery.CommonDir, ProjectID: cfg.Project.ID, Statuses: statuses, AutoCommit: cfg.Git.AutoCommit, ControlRoot: cfg.Discovery.ControlRoot, AutoCommitBlocked: cfg.AutoCommitBlocked()})
 		if err != nil {
 			return nil, &Error{Reason: "invalid-config", Message: err.Error()}
 		}

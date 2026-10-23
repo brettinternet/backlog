@@ -14,10 +14,14 @@ import (
 // retaining every declared field and the order of argv and declaration lists.
 func (cfg Config) TrustDigest() (string, error) {
 	subset := struct {
+		Git     *GitConfig     `json:"git,omitempty"`
 		Hooks   []HookConfig   `json:"hooks"`
 		Actions []ActionConfig `json:"actions"`
 		Sources []SourceConfig `json:"sources"`
 	}{}
+	if cfg.Git.AutoCommit && cfg.Provenance["git.autoCommit"].Layer == "project" {
+		subset.Git = &cfg.Git
+	}
 	for i, hook := range cfg.Hooks {
 		if cfg.Provenance[fmt.Sprintf("hooks[%d]", i)].Layer == "project" {
 			subset.Hooks = append(subset.Hooks, hook)
@@ -132,6 +136,14 @@ func (cfg Config) RequireTrusted(key string) error {
 		}
 	}
 	return nil
+}
+
+// AutoCommitBlocked explains why opt-in Git execution must remain inert.
+func (cfg Config) AutoCommitBlocked() string {
+	if err := cfg.RequireTrusted("git.autoCommit"); err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 // Untrusted reports inert declarations without reading state on the UI loop.

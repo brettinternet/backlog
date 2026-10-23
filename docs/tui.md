@@ -2,6 +2,15 @@
 
 **Status:** Draft UX spec. BL-16 through BL-25 implement and refine it. Every key is remappable through user config `keys:`, and this file is the source for the default keymap and help text.
 
+## Git commits
+
+With trusted `git.autoCommit: true`, consecutive native item edits share one
+commit after two seconds without another successful edit. Quit flushes the
+remaining batch after the source workers stop. Timers, Git, and file checks run
+outside the Bubble Tea update loop. Skips and Git hook failures are warnings;
+successful item writes remain. See [CLI Git behavior](cli.md#git-auto-commit)
+for path preservation, unsafe states, and the message format.
+
 ## Implemented list and detail shell
 
 Bare `bl` opens the list when stdin and stdout are terminals; `bl tui`
