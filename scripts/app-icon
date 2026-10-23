@@ -1,35 +1,73 @@
 #!/usr/bin/env swift
-// Render assets/AppIcon.icon to assets/app-icon.png the way macOS draws it (requires Xcode 26+).
+// Render assets/AppIcon.icon the way macOS draws it (requires Xcode 26+):
+//   assets/app-icon.png         macOS icon with its rounded shape, margin and shadow
+//   assets/app-icon-square.png  full-bleed square for uploads that apply their own mask
 import AppKit
 
+let px = 1024, body = 824, margin = 100 // macOS icon grid
 let assets = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("assets")
+let source = assets.appendingPathComponent("AppIcon.icon")
 let temp = FileManager.default.temporaryDirectory.appendingPathComponent("bl-app-icon-\(UUID().uuidString)")
 defer { try? FileManager.default.removeItem(at: temp) }
-let resources = temp.appendingPathComponent("Icon.bundle/Contents/Resources")
-try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
-// Without these keys AppKit skips Assets.car and falls back to the 256 px AppIcon.icns.
-try (["CFBundleIdentifier": "dev.bl.app-icon", "CFBundleIconName": "AppIcon"] as NSDictionary)
-    .write(to: resources.deletingLastPathComponent().appendingPathComponent("Info.plist"))
 
-let actool = Process()
-actool.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-actool.arguments = ["actool", assets.appendingPathComponent("AppIcon.icon").path,
-                    "--compile", resources.path, "--app-icon", "AppIcon",
-                    "--platform", "macosx", "--minimum-deployment-target", "26.0",
-                    "--output-partial-info-plist", temp.appendingPathComponent("partial.plist").path]
-actool.standardOutput = FileHandle.nullDevice
-try actool.run()
-actool.waitUntilExit()
-guard actool.terminationStatus == 0,
-      let icon = Bundle(url: temp.appendingPathComponent("Icon.bundle"))?.image(forResource: "AppIcon")
-else { fatalError("actool could not compile assets/AppIcon.icon") }
+// Compile an Icon Composer document with actool and draw it as macOS would.
+func render(_ document: URL, _ name: String) throws -> CGImage {
+    let bundle = temp.appendingPathComponent("\(name).bundle")
+    let resources = bundle.appendingPathComponent("Contents/Resources")
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    // Without these keys AppKit skips Assets.car and falls back to the 256 px AppIcon.icns.
+    try (["CFBundleIdentifier": "dev.bl.app-icon.\(name)", "CFBundleIconName": "AppIcon"] as NSDictionary)
+        .write(to: bundle.appendingPathComponent("Contents/Info.plist"))
+    let actool = Process()
+    actool.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+    actool.arguments = ["actool", document.path, "--compile", resources.path, "--app-icon", "AppIcon",
+                        "--platform", "macosx", "--minimum-deployment-target", "26.0",
+                        "--output-partial-info-plist", temp.appendingPathComponent("\(name).plist").path]
+    actool.standardOutput = FileHandle.nullDevice
+    try actool.run()
+    actool.waitUntilExit()
+    guard actool.terminationStatus == 0, let icon = Bundle(url: bundle)?.image(forResource: "AppIcon")
+    else { fatalError("actool could not compile \(document.path)") }
+    let context = canvas()
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    icon.draw(in: NSRect(x: 0, y: 0, width: px, height: px))
+    NSGraphicsContext.restoreGraphicsState()
+    return context.makeImage()!
+}
 
-let px = 1024
-let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
-                           samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                           colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-icon.draw(in: NSRect(x: 0, y: 0, width: px, height: px))
-NSGraphicsContext.restoreGraphicsState()
-try rep.representation(using: .png, properties: [:])!.write(to: assets.appendingPathComponent("app-icon.png"))
+func canvas() -> CGContext {
+    CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+              space: CGColorSpace(name: CGColorSpace.sRGB)!,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+}
+
+func write(_ image: CGImage, _ name: String) throws {
+    try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])!
+        .write(to: assets.appendingPathComponent(name))
+}
+
+let icon = try render(source, "icon")
+try write(icon, "app-icon.png")
+
+// The background is a vertical gradient. Extend each row's color to the corners the
+// rounded shape cuts away: sample the center column above and below the artwork and the
+// straight left edge beside it, staying clear of the glass rim.
+let pixels = CFDataGetBytePtr(icon.dataProvider!.data)! // sRGB RGBA rows, top-down
+let rim = 20, art = 260..<760 // icon pixels
+let square = canvas()
+for y in 0..<px { // CoreGraphics rows run bottom-up, bitmap rows top-down
+    let row = min(max(margin + (px - 1 - y) * body / px, margin + rim), margin + body - rim)
+    let pixel = pixels + row * icon.bytesPerRow + (art.contains(row) ? margin + 2 * rim : px / 2) * 4
+    square.setFillColor(CGColor(srgbRed: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255,
+                                blue: CGFloat(pixel[2]) / 255, alpha: 1))
+    square.fill(CGRect(x: 0, y: y, width: px, height: 1))
+}
+// Lay the icon's interior, inside its rounded rim, over the extended background.
+square.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: px, height: px).insetBy(dx: 40, dy: 40),
+                      cornerWidth: 240, cornerHeight: 240, transform: nil))
+square.clip()
+square.interpolationQuality = .high
+square.draw(icon.cropping(to: CGRect(x: margin, y: margin, width: body, height: body))!,
+            in: CGRect(x: 0, y: 0, width: px, height: px))
+try write(square.makeImage()!, "app-icon-square.png")
