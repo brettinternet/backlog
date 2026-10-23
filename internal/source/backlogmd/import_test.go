@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/format"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"go.yaml.in/yaml/v3"
 )
@@ -92,13 +94,13 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 	if item.Parent == nil || item.Parent.ID != "TASK-001" || len(item.BlockedBy) != 1 || item.BlockedBy[0].ID != "TASK-20" || len(item.Related) != 1 || item.Related[0].ID != "TASK-10" || item.DuplicateOf == nil || item.DuplicateOf.ID != "TASK-20" {
 		t.Fatalf("references were not rewritten, including archived dependency: %+v", item)
 	}
-	if len(item.Criteria) != 1 || !item.Criteria[0].Checked || !strings.Contains(item.Criteria[0].Text, "checked criterion") {
+	if !reflect.DeepEqual(item.Criteria, []model.Criterion{{Text: "checked criterion", Checked: true}, {Text: "#12 regression"}, {Text: "unindexed criterion"}}) {
 		t.Fatalf("checked state or criterion text was lost: %+v", item.Criteria)
 	}
 	if strings.Contains(dotted.SectionText("Acceptance criteria"), "<!--") || !strings.Contains(dotted.SectionText("Description"), "description content") || !strings.Contains(dotted.SectionText("Description"), "## Migration Detail\n\nKeep this legacy section.") {
 		t.Fatalf("section markers were not removed or description lost")
 	}
-	if len(item.DoD) != 1 || item.DoD[0].Checked || item.Plan != "1. Keep order." || item.Summary != "Summary text." {
+	if !reflect.DeepEqual(item.DoD, []model.Criterion{{Text: "unchecked dod"}, {Text: "checked dod", Checked: true}}) || item.Plan != "1. Keep order." || item.Summary != "Summary text." {
 		t.Fatalf("body sections were not mapped: dod=%+v plan=%q summary=%q", item.DoD, item.Plan, item.Summary)
 	}
 	if len(item.Comments) != 1 || item.Comments[0].Author != "brett" || item.Comments[0].Time.UTC().Format(time.RFC3339) != "2026-01-02T03:04:00Z" || item.Comments[0].Body != "A retained comment." {
@@ -107,6 +109,25 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 	custom, ok := item.Fields["custom"].(map[string]any)
 	if !ok || custom["enabled"] != true {
 		t.Fatalf("unknown metadata was not retained: %#v", item.Fields)
+	}
+
+	if !strings.Contains(item.Description, "- [ ] #1 description example") || !strings.Contains(dotted.SectionText("Acceptance criteria"), "- [ ] #9 fenced example") {
+		t.Fatal("index removal changed description or fenced code")
+	}
+	if !strings.Contains(strings.Join(report.Decisions, "\n"), "one leading #N index") {
+		t.Fatal("report omits criterion-index removal decision")
+	}
+	for _, file := range report.Files {
+		if file.SourcePath != "tasks/task-001.02.md" {
+			continue
+		}
+		for _, mapping := range file.Mappings {
+			if mapping.Source == "body:criteria" || mapping.Source == "body:dod" {
+				if !strings.Contains(mapping.Original.(string), "#1 ") || strings.Contains(mapping.Value.(string), "#1 ") {
+					t.Fatalf("report lost original index or retained it in output: %+v", mapping)
+				}
+			}
+		}
 	}
 
 	archived := readItem("backlog/archive/TASK-20.md").Item()
@@ -253,16 +274,23 @@ custom:
 ## Description
 <!-- SECTION:DESCRIPTION:BEGIN -->
 description content
+- [ ] #1 description example
 <!-- SECTION:DESCRIPTION:END -->
 ## Migration Detail
 Keep this legacy section.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] checked criterion
+- [x] #1 checked criterion
+- [ ] #2 #12 regression
+- [ ] unindexed criterion
+~~~md
+- [ ] #9 fenced example
+~~~
 <!-- AC:END -->
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] unchecked dod
+- [ ] #1 unchecked dod
+- [X] #2 checked dod
 <!-- DOD:END -->
 ## Implementation Plan
 <!-- SECTION:PLAN:BEGIN -->
