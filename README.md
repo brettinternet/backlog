@@ -6,8 +6,9 @@
 
 [![CI](https://github.com/brettinternet/backlog/actions/workflows/ci.yaml/badge.svg)](https://github.com/brettinternet/backlog/actions/workflows/ci.yaml)
 
-`bl` is a keyboard-first terminal backlog for people and coding agents. Tasks are
-Markdown files in Git, and every worktree of a repository shares one live queue.
+`bl` is a keyboard-first terminal backlog for people and coding agents. Native tasks are
+Markdown files in Git, and every worktree of a repository shares one live queue. Other supported
+backends include GitHub Issues and Projects v2, Linear, Beads, Backlog.md, Jira and external adapters.
 
 ![TUI demo](docs/demo.gif)
 
