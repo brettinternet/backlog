@@ -54,6 +54,11 @@ func TestActionProbeProcess(t *testing.T) {
 // Catches context/env drift across adapters, loss of terminal ownership,
 // confirmation bypass, disabled expansion execution and missing finish events.
 func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
+	// Build before writeFixture isolates HOME/XDG so Go keeps the caller's toolchain caches.
+	binary := filepath.Join(t.TempDir(), "bl")
+	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/bl").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v %s", err, output)
+	}
 	root := writeFixture(t)
 	cfg := eventConfig(t, root)
 	cfg.Ready.Statuses = []string{"todo"}
@@ -94,10 +99,6 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 	var first actionProbe
 	if err := json.Unmarshal([]byte(get(t, filepath.Join(root, "probe.json"))), &first); err != nil {
 		t.Fatal(err)
-	}
-	binary := filepath.Join(t.TempDir(), "bl")
-	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/bl").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, output)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

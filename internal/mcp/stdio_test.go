@@ -15,6 +15,12 @@ import (
 )
 
 func TestStdioSubprocessInitializeListCall(t *testing.T) {
+	// Build before HOME/XDG isolation so Go keeps the caller's toolchain caches.
+	binary := filepath.Join(t.TempDir(), "bl")
+	build := exec.Command("go", "build", "-o", binary, "../../cmd/bl")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build bl: %v\n%s", err, output)
+	}
 	testkit.Isolate(t)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {
@@ -29,11 +35,6 @@ func TestStdioSubprocessInitializeListCall(t *testing.T) {
 	config := "version: 1\nproject: {id: test}\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\nready: {statuses: [todo], satisfiedBy: [done]}\n"
 	if err := os.WriteFile(filepath.Join(root, "backlog.yaml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
-	}
-	binary := filepath.Join(t.TempDir(), "bl")
-	build := exec.Command("go", "build", "-o", binary, "../../cmd/bl")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build bl: %v\n%s", err, output)
 	}
 	command := exec.Command(binary, "-C", root, "mcp")
 	var stderr bytes.Buffer

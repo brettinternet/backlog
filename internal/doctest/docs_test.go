@@ -19,13 +19,14 @@ import (
 // lifecycle, without contacting providers or touching the reader's projects.
 func docCLI(t *testing.T) string {
 	t.Helper()
-	testkit.Isolate(t)
 	repo, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
+	// Build before HOME/XDG isolation so Go keeps the caller's toolchain caches.
 	run(t, repo, "go", "build", "-o", filepath.Join(bin, "bl"), "./cmd/bl")
+	testkit.Isolate(t)
 	fake, err := os.ReadFile(filepath.Join(repo, "internal/cli/testdata/next-worklease.py"))
 	if err != nil {
 		t.Fatal(err)
