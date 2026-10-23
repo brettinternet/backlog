@@ -1,0 +1,8 @@
+version: 1
+sources:
+  - id: todo
+    type: external
+    run: [python3, adapter.py]
+statuses:
+  - {key: todo, name: To do, category: todo}
+  - {key: done, name: Done, category: done}

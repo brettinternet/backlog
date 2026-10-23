@@ -1,0 +1,7 @@
+accounts:
+  linear:
+    - name: work
+      user: 5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c    # viewer
+      env: LINEAR_API_KEY
+      # Or read the key from the macOS Keychain:
+      # credential: [security, find-generic-password, -s, linear-api, -w]

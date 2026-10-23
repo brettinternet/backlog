@@ -1,0 +1,26 @@
+version: 1
+project: {name: Shop}
+sources:
+  - {id: tasks, type: native, path: backlog, prefix: SHOP}
+statuses:
+  - {key: idea, name: Idea, category: backlog}
+  - {key: ready, name: Ready, category: todo}
+  - {key: doing, name: Doing, category: active}
+  - {key: review, name: In Review, category: active}
+  - {key: shipped, name: Shipped, category: done}
+  - {key: dropped, name: Dropped, category: canceled}
+workflow: {start: doing, done: shipped}
+ready:
+  statuses: [todo]             # categories, not status keys
+  satisfiedBy: [done, canceled]
+  excludeLabels: [needs-design]
+  skipContainers: true
+milestones:
+  - {key: beta, name: Public beta, description: First external users}
+  - {key: v1, name: "1.0"}
+labels: [checkout, catalog, needs-design]
+defaults:
+  type: task
+  dod:
+    - Tests pass
+    - Changelog updated

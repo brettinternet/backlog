@@ -1,0 +1,21 @@
+version: 1
+sources:
+  - {id: tasks, type: native, path: backlog, prefix: BL}
+statuses:
+  - {key: draft, name: Draft, category: backlog}
+  - {key: todo, name: To Do, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+  - {key: done, name: Done, category: done}
+workflow: {start: in-progress, done: done}
+coordination: {worklease: {}}
+actions:
+  - name: worktree
+    when: is:ready
+    run: [git, worktree, add, -b, "{branch}", ".worktrees/{branch}"]
+  - name: agent
+    key: ctrl+a
+    when: is:ready
+    confirm: true
+    detach: true
+    run: [worklease, run, --detach, --name, "{id}", --ref, "{ref}", --resource, "{resource}", --,
+          claude, -p, "Implement {id}. Read it with: bl show {id}"]

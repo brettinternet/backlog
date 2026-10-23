@@ -1,0 +1,4 @@
+me: {default: "@ana"}
+projects:
+  github.com/acme/shop:
+    ready: {excludeLabels: [blocked, frontend]}

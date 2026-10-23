@@ -83,6 +83,53 @@ func TestShellExamples(t *testing.T) {
 	}
 }
 
+// Catch examples rotting as the config schema and CLI change. Examples that
+// need a provider account or bd only have their config validated.
+func TestExamples(t *testing.T) {
+	repo := docCLI(t)
+	external := map[string]bool{"07-beads": true, "08-github-issues": true, "09-github-project": true, "10-linear": true, "11-jira": true}
+	entries, err := os.ReadDir(filepath.Join(repo, "examples"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		t.Run(entry.Name(), func(t *testing.T) {
+			home := testkit.Isolate(t)
+			root := filepath.Join(t.TempDir(), "repo")
+			if err := os.CopyFS(root, os.DirFS(filepath.Join(repo, "examples", entry.Name()))); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "config.yaml")); err == nil {
+				config := filepath.Join(home, "XDG_CONFIG_HOME", "backlog")
+				if err := os.MkdirAll(config, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(filepath.Join(root, "config.yaml"), filepath.Join(config, "config.yaml")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("BL_FAKE_ROOT", root)
+			t.Setenv("BL_FAKE_STATE", filepath.Join(root, "authority.json"))
+			t.Setenv("BL_FAKE_ITEMS", "backlog")
+			run(t, root, "git", "init", "--quiet")
+			if _, err := os.Stat(filepath.Join(root, "backlog.yaml")); err == nil {
+				run(t, root, "bl", "config", "show", "--json")
+			}
+			data, err := os.ReadFile(filepath.Join(root, "README.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			blocks := shellBlocks(t, string(data))
+			if !external[entry.Name()] {
+				run(t, root, "sh", "-eu", "-c", strings.Join(blocks, "\n"))
+			}
+		})
+	}
+}
+
 func shellBlocks(t *testing.T, doc string) []string {
 	t.Helper()
 	var blocks []string

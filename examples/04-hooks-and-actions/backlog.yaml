@@ -1,0 +1,27 @@
+version: 1
+sources:
+  - {id: tasks, type: native, path: backlog, prefix: BL}
+statuses:
+  - {key: todo, name: To Do, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+  - {key: done, name: Done, category: done}
+workflow: {start: in-progress, done: done}
+actions:
+  - name: branch
+    key: ctrl+b
+    when: is:open
+    run: [git, switch, --create, "{branch}"]
+  - name: history
+    run: [git, log, --oneline, --, "backlog/{id}.md"]
+hooks:
+  - name: require-criteria
+    on: item.updated
+    phase: before
+    if: changed:status category:done
+    cwd: "{root}"
+    run: [python3, hooks/require-criteria.py]
+  - name: done-log
+    on: item.updated
+    if: changed:status category:done
+    cwd: "{root}"
+    run: [sh, -c, 'echo "$BL_ITEM_ID" >> done.log']

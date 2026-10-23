@@ -1,0 +1,12 @@
+version: 1
+project: {id: github.com/acme/shop}
+sources:
+  - {id: tasks, type: native, path: backlog, prefix: SHOP}
+statuses:
+  - {key: todo, name: To Do, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+  - {key: done, name: Done, category: done}
+workflow: {start: in-progress, done: done}
+ready: {statuses: [todo], excludeLabels: [blocked]}
+views:
+  - {name: Next, query: "is:ready", sort: next}

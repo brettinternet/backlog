@@ -1,0 +1,9 @@
+accounts:
+  jira:
+    - name: work
+      host: https://acme.atlassian.net
+      user: 712020:3f1c9a2e-8b4d-4c6e-9a1f-2b3c4d5e6f7a    # accountId
+      email: alice@acme.com
+      env: JIRA_API_TOKEN
+      # Or read the token from the macOS Keychain:
+      # credential: [security, find-generic-password, -s, jira-api, -w]

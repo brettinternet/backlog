@@ -1,0 +1,15 @@
+version: 1
+sources:
+  - id: jira
+    type: jira
+    site: https://acme.atlassian.net
+    account: work
+    jql: 'project = KAN ORDER BY id ASC'
+    hardLinkTypes: [Blocks]
+    unsuccessfulResolutions: [Abandoned]
+    allowWrites: true
+statuses:
+  - {key: To Do, name: To Do, category: todo}
+  - {key: In Progress, name: In Progress, category: active}
+  - {key: Done, name: Done, category: done}
+workflow: {start: In Progress, done: Done}

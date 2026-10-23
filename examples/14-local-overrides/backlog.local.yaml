@@ -1,0 +1,3 @@
+views:
+  - {name: Next, query: "is:ready", sort: next}
+  - {name: Mine, query: "assignee:me is:open"}

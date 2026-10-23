@@ -1,0 +1,8 @@
+accounts:
+  github:
+    - name: personal
+      host: github.com
+      user: alice
+      credential: [gh, auth, token, --hostname, github.com, --user, alice]
+      # Or a token from the environment:
+      # env: GITHUB_TOKEN

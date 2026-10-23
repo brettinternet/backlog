@@ -1,0 +1,6 @@
+accounts:
+  github:
+    - name: work
+      host: github.com
+      user: alice
+      credential: [gh, auth, token, --hostname, github.com, --user, alice]

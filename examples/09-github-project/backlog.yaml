@@ -1,0 +1,26 @@
+version: 1
+sources:
+  - id: issues
+    type: github
+    host: github.com
+    repo: acme/app
+    account: work
+    githubProject:
+      owner: acme
+      number: 12
+      id: PVT_kwDOBk3x2c4AqZ7m
+      fieldId: PVTSSF_lADOBk3x2c4AqZ7mzgYt3kA
+      allowWrites: true
+      options:
+        "f75ad846": todo
+        "47fc9ee4": active
+        "5a1c2e90": active
+        "98236657": done
+statuses:
+  - {key: open, name: Open, category: todo}
+  - {key: closed, name: Closed, category: done}
+  - {key: "f75ad846", name: Todo, category: todo}
+  - {key: "47fc9ee4", name: In Progress, category: active}
+  - {key: "5a1c2e90", name: In Review, category: active}
+  - {key: "98236657", name: Done, category: done}
+workflow: {start: "47fc9ee4", done: closed}

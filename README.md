@@ -48,6 +48,8 @@ Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
 Around the backlog: [MCP](docs/mcp.md), [hooks and actions](docs/automation.md),
 an [event stream](docs/events.md), and optional Worklease claims.
 
+[Examples](examples) has a ready-to-copy project for each source and setup.
+
 ## Docs
 
 Using `bl`:

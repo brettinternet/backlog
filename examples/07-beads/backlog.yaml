@@ -1,0 +1,9 @@
+version: 1
+sources:
+  - {id: issues, type: beads, path: .}
+statuses:
+  - {key: open, name: Open, category: todo}
+  - {key: in_progress, name: In progress, category: active}
+  - {key: blocked, name: Blocked, category: backlog}
+  - {key: closed, name: Closed, category: done}
+workflow: {start: in_progress, done: closed}

@@ -1,0 +1,2 @@
+workspaces:
+  - {name: launch, projects: [~/src/app, ~/src/site]}

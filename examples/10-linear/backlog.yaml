@@ -1,0 +1,17 @@
+version: 1
+sources:
+  - id: eng
+    type: linear
+    site: 7c4f2a8e-1b3d-4e5f-9a6b-0c1d2e3f4a5b    # organization
+    team: 3e9b1c7d-5a2f-4b8e-8c6d-1f0a2b3c4d5e    # team
+    account: work
+    allowWrites: true
+statuses:
+  - {key: 9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a, name: Backlog, category: backlog}
+  - {key: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, name: Todo, category: todo}
+  - {key: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, name: In Progress, category: active}
+  - {key: 3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e7f, name: Done, category: done}
+  - {key: 4d5e6f7a-8b9c-4d0e-9f2a-3b4c5d6e7f8a, name: Canceled, category: canceled}
+workflow:
+  start: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+  done: 3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e7f

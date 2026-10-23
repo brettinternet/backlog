@@ -1,0 +1,9 @@
+version: 1
+sources:
+  - {id: web, type: native, path: web/backlog, prefix: WEB}
+  - {id: api, type: native, path: api/backlog, prefix: API}
+statuses:
+  - {key: todo, name: To Do, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+  - {key: done, name: Done, category: done}
+workflow: {start: in-progress, done: done}

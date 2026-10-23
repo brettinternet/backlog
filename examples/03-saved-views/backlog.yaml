@@ -1,0 +1,26 @@
+version: 1
+sources:
+  - {id: tasks, type: native, path: backlog, prefix: WEB}
+statuses:
+  - {key: todo, name: To Do, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+  - {key: done, name: Done, category: done}
+workflow: {start: in-progress, done: done}
+labels: [bug, feature, perf, chore]
+views:
+  - name: Mine
+    query: assignee:me
+    sort: priority
+  - name: Bugs
+    query: label:bug
+    group: assignee
+    columns: [id, priority, assignee, title]
+  - name: Overdue
+    query: due:<today
+    sort: due
+  - name: Unassigned
+    query: assignee:none category:todo
+  - name: Team board
+    query: -category:backlog
+    group: assignee
+    layout: board

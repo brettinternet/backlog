@@ -1,0 +1,11 @@
+version: 1
+sources:
+  - id: issues
+    type: github
+    host: github.com
+    repo: acme/app
+    account: personal
+statuses:
+  - {key: open, name: Open, category: todo}
+  - {key: closed, name: Closed, category: done}
+workflow: {done: closed}

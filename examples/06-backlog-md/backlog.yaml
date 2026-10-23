@@ -1,0 +1,3 @@
+version: 1
+sources:
+  - {id: tasks, type: backlog-md, path: backlog}
