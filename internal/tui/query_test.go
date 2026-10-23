@@ -242,7 +242,7 @@ func TestQueryEditor(t *testing.T) {
 func TestQueryMenuKeys(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ prefix, key, field, value string }{
-		{"f", "s", "picker", "status"}, {"f", "p", "picker", "priority"}, {"f", "a", "picker", "assignee"}, {"f", "l", "picker", "label"}, {"f", "t", "picker", "type"}, {"f", "m", "picker", "milestone"}, {"f", "r", "is", "ready"}, {"f", "d", "is", "open,closed"}, {"f", "c", "clear", ""},
+		{"f", "s", "picker", "status"}, {"f", "p", "picker", "priority"}, {"f", "a", "picker", "assignee"}, {"f", "l", "picker", "label"}, {"f", "t", "picker", "type"}, {"f", "m", "picker", "milestone"}, {"f", "d", "is", "open,closed"}, {"f", "c", "clear", ""},
 		{"o", "n", "sort", "next"}, {"o", "p", "sort", "priority"}, {"o", "r", "sort", "rank"}, {"o", "u", "sort", "updated"}, {"o", "c", "sort", "created"}, {"o", "d", "sort", "due"}, {"o", "i", "sort", "id"}, {"o", "o", "sort", "-next"},
 		{"z", "s", "group", "status"}, {"z", "C", "group", "category"}, {"z", "p", "group", "priority"}, {"z", "A", "group", "assignee"}, {"z", "l", "group", "label"}, {"z", "m", "group", "milestone"}, {"z", "T", "group", "type"}, {"z", "P", "group", "parent"}, {"z", "n", "group", "none"}, {"z", "a", "fold", ""}, {"z", "M", "fold-all", ""}, {"z", "R", "unfold-all", ""},
 	}
@@ -293,6 +293,14 @@ func TestQueryMenuKeys(t *testing.T) {
 	m = queryKey(queryKey(m, "f"), "d")
 	if m.query != "sort:next" {
 		t.Fatalf("fd must toggle done off: %q", m.query)
+	}
+	m = queryKey(queryKey(m, "f"), "r")
+	if m.query != "sort:next is:ready" {
+		t.Fatalf("fr must toggle ready on: %q", m.query)
+	}
+	m = queryKey(queryKey(m, "f"), "r")
+	if m.query != "sort:next" {
+		t.Fatalf("fr must toggle ready off: %q", m.query)
 	}
 	m = queryKey(shellFixture(3), "z")
 	m = queryKey(m, "esc")
