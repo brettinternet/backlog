@@ -12,23 +12,30 @@ func Merge(previous, next Delta) Delta {
 	}
 	out := next
 	out.Stale = make(map[model.Ref]bool)
-	rows := make(map[model.Ref]model.Item, len(previous.Items)+len(next.Items))
+	// Keep cached order and append new rows, so the cache and its bounded warm
+	// preview are stable across refreshes.
+	index := make(map[model.Ref]int, len(previous.Items)+len(next.Items))
+	out.Items = make([]model.Item, 0, len(previous.Items)+len(next.Items))
+	put := func(item model.Item) {
+		if i, ok := index[item.Ref]; ok {
+			out.Items[i] = item
+			return
+		}
+		index[item.Ref] = len(out.Items)
+		out.Items = append(out.Items, item)
+	}
 	for _, item := range previous.Items {
-		rows[item.Ref] = item
+		put(item)
 		if !complete || previous.Coverage != Complete || previous.Stale[item.Ref] {
 			out.Stale[item.Ref] = true
 		}
 	}
 	for _, item := range next.Items {
-		rows[item.Ref] = item
+		put(item)
 		delete(out.Stale, item.Ref)
 		if next.Stale[item.Ref] {
 			out.Stale[item.Ref] = true
 		}
-	}
-	out.Items = make([]model.Item, 0, len(rows))
-	for _, item := range rows {
-		out.Items = append(out.Items, item)
 	}
 	out.ImmutableItems = nil
 	out.Incremental = false // the returned rows now represent the merged snapshot

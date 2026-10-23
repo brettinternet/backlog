@@ -132,6 +132,9 @@ func (s *Source) safeError(err error) error {
 	}
 	var schedule ScheduleDiagnostic
 	if errors.As(err, &schedule) {
+		if schedule.Code == "overloaded" {
+			return ScheduleDiagnostic{Code: "overloaded"}
+		}
 		return ScheduleDiagnostic{Code: "rate-limited", RetryAt: schedule.RetryAt}
 	}
 	var refusal *source.Error
