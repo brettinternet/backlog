@@ -95,6 +95,7 @@ type AccountConfig struct {
 	Host       string   `yaml:"host,omitempty" json:"host,omitempty"`
 	User       string   `yaml:"user,omitempty" json:"user,omitempty"`
 	Credential []string `yaml:"credential,omitempty" json:"-"`
+	Env        string   `yaml:"env,omitempty" json:"-"`
 }
 type MeConfig struct {
 	Default string `yaml:"default,omitempty" json:"default,omitempty"`

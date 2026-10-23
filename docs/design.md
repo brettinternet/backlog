@@ -161,6 +161,13 @@ backlog array that would pin old versions after edits.
 
 Coverage is explicit: complete, partial, or unknown. Partial or stale coverage never proves that an item was deleted, and never makes an unknown blocker look satisfied (Worklease D23 and D27 lessons). Each source gets its own worker, so one slow or rate-limited source never stalls another, and the header shows a badge per source.
 
+Remote sources use the [shared remote boundary](remote.md): cached rows and cursors
+commit atomically, bounded warm rows paint before network I/O, and incomplete
+refreshes retain unseen rows as stale. Only a fresh complete enumeration evicts
+unseen rows; complete incremental responses retain unchanged rows. Stale items
+are not ready and stale blockers cannot satisfy dependencies. Host/account HTTP
+queues and user-only credential resolution follow D17 and D23.
+
 ### 4.4 Mutations
 
 1. Validate against capabilities.

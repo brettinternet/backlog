@@ -128,6 +128,9 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			values = slices.Compact(values)
 			e.Reasons = append(e.Reasons, Reason{code, refs, values})
 		}
+		if in.Stale[item.Ref] {
+			add("stale", nil, nil)
+		}
 		if in.Archived[item.Ref] {
 			add("archived", nil, nil)
 		}

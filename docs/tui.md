@@ -132,7 +132,13 @@ stat sweep catches in-place edits on macOS, which do not signal the directory;
 the 150 ms filesystem-event budget applies to directory-signaled changes.
 `EMFILE`/`ENFILE` degrade to 50 ms stat polling, with no per-file watches. All
 watchers and workers stop on context cancellation. Source coverage is explicit:
-a partial or failed refresh never proves deletion.
+a partial or failed refresh never proves deletion. Remote warm starts publish at
+most 256 cached rows before waiting for the network, with unknown coverage.
+Cached rows remain visible in All, but stale items are not ready in Next and a
+stale done blocker cannot satisfy a dependency. Fresh rows replace stale rows
+even when their provider version is unchanged. Remote source workers poll once
+per minute; `R` requests an earlier refresh. Quota errors remain visible while
+the account scheduler refuses requests before its retry deadline.
 
 ## Principles
 

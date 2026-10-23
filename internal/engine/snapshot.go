@@ -19,10 +19,12 @@ type record struct {
 	item     *model.Item
 	edit     EditState
 	archived bool
+	stale    bool
 }
 type SourceState struct {
 	Coverage source.Coverage
 	Error    string
+	Cursor   source.Cursor
 }
 
 // Snapshot is immutable. Successive snapshots share unchanged item records.
