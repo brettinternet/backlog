@@ -121,10 +121,9 @@ deadline.
 
 - Never put credentials in argv, config, items, errors, stdout, or stderr. v1
   has no host credential delivery; adapters handle their own authentication.
-  Use an adapter-owned private store or helper, not host-injected tokens. There
-  are no login, refresh or logout methods. Host-managed OAuth requires a concrete
-  eligible consumer and a new protocol major, not an optional capability; see
-  the [OAuth boundary](oauth.md#jira-and-external-adapter-boundary).
+  Use an adapter-owned private store or helper. Host-managed OAuth needs an
+  [eligible consumer and new major](oauth.md#jira-and-external-adapter-boundary),
+  not an optional capability.
 - New optional fields must keep old meanings.
 - Reject unknown operations and mutation fields; never guess.
 - A new major needs a new schema path and conformance fixtures first. Never

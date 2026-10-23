@@ -101,31 +101,19 @@ version.
 
 ## Jira and external adapter boundary
 
-BL-63 rechecked [Atlassian's 3LO documentation][Jira 3LO] on **2026-10-23**:
-“Exchange authorization code for access token” marks `client_secret` required,
-and “Use a refresh token to get another access token and refresh token pair”
-also requires it. Neither flow qualifies as a secret-free native client.
-There is no Jira login implementation, embedded client secret, or token proxy.
-Use the explicit [Jira API-token helper or environment account](jira.md#setup)
-without `oauth: true`; no automatic fallback from an OAuth account occurs.
+Checked **2026-10-23** (BL-63); runtime and protocol v1 unchanged.
 
-External adapters continue to authenticate privately. Protocol v1 has no login,
-refresh, logout, or credential-delivery RPC; adding a capability name cannot
-enable one. Configure the adapter's own private credential store or helper
-outside `bl`, not credentials in `run` arguments or protocol messages. The host
-strips provider credentials from the adapter environment. No concrete eligible
-consumer has been identified, so v1 and runtime behavior remain unchanged.
+| Provider | Use now | Gate for native OAuth |
+| --- | --- | --- |
+| Jira | [API-token helper or explicit environment account](jira.md#setup), without `oauth: true` | [3LO][J1] requires `client_secret` for both code exchange and refresh. Needs documented secret-free equivalents and an owner-approved public client; no embedded secret or proxy. |
+| External | Adapter-owned private store or helper | No eligible consumer identified. Needs a concrete provider/consumer, then a new protocol major, schema and conformance fixtures. An optional capability cannot add auth RPCs. |
 
-Reopen native Jira OAuth only when official documentation supports both public
-code exchange and refresh without a secret, and an owner-approved client is
-available. Qualify scopes, rotation, revocation and immutable site/principal
-binding before using the shared OAuth seam. A host-managed external flow needs
-a concrete eligible provider and consumer first, then a new protocol major,
-schema and conformance fixtures for the authorization change. Any eligible
-implementation must pass the fake-server and secret-isolation checks below;
-helper-only outcomes require no new auth implementation.
+External v1 has no login, refresh, logout or credential-delivery RPC. Never put
+credentials in `run` arguments or frames; the host strips provider credentials
+from the adapter environment. New native flows must satisfy
+[the integration checks below](#adding-a-provider).
 
-[Jira 3LO]: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
+[J1]: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
 
 ## Adding a provider
 

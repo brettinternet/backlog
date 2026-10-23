@@ -71,11 +71,9 @@ guidance, not a live least-privilege qualification of the BL-40 token.
 
 Jira's Browse Projects, issue security, Transition Issues, Assign Issues and
 Add Comments permissions still apply. Tokens do not grant missing permissions.
-There is no Jira OAuth login flow in `bl`: Atlassian's documented 3LO exchange
-and refresh require a client secret. Keep `oauth: true` off for Jira accounts;
-use the explicit helper or environment setup above. See the
-[OAuth eligibility boundary](oauth.md#jira-and-external-adapter-boundary) for
-official evidence and the conditions for reconsidering native login.
+No Jira OAuth login: 3LO exchange and refresh require a client secret.
+Use the helper or `env` above, not `oauth: true`.
+See [eligibility and reopening gates](oauth.md#jira-and-external-adapter-boundary).
 
 ## Reads and coverage
 
