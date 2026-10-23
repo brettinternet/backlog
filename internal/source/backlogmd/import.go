@@ -158,6 +158,7 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 			"Completed-partition items use the done status; draft-partition items use the draft status, which is always configured in the backlog category.",
 			"Legacy timestamps without a timezone are interpreted as UTC and emitted as RFC 3339 UTC timestamps.",
 			"Unknown task frontmatter fields are retained as native fields; unknown body sections are retained under Description.",
+			"Structural HTML markers and one leading #N index from Acceptance Criteria and Definition of Done task-list entries are removed; entry text, order, and checked state are retained.",
 		},
 	}
 	if err := ctx.Err(); err != nil {

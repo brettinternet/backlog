@@ -12,6 +12,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+var criterionIndex = regexp.MustCompile(`^([ \t]*[-*+] \[[ xX]\][ \t]+)#[0-9]+[ \t]+`)
+
 var markerLine = regexp.MustCompile(`(?i)^<!--\s*(?:SECTION:[A-Z0-9_]+:(?:BEGIN|END)|(?:AC|DOD|COMMENTS):(?:BEGIN|END))\s*-->$`)
 
 // sourceDocument is the parsed, source-faithful view used to construct the
@@ -127,8 +129,8 @@ func parseBody(text string) parsedBody {
 	var descriptions []string
 	for i, heading := range names {
 		original := strings.Join(parts[i], "\n")
-		content := stripStructuralMarkers(original)
 		category := bodyCategory(heading)
+		content := stripBodyMarkers(original, category == "criteria" || category == "dod")
 		if category == "" {
 			if heading == "" {
 				category = "description"
@@ -172,13 +174,18 @@ func bodyCategory(heading string) string {
 	}
 }
 
-func stripStructuralMarkers(text string) string {
+func stripBodyMarkers(text string, stripIndexes bool) string {
 	lines := strings.Split(text, "\n")
 	kept := lines[:0]
 	fence := markdownFence{}
 	for _, line := range lines {
-		if !fence.consume(line) && markerLine.MatchString(strings.TrimSpace(line)) {
-			continue
+		if !fence.consume(line) {
+			if markerLine.MatchString(strings.TrimSpace(line)) {
+				continue
+			}
+			if stripIndexes {
+				line = criterionIndex.ReplaceAllString(line, "${1}")
+			}
 		}
 		kept = append(kept, line)
 	}
