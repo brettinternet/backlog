@@ -218,20 +218,9 @@ func readinessReason(e Explanation) string {
 	}
 	parts := make([]string, 0, len(e.Reasons))
 	for _, reason := range e.Reasons {
-		if reason.Code == "candidate" {
-			continue
+		if reason.Code != "candidate" {
+			parts = append(parts, reason.text())
 		}
-		text := reason.Code
-		if len(reason.Refs) > 0 {
-			ids := make([]string, len(reason.Refs))
-			for i, ref := range reason.Refs {
-				ids[i] = ref.ID
-			}
-			text += ": " + strings.Join(ids, ", ")
-		} else if len(reason.Values) > 0 {
-			text += ": " + strings.Join(reason.Values, ", ")
-		}
-		parts = append(parts, text)
 	}
 	if len(parts) == 0 {
 		return "no readiness explanation available"

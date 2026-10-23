@@ -10,8 +10,8 @@ import (
 )
 
 func adapterCommand(directory *string, out io.Writer) *urfave.Command {
-	return &urfave.Command{Name: "adapter", Usage: "Check an explicitly selected external adapter", Commands: []*urfave.Command{
-		{Name: "check", Usage: "Run an adapter conformance check (executes EXEC)", ArgsUsage: "EXEC [ARG...]", Flags: []urfave.Flag{&urfave.DurationFlag{Name: "timeout", Value: 5 * time.Second}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+	return &urfave.Command{Name: "adapter", Usage: "Check an external adapter", Category: categoryAutomation, Action: groupHelp("use bl adapter check EXEC [ARG...]"), Commands: []*urfave.Command{
+		{Name: "check", Usage: "Run the adapter conformance check (runs EXEC)", ArgsUsage: "EXEC [ARG...]", Flags: []urfave.Flag{&urfave.DurationFlag{Name: "timeout", Value: 5 * time.Second, Usage: "Fail a request after `DURATION` (at most 1m)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() == 0 || cmd.Duration("timeout") <= 0 || cmd.Duration("timeout") > time.Minute {
 				return &Error{Reason: "usage", Message: "use bl adapter check [--timeout 5s] EXEC [ARG...] (timeout at most 1m)"}
 			}

@@ -41,9 +41,9 @@ type initResult struct {
 
 func maintenanceCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 	return []*urfave.Command{
-		{Name: "init", Usage: "Initialize a native backlog", Flags: []urfave.Flag{
-			&urfave.StringFlag{Name: "prefix", Value: "BL", Usage: "Uppercase ID prefix"},
-			&urfave.StringFlag{Name: "path", Value: "backlog", Usage: "Native item directory"},
+		{Name: "init", Usage: "Create a native backlog in this repository", Category: categoryProject, Flags: []urfave.Flag{
+			&urfave.StringFlag{Name: "prefix", Value: "BL", Usage: "Start item IDs with uppercase `PREFIX`"},
+			&urfave.StringFlag{Name: "path", Value: "backlog", Usage: "Store items in `DIR`"},
 		}, Action: func(_ context.Context, cmd *urfave.Command) error {
 			result, err := initialize(*directory, cmd.String("prefix"), cmd.String("path"))
 			if err != nil {
@@ -55,8 +55,8 @@ func maintenanceCommands(directory *string, out, errOut io.Writer) []*urfave.Com
 			_, err = fmt.Fprintf(out, "Initialized native backlog at %s (prefix %s)\n", result.Path, result.Prefix)
 			return err
 		}},
-		{Name: "check", Usage: "Validate the native backlog", Flags: []urfave.Flag{
-			&urfave.BoolFlag{Name: "fix", Usage: "Apply documented safe repairs"},
+		{Name: "check", Usage: "Validate native item files", Category: categoryProject, Flags: []urfave.Flag{
+			&urfave.BoolFlag{Name: "fix", Usage: "Apply safe repairs first"},
 		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
@@ -104,7 +104,7 @@ func maintenanceCommands(directory *string, out, errOut io.Writer) []*urfave.Com
 			}
 			return nil
 		}},
-		{Name: "renumber", Usage: "Rename an ID and rewrite its references", ArgsUsage: "FROM TO", Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "renumber", Usage: "Rename an item ID and update references to it", ArgsUsage: "FROM TO", Category: categoryProject, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 2 {
 				return &Error{Reason: "usage", Message: "renumber requires FROM and TO"}
 			}

@@ -54,7 +54,7 @@ func WriteOptionNames() map[string][]string {
 
 func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urfave.Command {
 	flag := func() []urfave.Flag {
-		return []urfave.Flag{&urfave.StringFlag{Name: "if-version", Usage: "Refuse a stale item version"}}
+		return []urfave.Flag{&urfave.StringFlag{Name: "if-version", Usage: "Fail unless the item is still at `VERSION`"}}
 	}
 	body := func(text string) (string, error) {
 		if text != "-" {
@@ -119,13 +119,23 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			data.Outcomes = append(data.Outcomes, outcome)
 		}
 		if !cmd.Bool("json") {
+			written := []readItem{}
 			for _, r := range data.Outcomes {
-				if r.Error != nil {
-					if err := writeLine(out, r.ID+": "+r.Error.Reason+": "+r.Error.Message); err != nil {
+				if r.Item != nil {
+					written = append(written, *r.Item)
+				}
+			}
+			table := newItemTable(out, cfg, written)
+			for _, r := range data.Outcomes {
+				if r.Error == nil {
+					if err := table.write(*r.Item); err != nil {
 						return err
 					}
-				} else if err := writeLine(out, r.Item.Source+":"+r.Item.ID+" "+r.Item.Version); err != nil {
-					return err
+				} else if len(data.Outcomes) > 1 {
+					// A single failure is reported once, on stderr.
+					if err := writeLine(out, r.ID+": "+r.Error.Message); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -141,7 +151,12 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 	}
 	commands := []*urfave.Command{}
 	// Criteria are prose, so a comma must not split one --ac into several.
-	commands = append(commands, &urfave.Command{Name: "new", Usage: "Create an item using quick-add tokens", DisableSliceFlagSeparator: true, Flags: append(flag(), &urfave.StringFlag{Name: "body"}, &urfave.StringSliceFlag{Name: "ac"}, &urfave.StringFlag{Name: "source"}, &urfave.StringFlag{Name: "status", Usage: "Create in configured status KEY, such as draft"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "new", Usage: "Create an item", ArgsUsage: "TITLE [TOKENS...]", Description: newHelp, DisableSliceFlagSeparator: true, Flags: append([]urfave.Flag{
+		&urfave.StringFlag{Name: "status", Usage: "Create in status `KEY`, such as draft"},
+		&urfave.StringFlag{Name: "body", Usage: "Set the description to `TEXT`; - reads stdin"},
+		&urfave.StringSliceFlag{Name: "ac", Usage: "Add the acceptance criterion `TEXT`"},
+		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (required with several sources)"},
+	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if !cmd.Args().Present() {
 			return writeUsage("new requires a title")
 		}
@@ -204,9 +219,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if cmd.Bool("json") {
 			return success(out, "new", itemData(item))
 		}
-		return writeLine(out, item.Ref.Source+":"+item.Ref.ID+" "+item.Version)
+		return writeItemRow(out, cfg, itemData(item))
 	}})
-	commands = append(commands, &urfave.Command{Name: "set", Usage: "Set fields atomically per item", ArgsUsage: "ID... FIELD=V FIELD+=V FIELD-=V", Flags: flag(), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "set", Usage: "Set item fields", ArgsUsage: "ID... FIELD=VALUE...", Description: setHelp, Flags: flag(), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		ids := []string{}
 		changes := []model.Mutation{}
 		for _, arg := range cmd.Args().Slice() {
@@ -251,8 +266,14 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		return batch(ctx, cmd, cfg, ids, changes)
 	}})
-	for _, name := range []string{"start", "done", "archive", "unarchive"} {
-		commands = append(commands, &urfave.Command{Name: name, Usage: "Apply " + name + " to items", Flags: flag(), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	transitions := map[string]*urfave.Command{}
+	for name, usage := range map[string][2]string{
+		"start":     {"Move an item to the workflow start status", "ID"},
+		"done":      {"Move an item to the workflow done status", "ID"},
+		"archive":   {"Move items to the archive", "ID..."},
+		"unarchive": {"Restore archived items", "ID..."},
+	} {
+		transitions[name] = &urfave.Command{Name: name, Usage: usage[0], ArgsUsage: usage[1], Flags: flag(), Action: func(ctx context.Context, cmd *urfave.Command) error {
 			ids := cmd.Args().Slice()
 			if (cmd.Name == "start" || cmd.Name == "done") && len(ids) != 1 {
 				return writeUsage(cmd.Name + " requires exactly one ID")
@@ -273,14 +294,17 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				m = model.Mutation{Op: model.Set, Field: "status", Value: status}
 			}
 			return batch(ctx, cmd, cfg, ids, []model.Mutation{m})
-		}})
+		}}
 	}
+	commands = append(commands, transitions["start"], transitions["done"])
 	for _, name := range []string{"note", "comment"} {
 		flags := flag()
+		usage := "Append to an item's notes"
 		if name == "comment" {
-			flags = append(flags, &urfave.StringFlag{Name: "author", Usage: "Comment author (defaults to me.default)"})
+			flags = append([]urfave.Flag{&urfave.StringFlag{Name: "author", Usage: "Comment as `NAME` (default: me.default)"}}, flags...)
+			usage = "Comment on an item"
 		}
-		commands = append(commands, &urfave.Command{Name: name, Usage: "Append text or stdin (-)", Flags: flags, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		commands = append(commands, &urfave.Command{Name: name, Usage: usage, ArgsUsage: "ID TEXT|-", Flags: flags, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			args := cmd.Args().Slice()
 			if len(args) < 2 {
 				return writeUsage(cmd.Name + " requires ID and TEXT or -")
@@ -310,7 +334,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return batch(ctx, cmd, cfg, args[:1], []model.Mutation{m})
 		}})
 	}
-	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria", Flags: append(flag(), &urfave.StringFlag{Name: "evidence"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria", ArgsUsage: "ID (check|uncheck N... | add TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Usage: "Record `TEXT` as evidence when checking one criterion"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		args := cmd.Args().Slice()
 		if len(args) < 3 {
 			return writeUsage("ac requires ID, check|uncheck|add|rm, and text or index")
@@ -353,7 +377,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		return batch(ctx, cmd, cfg, args[:1], changes)
 	}})
-	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit the whole file or one section in $EDITOR", Flags: append(flag(), &urfave.StringFlag{Name: "section"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() != 1 {
 			return writeUsage("edit requires exactly one ID")
 		}
@@ -447,7 +471,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			if cmd.Bool("json") {
 				return success(out, "edit", itemData(item))
 			}
-			return writeLine(out, item.Ref.Source+":"+item.Ref.ID+" unchanged")
+			return writeLine(out, refsFor(cfg).ref(item.Ref, item.Ref.Source)+" unchanged")
 		}
 		m := model.Mutation{Op: model.Restore, Ref: item.Ref, ExpectedVersion: version, Original: edited}
 		if section != "" {
@@ -464,9 +488,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if cmd.Bool("json") {
 			return success(out, "edit", itemData(item))
 		}
-		return writeLine(out, item.Ref.Source+":"+item.Ref.ID+" "+item.Version)
+		return writeItemRow(out, cfg, itemData(item))
 	}})
-	return commands
+	return append(commands, transitions["archive"], transitions["unarchive"])
 }
 
 // ResolveRef expands ID shorthand in a reference written to an item of
