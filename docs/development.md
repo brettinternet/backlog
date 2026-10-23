@@ -108,7 +108,8 @@ Owner checklist:
 
 - [ ] Merge the intended release commit to `main` and wait for its CI to pass.
 - [ ] Run `task ci`, `task release:snapshot`, and `task release:test` locally.
-- [ ] Choose an unused `vMAJOR.MINOR.PATCH` tag (optional `-PRERELEASE` suffix),
+- [ ] Choose an unused `vMAJOR.MINOR.PATCH` tag (optional `-PRERELEASE` suffix,
+  published as a GitHub prerelease that the installer's `latest` skips),
   create it on that exact commit, and explicitly push the tag to trigger release.
 - [ ] Inspect the GitHub release notes, four archives, and checksums; verify
   `bl version` reports the intended version and commit after installation.

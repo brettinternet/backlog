@@ -37,4 +37,6 @@ jobs:
       - name: Recheck CI and publish
         run: |
           python3 scripts/release gate
-          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file dist/notes.md dist/bl_*.tar.gz dist/checksums.txt
+          # A -PRERELEASE tag must not become the installer's latest release.
+          case "$RELEASE_TAG" in *-*) set -- --prerelease ;; esac
+          gh release create "$RELEASE_TAG" "$@" --verify-tag --title "$RELEASE_TAG" --notes-file dist/notes.md dist/bl_*.tar.gz dist/checksums.txt
