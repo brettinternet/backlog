@@ -32,8 +32,15 @@ An agent finishing BL-2 calls:
 {"name":"update","arguments":{"id":"BL-2","fields":{"status":"done"}}}
 ```
 
-Each result carries the item's `version`. Pass it back as `version` to refuse
-a write when someone else changed the item first:
+Results use the same names as `bl show --json`. Each carries the item's
+`version`:
+
+```json
+{"item":{"source":"tasks","id":"BL-2","title":"Add sign-in page","status":"in-progress","category":"active","priority":"high","version":"0058ac49…"}}
+```
+
+Pass it back as `version` to refuse a write when someone else changed the item
+first:
 
 ```json
 {"content":[{"type":"text","text":"{\"message\":\"expected version does not match current content\",\"reason\":\"conflict\"}"}],"isError":true}

@@ -56,7 +56,8 @@ The `bl://instructions` resource serves the `bl instructions` overview.
 ```
 
 - `version` is optional on writes; a stale one returns `conflict` and writes
-  nothing.
+  nothing. The server runs one write at a time, so writes sent without
+  `version` don't conflict with each other.
 - `fields` takes `bl set` names. Suffix a list field with `+` or `-` to add or
   remove. `start` and `done` are status updates to the workflow statuses.
 - Editable sections: `description`, `criteria`, `dod`, `plan`, `notes`,
@@ -65,6 +66,20 @@ The `bl://instructions` resource serves the `bl instructions` overview.
   item that is never ready.
 - Comment `author` defaults to `me.default`.
 - Errors are tool results with `isError: true` and JSON `reason` and `message`.
+
+## Results
+
+Results use the `data` shapes of the matching CLI `--json` command
+([cli.md](cli.md)), without the envelope. `next` and `query` return `items`,
+and write tools return `item`, each an item summary:
+
+```json
+{"item":{"source":"tasks","id":"BL-2","title":"Add sign-in page","status":"in-progress","category":"active","priority":"high","version":"VERSION"}}
+```
+
+`show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
+coordination, `resource`, like `bl show --json`. Edge targets in `metadata`
+are always `source:id`. With coordination, a status `update` adds `transition`.
 
 ## Claims
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -61,9 +62,9 @@ func failedTransition(err error, item model.Item, transition engine.TransitionRe
 	data := struct {
 		Reason     string                  `json:"reason"`
 		Message    string                  `json:"message"`
-		Item       model.Item              `json:"item"`
+		Item       itemjson.Summary        `json:"item"`
 		Transition engine.TransitionResult `json:"transition"`
-	}{reason(err), engine.ErrorMessage(err), item, transition}
+	}{reason(err), engine.ErrorMessage(err), itemjson.NewSummary(item), transition}
 	b, _ := json.Marshal(data)
 	return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: string(b)}}}, data, nil
 }

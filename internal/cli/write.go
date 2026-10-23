@@ -14,6 +14,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/format"
+	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -105,7 +106,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				outcome.Transition = &transition
 			}
 			if transition.Status == "written" {
-				summary := itemData(item)
+				summary := itemjson.NewSummary(item)
 				outcome.Item = &summary
 			}
 			if err != nil {
@@ -114,7 +115,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 					first = outcome.Error
 				}
 			} else {
-				summary := itemData(item)
+				summary := itemjson.NewSummary(item)
 				outcome.Item = &summary
 			}
 			data.Outcomes = append(data.Outcomes, outcome)
@@ -229,9 +230,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			fmt.Fprintf(errOut, "bl: warning: blocker %s matches no single item; qualify it as source:ID\n", refs{}.ref(ref, sourceID))
 		}
 		if cmd.Bool("json") {
-			return success(out, "new", itemData(item))
+			return success(out, "new", itemjson.NewSummary(item))
 		}
-		return writeItemRow(out, cfg, itemData(item))
+		return writeItemRow(out, cfg, itemjson.NewSummary(item))
 	}})
 	commands = append(commands, &urfave.Command{Name: "set", Usage: "Set item fields", ArgsUsage: "ID... FIELD=VALUE...", Description: setHelp, Flags: append(flag(), &urfave.BoolFlag{Name: "yes", Usage: "Confirm provider assignee replacement"}), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		ids := []string{}
@@ -423,7 +424,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			}
 		}
 		if providerSection {
-			content = []byte(itemSections(item)[section] + "\n")
+			content = []byte(itemjson.Sections(item)[section] + "\n")
 		} else {
 			original, err := readNativeBytes(cfg, item)
 			if err != nil {
@@ -481,7 +482,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if string(edited) == string(content) {
 			_ = os.Remove(path)
 			if cmd.Bool("json") {
-				return success(out, "edit", itemData(item))
+				return success(out, "edit", itemjson.NewSummary(item))
 			}
 			return writeLine(out, refsFor(cfg).ref(item.Ref, item.Ref.Source)+" unchanged")
 		}
@@ -498,9 +499,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		_ = os.Remove(path)
 		if cmd.Bool("json") {
-			return success(out, "edit", itemData(item))
+			return success(out, "edit", itemjson.NewSummary(item))
 		}
-		return writeItemRow(out, cfg, itemData(item))
+		return writeItemRow(out, cfg, itemjson.NewSummary(item))
 	}})
 	return append(commands, transitions["archive"], transitions["unarchive"])
 }

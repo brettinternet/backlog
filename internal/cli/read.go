@@ -12,6 +12,7 @@ import (
 	urfave "github.com/urfave/cli/v3"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -19,20 +20,7 @@ import (
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
-type readItem struct {
-	Project  string               `json:"project,omitempty"`
-	Source   string               `json:"source"`
-	ID       string               `json:"id"`
-	Title    string               `json:"title"`
-	Status   string               `json:"status"`
-	Category model.StatusCategory `json:"category"`
-	Priority model.Priority       `json:"priority"`
-	Version  string               `json:"version"`
-}
-
-func itemData(i model.Item) readItem {
-	return readItem{i.Project, i.Ref.Source, i.Ref.ID, i.Title, i.Status, i.Category, i.Priority, i.Version}
-}
+type readItem = itemjson.Summary
 
 type readGroup struct {
 	Value string     `json:"value"`
@@ -40,14 +28,6 @@ type readGroup struct {
 }
 type listData struct {
 	Groups []readGroup `json:"groups"`
-}
-type showData struct {
-	Resource string            `json:"resource,omitempty"`
-	Item     readItem          `json:"item"`
-	Metadata map[string]any    `json:"metadata"`
-	Sections map[string]string `json:"sections"`
-	Criteria []model.Criterion `json:"criteria,omitempty"`
-	DoD      []model.Criterion `json:"dod,omitempty"`
 }
 type nextExplanation = engine.NextExplanation
 type nextData struct {
@@ -160,7 +140,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			for _, g := range groups {
 				group := readGroup{Value: g.Value, Items: []readItem{}}
 				for _, i := range g.Items {
-					group.Items = append(group.Items, itemData(i))
+					group.Items = append(group.Items, itemjson.NewSummary(i))
 				}
 				data.Groups = append(data.Groups, group)
 			}
@@ -228,7 +208,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				return &Error{Reason: "usage", Message: "ambiguous ID; matches: " + strings.Join(names, ", "), Details: map[string]any{"matches": names}}
 			}
 			i := matches[0]
-			sections := itemSections(i)
+			sections := itemjson.Sections(i)
 			if section != "" {
 				sections = map[string]string{section: sections[section]}
 			}
@@ -241,7 +221,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 						return writeError(e)
 					}
 				}
-				return success(out, "show", showData{Resource: resource, Item: itemData(i), Metadata: itemMetadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD})
+				return success(out, "show", itemjson.Detail{Resource: resource, Item: itemjson.NewSummary(i), Metadata: itemjson.Metadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD})
 			}
 			if section != "" {
 				return writeLine(out, sections[section])
@@ -266,7 +246,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				result, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{Query: strings.Join(cmd.Args().Slice(), " "), Start: cmd.Bool("start"), Explain: cmd.Bool("explain")})
 				data := nextData{Items: []readItem{}, Explanations: result.Explanations, NextOutcome: &result.NextOutcome}
 				for _, item := range result.Items {
-					data.Items = append(data.Items, itemData(item))
+					data.Items = append(data.Items, itemjson.NewSummary(item))
 				}
 				if err != nil {
 					return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err), Data: data}
@@ -297,7 +277,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				match := q.Match(i, s.Query, nil)
 				included := e.Readiness == engine.Ready && match && (cmd.Int("n") == 0 || len(data.Items) < cmd.Int("n"))
 				if included {
-					data.Items = append(data.Items, itemData(i))
+					data.Items = append(data.Items, itemjson.NewSummary(i))
 				} else if e.Readiness == engine.Ready {
 					code := "limit"
 					if !match {
@@ -317,27 +297,6 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 	}
 }
 
-func itemMetadata(i model.Item) map[string]any {
-	ref := func(r *model.Ref) string {
-		if r == nil {
-			return ""
-		}
-		source := r.Source
-		if source == "" {
-			source = i.Ref.Source
-		}
-		return source + ":" + r.ID
-	}
-	refs := func(values []model.Ref) []string {
-		out := []string{}
-		for _, v := range values {
-			out = append(out, ref(&v))
-		}
-		return out
-	}
-	return map[string]any{"type": i.Type, "rank": i.Rank, "assignees": i.Assignees, "labels": i.Labels, "milestone": i.Milestone, "due": i.Due, "parent": ref(i.Parent), "children": refs(i.Children), "blockedBy": refs(i.BlockedBy), "blocks": refs(i.Blocks), "related": refs(i.Related), "duplicateOf": ref(i.DuplicateOf), "refs": i.Refs, "files": i.Files, "created": i.Created, "updated": i.Updated, "url": i.URL, "fields": i.Fields}
-}
-
 // duplicateFiles reports an ID stored by two files (active and archived) as
 // ambiguous rather than unavailable; bl renumber accepts a path selector.
 func duplicateFiles(err error) *Error {
@@ -355,28 +314,6 @@ func validSection(s string) bool {
 		}
 	}
 	return false
-}
-func itemSections(i model.Item) map[string]string {
-	checks := func(values []model.Criterion) string {
-		lines := []string{}
-		for _, c := range values {
-			mark := " "
-			if c.Checked {
-				mark = "x"
-			}
-			line := "- [" + mark + "] " + c.Text
-			if c.Evidence != "" {
-				line += "\n  Evidence: " + c.Evidence
-			}
-			lines = append(lines, line)
-		}
-		return strings.Join(lines, "\n")
-	}
-	comments := []string{}
-	for _, c := range i.Comments {
-		comments = append(comments, c.Time.Format("2006-01-02T15:04:05Z07:00")+" "+c.Author+"\n"+c.Body)
-	}
-	return map[string]string{"description": i.Description, "criteria": checks(i.Criteria), "dod": checks(i.DoD), "plan": i.Plan, "notes": i.Notes, "summary": i.Summary, "comments": strings.Join(comments, "\n\n")}
 }
 func writeLine(out io.Writer, s string) error {
 	_, err := fmt.Fprintln(out, textutil.Sanitize(s))

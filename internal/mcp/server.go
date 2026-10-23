@@ -9,12 +9,14 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/instructions"
+	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -28,6 +30,9 @@ type Server struct {
 	server      *mcp.Server
 	cfg         project.Config
 	coordinator model.Coordinator
+	// writes serializes read-then-write tools so concurrent calls without a
+	// version don't conflict with each other.
+	writes sync.Mutex
 }
 
 func New(cfg project.Config) *Server {
@@ -73,12 +78,16 @@ func (s *Server) instructions(_ context.Context, req *mcp.ReadResourceRequest) (
 }
 
 type ItemResult struct {
-	Item       model.Item               `json:"item"`
+	Item       itemjson.Summary         `json:"item"`
 	Transition *engine.TransitionResult `json:"transition,omitempty"`
-	Resource   string                   `json:"resource,omitempty"`
 }
 type ItemsResult struct {
-	Items []model.Item `json:"items"`
+	Items []itemjson.Summary `json:"items"`
+}
+type NextClaimResult struct {
+	Items        []itemjson.Summary       `json:"items"`
+	Explanations []engine.NextExplanation `json:"explanations,omitempty"`
+	engine.NextOutcome
 }
 type NextArgs struct {
 	Limit   int    `json:"limit,omitempty" jsonschema:"Maximum number of ready items (0 means all); claim always selects at most one."`
@@ -150,10 +159,13 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 	}
 	ctx = engine.WithClaimEvents(engine.WithEventOrigin(engine.WithCoordination(ctx, s.coordinator, model.CallerContext{Session: args.Session, Run: args.Run}), "mcp"), s.cfg)
 	if args.Claim {
-		result, err := engine.NextClaim(ctx, s.cfg, engine.NextClaimOptions{Query: args.Query, Start: args.Start, Explain: args.Explain})
+		s.writes.Lock()
+		claimed, err := engine.NextClaim(ctx, s.cfg, engine.NextClaimOptions{Query: args.Query, Start: args.Start, Explain: args.Explain})
+		s.writes.Unlock()
+		result := NextClaimResult{itemjson.Summaries(claimed.Items), claimed.Explanations, claimed.NextOutcome}
 		if err != nil {
 			data := struct {
-				engine.NextClaimResult
+				NextClaimResult
 				Reason  string `json:"reason"`
 				Message string `json:"message"`
 			}{result, reason(err), engine.ErrorMessage(err)}
@@ -207,9 +219,9 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 		return nil, struct {
 			ItemsResult
 			Explanations []engine.NextExplanation `json:"explanations"`
-		}{ItemsResult{items}, explanations}, nil
+		}{ItemsResult{itemjson.Summaries(items)}, explanations}, nil
 	}
-	return nil, ItemsResult{items}, nil
+	return nil, ItemsResult{itemjson.Summaries(items)}, nil
 }
 func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryArgs) (*mcp.CallToolResult, any, error) {
 	initial, err := query.Parse(args.Query, query.Options{})
@@ -249,7 +261,7 @@ func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryAr
 		}
 	}
 	snap.Query.Sort(items, parsed.Sort)
-	return nil, ItemsResult{items}, nil
+	return nil, ItemsResult{itemjson.Summaries(items)}, nil
 }
 func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs) (*mcp.CallToolResult, any, error) {
 	if args.ID == "" {
@@ -272,7 +284,7 @@ func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs
 			return failed[any](reason(err), err.Error())
 		}
 	}
-	return nil, ItemResult{Item: items[0], Resource: resource}, nil
+	return nil, itemjson.NewDetail(items[0], resource), nil
 }
 func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
 	if args.Title == "" {
@@ -334,9 +346,11 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	return nil, ItemResult{Item: created}, nil
+	return nil, ItemResult{Item: itemjson.NewSummary(created)}, nil
 }
 func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args UpdateArgs) (*mcp.CallToolResult, any, error) {
+	s.writes.Lock()
+	defer s.writes.Unlock()
 	ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, s.coordinator, model.CallerContext{Session: args.Session, Run: args.Run}), s.cfg)
 	var transition engine.TransitionResult
 	ctx = engine.WithTransitionResult(ctx, &transition)
@@ -377,7 +391,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 		if err != nil {
 			return failed[any](reason(err), err.Error())
 		}
-		return nil, ItemResult{Item: updated}, nil
+		return nil, ItemResult{Item: itemjson.NewSummary(updated)}, nil
 	}
 	changes := make([]model.Mutation, 0, len(args.Fields))
 	// JSON objects are unordered; sorted keys make a batch deterministic and put
@@ -437,13 +451,15 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if err != nil {
 		return failedTransition(err, updated, transition)
 	}
-	result := ItemResult{Item: updated}
+	result := ItemResult{Item: itemjson.NewSummary(updated)}
 	if transition.Status != "" {
 		result.Transition = &transition
 	}
 	return nil, result, nil
 }
 func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args AppendArgs) (*mcp.CallToolResult, any, error) {
+	s.writes.Lock()
+	defer s.writes.Unlock()
 	ctx = engine.WithEventOrigin(ctx, "mcp")
 	if args.ID == "" || strings.TrimSpace(args.Text) == "" {
 		return failed[any]("usage", "id and nonempty text are required")
@@ -473,9 +489,11 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	return nil, ItemResult{Item: updated}, nil
+	return nil, ItemResult{Item: itemjson.NewSummary(updated)}, nil
 }
 func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args CriteriaArgs) (*mcp.CallToolResult, any, error) {
+	s.writes.Lock()
+	defer s.writes.Unlock()
 	ctx = engine.WithEventOrigin(ctx, "mcp")
 	if args.ID == "" {
 		return failed[any]("usage", "id is required")
@@ -511,7 +529,7 @@ func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args Crit
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	return nil, ItemResult{Item: updated}, nil
+	return nil, ItemResult{Item: itemjson.NewSummary(updated)}, nil
 }
 
 func readItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {

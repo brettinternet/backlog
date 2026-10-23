@@ -134,12 +134,12 @@ func testNextClaimConcurrentCLIAndMCP(t *testing.T, real bool) {
 	if err := json.Unmarshal([]byte(cliResultValue.out), &cliDecoded); err != nil {
 		t.Fatal(err)
 	}
-	var mcpDecoded engine.NextClaimResult
+	var mcpDecoded blmcp.NextClaimResult
 	b, _ := json.Marshal(mcpResult.StructuredContent)
 	if err := json.Unmarshal(b, &mcpDecoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(cliDecoded.Data.Items) != 1 || len(mcpDecoded.Items) != 1 || cliDecoded.Data.Items[0].ID == mcpDecoded.Items[0].Ref.ID {
+	if len(cliDecoded.Data.Items) != 1 || len(mcpDecoded.Items) != 1 || cliDecoded.Data.Items[0].ID == mcpDecoded.Items[0].ID {
 		t.Fatalf("same or missing item: %s %s", cliResultValue.out, b)
 	}
 	if cliDecoded.Data.Status != "written" || mcpDecoded.Status != "written" || cliDecoded.Data.Claim.Outcome != model.ClaimAcquired || mcpDecoded.Claim.Outcome != model.ClaimAcquired {
@@ -175,7 +175,7 @@ func testNextClaimConcurrentCLIAndMCP(t *testing.T, real bool) {
 	if code != 0 || !strings.Contains(out, `"outcome":"released"`) {
 		t.Fatalf("done: %d %s %s", code, out, stderr)
 	}
-	result, err := client.CallTool(ctx, &sdk.CallToolParams{Name: "update", Arguments: map[string]any{"id": mcpDecoded.Items[0].Ref.ID, "session": "mcp-loop", "fields": map[string]any{"status": "done"}}})
+	result, err := client.CallTool(ctx, &sdk.CallToolParams{Name: "update", Arguments: map[string]any{"id": mcpDecoded.Items[0].ID, "session": "mcp-loop", "fields": map[string]any{"status": "done"}}})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP done: %+v %v", result, err)
 	}
