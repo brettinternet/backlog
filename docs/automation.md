@@ -116,8 +116,8 @@ from a linked checkout with a different contextual handle root.
 
 ```sh
 export BL_SESSION=agent-loop-a
+bl next --claim --start --json
 bl show 12 --json
-bl start 12 --json
 bl heartbeat --json
 bl done 12 --json
 ```
@@ -125,7 +125,9 @@ bl done 12 --json
 Heartbeat at least once per half TTL. Inspect separate status/claim outcomes on
 failure: a failed status write retains the acquisition, and a failed release
 leaves the status written. An occupied session reports `claim-held` rather than
-contention. `next` is still read-only; claimed selection is separate BL-33 work.
+contention. Plain `next` is read-only; `next --claim --start` resumes the session's
+open item or walks one ranked snapshot, skipping contention. Uncertain acquire
+stops the walk; recover with the same session rather than claiming another item.
 
 ## Supervised workers and worktrees
 

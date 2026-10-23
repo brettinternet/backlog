@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,8 +9,12 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/brettinternet/backlog/internal/instructions"
+	backlogmcp "github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
@@ -133,6 +138,67 @@ func TestInstructionsCommandDrift(t *testing.T) {
 	}
 	if err := instructionDrift(all.String()); err != nil {
 		t.Fatal(err)
+	}
+	// Validate the documented MCP loop against the server's published schema,
+	// so renamed tools or arguments cannot silently strand agent recovery.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	server := backlogmcp.New(project.Config{})
+	finished := make(chan error, 1)
+	go func() { finished <- server.Run(ctx, serverTransport) }()
+	client := mcp.NewClient(&mcp.Implementation{Name: "instructions-test", Version: "test"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = session.Close()
+		cancel()
+		if err := <-finished; err != nil && ctx.Err() == nil {
+			t.Error(err)
+		}
+	}()
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(all.String(), "\n") {
+		if !strings.HasPrefix(line, `{"tool":`) {
+			continue
+		}
+		var example struct {
+			Tool      string         `json:"tool"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		if err := json.Unmarshal([]byte(line), &example); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, tool := range tools.Tools {
+			if tool.Name != example.Tool {
+				continue
+			}
+			found = true
+			encoded, err := json.Marshal(tool.InputSchema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var schema struct {
+				Properties map[string]any `json:"properties"`
+			}
+			if err := json.Unmarshal(encoded, &schema); err != nil {
+				t.Fatal(err)
+			}
+			for argument := range example.Arguments {
+				if _, ok := schema.Properties[argument]; !ok {
+					t.Fatalf("unknown documented MCP argument %s on %s", argument, example.Tool)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("unknown documented MCP tool %s", example.Tool)
+		}
 	}
 	for _, bad := range []string{"`bl nonexistent`", "bl next --nonexistent", "`bl next --if-version VERSION`", "`bl config nonexistent`"} {
 		if err := instructionDrift(bad); err == nil {

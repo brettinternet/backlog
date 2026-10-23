@@ -42,11 +42,14 @@ Use the smallest check that covers your change.
 This repository tracks work in native `backlog/BL-N.md` files, not the import
 provider. From any checkout, use `task backlog:cli -- instructions workflow`
 and follow the repository's AGENTS.md claim protocol. `task backlog:next` is
-read-only; `task backlog:claim-next -- SESSION` claims before any `start`.
-Claims use Worklease's generic policy with source
-`github.com/brettinternet/backlog`, never the `backlog-md` policy. Keep one
-stable session per loop, heartbeat at least every 7 minutes, and release after
-`done`. Native coordination remains unset until BL-32/BL-33.
+read-only; `task backlog:cli -- next --claim --start --session SESSION --json`
+selects, claims, and starts. Native coordination is enabled and uses Worklease's
+generic policy with source `github.com/brettinternet/backlog`, never the
+`backlog-md` policy. Keep one stable distinct session per loop, heartbeat through
+`task backlog:cli -- heartbeat --session SESSION` at least every 7 minutes and
+before half TTL, and finish through `task backlog:cli -- done ID --session SESSION`.
+Done waits for caller-managed release. On uncertainty, retain the session and
+recover its pending request rather than selecting new work.
 
 The wrapper builds an archived snapshot of committed primary `main`, not dirty
 primary files or the invoking worktree, into

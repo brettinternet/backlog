@@ -14,7 +14,10 @@ not write. Errors are tool results with `isError: true` and JSON text containing
 `reason` and `message`.
 
 - `next` accepts `limit` (zero or omitted means all) and returns ready items in
-  readiness order.
+  readiness order. Optional `claim` and `start` select/claim one item and then
+  start it; `start` requires `claim`. Claimed calls require explicit `session`
+  and accept optional `run`, with the same attempts, resume behavior, and
+  separate claim/status outcomes as CLI `next --claim --start`.
 - `query` accepts `query`, using the same expression language as `bl ls`.
 - `show` accepts `id` and returns the complete item, including its version, plus
   `resource` when coordination is enabled.
@@ -44,7 +47,15 @@ A run is verified through the coordinator for the exact caller and resource.
 Run-managed claims are never acquired, renewed, or released. A missing session
 returns `session-required`; mismatched run evidence returns `run-mismatch` before
 any write or release. A caller-managed session cannot borrow the server's run.
-Read-only `next` does not claim. The [provider-evidence requirements](cli.md#provider-evidence-and-recovery)
+Plain `next` does not claim. Claimed selection checks the session first, resumes
+held open items, replays pending acquire exactly, and only walks one ranked
+snapshot when the session is confirmed empty. Confirmed contention skips an item;
+unknown-outcome stops immediately without trying another. Closed held items,
+missing items, or unresolved ownership refuse fresh selection. Keep the same
+stable distinct session for the loop; never switch sessions to bypass recovery.
+A verified run returns only its item without a walk. Renew caller-managed claims
+with heartbeat before half TTL. A done status update completes matching release
+before returning, permitting the same session's next selection. The [provider-evidence requirements](cli.md#provider-evidence-and-recovery)
 also apply to MCP; unresolved/redacted evidence never authorizes side effects.
 
 The `bl://instructions` resource publishes `bl instructions` overview guidance.

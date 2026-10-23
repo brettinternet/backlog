@@ -273,7 +273,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 					return &Error{Reason: "usage", Message: fmt.Sprintf("unexpected argument %q; use bl --help", selected.Args().First()), Details: map[string]any{"argument": selected.Args().First()}}
 				}
 				if selected.Name != "mcp" && selected.Name != "version" && selected.Name != "instructions" {
-					if cfg, err := loadConfig(selected, directory); err == nil && cfg.Coordination.Worklease != nil {
+					if cfg, err := loadConfig(selected, directory); err == nil {
 						caller := model.CallerContext{Session: selected.String("session"), Run: os.Getenv("WORKLEASE_RUN_ID")}
 						if caller.Session == "" {
 							caller.Session = os.Getenv("BL_SESSION")
@@ -281,7 +281,11 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 						if caller.Session == "" {
 							caller.Session = os.Getenv("WORKLEASE_SESSION_ID")
 						}
-						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, worklease.New(cfg), caller), cfg)
+						var coordinator model.Coordinator
+						if cfg.Coordination.Worklease != nil {
+							coordinator = worklease.New(cfg)
+						}
+						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, coordinator, caller), cfg)
 					}
 				}
 				return action(engine.WithEventOrigin(ctx, "cli"), selected)

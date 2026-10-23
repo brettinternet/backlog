@@ -291,7 +291,7 @@ The pure engine's input contract, reason codes, tie fallbacks, and graph semanti
 
 The bootstrap implements `version`/`--version`, `config show`, and an empty TUI (`bl` or `bl tui`). These operations use the envelope below when `--json`/`-j` is requested; interactive TUI plus JSON is a usage error. Help remains plain text. Bare `bl` falls back to help off-terminal; explicit `bl tui` exits 6 off-terminal. Usage errors exit 2, invalid user configuration exits 5 (`invalid-config`), and internal failures exit 1. All reason mappings below are implemented; beyond these and the frozen read/write interface, the remaining operations are backlog work, not stub commands. Global `-C DIR` resolves an absolute invocation directory without changing the process working directory. `config show` reports it as `directory` in JSON and `Directory:` in text; user XDG paths are unaffected.
 
-**Frozen read interface:** `ls`, `show`, and read-only `next` are implemented; their flags and JSON `data` shapes are specified in [cli.md](cli.md). **Frozen write interface:** `new`, `set`, `start`, `done`, `note`, `comment`, `ac`, `edit`, `archive`, and `unarchive` are implemented with the synchronous, version-checked mutation path and documented in [cli.md](cli.md). Claimed next-item selection remains BL-33 work; explicit claim/release/heartbeat
+**Frozen read interface:** `ls`, `show`, and read-only `next` are implemented; their flags and JSON `data` shapes are specified in [cli.md](cli.md). **Frozen write interface:** `new`, `set`, `start`, `done`, `note`, `comment`, `ac`, `edit`, `archive`, and `unarchive` are implemented with the synchronous, version-checked mutation path and documented in [cli.md](cli.md). Claimed next-item selection (`next --claim [--start]`), explicit claim/release/heartbeat,
 and the engine status gate are implemented. See §9 for ownership and recovery evidence requirements.
 
 Commands:
@@ -502,7 +502,7 @@ Follow [development.md](development.md#tests). Test the native format with golde
 
 | Milestone | Outcome |
 | --- | --- |
-| m-0 Foundation | Native format, project/config, the agent CLI, next, check, import, cache, benchmarks, and `bl instructions`. Ends by moving this repository's own backlog onto `bl` (BL-26). Until BL-33, its agents claim with the interim Worklease command in AGENTS.md, which uses the same key. |
+| m-0 Foundation | Native format, project/config, the agent CLI, next, check, import, cache, benchmarks, and `bl instructions`. Ends by moving this repository's own backlog onto `bl` (BL-26). Its agents use the native claimed loop in AGENTS.md, with Worklease coordination enabled. |
 | m-1 TUI | Stack spike, engine, list/detail/board/tree, filters and views, editing, search, performance and soak verification |
 | m-2 Agents and automation | MCP, events, trust and doctor, hooks, actions, Worklease, Git auto-commit |
 | m-3 Backends | Sync framework, Backlog.md, Beads, GitHub, Linear, Jira, external protocol, workspaces |

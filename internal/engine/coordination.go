@@ -58,7 +58,14 @@ func RequireSession(c model.CallerContext) error {
 	}
 	return nil
 }
-func ClaimItem(ctx context.Context, item model.Item) (result model.ClaimResult) {
+func ClaimItem(ctx context.Context, item model.Item) model.ClaimResult {
+	result, _ := claimItem(ctx, item)
+	return result
+}
+
+// claimItem retains whether an inspection race resumed ownership rather than
+// authorizing a fresh acquire. Public writes need only the claim outcome.
+func claimItem(ctx context.Context, item model.Item) (result model.ClaimResult, resumed bool) {
 	defer func() {
 		if result.Outcome == "acquired" {
 			recordClaimEvent(ctx, item, "claim.acquired", &result)
@@ -66,25 +73,25 @@ func ClaimItem(ctx context.Context, item model.Item) (result model.ClaimResult) 
 	}()
 	c, caller := Coordination(ctx)
 	if c == nil {
-		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}
+		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}, false
 	}
 	if err := RequireSession(caller); err != nil {
-		return model.ClaimResult{Outcome: "unavailable", Reason: ErrorReason(err), Message: ErrorMessage(err)}
+		return model.ClaimResult{Outcome: "unavailable", Reason: ErrorReason(err), Message: ErrorMessage(err)}, false
 	}
 	resource, err := c.Resource(item)
 	if err != nil {
-		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: err.Error()}
+		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: err.Error()}, false
 	}
 	if caller.Run != "" {
-		return c.VerifyRun(ctx, caller, resource)
+		return c.VerifyRun(ctx, caller, resource), true
 	}
 	state := c.InspectSession(ctx, caller)
 	switch state.State {
 	case "absent":
-		return c.Acquire(ctx, caller, item)
+		return c.Acquire(ctx, caller, item), false
 	case "held":
 		if state.Claim != nil && slices.Equal(state.Claim.Resources, []string{resource}) {
-			return model.ClaimResult{Outcome: "held", Resource: resource, Claim: state.Claim, ExpiresAt: state.Claim.ExpiresAt}
+			return model.ClaimResult{Outcome: "held", Resource: resource, Claim: state.Claim, ExpiresAt: state.Claim.ExpiresAt}, true
 		}
 		held := "unknown"
 		if state.Claim != nil {
@@ -93,14 +100,14 @@ func ClaimItem(ctx context.Context, item model.Item) (result model.ClaimResult) 
 				held = strings.Join(state.Claim.Resources, ", ")
 			}
 		}
-		return model.ClaimResult{Outcome: "unavailable", Reason: "claim-held", Message: "session already holds " + held, Claim: state.Claim}
+		return model.ClaimResult{Outcome: "unavailable", Reason: "claim-held", Message: "session already holds " + held, Claim: state.Claim}, false
 	case "pending":
 		if state.Claim != nil && slices.Equal(state.Claim.Resources, []string{resource}) {
-			return c.ResumeAcquire(ctx, caller, state.Recovery)
+			return c.ResumeAcquire(ctx, caller, state.Recovery), true
 		}
-		return model.ClaimResult{Outcome: "uncertain", Reason: "claim-held", Message: "session has a pending claim on another item", Claim: state.Claim}
+		return model.ClaimResult{Outcome: "uncertain", Reason: "claim-held", Message: "session has a pending claim on another item", Claim: state.Claim}, false
 	default:
-		return model.ClaimResult{Outcome: "uncertain", Reason: "unavailable", Message: state.Message}
+		return model.ClaimResult{Outcome: "uncertain", Reason: "unavailable", Message: state.Message}, false
 	}
 }
 func ClaimSucceeded(r model.ClaimResult) bool {

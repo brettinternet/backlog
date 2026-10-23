@@ -1,5 +1,6 @@
-# coordination.worklease stays unset until BL-32; use task backlog:claim meanwhile.
 version: 1
+coordination:
+    worklease: {}
 project:
     id: github.com/brettinternet/backlog
     name: backlog

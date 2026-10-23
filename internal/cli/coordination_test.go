@@ -347,7 +347,7 @@ func TestRunManagedWorkerProcess(t *testing.T) {
 	}
 	// Clear the parent's BL_SESSION so CLI uses the worker's actual caller session.
 	t.Setenv("BL_SESSION", "")
-	for _, args := range [][]string{{"start", "12"}, {"heartbeat"}, {"done", "12"}} {
+	for _, args := range [][]string{{"next", "--claim", "--start"}, {"start", "12"}, {"heartbeat"}, {"done", "12"}} {
 		code, out, stderr := writeRun(root, "", args...)
 		if code != 0 || !strings.Contains(out, `"outcome":"run-managed"`) {
 			t.Fatalf("worker %v: %d %s %s", args, code, out, stderr)

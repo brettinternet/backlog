@@ -17,7 +17,7 @@ func TestExitReasons(t *testing.T) {
 	}{
 		{"internal", 1}, {"usage", 2}, {"session-required", 2},
 		{"not-found", 3}, {"conflict", 4}, {"claim-held", 4}, {"run-mismatch", 4},
-		{"rejected", 5}, {"invalid-config", 5}, {"unavailable", 6}, {"contention", 7},
+		{"rejected", 5}, {"invalid-config", 5}, {"unavailable", 6}, {"unknown-outcome", 6}, {"contention", 7},
 		{"unknown-future-reason", 1},
 	} {
 		t.Run(tc.reason, func(t *testing.T) {

@@ -81,7 +81,13 @@ type ItemsResult struct {
 	Items []model.Item `json:"items"`
 }
 type NextArgs struct {
-	Limit int `json:"limit,omitempty" jsonschema:"Maximum number of ready items (0 means all)."`
+	Limit   int    `json:"limit,omitempty" jsonschema:"Maximum number of ready items (0 means all); claim always selects at most one."`
+	Query   string `json:"query,omitempty"`
+	Claim   bool   `json:"claim,omitempty"`
+	Start   bool   `json:"start,omitempty"`
+	Explain bool   `json:"explain,omitempty"`
+	Session string `json:"session,omitempty" jsonschema:"Required for claim; keep one stable session for the whole work loop."`
+	Run     string `json:"run,omitempty"`
 }
 type QueryArgs struct {
 	Query string `json:"query" jsonschema:"bl query-language expression."`
@@ -138,10 +144,33 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 	if args.Limit < 0 {
 		return failed[any]("usage", "limit must be nonnegative")
 	}
-	ctx = engine.WithCoordination(ctx, s.coordinator, model.CallerContext{})
+	if args.Start && !args.Claim {
+		return failed[any]("usage", "start requires claim")
+	}
+	ctx = engine.WithClaimEvents(engine.WithEventOrigin(engine.WithCoordination(ctx, s.coordinator, model.CallerContext{Session: args.Session, Run: args.Run}), "mcp"), s.cfg)
+	if args.Claim {
+		result, err := engine.NextClaim(ctx, s.cfg, engine.NextClaimOptions{Query: args.Query, Start: args.Start, Explain: args.Explain})
+		if err != nil {
+			data := struct {
+				engine.NextClaimResult
+				Reason  string `json:"reason"`
+				Message string `json:"message"`
+			}{result, reason(err), engine.ErrorMessage(err)}
+			b, _ := json.Marshal(data)
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, data, nil
+		}
+		return nil, result, nil
+	}
 	snap, err := engine.LoadReads(ctx, s.cfg, false)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
+	}
+	parsed, err := snap.Parse(args.Query)
+	if err != nil {
+		return failed[any]("usage", err.Error())
+	}
+	if len(parsed.Sort) > 0 || parsed.Group != "" {
+		return failed[any]("usage", "next uses readiness ranking; sort and group are not supported")
 	}
 	byRef := make(map[model.Ref]model.Item, len(snap.Query.Items))
 	for _, i := range snap.Query.Items {
@@ -150,13 +179,34 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 	items := []model.Item{}
 	for _, ranked := range snap.Ranking.Items {
 		if ranked.Readiness == engine.Ready {
-			if item, ok := byRef[ranked.Ref]; ok {
+			if item, ok := byRef[ranked.Ref]; ok && parsed.Match(item, snap.Query, nil) {
 				items = append(items, item)
 				if args.Limit > 0 && len(items) >= args.Limit {
 					break
 				}
 			}
 		}
+	}
+	if args.Explain {
+		included := map[model.Ref]bool{}
+		for _, item := range items {
+			included[item.Ref] = true
+		}
+		explanations := []engine.NextExplanation{}
+		for _, explanation := range snap.Ranking.Items {
+			if explanation.Readiness == engine.Ready && !included[explanation.Ref] {
+				code := "limit"
+				if !parsed.Match(byRef[explanation.Ref], snap.Query, nil) {
+					code = "query"
+				}
+				explanation.Reasons = append(slices.Clone(explanation.Reasons), engine.Reason{Code: code})
+			}
+			explanations = append(explanations, engine.NextExplanation{Explanation: explanation, Included: included[explanation.Ref]})
+		}
+		return nil, struct {
+			ItemsResult
+			Explanations []engine.NextExplanation `json:"explanations"`
+		}{ItemsResult{items}, explanations}, nil
 	}
 	return nil, ItemsResult{items}, nil
 }

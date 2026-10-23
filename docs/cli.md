@@ -74,10 +74,10 @@ With no topic, print the topic list and overview. Topics are `overview`,
 exit 2 and list the valid topics. With `--json`, `data` contains `topic`,
 `topics`, and `markdown`; no topic selects overview.
 
-The workflow documents next/start/note/ac/done with JSON, version guards, and
-explicit coordination sessions. `next` remains read-only; claimed selection is
-BL-33 work. See the provider-evidence requirements below. The embedded text names
-no repository task IDs; BL-32 and BL-33 replace this guidance when claims ship.
+The workflow documents the claimed next/heartbeat/done loop through CLI and MCP,
+with one stable distinct session, version guards, exact pending recovery, and
+separate claim/status outcomes. Plain `next` remains read-only. See the
+provider-evidence requirements below.
 
 ## Native read cache
 
@@ -178,7 +178,7 @@ The Markdown `sections.criteria` and `sections.dod` include evidence lines.
 from the source. Pass it verbatim to `--if-version` on writes.
 It is not a timestamp or a hash of the JSON rendering.
 
-## `bl next [QUERY] [-n N] [--explain]`
+## `bl next [QUERY] [-n N] [--explain] [--claim [--start]]`
 
 Returns ready candidates in the engine's deterministic ranking. QUERY narrows
 candidates without removing their blockers from readiness evaluation. `-n`
@@ -204,6 +204,33 @@ Explanations preserve the [engine's reason codes](readiness.md) and optional
 `included` means selected in `items`; a ready item excluded by QUERY or the
 limit has an additional `query` or `limit` reason. These do not change its
 readiness. On an empty snapshot, `explanations` is omitted.
+
+### Claimed selection
+
+```sh
+bl next --claim --start --session loop-a --explain --json
+bl heartbeat --session loop-a --json
+bl done BL-012 --session loop-a --if-version VERSION --json
+```
+
+`--claim` requires an explicit session before any Worklease call (exit 2,
+`session-required`); `--start` requires `--claim`. Use one stable distinct session
+through selection, renewal, status changes, and completion. Claimed selection
+returns at most one item, walking one ranked snapshot without waiting or a
+second pass. Confirmed contention skips to the next candidate; an uncertain
+acquire stops with `unknown-outcome`, naming the item and retaining recovery
+state. JSON includes every attempt and separate claim/status outcomes. A failed
+start retains the acquired claim. A successful done waits for its caller-managed
+release before returning, so the same session can select again.
+
+Selection inspects session state before walking. A held open item returns
+`resumed: true` without acquiring, even if it no longer matches readiness or the
+query. A pending acquire replays the identical retained request and resumes only
+after confirmed ownership. Still-uncertain replay stops with `unknown-outcome`;
+missing items, unresolved state, and closed held items never fall through to new
+selection (closed items report `claim-held`). Do not switch sessions to bypass
+recovery. In a verified run, selection returns only that run's item without
+acquiring or walking; the supervisor owns heartbeat and release.
 
 ## Write commands
 
@@ -382,7 +409,8 @@ bulk Worklease claim overlay; show derives its resource in-process.
 Unsupported configured source types or incomplete native loads exit 6
 (`unavailable`), never silently yielding a partial ranking. Auto-detected
 Backlog.md/Beads backlogs are not read as native files; configure a native source
-or import them when import support ships. These commands do not claim or write.
+or import them when import support ships. Plain read commands do not claim or
+write; `next --claim [--start]` explicitly opts into coordination and mutation.
 
 Golden `data` examples are in `internal/cli/testdata/{ls,show,next}.json`.
 Regenerate deliberately with `task cli:test PKG=./internal/cli -- -update` and
@@ -443,7 +471,7 @@ Worklease 1.10.1 is the minimum supported coordination release; this
 repository selects the latest release through mise. It includes exact public resource identities and guarded
 release. Worklease 1.9.3 remains the historical key-policy baseline, not a
 supported lifecycle provider. Repository coordination remains optional; the
-interim development claim protocol continues until BL-33.
+native development loop uses `next --claim --start`, `heartbeat`, and `done`.
 
 Unknown, malformed, or redacted evidence fails closed: a redacted acquisition is `uncertain`/exit 6 and keeps the claim;
 inspection is unresolved; an unusable bulk list makes readiness unknown. Do not

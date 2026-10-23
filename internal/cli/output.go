@@ -43,7 +43,7 @@ func (e *Error) ExitCode() int {
 		return 4
 	case "rejected", "invalid-config":
 		return 5
-	case "unavailable":
+	case "unavailable", "unknown-outcome":
 		return 6
 	case "contention":
 		return 7

@@ -17,16 +17,6 @@ tasks:
     dir: "{{.CONTROL_ROOT}}"
     cmd: mise exec -- python3 scripts/backlog-cli {{.CLI_ARGS}}
 
-  claim:
-    desc: "Run Worklease from the primary checkout: task backlog:claim -- release -s SESSION"
-    dir: "{{.CONTROL_ROOT}}"
-    cmd: mise exec -- worklease {{.CLI_ARGS}}
-
-  claim-next:
-    desc: "Claim the first unclaimed ready native item: task backlog:claim-next -- SESSION"
-    dir: "{{.CONTROL_ROOT}}"
-    cmd: mise exec -- python3 scripts/backlog-claim-next {{.CLI_ARGS}}
-
   next:
     desc: Show the first ready native item (read-only)
     dir: "{{.CONTROL_ROOT}}"

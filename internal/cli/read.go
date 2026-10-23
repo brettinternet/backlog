@@ -50,13 +50,11 @@ type showData struct {
 	Criteria []model.Criterion `json:"criteria,omitempty"`
 	DoD      []model.Criterion `json:"dod,omitempty"`
 }
-type nextExplanation struct {
-	engine.Explanation
-	Included bool `json:"included"`
-}
+type nextExplanation = engine.NextExplanation
 type nextData struct {
 	Items        []readItem        `json:"items"`
 	Explanations []nextExplanation `json:"explanations,omitempty"`
+	*engine.NextOutcome
 }
 
 func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
@@ -246,13 +244,30 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "next", Usage: "Rank ready items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Include every included and excluded item with reasons"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "next", Usage: "Rank ready items matching QUERY", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Include every included and excluded item with reasons"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim one ready item, resuming this session first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item (requires --claim)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}
 			}
 			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
 				return err
+			}
+			if cmd.Bool("start") && !cmd.Bool("claim") {
+				return &Error{Reason: "usage", Message: "--start requires --claim"}
+			}
+			if cmd.Bool("claim") {
+				result, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{Query: strings.Join(cmd.Args().Slice(), " "), Start: cmd.Bool("start"), Explain: cmd.Bool("explain")})
+				data := nextData{Items: []readItem{}, Explanations: result.Explanations, NextOutcome: &result.NextOutcome}
+				for _, item := range result.Items {
+					data.Items = append(data.Items, itemData(item))
+				}
+				if err != nil {
+					return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err), Data: data}
+				}
+				if cmd.Bool("json") {
+					return success(out, "next", data)
+				}
+				return writeNext(out, data)
 			}
 			s, err := load(ctx, cfg, false)
 			if err != nil {
@@ -284,27 +299,31 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 					e.Reasons = append(append([]engine.Reason{}, e.Reasons...), engine.Reason{Code: code})
 				}
 				if cmd.Bool("explain") {
-					data.Explanations = append(data.Explanations, nextExplanation{e, included})
+					data.Explanations = append(data.Explanations, nextExplanation{Explanation: e, Included: included})
 				}
 			}
 			if cmd.Bool("json") {
 				return success(out, "next", data)
 			}
-			if err := writeTable(out, data.Items); err != nil {
-				return err
-			}
-			for _, e := range data.Explanations {
-				codes := []string{}
-				for _, r := range e.Reasons {
-					codes = append(codes, r.Code)
-				}
-				if err := writeLine(out, e.Ref.Source+":"+e.Ref.ID+"  "+e.Text()+" ["+strings.Join(codes, ", ")+"]"); err != nil {
-					return err
-				}
-			}
-			return nil
+			return writeNext(out, data)
 		}},
 	}
+}
+
+func writeNext(out io.Writer, data nextData) error {
+	if err := writeTable(out, data.Items); err != nil {
+		return err
+	}
+	for _, e := range data.Explanations {
+		codes := []string{}
+		for _, r := range e.Reasons {
+			codes = append(codes, r.Code)
+		}
+		if err := writeLine(out, e.Ref.Source+":"+e.Ref.ID+"  "+e.Text()+" ["+strings.Join(codes, ", ")+"]"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func itemMetadata(i model.Item) map[string]any {
