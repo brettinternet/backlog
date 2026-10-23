@@ -10,7 +10,9 @@ tasks:
     desc: Build release archives and checksums for VERSION
     requires:
       vars: [VERSION]
-    cmd: mise exec go -- python3 scripts/release build --version '{{.VERSION}}'
+    env:
+      RELEASE_VERSION: '{{.VERSION}}'
+    cmd: mise exec go -- python3 scripts/release build --version "$RELEASE_VERSION"
 
   test:
     desc: Verify CI gating and installer integrity with local fixtures

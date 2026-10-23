@@ -41,6 +41,16 @@ class ReleaseTests(unittest.TestCase):
         # A successful matching run on a later API page must still be found.
         release.require_ci([{"workflow_runs": []}, {"workflow_runs": [passing]}], "abc", "owner/repo")
 
+    def test_tag_is_data_not_shell(self):
+        # Git permits shell metacharacters in tags; validation must precede execution.
+        tag = "v0.0.0'$(printf${IFS}BL44_TAG_INJECTION>&2)'invalid"
+        subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], check=True)
+        result = subprocess.run(["task", "release:build", f"VERSION={tag}"],
+                                cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("version must be", result.stderr)
+        self.assertNotIn("\nBL44_TAG_INJECTION", result.stderr)
+
     def test_installer_integrity(self):
         with tempfile.TemporaryDirectory(prefix="bl-installer-test-") as temporary:
             root = Path(temporary)
