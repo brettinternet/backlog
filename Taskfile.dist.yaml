@@ -34,7 +34,7 @@ tasks:
     cmds:
       - task: security
       - task: check
-      - task: test
+      - task: test:scripts
       - task: race
       - task: smoke
 
@@ -69,6 +69,11 @@ tasks:
     desc: Run all tests
     deps:
       - task: cli:test
+      - task: test:scripts
+
+  test:scripts:
+    desc: Run the Python script tests
+    deps:
       - task: backlog:test
       - task: release:test
 

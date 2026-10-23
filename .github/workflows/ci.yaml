@@ -42,30 +42,50 @@ jobs:
           {
             echo "build=$(go env GOCACHE)"
             echo "modules=$(go env GOMODCACHE)"
-            echo "version=$(go env GOVERSION)"
+            echo "staticcheck=$(dirname "$(go env GOCACHE)")/staticcheck"
+            echo "key=${RUNNER_OS}-${RUNNER_ARCH}-go-$(go env GOVERSION)-${{ hashFiles('go.sum') }}"
           } >> "$GITHUB_OUTPUT"
 
+      # An exact restore-key match beats a prefix match, so every restore key
+      # must be a prefix of saved keys only.
       - name: Restore Go caches
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.go-cache.outputs.build }}
             ${{ steps.go-cache.outputs.modules }}
-          # Cache entries are immutable: include the commit so source builds refresh.
-          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-${{ hashFiles('go.sum') }}-
-            ${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go-cache.outputs.version }}-
-            ${{ runner.os }}-go-${{ steps.go-cache.outputs.version }}-
+            ${{ steps.go-cache.outputs.staticcheck }}
+          key: ${{ steps.go-cache.outputs.key }}-${{ github.sha }}
+          restore-keys: ${{ steps.go-cache.outputs.key }}-
 
-      # Keep these phases in sync with task ci; separate steps expose timings.
+      # Linux runs the full gate (task ci). The race run covers the plain test
+      # run. macOS runs only the Go tests for the darwin-specific code.
       - name: Security
+        if: runner.os == 'Linux'
         run: task security
       - name: Checks
+        if: runner.os == 'Linux'
         run: task check
-      - name: Tests
-        run: task test
+      - name: Script tests
+        if: runner.os == 'Linux'
+        run: task test:scripts
       - name: Race detection
+        if: runner.os == 'Linux'
         run: task race
       - name: Smoke test
+        if: runner.os == 'Linux'
         run: task smoke
+      - name: Tests
+        if: runner.os == 'macOS'
+        run: task cli:test
+
+      # Cache entries are immutable; main saves one per commit and pull requests reuse them.
+      - name: Save Go caches
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+            ${{ steps.go-cache.outputs.staticcheck }}
+          key: ${{ steps.go-cache.outputs.key }}-${{ github.sha }}

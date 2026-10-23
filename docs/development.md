@@ -31,12 +31,12 @@ Use the smallest check that covers your change.
 | --- | --- |
 | `task fix:staged` | Format staged Go files and re-stage them |
 | `task check:staged` | Pre-commit hooks on staged files: gofmt and a secret scan. Run before committing. |
-| `task test` | `go test ./...` |
+| `task test` | `go test ./...` and the Python script tests |
 | `task check` | gofmt, module tidiness/integrity, `go vet ./...`, Staticcheck, changelog generation |
 | `task race` | `go test -race ./...` |
 | `task security` | Betterleaks over the history, plus `govulncheck ./...` |
 | `task bench` | Benchmarks against the fixture generator (BL-12). Report only. |
-| `task ci` | The gate: security, check, test, race, smoke |
+| `task ci` | The gate: security, check, script tests, race, smoke. The race run covers `go test`. |
 | `task backlog:next` | First ready native item from the primary checkout's backlog |
 
 ## Repository backlog
