@@ -37,6 +37,9 @@ type Delta struct {
 	// Incremental means Items are changes since Cursor, not a full enumeration.
 	// Even complete incremental coverage cannot evict unseen rows.
 	Incremental bool
+	// RetainUnseen preserves cached freshness for rows omitted by a successful
+	// change window. It never refreshes an already stale row or proves absence.
+	RetainUnseen bool
 	// Stale rows may be displayed, but cannot satisfy dependencies or be ready.
 	Stale  map[model.Ref]bool
 	Cursor Cursor

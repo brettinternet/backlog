@@ -333,6 +333,20 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 	conn := func(rows []any) map[string]any {
 		return map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}
 	}
+	detail := func(n int) map[string]any {
+		row := entity(n)
+		category := "unstarted"
+		if n == 2 {
+			category = "completed"
+		}
+		row["title"], row["updatedAt"] = "Synthetic", "2026-10-22T00:00:00Z"
+		row["state"] = map[string]string{"id": state, "name": category, "type": category}
+		row["labels"] = conn([]any{})
+		if n == 6 {
+			row["archivedAt"] = "2026-10-22T00:00:00Z"
+		}
+		return row
+	}
 	missing := false
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -360,6 +374,26 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 				rows = append(rows, row)
 			}
 			data = map[string]any{"team": map[string]any{"id": team, "issues": conn(rows)}}
+		case strings.Contains(q, "i0:issue("):
+			batch := map[string]any{}
+			for i := 0; i < len(req.Variables); i++ {
+				var n int
+				_, _ = fmt.Sscanf(req.Variables[fmt.Sprintf("id%d", i)].(string), "60000000-0000-0000-0000-%012d", &n)
+				row := detail(n)
+				incoming := []any{}
+				blocker := 0
+				if n == 3 {
+					blocker = 2
+				} else if n == 4 {
+					blocker = 99
+				}
+				if blocker != 0 {
+					incoming = append(incoming, map[string]any{"type": "blocks", "issue": entity(blocker)})
+				}
+				row["relations"], row["inverseRelations"] = conn([]any{}), conn(incoming)
+				batch[fmt.Sprintf("i%d", i)] = row
+			}
+			data = batch
 		case strings.Contains(q, "inverseRelations(") || strings.Contains(q, "relations("):
 			key, rows := "relations", []any{}
 			if strings.Contains(q, "inverseRelations(") {
@@ -378,18 +412,7 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 		default:
 			var n int
 			_, _ = fmt.Sscanf(req.Variables["id"].(string), "60000000-0000-0000-0000-%012d", &n)
-			row := entity(n)
-			category := "unstarted"
-			if n == 2 {
-				category = "completed"
-			}
-			row["title"], row["updatedAt"] = "Synthetic", "2026-10-22T00:00:00Z"
-			row["state"] = map[string]string{"id": state, "name": category, "type": category}
-			row["labels"] = conn([]any{})
-			if n == 6 {
-				row["archivedAt"] = "2026-10-22T00:00:00Z"
-			}
-			data = map[string]any{"issue": row}
+			data = map[string]any{"issue": detail(n)}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
 	}))
@@ -412,7 +435,9 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 		t.Fatalf("initial partial list: %+v %v", reads, err)
 	}
 	missing = true
-	for _, archived := range []bool{false, true} {
+	// Changing archive visibility forces reconciliation, where omissions must
+	// become stale. Minute change windows deliberately retain prior freshness.
+	for _, archived := range []bool{true, false} {
 		reads, err = engine.LoadReads(ctx, uncoordinated(cfg), archived)
 		if err != nil {
 			t.Fatal(err)

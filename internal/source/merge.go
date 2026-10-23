@@ -26,7 +26,7 @@ func Merge(previous, next Delta) Delta {
 	}
 	for _, item := range previous.Items {
 		put(item)
-		if !complete || previous.Coverage != Complete || previous.Stale[item.Ref] {
+		if previous.Stale[item.Ref] || !next.RetainUnseen && (!complete || previous.Coverage != Complete) {
 			out.Stale[item.Ref] = true
 		}
 	}
@@ -39,6 +39,7 @@ func Merge(previous, next Delta) Delta {
 	}
 	out.ImmutableItems = nil
 	out.Incremental = false // the returned rows now represent the merged snapshot
+	out.RetainUnseen = false
 	if complete && previous.Coverage != Complete {
 		out.Coverage = Partial
 	}

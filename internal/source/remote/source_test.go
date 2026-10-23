@@ -82,6 +82,13 @@ func TestRemoteCoverageCursorAndWarmCache(t *testing.T) {
 	if err != nil || !find(partial, "A") || !partial.Stale[row("A", "done").Ref] {
 		t.Fatalf("lost or fresh omitted row: %+v %v", partial, err)
 	}
+	// A successful change window preserves fresh and stale rows across restart,
+	// even though the overall enumeration remains partial.
+	p.delta = source.Delta{Coverage: source.Partial, Incremental: true, RetainUnseen: true, Cursor: source.Cursor{Value: "cursor-2"}}
+	retained, err := New(p, store, &Secrets{}).Load(ctx, source.Cursor{})
+	if err != nil || len(retained.Items) != 2 || !retained.Stale[row("A", "done").Ref] || retained.Stale[row("B", "todo").Ref] {
+		t.Fatalf("change window altered cached freshness: %+v %v", retained, err)
+	}
 	p.err = errors.New("failed scan")
 	p.delta.Cursor.Value = "uncommitted"
 	if _, err = s.Load(ctx, source.Cursor{}); err == nil {

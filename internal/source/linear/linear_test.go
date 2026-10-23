@@ -39,6 +39,8 @@ type fixture struct {
 	priority                                                                       int
 	labels                                                                         []string
 	comments                                                                       []any
+	size, requests, batches                                                        int
+	changed, relationOverflow                                                      bool
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -104,6 +106,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		f.t.Error("bad request")
 		return
 	}
+	f.requests++
 	q, v := req.Query, req.Variables
 	emit := func(data any) { _ = json.NewEncoder(w).Encode(map[string]any{"data": data}) }
 	if v["count"] != nil && v["count"] != float64(250) {
@@ -132,7 +135,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			f.overlap++
-			if v["since"] != "2026-09-23T00:00:00Z" {
+			if v["since"] != "2026-09-23T00:00:00Z" && v["since"] != "2026-09-23T01:00:00Z" && f.size == 0 {
 				f.t.Errorf("lost tagged overlap: %v", v["since"])
 			}
 			if f.moving {
@@ -149,6 +152,23 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			} else {
 				rows = append(rows, f.row(251))
 				next = ""
+			}
+		}
+		if f.size > 0 {
+			rows = []any{}
+			next = ""
+			if q == listQuery {
+				offset, _ := strconv.Atoi(fmt.Sprint(v["after"]))
+				for n := offset + 1; n <= min(offset+250, f.size); n++ {
+					rows = append(rows, f.row(n))
+				}
+				if offset+250 < f.size {
+					next = strconv.Itoa(offset + 250)
+				}
+			} else if f.changed {
+				row := f.row(1)
+				row["updatedAt"] = "2026-10-23T00:01:00Z"
+				rows = append(rows, row)
 			}
 		}
 		c := conn(rows, next)
@@ -225,6 +245,33 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		f.comments = append(f.comments, map[string]any{"id": id, "body": v["body"], "user": map[string]string{"id": userID}})
 		emit(map[string]any{"commentCreate": map[string]any{"success": true, "comment": map[string]string{"id": id}}})
 	default:
+		if strings.HasPrefix(q, "query($id0:String!") {
+			f.batches++
+			data := map[string]any{}
+			for i := 0; i < len(v); i++ {
+				id := v[fmt.Sprintf("id%d", i)].(string)
+				n, _ := strconv.Atoi(id[24:])
+				row := f.row(n)
+				if f.changed && n == 1 {
+					row["updatedAt"] = "2026-10-23T00:01:00Z"
+				}
+				out, in := []any{}, []any{}
+				if f.block && n == 1 {
+					out = append(out, map[string]any{"type": "blocks", "relatedIssue": entityRow(2)})
+					in = append(in, map[string]any{"type": "blocks", "issue": entityRow(2)})
+				}
+				row["relations"], row["inverseRelations"] = conn(out, ""), conn(in, "")
+				if f.relationOverflow && n == 1 {
+					row["relations"], row["inverseRelations"] = conn([]any{}, "rel-next"), conn([]any{}, "inverse-next")
+				}
+				if f.missingRelations {
+					delete(row, "relations")
+				}
+				data[fmt.Sprintf("i%d", i)] = row
+			}
+			emit(data)
+			return
+		}
 		f.t.Errorf("unexpected query: %s", q)
 		w.WriteHeader(400)
 	}
@@ -232,6 +279,65 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 
 // Catches requesting Linear's rejected 251+ page size or silently truncating
 // a team with more issues than one provider page.
+// Prevents quota exhaustion from per-issue reads on every minute, unnoticed
+// relation-only edits, and change windows turning unchanged ready rows stale.
+func TestRefreshBudgetAndRetainedRows(t *testing.T) {
+	s, f := fixtureSource(t)
+	f.size = 1000
+	ctx := context.Background()
+	now := s.o.Now()
+	s.o.Now = func() time.Time { return now }
+	store := cache.New(t.TempDir(), "budget", "lin", "scope")
+	wrapped := remote.New(s, store, s.o.Secrets)
+	d, err := wrapped.Load(ctx, source.Cursor{})
+	if err != nil || len(d.Items) != 1000 || f.requests != 106 || len(d.Stale) != 0 {
+		t.Fatalf("initial scan: rows=%d requests=%d stale=%d err=%v", len(d.Items), f.requests, len(d.Stale), err)
+	}
+	before := d.Items[0]
+	f.block = true // updatedAt stays unchanged
+	now = now.Add(time.Minute)
+	requests := f.requests
+	// A new adapter and wrapper prove that persisted cursors retain the schedule.
+	restarted, err := New(s.o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped = remote.New(restarted, store, s.o.Secrets)
+	d, err = wrapped.Load(ctx, source.Cursor{})
+	if err != nil || f.requests-requests != 2 || len(d.Items) != 1000 || len(d.Stale) != 0 || d.Items[0].Version != before.Version {
+		t.Fatalf("unchanged window: rows=%d requests=%d stale=%d err=%v", len(d.Items), f.requests-requests, len(d.Stale), err)
+	}
+	f.changed = true
+	now = now.Add(time.Minute)
+	requests = f.requests
+	d, err = wrapped.Load(ctx, source.Cursor{})
+	if err != nil || f.requests-requests != 3 || len(d.Items) != 1000 || len(d.Stale) != 0 || d.Items[0].Updated == before.Updated {
+		t.Fatalf("one changed issue: requests=%d stale=%d err=%v", f.requests-requests, len(d.Stale), err)
+	}
+	f.changed = false
+	f.block = false
+	now = now.Add(reconcileInterval - 2*time.Minute)
+	requests = f.requests
+	d, err = wrapped.Load(ctx, source.Cursor{})
+	if err != nil || f.requests-requests != 106 || len(d.Items) != 1000 || len(d.Stale) != 0 || len(d.Items[0].BlockedBy) != 0 || d.Items[0].Version != before.Version {
+		t.Fatalf("relation-only reconciliation: requests=%d stale=%d err=%v", f.requests-requests, len(d.Stale), err)
+	}
+	// A failed reconciliation must not advance its schedule or poison cached rows.
+	now = now.Add(reconcileInterval)
+	f.missingRelations = true
+	if _, err = wrapped.Load(ctx, source.Cursor{}); err == nil {
+		t.Fatal("incomplete batch committed")
+	}
+	f.missingRelations = false
+	f.block = true
+	requests = f.requests
+	d, err = wrapped.Load(ctx, source.Cursor{})
+	if err != nil || f.requests-requests != 106 || len(d.Stale) != 0 || len(d.Items[0].BlockedBy) != 1 || d.Items[0].Version == before.Version {
+		t.Fatalf("failed reconciliation advanced cursor: requests=%d stale=%d err=%v", f.requests-requests, len(d.Stale), err)
+	}
+	t.Log("1000 issues: unchanged refresh=2 requests; one change=3; hourly reconciliation=106; no stale retained rows")
+}
+
 func TestPageCap(t *testing.T) {
 	s, f := fixtureSource(t)
 	f.bulk = true
@@ -261,7 +367,9 @@ func TestMovingCursorAndRelationReconciliation(t *testing.T) {
 	before := d.Items[0]
 	f.moving = false
 	f.block = true
-	relationReads := f.relations
+	relationReads := f.batches
+	now := s.o.Now().Add(reconcileInterval)
+	s.o.Now = func() time.Time { return now }
 	d, err = wrapped.Load(context.Background(), d.Cursor)
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +380,7 @@ func TestMovingCursorAndRelationReconciliation(t *testing.T) {
 			after = i
 		}
 	}
-	if len(after.BlockedBy) != 1 || len(after.Blocks) != 1 || after.BlockedBy[0].ID != "TEST-2" || after.Updated != before.Updated || after.Version == before.Version || f.relations <= relationReads {
+	if len(after.BlockedBy) != 1 || len(after.Blocks) != 1 || after.BlockedBy[0].ID != "TEST-2" || after.Updated != before.Updated || after.Version == before.Version || f.batches <= relationReads {
 		t.Fatal("relation-only change not reconciled directionally")
 	}
 	coordinator := &worklease.Coordinator{Config: project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "lin", Type: "linear", Site: orgID}}}}}
@@ -353,6 +461,14 @@ func TestIncompletePaginationDoesNotAdvance(t *testing.T) {
 	f.missingRelations = true
 	if _, err := s.Read(context.Background(), "TEST-1"); err == nil {
 		t.Fatal("missing relation nodes treated as no prerequisites")
+	}
+	// A blocker beyond the batched first page must still affect readiness.
+	f.missingRelations = false
+	f.relationOverflow, f.block = true, true
+	reads := f.relations
+	d, err := s.Load(context.Background(), source.Cursor{})
+	if err != nil || len(d.Items) != 3 || len(d.Items[0].BlockedBy) != 1 || len(d.Items[0].Blocks) != 1 || f.relations-reads != 2 {
+		t.Fatalf("batched relation overflow lost edges: %+v %v", d.Items, err)
 	}
 }
 

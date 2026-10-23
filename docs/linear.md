@@ -60,17 +60,40 @@ Display IDs such as `ENG-431` stay separate from immutable issue identity.
 
 ## Sync and relations
 
-Pages never request more than **250** items. Each refresh independently enumerates
-the team's issues (including archived issues) and both relation directions for
-every in-scope issue, even when `updatedAt` is unchanged. A second scan overlaps
-the previous committed scan's start by **30 days**, retaining the Worklease
-v1.9.3 policy. This recovers issues moved ahead of an already traversed cursor.
-The overlap is not a retention limit: full enumeration still includes older issues.
-The shared remote worker polls each minute; network work never runs on the UI loop.
+Pages never request more than **250** items. The shared remote worker polls each
+minute; network work never runs on the UI loop. Between reconciliations, refresh
+reads only issues updated since the last committed scan's start minus a
+**two-minute overlap**. Detail and both initial relation directions are batched
+in groups of **10 issues**, with **25 relations per direction** per issue.
+Additional relation pages use the normal 250-row paginated reads.
+
+At startup and every **hour**, reconciliation enumerates all issues (including
+archived issues) and refreshes every in-scope issue and both relation directions,
+even when `updatedAt` is unchanged. It also scans a **30-day overlap** from the
+previous committed scan's start, retaining Worklease v1.9.3's moving-cursor
+recovery policy. The overlap is not a retention limit: reconciliation includes
+older issues. A relation-only edit becomes visible by the next successful
+reconciliation. The schedule persists with the cursor across process restarts;
+changing archive visibility or loading a legacy cursor forces reconciliation.
+
+Request budget (excluding explicit detail reads/writes):
+- An empty change window costs **2 requests**: identity/scope verification and
+  one change-list page, independent of cached issue count.
+- A window containing C issues costs **1 + max(1, ceil(C / 250)) +
+  ceil(C / 10)** requests, plus relation overflow pages. Overlapping recent
+  updates can be reread; older unchanged issues incur no detail/relation reads.
+- Reconciliation costs identity verification, full-list and recovery-window
+  pages, and **ceil(N / 10)** batched detail/relation requests, plus overflow.
+  With 1,000 issues, an empty recovery window and no relation overflow, this is
+  **106 requests once per hour**, rather than 3,000+ requests every minute.
+  Large or relation-heavy teams can still reach complexity or request quotas;
+  the shared scheduler honors both limits and fails closed until reset.
 
 A moving `updatedAt` traversal and filtered visibility cannot prove absence.
-Coverage remains partial; unseen cached rows are retained as stale, not deleted
-or considered ready. Cursors commit with rows only after successful scans.
+Coverage remains partial. Successful change windows preserve cached freshness
+for unchanged rows; they never refresh an already stale row. Reconciliation
+marks unseen cached rows stale, not deleted or considered ready. Cursors and
+reconciliation timestamps commit with rows only after successful scans.
 Missing/repeated cursors, unknown states/relations and incomplete nested reads
 fail closed. Labels over the 250-label complete-read limit are refused. Relations
 and comments have separately paged, bounded reads.

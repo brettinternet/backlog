@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -162,6 +163,7 @@ type issue struct {
 	Assignee                                *struct{ ID string }
 	Labels                                  connection[struct{ ID, Name string }]
 	Parent                                  *entity
+	Relations, InverseRelations             *connection[relation]
 }
 
 const issueFields = `id identifier title description url createdAt updatedAt archivedAt trashed priority team{id} project{id} state{id name type} assignee{id} labels(first:250){nodes{id name} pageInfo{hasNextPage endCursor}} parent{id identifier team{id} project{id}}`
@@ -181,26 +183,33 @@ func (s *Source) within(r issue) bool {
 }
 
 type syncCursor struct {
-	Watermark time.Time
-	Scope     string
+	Watermark      time.Time
+	Reconciled     time.Time
+	Scope          string
+	IncludeArchive bool
 }
 
 func (s *Source) scope() string {
 	return s.o.Organization + ":" + s.o.Team + ":" + s.o.Project + ":" + s.o.Account.User
 }
 
-// Load independently reconciles all relations on every refresh: relation changes
-// do not bump issue.updatedAt. Full moving-order scans are never absence proofs.
-// A second overlapping window recovers rows moved ahead of a traversed cursor.
-// The 30-day overlap is retained from Worklease v1.9.3, not a retention limit.
+const reconcileInterval = time.Hour
+const changeOverlap = 2 * time.Minute
+const detailBatchSize = 10
+const relationBatchPageSize = 25
+
+// Load reads only the overlapping change window between hourly reconciliations.
+// Reconciliation scans all rows and relations, including a 30-day recovery window
+// for moving-order gaps. Neither traversal is an absence proof.
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	start := s.o.Now().UTC()
 	since := start
+	var state syncCursor
 	if cursor.Value != "" {
-		var c syncCursor
-		if len(cursor.Value) > 2048 || json.Unmarshal([]byte(cursor.Value), &c) != nil || c.Scope != s.scope() || c.Watermark.IsZero() || c.Watermark.After(start) {
+		c := &state
+		if len(cursor.Value) > 2048 || json.Unmarshal([]byte(cursor.Value), c) != nil || c.Scope != s.scope() || c.Watermark.IsZero() || c.Watermark.After(start) || c.Reconciled.After(start) {
 			return source.Delta{}, source.Refuse("rejected", "invalid Linear sync cursor")
 		}
 		since = c.Watermark
@@ -209,8 +218,13 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if err != nil {
 		return source.Delta{}, err
 	}
+	reconcile := state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || state.IncludeArchive != cursor.IncludeArchive
+	windows := []time.Time{since.Add(-changeOverlap)}
+	if reconcile {
+		windows = []time.Time{{}, since.Add(-30 * 24 * time.Hour)}
+	}
 	rows := map[string]issue{}
-	for _, window := range []time.Time{{}, since.Add(-30 * 24 * time.Hour)} {
+	for _, window := range windows {
 		seen := map[string]bool{}
 		vars := map[string]any{"team": s.o.Team, "count": 250}
 		q := listQuery
@@ -256,33 +270,72 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 			vars["after"] = next
 		}
 	}
-	delta := source.Delta{Coverage: source.Partial, Archived: map[model.Ref]bool{}}
+	delta := source.Delta{Coverage: source.Partial, Incremental: !reconcile, RetainUnseen: !reconcile, Archived: map[model.Ref]bool{}}
 	ids := make([]string, 0, len(rows))
 	for id := range rows {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	for _, id := range ids {
-		row, err := s.detail(ctx, c, id)
+	for offset := 0; offset < len(ids); offset += detailBatchSize {
+		batch, err := s.details(ctx, c, ids[offset:min(offset+detailBatchSize, len(ids))])
 		if err != nil {
 			return source.Delta{}, err
 		}
-		item, err := s.item(ctx, c, row)
-		if err != nil {
-			return source.Delta{}, err
-		}
-		if row.ArchivedAt != nil || row.Trashed {
-			delta.Archived[item.Ref] = true
-			if !cursor.IncludeArchive {
-				continue
+		for _, row := range batch {
+			item, err := s.item(ctx, c, row)
+			if err != nil {
+				return source.Delta{}, err
 			}
+			if row.ArchivedAt != nil || row.Trashed {
+				delta.Archived[item.Ref] = true
+				if !cursor.IncludeArchive {
+					continue
+				}
+			}
+			delta.Items = append(delta.Items, item)
 		}
-		delta.Items = append(delta.Items, item)
 	}
-	raw, _ := json.Marshal(syncCursor{Watermark: start, Scope: s.scope()})
+	if reconcile {
+		state.Reconciled = start
+	}
+	raw, _ := json.Marshal(syncCursor{Watermark: start, Reconciled: state.Reconciled, Scope: s.scope(), IncludeArchive: cursor.IncludeArchive})
 	delta.Cursor = source.Cursor{Value: string(raw), IncludeArchive: cursor.IncludeArchive}
 	return delta, nil
 }
+
+// details batches bounded aliases instead of one detail and two relation requests
+// per issue. Overflow relation pages still use the normal paginated reader.
+func (s *Source) details(ctx context.Context, c remote.Credential, ids []string) ([]issue, error) {
+	var q strings.Builder
+	q.WriteString("query(")
+	vars := map[string]any{}
+	for i, id := range ids {
+		if i > 0 {
+			q.WriteString(",")
+		}
+		fmt.Fprintf(&q, "$id%d:String!", i)
+		vars[fmt.Sprintf("id%d", i)] = id
+	}
+	q.WriteString("){")
+	for i := range ids {
+		fmt.Fprintf(&q, "i%d:issue(id:$id%d){%s relations(first:%d){nodes{type relatedIssue{%s}} pageInfo{hasNextPage endCursor}} inverseRelations(first:%d){nodes{type issue{%s}} pageInfo{hasNextPage endCursor}}}", i, i, issueFields, relationBatchPageSize, entityFields, relationBatchPageSize, entityFields)
+	}
+	q.WriteString("}")
+	var result map[string]*issue
+	if err := s.query(ctx, c, q.String(), vars, &result); err != nil {
+		return nil, err
+	}
+	rows := make([]issue, 0, len(ids))
+	for i, id := range ids {
+		row := result[fmt.Sprintf("i%d", i)]
+		if row == nil || row.ID != id || !s.within(*row) || row.Relations == nil || row.InverseRelations == nil {
+			return nil, source.Refuse("unavailable", "incomplete Linear batch")
+		}
+		rows = append(rows, *row)
+	}
+	return rows, nil
+}
+
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -404,7 +457,16 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 					Relations, InverseRelations *connection[relation]
 				}
 			}
-			if err := s.query(ctx, c, q, vars, &r); err != nil {
+			initial := row.Relations
+			if direction == "in" {
+				initial = row.InverseRelations
+			}
+			if page == 0 && initial != nil {
+				r.Issue = &struct {
+					ID                          string
+					Relations, InverseRelations *connection[relation]
+				}{row.ID, row.Relations, row.InverseRelations}
+			} else if err := s.query(ctx, c, q, vars, &r); err != nil {
 				return model.Item{}, err
 			}
 			if r.Issue == nil || r.Issue.ID != row.ID {
