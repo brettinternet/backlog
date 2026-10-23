@@ -2,24 +2,43 @@ package source
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
 )
 
-// PrepareFields prepares common provider field edits without round-tripping a
-// remote UUID, URL, raw fields or dependency graph through the native format.
-// It never changes the input and leaves version enforcement to Apply.
+// PrepareFields prepares common provider field edits and comment appends without
+// round-tripping a remote UUID, URL, raw fields or dependency graph through the
+// native format. Comments have no inverse. It never changes the input and leaves
+// version enforcement to Apply.
 func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 	result := Prepared{Item: before, Inverse: model.Mutation{Ref: m.Ref, Op: m.Op, Field: m.Field}}
 	if m.Op == model.Batch {
+		undoable := true
 		for _, change := range m.Changes {
 			prepared, err := PrepareFields(result.Item, change)
 			if err != nil {
 				return Prepared{}, err
 			}
 			result.Item = prepared.Item
+			undoable = undoable && prepared.Inverse.Op != ""
 			result.Inverse.Changes = append([]model.Mutation{prepared.Inverse}, result.Inverse.Changes...)
 		}
+		if !undoable {
+			result.Inverse = model.Mutation{}
+		}
+		return result, nil
+	}
+	if m.Op == model.AppendComment {
+		comment := m.Comment
+		if comment.Body == "" {
+			comment.Body = m.Text
+		}
+		if strings.TrimSpace(comment.Body) == "" {
+			return Prepared{}, Refuse("rejected", "comment body required")
+		}
+		result.Item.Comments = append(slices.Clone(before.Comments), comment)
+		result.Inverse = model.Mutation{}
 		return result, nil
 	}
 	if m.Op != model.Set {

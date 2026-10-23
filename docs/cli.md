@@ -31,7 +31,8 @@ user configuration, or remote-provider writes.
 `ls`, `show`, and the read-only `next` interface are frozen. All accept global
 `-C DIR` and `--json` (`-j`) before or after the command. Help is plain text.
 JSON uses the [schema-version-1 envelope](design.md#7-agent-interface).
-The write commands below are also frozen. Coordination is optional; remote adapters remain separate backlog work.
+The write commands below are also frozen. Coordination is optional; GitHub is
+available with [provider-specific write semantics](github.md).
 
 ```sh
 bl ls 'is:open priority:>=high' --sort priority,id --group status -n 20
@@ -74,8 +75,9 @@ config are always trusted. Grants never launch anything by themselves.
 Untrusted programs and network sources remain inert on every interface. The TUI
 shows a persistent trust banner and can still browse local native sources.
 Hooks and actions enforce `Config.RequireTrusted` before execution. This build
-ships native, [Backlog.md](backlog-md.md), Beads, and external adapters;
-remote service adapters remain unavailable.
+ships native, [Backlog.md](backlog-md.md), Beads, [GitHub](github.md), and external
+adapters; Linear and Jira remain unavailable. Doctor does not execute GitHub
+credential helpers; actual reads verify credentials and provider bindings.
 
 `bl doctor [--json] [--online]` reports six checks: `config`, `trust`,
 `control-root`, `cache`, `worklease`, and `sources`. Each check has `name`,
@@ -216,9 +218,10 @@ JSON also includes `criteria` and `dod` arrays when nonempty. Each entry has
 `text`, `checked`, and optional `evidence`; evidence is not duplicated in `text`.
 The Markdown `sections.criteria` and `sections.dod` include evidence lines.
 
-**Version contract:** `item.version` is the native codec's content hash, unchanged
-from the source. Pass it verbatim to `--if-version` on writes.
-It is not a timestamp or a hash of the JSON rendering.
+**Version contract:** `item.version` is the source's opaque version (the native
+codec's content hash for files; a composite issue/relations/project fingerprint
+for GitHub), unchanged from the source. Pass it verbatim to `--if-version` on
+writes. It is not a hash of this JSON rendering.
 
 ## `bl next [QUERY] [--workspace NAME] [-n N] [--explain] [--claim [--start]]`
 
@@ -283,9 +286,12 @@ All writes accept `--json` and `--if-version V`. Use the version returned by
 `show` when an operation depends on prior content, especially criterion numbers.
 A stale version exits 4 (`conflict`) without changing bytes. Even without the
 flag, the engine binds each write to its initial read and checks it under the
-source's write lock. Writes validate config and source capabilities before
-atomic persistence. Unchanged lines, unknown fields, comments, and quoting are
-preserved. Native archives move without rewriting bytes or changing version.
+source's write lock for local files. Writes validate config and source capabilities
+before persistence. Native persistence is atomic; unchanged lines, unknown fields,
+comments, and quoting are preserved. Native archives move without rewriting bytes
+or changing version. GitHub checks a fresh composite version before one non-retried
+mutation, but its API has no CAS: a concurrent preflight-to-write race remains.
+See [GitHub writes](github.md#writes-and-claims).
 
 `new` and `edit` return the summary item directly as `data`, including `version`.
 Other writes return `data.outcomes`, one result per input ID in input order:
@@ -295,7 +301,8 @@ Other writes return `data.outcomes`, one result per input ID in input order:
 ```
 
 Each successful outcome carries the new item version. Batches attempt every ID;
-they are atomic per item, not across items. If any ID fails, the envelope has
+local batches are atomic per item, not across items. GitHub accepts one field
+assignment per command and refuses multi-field batches. If any ID fails, the envelope has
 `ok: false`, retains `data.outcomes`, and uses the first failed ID's error and
 exit code. Multiple IDs with `--if-version` exit 2 before writing any item.
 Text output reports each outcome too.

@@ -2,12 +2,14 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -15,7 +17,9 @@ import (
 	"github.com/brettinternet/backlog/internal/source/backlogmd"
 	"github.com/brettinternet/backlog/internal/source/beads"
 	"github.com/brettinternet/backlog/internal/source/external"
+	"github.com/brettinternet/backlog/internal/source/github"
 	"github.com/brettinternet/backlog/internal/source/native"
+	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
 // ReadSnapshot is the read-only composition used by command adapters.
@@ -137,6 +141,9 @@ func readSource(cfg project.Config, c project.SourceConfig) (source.Source, erro
 	return &eventSource{Source: backend, cfg: cfg}, nil
 }
 
+var providerSecrets = &remote.Secrets{}
+var providerCredentials = &remote.Credentials{Secrets: providerSecrets}
+
 func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error) {
 	for i, configured := range cfg.Sources {
 		if configured.ID == c.ID {
@@ -145,6 +152,52 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			}
 			break
 		}
+	}
+	if c.Type == "github" {
+		host := c.Host
+		if host == "" {
+			host = "github.com"
+		}
+		var account *project.AccountConfig
+		for _, candidate := range cfg.Accounts["github"] {
+			if candidate.Host == host && (candidate.Name == c.Account || candidate.User == c.Account) {
+				if account != nil {
+					return nil, source.Refuse("unavailable", "ambiguous GitHub account")
+				}
+				copy := candidate
+				account = &copy
+			}
+		}
+		if account == nil {
+			return nil, source.Refuse("unavailable", "GitHub user account not configured")
+		}
+		aliases := map[string]string{}
+		for _, configured := range cfg.Sources {
+			if configured.Type != "github" {
+				continue
+			}
+			h := configured.Host
+			if h == "" {
+				h = "github.com"
+			}
+			key := strings.ToLower(h + "/" + configured.Repo)
+			if _, duplicate := aliases[key]; duplicate {
+				aliases[key] = ""
+			} else {
+				aliases[key] = configured.ID
+			}
+		}
+		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: *account, Project: c.GitHubProject, Secrets: providerSecrets, Credentials: providerCredentials, SourceIDs: aliases})
+		if err != nil {
+			return nil, err
+		}
+		// Configuration and principal partition cached permissions and project mappings.
+		identity, _ := json.Marshal(struct {
+			Source  project.SourceConfig
+			User    string
+			Aliases map[string]string
+		}{c, account.User, aliases})
+		return remote.New(backend, cache.New(cfg.Paths.CacheDir, cfg.Project.ID, c.ID, string(identity)), providerSecrets), nil
 	}
 	if c.Type == "external" {
 		return external.New(external.Options{ID: c.ID, Run: c.Run, Dir: cfg.Discovery.ControlRoot})
@@ -208,7 +261,7 @@ func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.
 			return nil, err
 		}
 		requested := id
-		if numeric {
+		if numeric && c.Prefix != "" {
 			requested = c.Prefix + "-" + id
 		}
 		item, err := backend.Read(ctx, requested)

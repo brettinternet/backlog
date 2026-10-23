@@ -119,6 +119,15 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 	now := s.now()
 	until := retryDeadline(response.Header, now)
 	limited := response.StatusCode == 429 || response.StatusCode == 403 && !until.IsZero()
+	// Header-declared limits take effect before consuming a possibly blocked body.
+	var raw []byte
+	if !limited {
+		raw, err = io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
+		if err != nil || len(raw) > 8<<20 {
+			return fail("response failed or exceeded 8MiB")
+		}
+		limited = response.StatusCode == 403 && strings.Contains(strings.ToLower(string(raw)), "rate limit")
+	}
 	if limited && !until.After(now) {
 		until = now.Add(time.Second)
 	}
@@ -130,10 +139,6 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 	}
 	if response.StatusCode >= 300 && response.StatusCode != http.StatusNotModified {
 		return fail("provider refused request")
-	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
-	if err != nil || len(raw) > 8<<20 {
-		return fail("response failed or exceeded 8MiB")
 	}
 	if cacheable && response.StatusCode == http.StatusOK {
 		if len(q.etags) >= 128 {

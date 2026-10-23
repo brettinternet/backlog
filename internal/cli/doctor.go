@@ -272,6 +272,10 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 			c.Fix = "Review bl trust --show, then run bl trust"
 			return c
 		}
+		if s.Type == "github" {
+			c.Message = "GitHub configured; reads verify credentials, repository and project bindings"
+			continue
+		}
 		if s.Type == "external" {
 			if len(s.Run) == 0 || s.Run[0] == "" {
 				c.Status, c.Message, c.Fix = "fail", "External source requires executable argv", "Configure sources.run"

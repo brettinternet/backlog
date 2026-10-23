@@ -84,6 +84,23 @@
           "repo": {
             "type": "string"
           },
+          "githubProject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["owner", "number", "id", "fieldId", "options"],
+            "properties": {
+              "owner": {"type": "string", "minLength": 1},
+              "number": {"type": "integer", "minimum": 1},
+              "id": {"type": "string", "minLength": 1},
+              "fieldId": {"type": "string", "minLength": 1},
+              "allowWrites": {"type": "boolean", "default": false},
+              "options": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {"enum": ["backlog", "todo", "active", "done", "canceled"]}
+              }
+            }
+          },
           "run": {
             "type": "array",
             "items": {

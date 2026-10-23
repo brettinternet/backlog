@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
 
@@ -20,6 +22,27 @@ func TestKeyVectors(t *testing.T) {
 		if err != nil || got != v.Resource {
 			t.Fatalf("%+v: %s %v", v, got, err)
 		}
+	}
+}
+
+// Source aliases, credentials and project membership must never split claims
+// for the same GitHub issue across clients.
+func TestGitHubResourceIdentity(t *testing.T) {
+	t.Parallel()
+	cfg := project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "issues", Type: "github", Repo: "Owner/Repo", Account: "first"}}}}
+	item := model.Item{Ref: model.Ref{Source: "issues", ID: "123"}, Title: "before", Status: "Todo"}
+	first, err := resource(cfg, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Sources[0].ID = "renamed"
+	cfg.Sources[0].Account = "second"
+	cfg.Sources[0].GitHubProject = &project.GitHubProjectConfig{ID: "PVT_other"}
+	item.Ref.Source = "renamed"
+	item.Title, item.Status = "after", "Done"
+	second, err := resource(cfg, item)
+	if err != nil || first != second || first != "github:github.com%2Fowner%2Frepo#123" {
+		t.Fatalf("claim identity drift: %s %s %v", first, second, err)
 	}
 }
 

@@ -90,8 +90,10 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			return model.Item{}, source.Refuse("conflict", "provider version changed")
 		}
 	}
-	// The provider must also enforce ExpectedVersion atomically. A preflight is
-	// not permission to overwrite a race, nor to retry an uncertain remote write.
+	// The provider must enforce ExpectedVersion atomically where supported.
+	// APIs without CAS (GitHub) require their own fresh preflight immediately
+	// before dispatch; that check cannot eliminate a concurrent provider race.
+	// No adapter may automatically replay an uncertain mutation.
 	item, err := s.backend.Apply(ctx, m)
 	if err != nil {
 		return model.Item{}, s.safeError(err)
