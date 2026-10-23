@@ -222,7 +222,7 @@ func claimedNextItem(ctx context.Context, cfg project.Config, c model.Coordinato
 	// work key. Only a source-qualified bl ref is an item locator; the
 	// verified resource remains authoritative for all other labels.
 	sourceID, id, qualified := strings.Cut(claim.Item, ":")
-	if qualified && sourceID != "" && id != "" {
+	if qualified && id != "" && slices.ContainsFunc(cfg.Sources, func(s project.SourceConfig) bool { return s.ID == sourceID }) {
 		var err error
 		items, err = ReadDetail(ctx, cfg, claim.Item)
 		if err != nil {

@@ -148,13 +148,17 @@ func TestNextClaimBoundedWalk(t *testing.T) {
 // or closed identities and uncertain replay must never fall into the fresh walk.
 func TestNextClaimSessionAndRunFirst(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"held", "pending", "pending-unknown", "replay-mismatch", "closed", "missing", "unresolved", "run", "run-mismatch", "missing-session"} {
+	for _, mode := range []string{"held", "interim-label", "pending", "pending-unknown", "replay-mismatch", "closed", "missing", "unresolved", "run", "run-mismatch", "missing-session"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, c, ctx := nextFixture(t)
 			claim := &model.ClaimInfo{ID: "claim", Resources: []string{"tasks:BL-2"}, Item: "tasks:BL-2", Session: "loop"}
 			c.state = model.SessionState{State: model.SessionHeld, Claim: claim}
 			wantReason, wantResume := "", true
 			switch mode {
+			case "interim-label":
+				// Direct generic acquisition labels contain a colon, but are
+				// not backlog refs. Resolve their verified resource instead.
+				claim.Item = "generic:#c5470a94"
 			case "pending", "pending-unknown", "replay-mismatch":
 				c.state.State = model.SessionPending
 				c.acquire = model.ClaimResult{Outcome: model.ClaimAcquired, Claim: claim}
