@@ -37,6 +37,7 @@ type linearAuthFixture struct {
 	refreshes, exchanges, revokes int
 	wrongPrincipal                bool
 	forceScope                    string
+	omitRefreshScope              bool
 }
 
 func linearTestProvider(t *testing.T) (*linearProvider, *linearAuthFixture) {
@@ -72,7 +73,11 @@ func linearTestProvider(t *testing.T) (*linearProvider, *linearAuthFixture) {
 			} else {
 				t.Error("unexpected grant")
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": fmt.Sprintf("linear-canary-access-%d", f.refreshes), "refresh_token": fmt.Sprintf("linear-canary-refresh-%d", f.refreshes), "expires_in": 3600, "token_type": "Bearer", "scope": f.scope})
+			body := map[string]any{"access_token": fmt.Sprintf("linear-canary-access-%d", f.refreshes), "refresh_token": fmt.Sprintf("linear-canary-refresh-%d", f.refreshes), "expires_in": 3600, "token_type": "Bearer", "scope": f.scope}
+			if f.omitRefreshScope && r.Form.Get("grant_type") == "refresh_token" {
+				delete(body, "scope") // RFC 6749 allows omission when unchanged.
+			}
+			_ = json.NewEncoder(w).Encode(body)
 		case "/graphql":
 			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer linear-canary-access-") {
 				t.Error("viewer must use Bearer")
@@ -170,6 +175,9 @@ func TestLinearPKCELifecycleAndConcurrentRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.mu.Lock()
+	f.omitRefreshScope = true
+	f.mu.Unlock()
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
@@ -294,9 +302,10 @@ func FuzzLinearTokenResponse(f *testing.F) {
 	f.Add([]byte(`{"access_token":"canary","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":"read"}`))
 	f.Add([]byte(`{"access_token":"canary","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":["read","write"]}`))
 	f.Add([]byte(`{"access_token":"canary","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":"read,write"}`))
+	f.Add([]byte(`{"access_token":"canary","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer"}`))
 	f.Add([]byte(`{"error":"canary"}`))
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		tokens, err := decodeLinearTokens(raw, time.Unix(0, 0))
+		tokens, err := decodeLinearTokens(raw, time.Unix(0, 0), []string{"read"})
 		if err != nil {
 			var d *Diagnostic
 			if !errors.As(err, &d) || strings.Contains(err.Error(), "canary") {

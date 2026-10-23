@@ -94,7 +94,7 @@ func (p *linearProvider) Authorize(ctx context.Context, a Account, scopes []stri
 		if value.err != nil {
 			return Tokens{}, value.err
 		}
-		tokens, err := p.exchange(ctx, url.Values{"client_id": {linearClientID}, "grant_type": {"authorization_code"}, "redirect_uri": {p.redirect}, "code": {value.code}, "code_verifier": {verifier}})
+		tokens, err := p.exchange(ctx, url.Values{"client_id": {linearClientID}, "grant_type": {"authorization_code"}, "redirect_uri": {p.redirect}, "code": {value.code}, "code_verifier": {verifier}}, scopes)
 		// Previously authorized grants may be broader than this consent. Never
 		// turn a read-only login into implicit write consent.
 		if err == nil && !hasScopes(scopes, tokens.GrantedScopes) {
@@ -111,17 +111,20 @@ func (p *linearProvider) Refresh(ctx context.Context, a Account, t Tokens) (Toke
 	if err := linearAccount(a); err != nil {
 		return Tokens{}, err
 	}
-	return p.exchange(ctx, url.Values{"client_id": {linearClientID}, "grant_type": {"refresh_token"}, "refresh_token": {t.RefreshToken}})
+	return p.exchange(ctx, url.Values{"client_id": {linearClientID}, "grant_type": {"refresh_token"}, "refresh_token": {t.RefreshToken}}, t.GrantedScopes)
 }
-func (p *linearProvider) exchange(ctx context.Context, form url.Values) (Tokens, error) {
+
+// exchange treats an omitted scope as the prior grant (RFC 6749 sections 5.1
+// and 6): the requested scopes for a code, the stored grant for a refresh.
+func (p *linearProvider) exchange(ctx context.Context, form url.Values, omitted []string) (Tokens, error) {
 	raw, err := p.request(ctx, p.tokenURL, "application/x-www-form-urlencoded", form.Encode(), "")
 	if err != nil {
 		return Tokens{}, err
 	}
-	return decodeLinearTokens(raw, time.Now())
+	return decodeLinearTokens(raw, time.Now(), omitted)
 }
 
-func decodeLinearTokens(raw []byte, now time.Time) (Tokens, error) {
+func decodeLinearTokens(raw []byte, now time.Time, omitted []string) (Tokens, error) {
 	var response struct {
 		Access  string          `json:"access_token"`
 		Refresh string          `json:"refresh_token"`
@@ -134,7 +137,9 @@ func decodeLinearTokens(raw []byte, now time.Time) (Tokens, error) {
 	}
 	var scopes []string
 	var scope string
-	if json.Unmarshal(response.Scope, &scope) == nil {
+	if len(response.Scope) == 0 || string(response.Scope) == "null" {
+		scopes = append([]string(nil), omitted...)
+	} else if json.Unmarshal(response.Scope, &scope) == nil {
 		scopes = strings.FieldsFunc(scope, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r' })
 	} else if json.Unmarshal(response.Scope, &scopes) != nil {
 		return Tokens{}, Failure(CodeInsufficientScope, time.Time{})
