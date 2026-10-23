@@ -13,11 +13,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
 	urfave "github.com/urfave/cli/v3"
 
+	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
@@ -112,7 +115,18 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			return &Error{Reason: "invalid-config", Message: err.Error()}
 		}
 		defer tui.ConfigureRuntime()()
-		session, cancel := context.WithCancel(engine.WithEventOrigin(ctx, "tui"))
+		// While the TUI owns the terminal, warnings go to its status line; the quit
+		// flush runs after it exits and prints to stderr.
+		var program atomic.Pointer[tea.Program]
+		commits := autocommit.New(2*time.Second, "", func(message string) {
+			if p := program.Load(); p != nil {
+				p.Send(tui.NoticeMsg("Warning: " + message))
+				return
+			}
+			fmt.Fprintln(errOut, "bl: warning: "+message)
+		})
+		defer commits.Close()
+		session, cancel := context.WithCancel(autocommit.WithSession(engine.WithEventOrigin(ctx, "tui"), commits))
 		defer cancel()
 		store, err := engine.OpenProjectStore(session, cfg)
 		if err != nil {
@@ -189,7 +203,10 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			NoColor:      os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb",
 		})
 		app.Bind(snapshots)
-		final, runErr := tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120)).Run()
+		p := tea.NewProgram(app, tea.WithContext(session), tea.WithInput(in), tea.WithOutput(out), tea.WithFPS(120))
+		program.Store(p)
+		final, runErr := p.Run()
+		program.Store(nil)
 		err = runErr
 		if result, ok := final.(tui.Model); ok {
 			if saveErr := result.SaveSession(cfg); saveErr != nil {
@@ -303,6 +320,11 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 						}
 						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, coordinator, caller), cfg)
 					}
+				}
+				if selected.Name != "mcp" {
+					commits := autocommit.New(0, selected.Name, func(message string) { fmt.Fprintln(errOut, "bl: warning: "+message) })
+					defer commits.Close()
+					ctx = autocommit.WithSession(ctx, commits)
 				}
 				return action(engine.WithEventOrigin(ctx, "cli"), selected)
 			}

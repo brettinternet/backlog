@@ -1,5 +1,33 @@
 # CLI commands
 
+## Git auto-commit
+
+`git.autoCommit` defaults to `false`. Enable it in user or project config:
+
+```yaml
+git:
+  autoCommit: true
+```
+
+Project-configured auto-commit requires `bl trust`, because Git executes hooks.
+Native item mutations (including `check --fix` and `renumber`) make one
+pathspec-limited commit per CLI command in the control checkout. Multiple items
+share that commit. MCP mutations commit once per request. The subject is
+`docs(backlog): <verb> <ID> <title>`; a multi-item batch uses its last item's
+ID and title. CLI verbs use the command name; TUI and MCP use the mutation
+operation. No fetch, pull, push, or hook bypass occurs.
+
+Unrelated staged and unstaged paths remain untouched. A target path already
+dirty before the first edit, changed externally before commit, or staged during
+the batch causes the batch to skip with a warning. Merge, rebase, cherry-pick,
+detached HEAD, a busy repository, unavailable Git, and failed hooks also warn
+and leave the file write in place. Git commands time out after 30 seconds.
+Skipped or failed batches are not retried automatically. Hooks must not mutate
+the same backlog while its Git commit holds the repository write lock.
+
+Auto-commit does not apply to project initialization, import into a new project,
+user configuration, or remote-provider writes.
+
 `ls`, `show`, and the read-only `next` interface are frozen. All accept global
 `-C DIR` and `--json` (`-j`) before or after the command. Help is plain text.
 JSON uses the [schema-version-1 envelope](design.md#7-agent-interface).

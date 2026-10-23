@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
@@ -30,7 +31,10 @@ var prefixPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*$`)
 var sourcePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 type Options struct {
-	ID, Path, Prefix string
+	ID, Path, Prefix  string
+	AutoCommit        bool
+	AutoCommitBlocked string
+	ControlRoot       string
 	// CommonDir is Discovery.CommonDir; Path must already use the control root.
 	CommonDir, ProjectID string
 	Statuses             map[string]model.StatusCategory
@@ -456,6 +460,11 @@ func (s *Source) allocate() (string, error) {
 	return id, nil
 }
 func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
+	if s.options.AutoCommit {
+		var close func()
+		ctx, close = autocommit.Ensure(ctx)
+		defer close()
+	}
 	fail := func(e error) (model.Item, error) { return model.Item{}, e }
 	if m.Ref.Source != "" && m.Ref.Source != s.options.ID {
 		return fail(source.Refuse("source-mismatch", m.Ref.Source))
@@ -501,7 +510,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			return fail(source.Refuse("conflict", "creation target exists or is inaccessible"))
 		}
-		if err := atomicWrite(path, data, 0644); err != nil {
+		if err := s.commitWrite(ctx, m, item, []string{path}, func() error { return atomicWrite(path, data, 0644) }); err != nil {
 			return fail(err)
 		}
 		doc, err := format.Parse(data)
@@ -539,13 +548,15 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
 			return fail(source.Refuse("conflict", "archive target exists or is inaccessible"))
 		}
-		if err := os.Rename(path, target); err != nil {
-			return fail(err)
-		}
-		if err := syncDir(dir); err != nil {
-			return fail(err)
-		}
-		if err := syncDir(filepath.Dir(path)); err != nil {
+		if err := s.commitWrite(ctx, m, s.item(doc), []string{path, target}, func() error {
+			if err := os.Rename(path, target); err != nil {
+				return err
+			}
+			if err := syncDir(dir); err != nil {
+				return err
+			}
+			return syncDir(filepath.Dir(path))
+		}); err != nil {
 			return fail(err)
 		}
 		return s.item(doc), nil
@@ -567,8 +578,19 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if err != nil {
 		return fail(err)
 	}
-	if err := atomicWrite(path, next.Bytes(), info.Mode()); err != nil {
+	if err := s.commitWrite(ctx, m, s.item(next), []string{path}, func() error { return atomicWrite(path, next.Bytes(), info.Mode()) }); err != nil {
 		return fail(err)
 	}
 	return s.item(next), nil
+}
+
+func (s *Source) commitWrite(ctx context.Context, m model.Mutation, item model.Item, paths []string, write func() error) error {
+	if !s.options.AutoCommit {
+		return write()
+	}
+	if s.options.AutoCommitBlocked != "" {
+		autocommit.Warning(ctx, s.options.AutoCommitBlocked)
+		return write()
+	}
+	return autocommit.Write(ctx, s.options.ControlRoot, paths, string(m.Op), item.Ref.ID, item.Title, write)
 }

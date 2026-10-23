@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -63,6 +64,61 @@ func writeOK(t *testing.T, root, stdin string, args ...string) string {
 	}
 	return out
 }
+
+// Auto-commit must stay off by default, require trust for project-enabled Git
+// hooks, and commit a multi-item command exactly once through the real CLI.
+func TestAutoCommitCLI(t *testing.T) {
+	root := writeFixture(t)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	git := func(args ...string) string {
+		t.Helper()
+		data, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, data)
+		}
+		return string(data)
+	}
+	git("init", "--initial-branch=main")
+	git("config", "user.name", "Test")
+	git("config", "user.email", "test@example.invalid")
+	put(t, filepath.Join(root, "items/BL-13.md"), strings.ReplaceAll(get(t, filepath.Join(root, "items/BL-012.md")), "BL-012", "BL-13"))
+	git("add", ".")
+	git("commit", "-m", "initial")
+	head := git("rev-parse", "HEAD")
+	writeOK(t, root, "", "set", "12", "title=Default off")
+	if git("rev-parse", "HEAD") != head {
+		t.Fatal("autoCommit defaulted on")
+	}
+	git("add", "items/BL-012.md")
+	git("commit", "-m", "baseline")
+	configPath := filepath.Join(root, ".config/backlog.yaml")
+	put(t, configPath, get(t, configPath)+"git: {autoCommit: true}\n")
+	git("add", ".config/backlog.yaml")
+	git("commit", "-m", "enable")
+	head = git("rev-parse", "HEAD")
+	code, out, warnings := writeRun(root, "", "set", "12", "title=Untrusted write")
+	if code != 0 || !strings.Contains(warnings, "untrusted") || git("rev-parse", "HEAD") != head {
+		t.Fatalf("trust gate: %d %s %s", code, out, warnings)
+	}
+	git("add", "items/BL-012.md")
+	git("commit", "-m", "baseline")
+	if code, out, warnings := writeRun(root, "", "trust"); code != 0 {
+		t.Fatalf("trust: %d %s %s", code, out, warnings)
+	}
+	count := git("rev-list", "--count", "HEAD")
+	writeOK(t, root, "", "set", "12", "13", "priority=high")
+	if got := git("show", "--format=", "--name-only", "HEAD"); got != "items/BL-012.md\nitems/BL-13.md\n" {
+		t.Fatalf("wrong paths: %s", got)
+	}
+	if git("rev-list", "--count", "HEAD~1") != count {
+		t.Fatal("multi-item command made multiple commits")
+	}
+	if !strings.HasPrefix(git("log", "-1", "--format=%s"), "docs(backlog): set BL-13 ") {
+		t.Fatal("wrong message")
+	}
+}
+
 func fileVersion(t *testing.T, root string) string {
 	t.Helper()
 	d, err := format.Parse([]byte(get(t, filepath.Join(root, "items/BL-012.md"))))

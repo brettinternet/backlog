@@ -17,7 +17,8 @@ import (
 
 // Catch examples drifting from actual arguments, mutation behavior and claim
 // lifecycle, without contacting providers or touching the reader's projects.
-func TestShellExamples(t *testing.T) {
+func docCLI(t *testing.T) string {
+	t.Helper()
 	testkit.Isolate(t)
 	repo, err := filepath.Abs("../..")
 	if err != nil {
@@ -33,6 +34,11 @@ func TestShellExamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return repo
+}
+
+func TestShellExamples(t *testing.T) {
+	repo := docCLI(t)
 	for _, doc := range []string{"README.md", "docs/guide.md"} {
 		t.Run(doc, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "repo")
