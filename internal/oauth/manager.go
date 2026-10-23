@@ -306,7 +306,10 @@ func (m *Manager) Logout(ctx context.Context, account Account) (LogoutResult, er
 // provider's token endpoint, retaining scope evidence across process restarts.
 func verifyGrant(ctx context.Context, provider Provider, account Account, tokens Tokens) (Principal, error) {
 	principal, err := provider.Verify(ctx, account, tokens.AccessToken)
-	if tokens.GrantedScopes != nil {
+	if err == nil && tokens.GrantedScopes != nil {
+		if principal.Scopes != nil && !hasScopes(principal.Scopes, tokens.GrantedScopes) {
+			return Principal{}, Failure(CodeInsufficientScope, time.Time{})
+		}
 		principal.Scopes = ScopeSet(tokens.GrantedScopes)
 	}
 	return principal, err

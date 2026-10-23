@@ -148,8 +148,9 @@ bl auth logout linear work         # local deletion/cache purge; remote revoke i
 Login requires a terminal and is never initiated by MCP, claims, hooks or actions.
 Scope upgrades trigger provider permission/capability rediscovery. Logout reports
 when provider settings must be used for manual revocation. The shared command
-exists, but no production provider flow is registered yet; BL-61/62 own those
-integrations. Jira OAuth is excluded by the owner. See [OAuth qualification](oauth.md)
+supports [Linear PKCE](linear.md#oauth-login) and [GitHub App device login](github.md#oauth-login).
+GitHub uses separate read-only and write Apps rather than resource scopes; the
+same commands accept `github` instead of `linear`. Jira OAuth is excluded by the owner. See [OAuth qualification](oauth.md)
 for the evidence matrix, current boundary and provider requirements.
 
 `--json` returns a versioned envelope with `provider`, `account`, requested

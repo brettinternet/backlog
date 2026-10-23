@@ -28,6 +28,9 @@ type fixture struct {
 	labels, assignees                               []string
 	writes, lists, hints, notModified, projectPages int
 	limited, readOnly                               bool
+	oauthApp, issuePermission, projectPermission    string
+	repositoryMissing                               bool
+	personalProject                                 bool
 }
 
 func newFixture(t *testing.T) (*Source, *fixture) {
@@ -78,6 +81,18 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-OAuth-Scopes", "repo, project")
 	if r.Method == http.MethodGet {
+		if r.URL.Path == "/user/installations" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 1, "installations": []any{map[string]any{"id": 42, "app_slug": f.oauthApp, "account": map[string]string{"login": "owner", "type": "Organization"}, "permissions": map[string]string{"issues": f.issuePermission, "organization_projects": f.projectPermission}}}})
+			return
+		}
+		if r.URL.Path == "/user/installations/42/repositories" {
+			repos := []any{}
+			if !f.repositoryMissing {
+				repos = append(repos, map[string]any{"id": 1, "full_name": "owner/repo"})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(repos), "repositories": repos})
+			return
+		}
 		f.hints++
 		if f.limited {
 			w.WriteHeader(403)
@@ -132,7 +147,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		f.option = v["optionID"].(string)
 		emit(map[string]any{"updateProjectV2ItemFieldValue": map[string]any{"projectV2Item": map[string]string{"id": "PVTI_1"}}})
 	case strings.Contains(q, "fields(first:"):
-		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": "alice"}, "fields": map[string]any{"nodes": []any{map[string]any{"id": "PVTSSF_status", "name": "Status", "options": []any{map[string]string{"id": "todo", "name": "Todo"}, map[string]string{"id": "active", "name": "Active"}}}}, "pageInfo": map[string]any{"hasNextPage": false}}}})
+		owner := "alice"
+		if f.oauthApp != "" {
+			owner = "owner"
+		}
+		kind := "Organization"
+		if f.personalProject {
+			kind = "User"
+		}
+		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "viewerCanUpdate": !f.readOnly, "owner": map[string]string{"login": owner, "__typename": kind}, "fields": map[string]any{"nodes": []any{map[string]any{"id": "PVTSSF_status", "name": "Status", "options": []any{map[string]string{"id": "todo", "name": "Todo"}, map[string]string{"id": "active", "name": "Active"}}}}, "pageInfo": map[string]any{"hasNextPage": false}}}})
 	case strings.Contains(q, "items(first:"):
 		f.projectPages++
 		rows := []any{}
@@ -140,7 +163,11 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		if next {
 			rows = append(rows, map[string]any{"id": "PVTI_1", "updatedAt": "2026-01-01T00:00:00Z", "content": map[string]any{"__typename": "Issue", "id": "I_1", "number": 1, "repository": map[string]string{"nameWithOwner": "owner/repo"}}, "fieldValueByName": map[string]any{"optionId": f.option, "name": map[string]string{"todo": "Todo", "active": "In Progress"}[f.option], "field": map[string]string{"id": "PVTSSF_status"}}})
 		}
-		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": "alice"}, "items": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": "project-next"}}}})
+		owner := "alice"
+		if f.oauthApp != "" {
+			owner = "owner"
+		}
+		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": owner}, "items": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": "project-next"}}}})
 	case strings.Contains(q, "issues(first:"):
 		f.lists++
 		n := 1

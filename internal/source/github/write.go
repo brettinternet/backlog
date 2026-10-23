@@ -76,13 +76,15 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.ExpectedVersion == "" || current.Version != m.ExpectedVersion {
 		return model.Item{}, source.Refuse("conflict", "issue, relations or project status changed")
 	}
-	if !s.writable {
+	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !projectWrite && !s.issueWrite) {
 		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
 	}
 	if projectWrite {
-		scope := false
-		for _, v := range strings.Split(s.scopes, ",") {
-			scope = scope || strings.TrimSpace(v) == "project"
+		scope := s.o.Account.OAuth && c.HasScope("write") && s.projectWritable
+		if !s.o.Account.OAuth {
+			for _, v := range strings.Split(s.scopes, ",") {
+				scope = scope || strings.TrimSpace(v) == "project"
+			}
 		}
 		if !scope {
 			return model.Item{}, source.Refuse("rejected", "project OAuth scope required")

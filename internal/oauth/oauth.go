@@ -164,7 +164,7 @@ func validProviderID(id string) bool {
 var defaultRegistry = struct {
 	sync.RWMutex
 	providers Registry
-}{providers: Registry{"linear": newLinearProvider()}}
+}{providers: Registry{"linear": newLinearProvider(), "github": newGitHubProvider()}}
 
 // RegisterDefault registers one provider implementation compiled into bl.
 func RegisterDefault(provider Provider) error {

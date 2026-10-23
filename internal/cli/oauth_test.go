@@ -257,6 +257,14 @@ func (githubCanaryAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-OAuth-Scopes", "read")
+	if r.URL.Path == "/api/v3/user/installations" {
+		_, _ = io.WriteString(w, `{"total_count":1,"installations":[{"id":42,"app_slug":"bl-cli-read","account":{"login":"owner","type":"Organization"},"permissions":{"issues":"read"}}]}`)
+		return
+	}
+	if r.URL.Path == "/api/v3/user/installations/42/repositories" {
+		_, _ = io.WriteString(w, `{"total_count":1,"repositories":[{"id":1,"full_name":"owner/repo"}]}`)
+		return
+	}
 	if r.URL.Path == "/api/v3/repos/owner/repo/issues" {
 		_, _ = io.WriteString(w, "[]")
 		return
@@ -337,9 +345,6 @@ func TestOAuthCanariesStayOutOfPublicAndAutomationSurfaces(t *testing.T) {
 	}
 	testkit.Isolate(t)
 	provider := canaryOAuthProvider{}
-	if err := oauth.RegisterDefault(provider); err != nil {
-		t.Fatal(err)
-	}
 	server := httptest.NewTLSServer(githubCanaryAPI{})
 	defer server.Close()
 	originalTransport := http.DefaultTransport
@@ -402,7 +407,7 @@ func TestOAuthCanariesStayOutOfPublicAndAutomationSurfaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	account := oauth.Account{Provider: "github", Name: "work", Host: "github.fake", User: "alice", OptIn: true}
-	manager := oauth.NewManager(oauth.Store{StateDir: paths.StateDir}, paths.CacheDir, oauth.DefaultRegistry(), remote.ProcessSecrets)
+	manager := oauth.NewManager(oauth.Store{StateDir: paths.StateDir}, paths.CacheDir, oauth.Registry{"github": provider}, remote.ProcessSecrets)
 	if err = manager.Login(context.Background(), account, oauth.Interaction{In: strings.NewReader("ok"), Out: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +534,7 @@ func TestOAuthSourceReportsStructuredProviderDiagnostic(t *testing.T) {
 	root := t.TempDir()
 	code, out, stderr := run("-C", root, "--json", "ls")
 	var envelope cli.Envelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 6 || stderr != "" || envelope.Error == nil || envelope.Error.Reason != "oauth-provider-unavailable" || envelope.Error.Details["code"] != "oauth-provider-unavailable" {
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 6 || stderr != "" || envelope.Error == nil || envelope.Error.Reason != "authentication-required" || envelope.Error.Details["code"] != "authentication-required" {
 		t.Fatalf("OAuth source diagnostic: %d %q %q: %v", code, out, stderr, err)
 	}
 	if strings.Contains(out, "access_token") || strings.Contains(out, "refresh_token") {

@@ -33,12 +33,15 @@ type Options struct {
 	SourceIDs      map[string]string // lower-case host/repository to configured source alias
 }
 type Source struct {
-	o            Options
-	client       remote.Client
-	mu           sync.Mutex
-	repositoryID string
-	scopes       string
-	writable     bool
+	o               Options
+	client          remote.Client
+	mu              sync.Mutex
+	repositoryID    string
+	scopes          string
+	writable        bool
+	issueWrite      bool
+	projectGrants   map[string]bool
+	projectWritable bool
 }
 
 func New(o Options) (*Source, error) {
@@ -59,7 +62,7 @@ func New(o Options) (*Source, error) {
 			}
 		}
 	}
-	return &Source{o: o, client: remote.Client{Host: apiHost(o.Host), Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets}}, nil
+	return &Source{o: o, client: remote.Client{Host: apiHost(o.Host), Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets, OAuth: o.Account.OAuth}}, nil
 }
 func apiHost(host string) string {
 	if host == "github.com" {
@@ -110,6 +113,11 @@ func (s *Source) request(ctx context.Context, c remote.Credential, method, endpo
 }
 func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 	return s.o.Credentials.Resolve(ctx, s.o.Account, func(ctx context.Context, c remote.Credential) (string, error) {
+		if s.o.Account.OAuth {
+			if err := s.appPermissions(ctx, c); err != nil {
+				return "", err
+			}
+		}
 		response, err := s.request(ctx, c, http.MethodPost, s.endpoint(), map[string]any{"query": `query {viewer {login}}`})
 		if err != nil {
 			return "", err

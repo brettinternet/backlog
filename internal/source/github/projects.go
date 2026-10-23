@@ -24,7 +24,7 @@ type projectItem struct {
 	} `json:"fieldValueByName"`
 }
 
-const discoveryQuery = `query($projectID:ID!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} fields(first:100,after:$after){nodes{... on ProjectV2SingleSelectField{id name options{id name}}} pageInfo{hasNextPage endCursor}}}}}`
+const discoveryQuery = `query($projectID:ID!,$after:String){node(id:$projectID){... on ProjectV2{id number viewerCanUpdate owner{__typename ... on User{login} ... on Organization{login}} fields(first:100,after:$after){nodes{... on ProjectV2SingleSelectField{id name options{id name}}} pageInfo{hasNextPage endCursor}}}}}`
 const projectItemsQuery = `query($projectID:ID!,$fieldName:String!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after){nodes{id updatedAt content{__typename ... on Issue{id number repository{nameWithOwner}}} fieldValueByName(name:$fieldName){... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id}}}}} pageInfo{hasNextPage endCursor}}}}}`
 
 func (s *Source) projectIdentity(id string, number int, owner string) error {
@@ -40,9 +40,13 @@ func (s *Source) discover(ctx context.Context, c remote.Credential) (string, err
 	for {
 		var data struct {
 			Node *struct {
-				ID     string
-				Number int
-				Owner  struct{ Login string }
+				ID              string
+				Number          int
+				ViewerCanUpdate bool
+				Owner           struct {
+					Login    string
+					TypeName string `json:"__typename"`
+				}
 				Fields struct {
 					Nodes []struct {
 						ID, Name string
@@ -60,6 +64,12 @@ func (s *Source) discover(ctx context.Context, c remote.Credential) (string, err
 		}
 		if err := s.projectIdentity(data.Node.ID, data.Node.Number, data.Node.Owner.Login); err != nil {
 			return "", err
+		}
+		if s.o.Account.OAuth {
+			if data.Node.Owner.TypeName != "Organization" {
+				return "", source.Refuse("rejected", "personal Projects v2 require a credential helper")
+			}
+			s.projectWritable = data.Node.ViewerCanUpdate && s.projectGrants[strings.ToLower(data.Node.Owner.Login)]
 		}
 		for _, field := range data.Node.Fields.Nodes {
 			if field.ID != s.o.Project.FieldID {
