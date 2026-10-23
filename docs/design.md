@@ -73,7 +73,7 @@ Non-goals:
 | D12 | **Readiness and next** follow §6: deterministic ranking with a machine-readable explanation for every included and excluded candidate. |
 | D13 | **One query language** ([query.md](query.md)) serves the TUI filter bar, CLI arguments, saved views, and MCP. Sources may push down predicates they support. The result never depends on pushdown. |
 | D14 | **UI loop discipline.** No I/O and no work proportional to backlog size happen on the Bubble Tea update loop. Filter, sort, and group projections run on a worker over immutable snapshots, with latest-wins cancellation. Detail and Markdown rendering are async and cached by item version, width, and theme. |
-| D15 | **Edits are optimistic.** A change applies locally at once and shows as pending until the source confirms. Failures and conflicts stay visible. Every write first checks the item version (a content hash for files, the provider version or a composite content fingerprint for remote sources). Native writes check atomically. Where a remote API has no compare-and-swap (GitHub issue and Projects v2 mutations), a fresh provider read immediately before one non-retried mutation rejects observed conflicts but cannot eliminate a concurrent preflight-to-write race; no unsupported CAS guarantee is implied. The TUI checks against the version it displayed. CLI and MCP callers may pass the version they read (`--if-version`, §7), so a write based on stale data, such as a criterion number that shifted, fails instead of landing on the wrong target. Session undo and redo apply inverse mutations. |
+| D15 | **Edits are optimistic.** A change applies locally at once and shows as pending until the source confirms. Failures and conflicts stay visible. Every write first checks the item version (a content hash for files, the provider version or a composite content fingerprint for remote sources). Native writes check atomically. Where a remote API has no compare-and-swap (GitHub issue/Projects v2 and Linear mutations), a fresh provider read immediately before one non-retried mutation rejects observed conflicts but cannot eliminate a concurrent preflight-to-write race; no unsupported CAS guarantee is implied. The TUI checks against the version it displayed. CLI and MCP callers may pass the version they read (`--if-version`, §7), so a write based on stale data, such as a criterion number that shifted, fails instead of landing on the wrong target. Session undo and redo apply inverse mutations. |
 | D16 | **Configuration layers** (§5): built-ins, then user config, then committed project config, then user per-project overrides, then environment, then flags. Committed config that would run a program or contact a network service is inert until the user runs `bl trust`. Trust is bound to a digest of those entries. |
 | D17 | **Credentials** never appear in committed config. They come from a user-configured credential-helper argv or an environment variable per account, are held only in memory, and are never logged or passed to hooks. |
 | D18 | **Extension seams:** external source adapters (JSON-RPC 2.0 over stdio), the coordination seam (D20), hooks, actions, the event log, and MCP. No in-process plugins, scripting runtime, or SDK until two external consumers need one. Worklease's Python-era SDK shipped before any adapter existed and had to be removed. |
@@ -166,8 +166,11 @@ Remote sources use the [shared remote boundary](remote.md): cached rows and curs
 commit atomically, bounded warm rows paint before network I/O, and incomplete
 refreshes retain unseen rows as stale. Only a fresh complete enumeration evicts
 unseen rows; complete incremental responses retain unchanged rows. Stale items
-are not ready and stale blockers cannot satisfy dependencies. Host/account HTTP
-queues and user-only credential resolution follow D17 and D23.
+are not ready and stale blockers cannot satisfy dependencies. Read lists, Go To,
+and `next` may use fresh partial observations; unknown coverage and error findings
+still fail closed. Workspace reranking preserves per-row staleness. This applies
+D12/D23 without treating partial inventories as complete for events or deletions.
+Host/account HTTP queues and user-only credential resolution follow D17 and D23.
 
 ### 4.4 Mutations
 
@@ -216,7 +219,7 @@ version: 1
 project: {id: github.com/brettinternet/backlog, name: backlog}
 sources:
   - {id: tasks, type: native, path: backlog, prefix: BL}
-  # - {id: eng, type: linear, team: ENG}            # network source: requires `bl trust`
+  # - {id: eng, type: linear, site: ORGANIZATION_UUID, team: TEAM_UUID, account: work} # requires `bl trust`; see linear.md
 statuses:
   - {key: draft, name: Draft, category: backlog}
   - {key: todo, name: To Do, category: todo}
@@ -241,7 +244,7 @@ actions: []   # requires `bl trust`
 # ~/.config/backlog/config.yaml (user). Identity, accounts, overrides.
 me: {default: "@brett"}
 accounts:
-  linear: [{name: work, credential: [security, find-generic-password, -s, linear-api, -w]}]
+  linear: [{name: work, user: VIEWER_UUID, credential: [security, find-generic-password, -s, linear-api, -w]}]
   github: [{host: github.com, user: brettinternet, credential: [gh, auth, token, --hostname, github.com, --user, brettinternet]}]
 projects:
   github.com/acme/app:              # private sources for a repo you cannot commit config to
@@ -452,7 +455,7 @@ reading private files or inventing request inputs.
 | Backlog.md | Files, no CLI | Task ID, filename slug tolerated | `dependencies`, `parent_task_id` | Status, fields, sections, AC, comments. Milestone files and the label list are read-only. | Worklease §3 Backlog.md 1.52.0 |
 | Beads | `bd` 1.3.0 `--json --readonly --sandbox` | Issue ID | Bulk `dependencies`. `blocks` is hard. | `bd update` and comment | [Mapping and limits](beads.md); Worklease §3 Beads |
 | [GitHub](github.md) | GraphQL and REST over HTTPS, one serial queue per host and account | `owner/repo#N` | `blockedBy` and sub-issues | State, labels, assignees, comments, Projects v2 status | Worklease §3 GitHub and Projects |
-| Linear | GraphQL over HTTPS | Organization and issue UUID, identifier displayed | Directional `blocks` | State, assignee, priority, labels, comments | Worklease §3 Linear |
+| Linear | GraphQL over HTTPS | Organization and issue UUID, identifier displayed | Directional `blocks` | State, assignee, priority, labels, comments (explicit source `allowWrites`) | Worklease §3 Linear; [setup and sync](linear.md) |
 | Jira Cloud | REST v3 with API token | Issue ID, key displayed | Issue links | Workflow transitions, fields, comments | Probe pending (BL-40) |
 | external | JSON-RPC stdio | Adapter-defined | Adapter-defined | Capability-declared | BL-42 |
 

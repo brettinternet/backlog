@@ -2,15 +2,22 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/testkit"
 )
 
 type nextCoordinator struct {
@@ -266,5 +273,189 @@ func TestNextClaimStartDoneReuse(t *testing.T) {
 				t.Fatalf("reuse: %+v %v calls:%v", result, err, c.sequence)
 			}
 		})
+	}
+}
+
+// Malformed files and duplicate native identities must not become usable
+// snapshots merely because partial remote observations are now accepted.
+func TestInvalidNativeReadsFailClosed(t *testing.T) {
+	t.Parallel()
+	cfg, c, ctx := nextFixture(t)
+	if err := os.WriteFile(filepath.Join(cfg.Sources[0].Path, "BL-2.md"), []byte("---\nid: [\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.LoadReads(ctx, cfg, false); err == nil {
+		t.Fatal("list accepted malformed native source")
+	}
+	if _, err := engine.GoToItems(ctx, cfg); err == nil {
+		t.Fatal("Go To accepted malformed native source")
+	}
+	if _, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{}); err == nil || len(c.sequence) != 0 {
+		t.Fatalf("claimed from malformed native source: %v attempts=%v", err, c.sequence)
+	}
+	valid := []byte("---\nid: BL-2\ntitle: Duplicate\nstatus: todo\n---\n")
+	if err := os.WriteFile(filepath.Join(cfg.Sources[0].Path, "BL-2.md"), valid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(cfg.Sources[0].Path, "archive")
+	if err := os.MkdirAll(archive, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archive, "BL-2.md"), valid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.LoadReads(ctx, cfg, true); err == nil {
+		t.Fatal("archive list accepted duplicate native identities")
+	}
+	if _, err := engine.GoToItems(ctx, cfg); err == nil {
+		t.Fatal("Go To accepted duplicate native identities")
+	}
+}
+
+type readRoundTrip func(*http.Request) (*http.Response, error)
+
+func (f readRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Linear never claims complete coverage. Fresh observations must remain usable
+// for lists, next and Go To without making unseen cached rows ready or allowing
+// a formerly done (now stale) blocker to satisfy a dependency.
+func TestPartialLinearReadsAndNext(t *testing.T) {
+	testkit.Isolate(t)
+	cfg, c, ctx := nextFixture(t)
+	const org = "10000000-0000-0000-0000-000000000001"
+	const team = "20000000-0000-0000-0000-000000000001"
+	const user = "30000000-0000-0000-0000-000000000001"
+	const state = "40000000-0000-0000-0000-000000000001"
+	id := func(n int) string { return fmt.Sprintf("60000000-0000-0000-0000-%012d", n) }
+	entity := func(n int) map[string]any {
+		return map[string]any{"id": id(n), "identifier": fmt.Sprintf("TEST-%d", n), "team": map[string]string{"id": team}}
+	}
+	conn := func(rows []any) map[string]any {
+		return map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}
+	}
+	missing := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query     string
+			Variables map[string]any
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		q := req.Query
+		var data any
+		switch {
+		case strings.Contains(q, "viewer{"):
+			data = map[string]any{"viewer": map[string]any{"id": user, "active": true, "organization": map[string]string{"id": org}}, "team": map[string]string{"id": team}}
+		case strings.Contains(q, "issues(first:"):
+			rows := []any{}
+			for n := 1; n <= 6; n++ {
+				if missing && (n == 2 || n == 5) {
+					continue
+				}
+				row := entity(n)
+				row["updatedAt"] = "2026-10-22T00:00:00Z"
+				rows = append(rows, row)
+			}
+			data = map[string]any{"team": map[string]any{"id": team, "issues": conn(rows)}}
+		case strings.Contains(q, "inverseRelations(") || strings.Contains(q, "relations("):
+			key, rows := "relations", []any{}
+			if strings.Contains(q, "inverseRelations(") {
+				key = "inverseRelations"
+				blocker := 0
+				if req.Variables["id"] == id(3) {
+					blocker = 2
+				} else if req.Variables["id"] == id(4) {
+					blocker = 99
+				}
+				if blocker != 0 {
+					rows = append(rows, map[string]any{"type": "blocks", "issue": entity(blocker)})
+				}
+			}
+			data = map[string]any{"issue": map[string]any{"id": req.Variables["id"], key: conn(rows)}}
+		default:
+			var n int
+			_, _ = fmt.Sscanf(req.Variables["id"].(string), "60000000-0000-0000-0000-%012d", &n)
+			row := entity(n)
+			category := "unstarted"
+			if n == 2 {
+				category = "completed"
+			}
+			row["title"], row["updatedAt"] = "Synthetic", "2026-10-22T00:00:00Z"
+			row["state"] = map[string]string{"id": state, "name": category, "type": category}
+			row["labels"] = conn([]any{})
+			if n == 6 {
+				row["archivedAt"] = "2026-10-22T00:00:00Z"
+			}
+			data = map[string]any{"issue": row}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	original := http.DefaultTransport
+	http.DefaultTransport = readRoundTrip(func(r *http.Request) (*http.Response, error) {
+		copy := r.Clone(r.Context())
+		copy.URL.Host = u.Host
+		return server.Client().Transport.RoundTrip(copy)
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+	t.Setenv("BL_PARTIAL_LINEAR_TOKEN", "partial-linear-test-credential")
+	cfg.Sources = []project.SourceConfig{{ID: "tasks", Type: "linear", Site: org, Team: team, Account: "test"}}
+	cfg.Accounts = map[string][]project.AccountConfig{"linear": {{Name: "test", User: user, Env: "BL_PARTIAL_LINEAR_TOKEN"}}}
+	cfg.Paths.CacheDir = t.TempDir()
+	cfg.Paths.StateDir = t.TempDir()
+	reads, err := engine.LoadReads(ctx, uncoordinated(cfg), false)
+	if err != nil || len(reads.Query.Items) != 5 {
+		t.Fatalf("initial partial list: %+v %v", reads, err)
+	}
+	missing = true
+	for _, archived := range []bool{false, true} {
+		reads, err = engine.LoadReads(ctx, uncoordinated(cfg), archived)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantCount := 5
+		if archived {
+			wantCount = 6
+		}
+		if len(reads.Query.Items) != wantCount {
+			t.Fatalf("partial list lost cached rows (archives=%v): %+v", archived, reads.Query.Items)
+		}
+		if !slices.Equal(reads.Ranking.Candidates, []model.Ref{{Source: "tasks", ID: "TEST-1"}}) {
+			t.Fatalf("unsafe partial next (archives=%v): %+v", archived, reads.Ranking)
+		}
+		for _, e := range reads.Ranking.Items {
+			if slices.Contains([]string{"TEST-3", "TEST-4", "TEST-5"}, e.Ref.ID) && e.Readiness != engine.Unknown {
+				t.Fatalf("stale or missing blocker treated as known: %+v", e)
+			}
+		}
+	}
+	workspace := uncoordinated(cfg)
+	workspace.Workspace = &project.Workspace{Projects: []project.Config{uncoordinated(cfg)}, Sources: map[string]project.WorkspaceSource{"test/tasks": {Project: 0, ID: "tasks"}}}
+	composed, err := engine.LoadReads(ctx, workspace, false)
+	if err != nil || !slices.Equal(composed.Ranking.Candidates, []model.Ref{{Source: "test/tasks", ID: "TEST-1"}}) {
+		t.Fatalf("workspace lost partial freshness: %+v %v", composed.Ranking, err)
+	}
+	rows, err := engine.GoToItems(ctx, cfg)
+	if err != nil || len(rows) != 6 {
+		t.Fatalf("partial Go To: %+v %v", rows, err)
+	}
+	result, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{})
+	if err != nil || len(result.Items) != 1 || result.Items[0].Ref.ID != "TEST-1" || !slices.Equal(c.sequence, []string{"TEST-1"}) {
+		t.Fatalf("fresh partial claim: %+v %v attempts=%v", result, err, c.sequence)
+	}
+	// A retained human work label resolves by verified resource, not by rank;
+	// a stale row must never be used as that identity observation.
+	c.state.Claim.Item = "run supervisor-label"
+	result, err = engine.NextClaim(ctx, cfg, engine.NextClaimOptions{})
+	if err != nil || !result.Resumed || result.Items[0].Ref.ID != "TEST-1" {
+		t.Fatalf("partial identity resume: %+v %v", result, err)
+	}
+	c.state.Claim.Resources = []string{"tasks:TEST-5"}
+	if _, err = engine.NextClaim(ctx, cfg, engine.NextClaimOptions{}); engine.ErrorReason(err) != "unavailable" {
+		t.Fatalf("stale identity resumed: %v", err)
 	}
 }

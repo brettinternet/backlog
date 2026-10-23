@@ -43,7 +43,7 @@ func (s *Source) LoadInitial(ctx context.Context) (source.Delta, error) {
 	}
 	return s.cleanDelta(delta)
 }
-func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error) {
+func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta, error) {
 	if s.secrets == nil {
 		return source.Delta{}, source.Refuse("unavailable", "remote secret store required")
 	}
@@ -51,6 +51,7 @@ func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error
 	var loaded source.Delta
 	delta, err := s.cache.RemoteRefresh(ctx, func(cursor source.Cursor) (source.Delta, error) {
 		called = true
+		cursor.IncludeArchive = request.IncludeArchive
 		delta, err := s.backend.Load(ctx, cursor)
 		if err != nil {
 			return source.Delta{}, s.safeError(err)
@@ -61,7 +62,7 @@ func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error
 	if err != nil && !called {
 		// Cursors are disposable. An unavailable cache starts a fresh provider
 		// enumeration rather than preventing reads or trusting lost state.
-		delta, err = s.backend.Load(ctx, source.Cursor{})
+		delta, err = s.backend.Load(ctx, source.Cursor{IncludeArchive: request.IncludeArchive})
 		if err == nil {
 			return s.cleanDelta(delta)
 		}

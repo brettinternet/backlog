@@ -101,6 +101,39 @@ func TestHTTPQuotaAndETag(t *testing.T) {
 	}
 }
 
+// Linear's millisecond complexity reset can outlive its request reset. A
+// successful final request must hold every client sharing that account.
+func TestLinearQuotaAndRawAuthorization(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
+	scheduler := NewScheduler()
+	scheduler.now = func() time.Time { return now }
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Header.Get("Authorization") != "linear-key" {
+			t.Error("personal API key must not be Bearer-prefixed")
+		}
+		w.Header().Set("X-RateLimit-Requests-Remaining", "0")
+		w.Header().Set("X-RateLimit-Requests-Reset", fmt.Sprint(now.Add(time.Minute).UnixMilli()))
+		w.Header().Set("X-RateLimit-Complexity-Remaining", "0")
+		w.Header().Set("X-RateLimit-Complexity-Reset", fmt.Sprint(now.Add(2*time.Minute).UnixMilli()))
+		fmt.Fprint(w, `{"data":{}}`)
+	}))
+	defer server.Close()
+	parsed, _ := url.Parse(server.URL)
+	client := Client{Host: parsed.Host, Account: "viewer", HTTP: server.Client(), Scheduler: scheduler, Secrets: &Secrets{}, RawAuthorization: true}
+	req, _ := http.NewRequest(http.MethodPost, server.URL, nil)
+	if _, err := client.Do(context.Background(), req, Credential{token: "linear-key"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := client.Do(context.Background(), req, Credential{token: "linear-key"})
+	var limited ScheduleDiagnostic
+	if !errors.As(err, &limited) || !limited.RetryAt.Equal(now.Add(2*time.Minute)) || calls.Load() != 1 {
+		t.Fatalf("Linear quota escaped: %v calls=%d", err, calls.Load())
+	}
+}
+
 // Catches independent clients bypassing serialization or a blocked account
 // holding the scheduler globally. Channels, not elapsed time, establish order.
 func TestHTTPAccountSerializationAndIsolation(t *testing.T) {

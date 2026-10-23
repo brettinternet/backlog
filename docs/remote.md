@@ -1,8 +1,8 @@
 # Remote source boundary
 
-[GitHub Issues and Projects v2](github.md) is available through the configured
-source registry. `internal/source/remote` supplies its shared scheduler,
-credentials, sanitization and SQLite cache. Linear and Jira remain upcoming. Native sources keep
+[GitHub Issues and Projects v2](github.md) and [Linear](linear.md) are available
+through the configured source registry. `internal/source/remote` supplies their
+shared scheduler, credentials, sanitization and SQLite cache. Jira remains upcoming. Native sources keep
 their stat cache and directory watcher. The engine accepts both through the
 existing source registry, without network I/O on the Bubble Tea update loop.
 
@@ -32,11 +32,21 @@ Warm loading decodes at most two 128-row batches and marks every row stale.
 An unavailable or damaged cache falls back to an uncursored provider load.
 Nothing in the cache is required for correctness.
 
+CLI lists, read-only and claimed `next`, and the Go To catalog accept partial
+observations without claiming a complete inventory. Fresh rows can be candidates;
+retained stale rows remain visible but never ready, and stale or missing blockers
+remain unknown, including in workspace projections. Unknown coverage and error
+findings or duplicate identities still fail these reads closed (including
+malformed native files).
+Archive requests are forwarded independently of the durable sync cursor; cached
+archive rows do not leak into active-only lists. Event/deletion reconciliation
+still requires complete coverage.
+
 The wrapper prepares common Set/Batch field edits and provider-level inverses
 without converting remote IDs or raw fields into native Markdown. Adapters
 implementing other operations must supply their own preparation. Every provider
 `Apply` must atomically enforce `ExpectedVersion` where the provider supports it,
-not rely on the wrapper's preceding Read. APIs without compare-and-swap (GitHub)
+not rely on the wrapper's preceding Read. APIs without compare-and-swap (GitHub and Linear)
 require a fresh provider preflight immediately before a single mutation and must
 document the remaining concurrent-write race. The framework never retries a write
 whose remote outcome could be uncertain.
@@ -74,11 +84,13 @@ a credential-bearing cursor is refused rather than replayed. Hook environments
 retain the existing allowlist, never account environment variables.
 
 `Client.Do` requires HTTPS on the configured host, explicit authorization, and
-an account. It disables redirects, bounds responses to 8 MiB, consumes the body
+an account. GitHub uses Bearer authorization; Linear personal API keys use raw
+authorization. It disables redirects, bounds responses to 8 MiB, consumes the body
 inside the serialized account slot, and never exposes credential-bearing request
 objects or raw transport errors. Queues are bounded and context-cancelable.
 `Retry-After` seconds/HTTP dates, `X-RateLimit-Remaining/Reset` epoch headers,
-and `RateLimit-Remaining/Reset` relative headers set the account retry deadline,
+`RateLimit-Remaining/Reset` relative headers, and Linear's
+`X-RateLimit-Requests/Complexity-Remaining/Reset` millisecond epochs set the account retry deadline,
 even on successful responses. Before that deadline requests fail with a
 `ScheduleDiagnostic` carrying `RetryAt`, rather than sleeping or retrying writes.
 GET ETags are memory-only and partitioned by account, credential, URL and Accept.

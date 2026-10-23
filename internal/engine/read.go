@@ -18,6 +18,7 @@ import (
 	"github.com/brettinternet/backlog/internal/source/beads"
 	"github.com/brettinternet/backlog/internal/source/external"
 	"github.com/brettinternet/backlog/internal/source/github"
+	"github.com/brettinternet/backlog/internal/source/linear"
 	"github.com/brettinternet/backlog/internal/source/native"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
@@ -28,6 +29,7 @@ type ReadSnapshot struct {
 	Ranking   Result
 	Warnings  []string
 	searchers []func(context.Context, string) (map[model.Ref]bool, error)
+	stale     map[model.Ref]bool
 	ctx       context.Context
 }
 
@@ -43,17 +45,11 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnap
 func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted bool) (ReadSnapshot, error) {
 	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
 	s.ctx = ctx
+	s.stale = map[model.Ref]bool{}
 	if cfg.Me.Default != "" {
 		s.Query.Me = []string{cfg.Me.Default}
 	}
 	archivedRefs := map[model.Ref]bool{}
-	load := func(backend source.Source, id string, cursor source.Cursor) (source.Delta, error) {
-		delta, err := backend.Load(ctx, cursor)
-		if err == nil && delta.Coverage != source.Complete {
-			err = fmt.Errorf("source %s has incomplete coverage: %v", id, delta.Findings)
-		}
-		return delta, err
-	}
 	for n, c := range cfg.Sources {
 		if skipUntrusted {
 			if err := cfg.RequireTrusted(fmt.Sprintf("sources[%d]", n)); err != nil {
@@ -65,29 +61,34 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		if err != nil {
 			return s, err
 		}
-		delta, err := load(backend, c.ID, source.Cursor{})
+		delta, err := loadObservation(ctx, backend, source.Cursor{})
 		if err != nil {
 			return s, err
 		}
 		if archived {
-			items := delta.Items
+			active := delta
 			seen := map[model.Ref]bool{}
-			for _, i := range items {
+			for _, i := range active.Items {
 				seen[i.Ref] = true
 			}
-			// The second load's search index also covers archived items.
-			if delta, err = load(backend, c.ID, source.Cursor{IncludeArchive: true}); err != nil {
+			// The second load's search index also covers archived items. Merge
+			// observations so a partial archive scan retains unseen rows as stale.
+			if delta, err = loadObservation(ctx, backend, source.Cursor{IncludeArchive: true}); err != nil {
 				return s, err
 			}
-			// A duplicate ID across active and archive is a check finding; keep the first.
-			for _, i := range delta.Items {
-				if !seen[i.Ref] {
-					seen[i.Ref] = true
-					archivedRefs[i.Ref] = true
-					items = append(items, i)
+			if delta.Archived == nil {
+				delta.Archived = map[model.Ref]bool{}
+				for _, i := range delta.Items {
+					delta.Archived[i.Ref] = !seen[i.Ref]
 				}
 			}
-			delta.Items = items
+			delta = source.Merge(active, delta)
+		}
+		for ref, stale := range delta.Stale {
+			s.stale[ref] = stale
+		}
+		for ref, archived := range delta.Archived {
+			archivedRefs[ref] = archived
 		}
 		for _, finding := range delta.Findings {
 			if finding.Severity == "warning" {
@@ -99,10 +100,10 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		} else {
 			s.searchers = append(s.searchers, nil)
 		}
-		if len(s.Query.Items) == 0 {
-			s.Query.Items = delta.Items
-		} else {
-			s.Query.Items = append(s.Query.Items, delta.Items...)
+		for _, item := range delta.Items {
+			if archived || !delta.Archived[item.Ref] {
+				s.Query.Items = append(s.Query.Items, item)
+			}
 		}
 	}
 	coordination := cfg.Coordination.Worklease != nil
@@ -115,7 +116,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		}
 	}
 	s.Query.Coordination = coordination
-	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Coordination: coordination, Claims: claims})
+	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims})
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)
 		claim := string(claims[e.Ref])
@@ -125,6 +126,33 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		s.Query.States[e.Ref] = query.State{Readiness: string(e.Readiness), Archived: archivedRefs[e.Ref], Claim: claim}
 	}
 	return s, nil
+}
+
+// loadObservation permits fresh rows from a partial scan, not unknown coverage
+// or malformed source data. Completeness is still required for deletion/event
+// reconciliation; individual stale rows must remain unready at every consumer.
+func loadObservation(ctx context.Context, backend source.Source, cursor source.Cursor) (source.Delta, error) {
+	delta, err := backend.Load(ctx, cursor)
+	if err != nil {
+		return delta, err
+	}
+	if delta.Coverage != source.Complete && delta.Coverage != source.Partial {
+		return delta, fmt.Errorf("source %s has incomplete coverage: %v", backend.Info().ID, delta.Findings)
+	}
+	for _, finding := range delta.Findings {
+		if finding.Severity == "error" {
+			return delta, fmt.Errorf("source %s has invalid observations: %v", backend.Info().ID, delta.Findings)
+		}
+	}
+	seen := make(map[model.Ref]bool, len(delta.Items))
+	for _, item := range delta.Items {
+		ref := canonical(item.Ref)
+		if seen[ref] {
+			return delta, fmt.Errorf("source %s has duplicate item %s", backend.Info().ID, item.Ref.ID)
+		}
+		seen[ref] = true
+	}
+	return delta, nil
 }
 
 func readSource(cfg project.Config, c project.SourceConfig) (source.Source, error) {
@@ -152,6 +180,30 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			}
 			break
 		}
+	}
+	if c.Type == "linear" {
+		var account *project.AccountConfig
+		for _, candidate := range cfg.Accounts["linear"] {
+			if candidate.Name == c.Account || candidate.User == c.Account {
+				if account != nil {
+					return nil, source.Refuse("unavailable", "ambiguous Linear account")
+				}
+				copy := candidate
+				account = &copy
+			}
+		}
+		if account == nil {
+			return nil, source.Refuse("unavailable", "Linear user account not configured")
+		}
+		backend, err := linear.New(linear.Options{ID: c.ID, Organization: c.Site, Team: c.Team, Project: c.Project, Account: *account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentials})
+		if err != nil {
+			return nil, err
+		}
+		identity, _ := json.Marshal(struct {
+			Source project.SourceConfig
+			User   string
+		}{c, account.User})
+		return remote.New(backend, cache.New(cfg.Paths.CacheDir, cfg.Project.ID, c.ID, string(identity)), providerSecrets), nil
 	}
 	if c.Type == "github" {
 		host := c.Host
