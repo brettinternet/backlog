@@ -388,8 +388,8 @@ need an interactive yes or `--yes`; otherwise they refuse without running. JSON
 ### `bl events [--follow|-f] [--since ID] [QUERY]`
 
 Reads the project event log. JSON returns `data.events`; `--follow` prints one
-envelope per line with `data.event`. `--since` is exclusive; an unknown ID is an
-error. See [Events](events.md).
+envelope per line with `data.event`. `--since` is exclusive; an unknown ID is
+`not-found`. See [Events](events.md).
 
 ## Project commands
 

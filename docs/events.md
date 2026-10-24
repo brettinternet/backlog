@@ -111,6 +111,9 @@ consumers must then start without a cursor.
 Use `--since` to skip consumed history. The follower polls the log every 25 ms
 while source watchers reconcile changes. Cancellation exits 0.
 
+The MCP `events` tool reads the same events, a page at a time, without follow
+([mcp.md](mcp.md#results)).
+
 QUERY uses the [query language](query.md) with `changed:`, `hook:`, `action:`,
 and `outcome:` enabled. Item terms match the event's item, not the current file.
 `is:ready`, `is:blocked`, `is:waiting`, and `is:unknown` use

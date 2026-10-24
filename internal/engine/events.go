@@ -18,6 +18,7 @@ import (
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
@@ -855,4 +856,70 @@ func itemChanges(before, after model.Item) map[string]hooks.Change {
 		}
 	}
 	return out
+}
+
+// EventMatcher evaluates q, parsed with query.Options{Hook: true}, against
+// logged events. Readiness and archive state come from each event's changes.
+func EventMatcher(cfg project.Config, q query.Query) func(hooks.Event) bool {
+	snapshot := query.Snapshot{Settings: cfg.Settings, Me: []string{cfg.Me.Default}, States: map[model.Ref]query.State{}}
+	return func(e hooks.Event) bool {
+		var item model.Item
+		data, _ := json.Marshal(e.Item)
+		_ = json.Unmarshal(data, &item)
+		snapshot.Now = e.Time
+		state := query.State{}
+		if change, ok := e.Changes["readiness"]; ok {
+			state.Readiness = fmt.Sprint(change.To)
+		}
+		if change, ok := e.Changes["archived"]; ok {
+			state.Archived = change.To == true
+		}
+		snapshot.States[item.Ref] = state
+		event := query.Event{Type: e.Type, Outcome: e.Outcome}
+		if e.Type == "hook.finished" {
+			event.Hook = e.Name
+		}
+		if e.Type == "action.finished" {
+			event.Action = e.Name
+		}
+		for field := range e.Changes {
+			event.Changed = append(event.Changed, field)
+		}
+		return q.Match(item, snapshot, &event)
+	}
+}
+
+// EventPage is one bounded read of the event log. Cursor is the ID to pass as
+// the next since: the last returned event when More, otherwise the last
+// logged event, or since itself when nothing is newer.
+type EventPage struct {
+	Events []hooks.Event
+	Cursor string
+	More   bool
+}
+
+// ReadEvents returns events after since that match, at most limit (0: all).
+// An unknown since is a not-found refusal.
+func ReadEvents(ctx context.Context, cfg project.Config, since string, match func(hooks.Event) bool, limit int) (EventPage, error) {
+	events, err := hooks.New(cfg.Paths.StateDir, cfg.Project.ID).Read(ctx, since)
+	if errors.Is(err, hooks.ErrUnknownCursor) {
+		return EventPage{}, source.Refuse("not-found", err.Error())
+	}
+	if err != nil {
+		return EventPage{}, source.Refuse("unavailable", err.Error())
+	}
+	page := EventPage{Events: []hooks.Event{}, Cursor: since}
+	for _, e := range events {
+		if !match(e) {
+			page.Cursor = e.ID
+			continue
+		}
+		if limit > 0 && len(page.Events) == limit {
+			page.More = true
+			break
+		}
+		page.Events = append(page.Events, e)
+		page.Cursor = e.ID
+	}
+	return page, nil
 }
