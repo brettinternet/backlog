@@ -425,10 +425,10 @@ func (d *document) criterionEdit(m model.Mutation) ([]byte, error) {
 		return nil, source.Refuse("invalid-value", "expected criteria or dod section")
 	}
 	entries := d.criterionLines(key)
+	if (m.Op == model.AddCriterion || m.Op == model.SetCriterion) && (strings.TrimSpace(m.Text) == "" || strings.ContainsAny(m.Text, "\r\n")) {
+		return nil, source.Refuse("invalid-value", "criterion must be nonempty and single-line")
+	}
 	if m.Op == model.AddCriterion {
-		if strings.TrimSpace(m.Text) == "" || strings.ContainsAny(m.Text, "\r\n") {
-			return nil, source.Refuse("invalid-value", "criterion must be nonempty and single-line")
-		}
 		return d.sectionEdit(key, fmt.Sprintf("- [ ] #%d %s", len(entries)+1, m.Text), true)
 	}
 	if m.Index < 1 || m.Index > len(entries) {
@@ -444,6 +444,9 @@ func (d *document) criterionEdit(m model.Mutation) ([]byte, error) {
 		return d.splice(start, end, ""), nil
 	}
 	parts := checklistLine.FindStringSubmatch(cleanLine(d.lines[start]))
+	if m.Op == model.SetCriterion {
+		return d.splice(start, end, parts[1]+parts[2]+parts[3]+generatedIndex.FindString(parts[4])+m.Text+d.nl+strings.Join(d.lines[start+1:end], "")), nil
+	}
 	mark := "x"
 	if m.Op == model.UncheckCriterion {
 		mark = " "

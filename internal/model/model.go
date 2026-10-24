@@ -94,6 +94,7 @@ const (
 	UncheckCriterion Operation = "uncheck-criterion"
 	AddCriterion     Operation = "add-criterion"
 	RemoveCriterion  Operation = "remove-criterion"
+	SetCriterion     Operation = "set-criterion"
 	Restore          Operation = "restore"
 )
 

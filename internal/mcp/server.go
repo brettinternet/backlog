@@ -156,7 +156,7 @@ type AppendArgs struct {
 type CriteriaArgs struct {
 	WriteArgs
 	ID        string `json:"id"`
-	Operation string `json:"operation" jsonschema:"check, uncheck, add, or remove"`
+	Operation string `json:"operation" jsonschema:"check, uncheck, add, set, or remove"`
 	Index     int    `json:"index,omitempty"`
 	Text      string `json:"text,omitempty"`
 	Evidence  string `json:"evidence,omitempty"`
@@ -537,10 +537,10 @@ func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args Crit
 	if err != nil {
 		return failed[any]("conflict", err.Error())
 	}
-	ops := map[string]model.Operation{"check": model.CheckCriterion, "uncheck": model.UncheckCriterion, "add": model.AddCriterion, "remove": model.RemoveCriterion}
+	ops := map[string]model.Operation{"check": model.CheckCriterion, "uncheck": model.UncheckCriterion, "add": model.AddCriterion, "set": model.SetCriterion, "remove": model.RemoveCriterion}
 	op, ok := ops[args.Operation]
 	if !ok {
-		return failed[any]("rejected", "operation must be check, uncheck, add, or remove")
+		return failed[any]("rejected", "operation must be check, uncheck, add, set, or remove")
 	}
 	lists := map[string]string{"": "Acceptance criteria", "criteria": "Acceptance criteria", "dod": "Definition of done"}
 	section, ok := lists[args.List]
@@ -548,11 +548,10 @@ func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args Crit
 		return failed[any]("usage", "list must be criteria or dod")
 	}
 	m := model.Mutation{Op: op, Section: section, Index: args.Index, Text: args.Text}
-	if op == model.AddCriterion {
-		if strings.TrimSpace(args.Text) == "" || strings.ContainsAny(args.Text, "\r\n") {
-			return failed[any]("usage", "criterion must be nonempty and single-line")
-		}
-	} else if args.Index < 1 {
+	if (op == model.AddCriterion || op == model.SetCriterion) && (strings.TrimSpace(args.Text) == "" || strings.ContainsAny(args.Text, "\r\n")) {
+		return failed[any]("usage", "criterion must be nonempty and single-line")
+	}
+	if op != model.AddCriterion && args.Index < 1 {
 		return failed[any]("usage", "criterion index must be positive")
 	}
 	if args.Evidence != "" {

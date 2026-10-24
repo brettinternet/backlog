@@ -147,11 +147,12 @@ func TestBacklogMD152Compatibility(t *testing.T) {
 		{Op: model.ReplaceSection, Section: "Summary", Text: "Edited summary."},
 		{Op: model.RemoveCriterion, Section: "criteria", Index: 1},
 		{Op: model.AddCriterion, Section: "criteria", Text: "Added criterion"},
+		{Op: model.SetCriterion, Section: "criteria", Index: 2, Text: "Reworded criterion"},
 		{Op: model.AppendComment, Comment: model.Comment{Time: adapterClock, Author: "@agent", Body: "Adapter comment."}},
 	}})
 	check(fixture)
 	plain := run("task", "view", fixture.Ref.ID, "--plain")
-	if !strings.Contains(plain, "- [x] #1 #12 is user text") || !strings.Contains(plain, "- [ ] #2 Added criterion") {
+	if !strings.Contains(plain, "- [x] #1 #12 is user text") || !strings.Contains(plain, "- [ ] #2 Reworded criterion") {
 		t.Fatalf("provider did not see sequential generated indexes:\n%s", plain)
 	}
 

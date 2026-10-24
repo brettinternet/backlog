@@ -82,7 +82,7 @@ func New(o Options) (*Source, error) {
 }
 func (s *Source) Info() source.Info {
 	caps := model.Capabilities{}
-	for _, op := range []model.Operation{model.Batch, model.Create, model.Archive, model.Unarchive, model.Set, model.Add, model.Remove, model.Unset, model.ReplaceSection, model.AppendNote, model.AppendComment, model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion, model.Restore} {
+	for _, op := range []model.Operation{model.Batch, model.Create, model.Archive, model.Unarchive, model.Set, model.Add, model.Remove, model.Unset, model.ReplaceSection, model.AppendNote, model.AppendComment, model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion, model.SetCriterion, model.Restore} {
 		caps[op] = true
 	}
 	return source.Info{ID: s.options.ID, Kind: "native", Display: s.options.Path, Capabilities: caps}

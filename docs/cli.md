@@ -223,23 +223,32 @@ bl ac 12 check 1 3
 bl ac 12 uncheck 2
 bl ac 12 check 1 --evidence 'go test ./... passed' --if-version VERSION
 bl ac 12 add 'Handles empty input'
+bl ac 12 set 2 'Handles empty and blank input'
 bl ac 12 rm 2
 bl ac 12 check 1 --dod --evidence 'task ci passed'
 ```
 
 Indices start at 1. `--evidence` takes one index and one line, written as an
 indented `Evidence:` line under the criterion (replacing any old one). Checking
-without it keeps evidence; unchecking removes it. Criteria renumber when one is
+without it keeps evidence; unchecking removes it. `set N TEXT` rewords one
+entry in place, keeping its check state, position, and evidence. Criteria renumber when one is
 removed, and evidence moves with its criterion. Always pass `--if-version` when
 the indices came from an earlier read. `--dod` applies the same operations to
 definition-of-done items, which are numbered separately from criteria.
 
-### `bl edit ID [--section S]`
+### `bl edit ID [--section S [--text TEXT|-]]`
 
 Opens the native file, or one section, in `$EDITOR` (default `vi`, run through
 the shell so arguments work). Sections: `description`, `criteria`, `dod`,
 `plan`, `notes`, `summary`. Editor output goes to stderr, so JSON on stdout stays
 clean.
+
+`--text` replaces the section without opening an editor; `-` reads stdin. It
+requires `--section` and fails like any other write.
+
+```sh
+bl edit 12 --section plan --text - --if-version VERSION < plan.md
+```
 
 | Outcome | Exit | Result |
 | --- | --- | --- |

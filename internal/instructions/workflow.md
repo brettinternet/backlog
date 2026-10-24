@@ -59,6 +59,13 @@ bl ac ID check 1 --evidence "Required verification command passed." --if-version
 bl ac ID check 1 --dod --evidence "Definition-of-done check passed." --if-version VERSION --json
 ```
 
+Write plan or summary sections without an editor, and reword an entry in place:
+
+```sh
+bl edit ID --section summary --text "What changed and how it was verified." --if-version VERSION --json
+bl ac ID set 2 "Clearer criterion text." --if-version VERSION --json
+```
+
 A stale version exits 4 without writing. Reread the item and reassess the
 operation; do not blindly retry. Every successful write returns a new version.
 

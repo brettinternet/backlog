@@ -53,6 +53,8 @@ func WriteOptionNames() map[string][]string {
 	return out
 }
 
+var sectionNames = map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}
+
 func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urfave.Command {
 	flag := func() []urfave.Flag {
 		return []urfave.Flag{&urfave.StringFlag{Name: "if-version", Usage: "Fail unless the item is still at `VERSION`"}}
@@ -353,15 +355,15 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return batch(ctx, cmd, cfg, args[:1], []model.Mutation{m})
 		}})
 	}
-	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria or definition of done", ArgsUsage: "ID (check|uncheck N... | add TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Aliases: []string{"e"}, Usage: "Record `TEXT` as evidence when checking one criterion"}, &urfave.BoolFlag{Name: "dod", Usage: "Change definition-of-done items instead of acceptance criteria"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, reword, or remove acceptance criteria or definition of done", ArgsUsage: "ID (check|uncheck N... | add TEXT | set N TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Aliases: []string{"e"}, Usage: "Record `TEXT` as evidence when checking one criterion"}, &urfave.BoolFlag{Name: "dod", Usage: "Change definition-of-done items instead of acceptance criteria"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		args := cmd.Args().Slice()
 		if len(args) < 3 {
-			return writeUsage("ac requires ID, check|uncheck|add|rm, and text or index")
+			return writeUsage("ac requires ID, check|uncheck|add|set|rm, and text or index")
 		}
-		ops := map[string]model.Operation{"check": model.CheckCriterion, "uncheck": model.UncheckCriterion, "add": model.AddCriterion, "rm": model.RemoveCriterion}
+		ops := map[string]model.Operation{"check": model.CheckCriterion, "uncheck": model.UncheckCriterion, "add": model.AddCriterion, "set": model.SetCriterion, "rm": model.RemoveCriterion}
 		op, ok := ops[args[1]]
 		if !ok {
-			return writeUsage("ac operation must be check, uncheck, add, or rm")
+			return writeUsage("ac operation must be check, uncheck, add, set, or rm")
 		}
 		if cmd.IsSet("evidence") && (op != model.CheckCriterion || len(args) != 3 || strings.TrimSpace(cmd.String("evidence")) == "" || strings.ContainsAny(cmd.String("evidence"), "\r\n")) {
 			return writeUsage("--evidence requires check with exactly one index and nonempty single-line text")
@@ -371,7 +373,17 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			section = "Definition of done"
 		}
 		changes := []model.Mutation{}
-		if op == model.AddCriterion {
+		if op == model.SetCriterion {
+			n, err := strconv.Atoi(args[2])
+			text := strings.Join(args[3:], " ")
+			if len(args) < 4 || err != nil || n < 1 {
+				return writeUsage("ac set takes one positive index and text")
+			}
+			if strings.TrimSpace(text) == "" || strings.ContainsAny(text, "\r\n") {
+				return writeUsage("criterion must be nonempty and single-line")
+			}
+			changes = append(changes, model.Mutation{Op: op, Section: section, Index: n, Text: text})
+		} else if op == model.AddCriterion {
 			text := strings.Join(args[2:], " ")
 			if strings.TrimSpace(text) == "" || strings.ContainsAny(text, "\r\n") {
 				return writeUsage("criterion must be nonempty and single-line")
@@ -400,7 +412,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		return batch(ctx, cmd, cfg, args[:1], changes)
 	}})
-	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Aliases: []string{"s"}, Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Aliases: []string{"s"}, Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}, &urfave.StringFlag{Name: "text", Usage: "Replace the section with `TEXT` (- reads stdin) instead of opening $EDITOR"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() != 1 {
 			return writeUsage("edit requires exactly one ID")
 		}
@@ -410,6 +422,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		section := cmd.String("section")
 		if section != "" && (!validSection(section) || section == "comments") {
 			return writeUsage("editable sections: description criteria dod plan notes summary; comments are append-only")
+		}
+		if cmd.IsSet("text") && section == "" {
+			return writeUsage("--text requires --section")
 		}
 		cfg, err := loadConfig(cmd, *directory)
 		if err != nil {
@@ -433,6 +448,20 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				providerSection = section != ""
 			}
 		}
+		if cmd.IsSet("text") {
+			text, err := body(cmd.String("text"))
+			if err != nil {
+				return err
+			}
+			item, err = engine.ApplyWrite(ctx, cfg, model.Mutation{Op: model.ReplaceSection, Ref: item.Ref, ExpectedVersion: version, Section: sectionNames[section], Text: text})
+			if err != nil {
+				return writeError(err)
+			}
+			if cmd.Bool("json") {
+				return success(out, "edit", itemjson.NewSummary(item))
+			}
+			return writeItemRow(out, cfg, itemjson.NewSummary(item))
+		}
 		if providerSection {
 			content = []byte(itemjson.Sections(item)[section] + "\n")
 		} else {
@@ -450,8 +479,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			}
 			content = original
 			if section != "" {
-				names := map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}
-				content = []byte(doc.SectionText(names[section]) + "\n")
+				content = []byte(doc.SectionText(sectionNames[section]) + "\n")
 			}
 		}
 		file, err := os.CreateTemp("", "bl-edit-*.md")
@@ -498,9 +526,8 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		m := model.Mutation{Op: model.Restore, Ref: item.Ref, ExpectedVersion: version, Original: edited}
 		if section != "" {
-			names := map[string]string{"description": "Description", "criteria": "Acceptance criteria", "dod": "Definition of done", "plan": "Plan", "notes": "Notes", "summary": "Summary"}
 			m.Op = model.ReplaceSection
-			m.Section = names[section]
+			m.Section = sectionNames[section]
 			m.Text = string(edited)
 		}
 		item, err = engine.ApplyWrite(ctx, cfg, m)

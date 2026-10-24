@@ -95,8 +95,8 @@ names unless a JSON tag says otherwise; `Ref` is `{"source": "example", "id":
 
 Write capabilities are model operations: `set`, `add`, `remove`, `unset`,
 `replace-section`, `append-note`, `append-comment`, `check-criterion`,
-`uncheck-criterion`, `add-criterion`, `remove-criterion`, `create`, `archive`,
-`unarchive`, `batch`, `restore`. Missing means unavailable.
+`uncheck-criterion`, `add-criterion`, `remove-criterion`, `set-criterion`,
+`create`, `archive`, `unarchive`, `batch`, `restore`. Missing means unavailable.
 
 Each mutation has `Ref`, `Op`, and `ExpectedVersion` (only `create` may omit
 it). The adapter must check the version atomically and return `conflict` rather

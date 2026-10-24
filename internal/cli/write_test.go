@@ -369,6 +369,11 @@ func TestCriterionVersionAndEvidence(t *testing.T) {
 	if !strings.Contains(result, "- [x] Second\n  Context stays here.\n  Evidence: fresh proof") || strings.Contains(result, "old proof") {
 		t.Fatal(result)
 	}
+	// Rewording keeps the entry's check state, position, and evidence.
+	writeOK(t, root, "", "ac", "12", "set", "1", "Second", "reworded")
+	if result = get(t, path); !strings.Contains(result, "- [x] Second reworded\n  Context stays here.\n  Evidence: fresh proof") {
+		t.Fatal(result)
+	}
 	code, out, _ = writeRun(root, "", "show", "12")
 	var detail struct {
 		Data struct {
@@ -398,6 +403,12 @@ func TestCriterionVersionAndEvidence(t *testing.T) {
 	writeOK(t, root, "", "ac", "12", "check", "1", "--dod", "--evidence", "task ci passed")
 	result = get(t, path)
 	if !strings.Contains(result, "## Definition of done\n\n- [x] Run checks\n  Evidence: task ci passed") || !strings.Contains(result, "- [ ] Second") {
+		t.Fatal(result)
+	}
+	// --text must replace the section without ever launching the editor.
+	t.Setenv("EDITOR", "false")
+	writeOK(t, root, "Step one.\nStep two.\n", "edit", "12", "--section", "plan", "--text", "-")
+	if result = get(t, path); !strings.Contains(result, "## Plan\n\nStep one.\nStep two.\n") {
 		t.Fatal(result)
 	}
 }

@@ -81,7 +81,7 @@ func New(o Options) (*Source, error) {
 func (s *Source) Info() source.Info {
 	caps := model.Capabilities{}
 	if !s.options.ReadOnly {
-		for _, op := range []model.Operation{model.Batch, model.Create, model.Archive, model.Unarchive, model.Set, model.Add, model.Remove, model.Unset, model.ReplaceSection, model.AppendNote, model.AppendComment, model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion, model.Restore} {
+		for _, op := range []model.Operation{model.Batch, model.Create, model.Archive, model.Unarchive, model.Set, model.Add, model.Remove, model.Unset, model.ReplaceSection, model.AppendNote, model.AppendComment, model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion, model.SetCriterion, model.Restore} {
 			caps[op] = true
 		}
 	}

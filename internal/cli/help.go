@@ -48,6 +48,7 @@ Examples:
   bl ac 12 check 1 2
   bl ac 12 check 3 --evidence 'go test ./... passes'
   bl ac 12 add 'Docs updated'
+  bl ac 12 set 2 'Handles empty input'
   bl ac 12 rm 4
   bl ac 12 check 1 --dod --evidence 'task ci passed'`
 

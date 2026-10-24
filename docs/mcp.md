@@ -45,7 +45,7 @@ The `bl://instructions` resource serves the `bl instructions` overview.
 | `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `source` | `bl new` |
 | `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run` | `bl set`, `bl archive`, `bl edit --section` |
 | `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
-| `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
+| `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`set`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `claim`, `release` | `id`, `session`, `run` | `bl claim`, `bl release` |
@@ -61,7 +61,8 @@ The `bl://instructions` resource serves the `bl instructions` overview.
   `version` don't conflict with each other.
 - `fields` takes `bl set` names. Suffix a list field with `+` or `-` to add or
   remove. `start` and `done` are status updates to the workflow statuses.
-- `criteria` changes acceptance criteria unless `list` is `dod`.
+- `criteria` changes acceptance criteria unless `list` is `dod`. `set` rewords
+  the entry at `index` to `text`, keeping its check state and evidence.
 - Editable sections: `description`, `criteria`, `dod`, `plan`, `notes`,
   `summary`.
 - References accept the same shorthand as `bl new`. `status: draft` creates an

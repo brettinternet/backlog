@@ -301,7 +301,7 @@ func (s *Source) edit(data []byte, m model.Mutation, now time.Time) ([]byte, str
 		}
 		text := "author: " + comment.Author + d.nl + "created: " + comment.Time.UTC().Format("2006-01-02 15:04") + d.nl + "---" + d.nl + comment.Body + d.nl + "---"
 		next, err = d.sectionEdit("comments", text, true)
-	case model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion:
+	case model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion, model.SetCriterion:
 		next, err = d.criterionEdit(m)
 	case model.Restore:
 		original, parseErr := parseDocument(m.Original)

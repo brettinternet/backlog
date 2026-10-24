@@ -381,15 +381,15 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 		text := "### " + c.Time.UTC().Truncate(time.Second).Format(time.RFC3339) + " " + c.Author + d.nl + d.nl + c.Body
 		target = "Comments"
 		data, err = d.sectionEdit("Comments", text, true)
-	case model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion:
+	case model.CheckCriterion, model.UncheckCriterion, model.AddCriterion, model.RemoveCriterion, model.SetCriterion:
 		name := sectionName(m.Section)
 		if name != "Acceptance criteria" && name != "Definition of done" {
 			return fail(fmt.Errorf("invalid-value: expected criteria section"))
 		}
+		if (m.Op == model.AddCriterion || m.Op == model.SetCriterion) && (strings.TrimSpace(m.Text) == "" || strings.ContainsAny(m.Text, "\r\n")) {
+			return fail(fmt.Errorf("invalid-value: criterion must be nonempty and single-line"))
+		}
 		if m.Op == model.AddCriterion {
-			if strings.TrimSpace(m.Text) == "" || strings.ContainsAny(m.Text, "\r\n") {
-				return fail(fmt.Errorf("invalid-value: criterion must be nonempty and single-line"))
-			}
 			target = name
 			text := "- [ ] " + normalize(m.Text, d.nl)
 			data, err = d.sectionEdit(name, text, true)
@@ -402,6 +402,11 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 		e := entries[m.Index-1]
 		if m.Op == model.RemoveCriterion {
 			data = d.splice(e.start, e.end, "")
+		} else if m.Op == model.SetCriterion {
+			line := d.lines[e.start]
+			prefix := line[:len(line)-len(strings.TrimLeft(line[5:], " \t"))]
+			text := prefix + m.Text + d.nl + strings.Join(d.lines[e.start+1:e.end], "")
+			data = d.splice(e.start, e.end, text)
 		} else {
 			line := d.lines[e.start]
 			mark := "x"

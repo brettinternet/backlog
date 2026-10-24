@@ -977,7 +977,7 @@ func knownOperation(operation model.Operation) bool {
 	switch operation {
 	case model.Batch, model.Create, model.Archive, model.Unarchive, model.Set, model.Add, model.Remove, model.Unset,
 		model.ReplaceSection, model.AppendNote, model.AppendComment, model.CheckCriterion, model.UncheckCriterion,
-		model.AddCriterion, model.RemoveCriterion, model.Restore:
+		model.AddCriterion, model.RemoveCriterion, model.SetCriterion, model.Restore:
 		return true
 	default:
 		return false

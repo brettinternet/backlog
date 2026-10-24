@@ -59,7 +59,7 @@ func TestWriteCommandOptionParity(t *testing.T) {
 		"archive": {"if-version": "update.version"}, "unarchive": {"if-version": "update.version"},
 		"note": {"if-version": "append.version"}, "comment": {"if-version": "append.version", "author": "append.author"},
 		"ac":   {"if-version": "criteria.version", "evidence": "criteria.evidence", "dod": "criteria.list"},
-		"edit": {"if-version": "update.version", "section": "update.section"},
+		"edit": {"if-version": "update.version", "section": "update.section", "text": "update.text"},
 	}
 	for command, flags := range cli.WriteOptionNames() {
 		destinations, ok := mapping[command]

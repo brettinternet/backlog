@@ -300,8 +300,9 @@ bl set ID... FIELD=V FIELD+=V FIELD-=V
 bl start ID | bl done ID             workflow transitions
 bl note ID TEXT|- | bl comment ID TEXT|-
 bl ac ID (check|uncheck) N... | bl ac ID check N --evidence TEXT
-bl ac ID add TEXT | bl ac ID rm N   --dod targets definition of done
+bl ac ID add TEXT | bl ac ID set N TEXT | bl ac ID rm N   --dod targets definition of done
 bl edit ID [--section S]             open $EDITOR
+bl edit ID --section S --text TEXT|- replace a section without an editor
 bl archive ID... | bl unarchive ID...
 bl claim ID | bl release ID | bl heartbeat    claims (§9)
 bl init | bl import backlog-md [PATH] | bl check [--fix] | bl renumber FROM TO
