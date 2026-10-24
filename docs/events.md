@@ -51,7 +51,7 @@ nonce. A failed mutation appends none.
 | `item.archived` | An item is archived (`changes.archived`), or a complete snapshot no longer has it (`changes.present: {from: true, to: false}`). Editing an archived item is `item.updated`. |
 | `item.readiness` | Item data changes readiness. `changes.readiness` has `from`, `to`, and `reason` (including `candidate` on becoming ready). |
 | `claim.acquired`, `claim.released` | A claim operation through `bl` succeeds |
-| `hook.finished`, `action.finished` | A hook or action ends. Adds `name`, `outcome` (`ok`, `failed`, `timeout`, `refused`), `exitCode`, `duration` (ns), and optional `result` (≤ 8 KiB). |
+| `hook.finished`, `action.finished` | A hook or action ends. Adds `name`, `outcome` (`ok`, `failed`, `timeout`, `refused`), `exitCode`, `duration` (ns), optional `result` (≤ 8 KiB), and, unless `ok`, optional `message`: the refusal or exec error, or for a nonzero exit or timeout the last lines of stderr, ≤ 1 KiB with terminal controls stripped. `message` is display text, not a contract for parsing. |
 
 Readiness is checked for the changed item, its transitive dependents, and its old
 and new parents. Only real transitions emit: a dependent still blocked by

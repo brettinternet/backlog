@@ -50,6 +50,7 @@ type Event struct {
 	ExitCode      *int              `json:"exitCode,omitempty"`
 	Duration      time.Duration     `json:"duration,omitempty"`
 	Result        map[string]any    `json:"result,omitempty"`
+	Message       string            `json:"message,omitempty"`
 }
 
 // Log retains rotated segments: cursors and dedupe identities never silently

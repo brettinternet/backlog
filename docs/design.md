@@ -348,7 +348,7 @@ bl instructions [TOPIC] | bl mcp
 | `item.created`, `item.updated`, `item.archived` | A mutation succeeds, from any origin, or sync sees an external edit (origin `sync`) |
 | `item.readiness` | An item's readiness changes because of item data: its status, blockers, children, labels, or assignees. `changes.readiness` holds `from`, `to`, and the reason. Claims never trigger it, because Worklease's own events cover claims. |
 | `claim.acquired`, `claim.released` | A claim operation made through `bl` succeeds |
-| `hook.finished`, `action.finished` | An after hook or an action exits. The event holds the name, `outcome` (`ok`, `failed`, `timeout`, or `refused`), the exit code, the duration, and `result`. |
+| `hook.finished`, `action.finished` | An after hook or an action exits. The event holds the name, `outcome` (`ok`, `failed`, `timeout`, or `refused`), the exit code, the duration, `result`, and on failure a bounded `message` with the refusal reason or stderr tail. |
 
 - **Origin:** `tui`, `cli`, `mcp`, `hook`, `action`, or `sync`.
 - **Cause and depth:** an event produced by a hook or action, directly or through a `bl` call it makes, names its `cause` event, with `depth` one higher. Hooks don't run for events deeper than 3. `BL_HOOK_DEPTH` carries the depth into `bl` subprocesses.
