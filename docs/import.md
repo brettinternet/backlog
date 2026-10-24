@@ -35,10 +35,11 @@ bl check
 git status                                  # review, then commit
 ```
 
-`--in-place` writes `backlog.yaml` and the items beside the Backlog.md folder,
-then removes every imported task, draft, archive, and milestone file and
-`config.yml`. Docs, decisions, and other files stay. Empty partition folders are
-removed.
+`--in-place` writes `backlog.yaml` at the checkout root and the items into the
+Backlog.md folder, which becomes the native source path (`backlog` or
+`docs/backlog`). It then removes every imported task, draft, archive, and
+milestone file and `config.yml`. Docs, decisions, and other files stay. Empty
+partition folders are removed.
 
 It refuses, before writing anything, when:
 

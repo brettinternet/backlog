@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -180,6 +181,16 @@ func Import(ctx context.Context, input string, options ImportOptions) (Report, e
 	if err != nil {
 		return Report{}, err
 	}
+	items := "backlog"
+	if options.InPlace {
+		// Discovery reads backlog.yaml only at the checkout root, so the
+		// native source keeps the Backlog.md folder's path from there.
+		if top, ok := checkoutRoot(source.root); ok {
+			source.projectRoot = top
+			items, _ = filepath.Rel(top, source.root)
+			items = filepath.ToSlash(items)
+		}
+	}
 	targetAbs, existed := source.projectRoot, false
 	if !options.InPlace {
 		targetAbs, err = filepath.Abs(options.Target)
@@ -266,7 +277,7 @@ func Import(ctx context.Context, input string, options ImportOptions) (Report, e
 	if err != nil {
 		return report, err
 	}
-	refs, err := assignIDs(tasks, prefix, &report)
+	refs, err := assignIDs(tasks, prefix, items, &report)
 	if err != nil {
 		return report, err
 	}
@@ -341,7 +352,7 @@ func Import(ctx context.Context, input string, options ImportOptions) (Report, e
 	settings := project.Settings{
 		Version:    1,
 		Project:    project.ProjectConfig{Name: source.projectName},
-		Sources:    []project.SourceConfig{{ID: "tasks", Type: "native", Path: "backlog", Prefix: prefix}},
+		Sources:    []project.SourceConfig{{ID: "tasks", Type: "native", Path: items, Prefix: prefix}},
 		Statuses:   statuses,
 		Workflow:   workflow,
 		Milestones: milestoneConfig,
@@ -741,6 +752,21 @@ func followLink(path string) (string, error) {
 	return target, nil
 }
 
+// checkoutRoot returns the nearest directory at or above dir with a .git
+// entry, which a linked worktree has as a file.
+func checkoutRoot(dir string) (string, bool) {
+	for {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
 // gitCreated returns the author time of the commit that added path, following
 // renames. It reports false outside Git or for an uncommitted file.
 func gitCreated(ctx context.Context, path string) (time.Time, bool) {
@@ -929,7 +955,7 @@ func readMilestone(candidate sourceCandidate) (milestoneInput, error) {
 // way. Renumbered items keep the source ID as legacy_id, so archived drafts
 // that reused an ID each get their own. A reference to a reused ID resolves to
 // the only unarchived holder; with none or several, it is ambiguous ("").
-func assignIDs(tasks []taskInput, prefix string, report *Report) (map[string]string, error) {
+func assignIDs(tasks []taskInput, prefix, items string, report *Report) (map[string]string, error) {
 	kept := map[string]string{}
 	holders := map[string][]int{}
 	highest := new(big.Int)
@@ -993,9 +1019,9 @@ func assignIDs(tasks []taskInput, prefix string, report *Report) (map[string]str
 		}
 	}
 	for i := range tasks {
-		tasks[i].outputPath = filepath.ToSlash(filepath.Join("backlog", tasks[i].nativeID+".md"))
+		tasks[i].outputPath = path.Join(items, tasks[i].nativeID+".md")
 		if tasks[i].archived {
-			tasks[i].outputPath = filepath.ToSlash(filepath.Join("backlog", "archive", tasks[i].nativeID+".md"))
+			tasks[i].outputPath = path.Join(items, "archive", tasks[i].nativeID+".md")
 		}
 	}
 	return refs, nil
