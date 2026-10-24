@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -189,7 +190,7 @@ func TestPinnedRedactedMembershipFailsClosed(t *testing.T) {
 			var item = model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}}
 			if mode == "acquire" {
 				key, _ := Key("generic", "test", "BL-1")
-				argv = command("acquire", "--resource", key, "--wait", "0s", "--work-key", "tasks:BL-1")
+				argv = command("acquire", "--resource", key, "--wait", "0s", "--work-key", "test BL-1")
 				response = successFixture(map[string]any{"claimId": "claim", "resources": []string{"coordination:generic:[REDACTED]"}})
 			}
 			c := cliFixture(t, []step{{argv, response}})
@@ -249,7 +250,7 @@ func TestPinnedRunMismatchRefusesMutation(t *testing.T) {
 func TestAcquireLostOrMalformedResponseIsUncertain(t *testing.T) {
 	key, _ := Key("generic", "test", "BL-1")
 	response := map[string]any{"schemaVersion": 99, "ok": true}
-	c := cliFixture(t, []step{{command("acquire", "--resource", key, "--wait", "0s", "--work-key", "tasks:BL-1"), response}})
+	c := cliFixture(t, []step{{command("acquire", "--resource", key, "--wait", "0s", "--work-key", "test BL-1"), response}})
 	result := c.Acquire(context.Background(), model.CallerContext{Session: "loop"}, model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}})
 	if result.Outcome != model.ClaimUncertain {
 		t.Fatalf("unknown commit became definitive: %+v", result)
@@ -264,5 +265,22 @@ func TestSessionAloneCannotMutateSupervisorClaim(t *testing.T) {
 	state := c.InspectSession(context.Background(), model.CallerContext{Session: "loop"})
 	if state.State != model.SessionUnresolved || !strings.Contains(state.Message, "explicit run context") {
 		t.Fatalf("session downgraded run ownership: %+v", state)
+	}
+}
+
+// Worklease rejects an acquire whose work key breaks its public-text limits,
+// so a long or unprintable project ID must never fail the claim.
+func TestWorkKeyStaysPublicText(t *testing.T) {
+	long := strings.Repeat("é", 600)
+	for _, tc := range []struct{ project, item, want string }{
+		{"github.com/brettinternet/backlog", "BL-76", "github.com/brettinternet/backlog BL-76"},
+		{"/srv/a\nb\u200f", "#12", "/srv/ab #12"},
+		{long, "BL-1", strings.Repeat("é", 509) + " BL-1"},
+		{"test", "\x01", "resource"},
+	} {
+		got := workKey(tc.project, tc.item, "resource")
+		if got != tc.want || len(got) > 1024 || !utf8.ValidString(got) {
+			t.Errorf("workKey(%q, %q) = %q (%d bytes), want %q", tc.project, tc.item, got, len(got), tc.want)
+		}
 	}
 }

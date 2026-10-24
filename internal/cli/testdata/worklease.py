@@ -27,7 +27,7 @@ elif operation == "runs":
     response["runs"] = []
 elif operation == "acquire":
     assert claim is None or not claim["active"]
-    claim = dict(claimId="claim", resources=[argv[argv.index("--resource") + 1]], authorityId="authority", sessionId="loop", agentId="agent@host", expiresAt="2030-01-01T00:00:00Z", active=True, workKey="tasks:BL-012")
+    claim = dict(claimId="claim", resources=[argv[argv.index("--resource") + 1]], authorityId="authority", sessionId="loop", agentId="agent@host", expiresAt="2030-01-01T00:00:00Z", active=True, workKey="test BL-012")
     path.write_text(json.dumps(claim))
     response.update(claim)
 elif operation in ("status", "verify"):
@@ -39,7 +39,7 @@ elif operation == "release":
     assert claim["active"]
     expected = argv[argv.index("--if-claim-id") + 1]
     if os.environ.get("BL_FAKE_REPLACE_ON_RELEASE"):
-        claim.update(claimId="replacement", resources=["other-resource"], workKey="tasks:BL-013")
+        claim.update(claimId="replacement", resources=["other-resource"], workKey="test BL-013")
     if claim["claimId"] != expected:
         response.update(ok=False, error=dict(reason="claim-mismatch", message="claim identity changed"))
     else:
