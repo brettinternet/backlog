@@ -64,7 +64,8 @@ and failed `!` counts, `↻` while results or a sync take over 300 ms, and the
 cursor position. A loading indicator, once shown, stays at least 300 ms, so
 nothing flashes.
 
-At 120 columns or wider, detail opens beside the list; narrower, it replaces the
+At 30 rows or taller, a blank row separates the body from the header and from
+the status bar. At 120 columns or wider, detail opens beside the list; narrower, it replaces the
 list. Pickers, quick-add, and which-key menus open above the status bar. The
 palette, go-to, and the full form are centered panels. Help fills the body.
 

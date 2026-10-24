@@ -14,7 +14,7 @@ import (
 const detailPad = 2
 
 // View paints fixed rows: header, body (list, board, tree or detail) and status
-// bar. Overlays draw over the body, so nothing beneath them shifts.
+// bar, with a blank row inside each bar on a tall terminal. Overlays draw over the body, so nothing beneath them shifts.
 func (m Model) View() tea.View {
 	v := tea.NewView(strings.Join(m.frame(), "\n"))
 	v.AltScreen = true
@@ -24,8 +24,14 @@ func (m Model) View() tea.View {
 
 func (m Model) frame() []string {
 	lines := make([]string, 0, m.height)
+	spacer := make([]string, m.gap())
+	for i := range spacer {
+		spacer[i] = blank(m.width)
+	}
 	lines = append(lines, m.headerLine())
-	lines = append(lines, m.body(max(0, m.height-2))...)
+	lines = append(lines, spacer...)
+	lines = append(lines, m.body(m.bodyRows())...)
+	lines = append(lines, spacer...)
 	lines = append(lines, m.statusBar())
 	lines = m.overlay(lines)
 	if len(lines) > m.height {
@@ -152,7 +158,7 @@ func (m Model) detailBanner() []string {
 // detailVisible is the number of scrolled content rows below the detail
 // header (meta, title, tabs and a gap) and any failure banner.
 func (m Model) detailVisible() int {
-	return max(1, m.height-2-m.detailBodyTop())
+	return max(1, m.bodyRows()-m.detailBodyTop())
 }
 
 // detailBodyTop is the pane row of the first body line, below the meta,

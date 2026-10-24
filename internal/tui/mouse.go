@@ -116,6 +116,11 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// y is the body row; the blank rows beside the bars do nothing.
+	y := p.Y - m.bodyY()
+	if y < 0 || y >= m.bodyRows() {
+		return m, nil
+	}
 	if split && p.X == m.listWidth() {
 		m.mouse.dragging = true
 		return m, nil
@@ -127,17 +132,17 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			x, width = x-m.listWidth()-1, m.detailWidth()
 		}
 		switch {
-		case p.Y == 3: // meta, title, then the tab bar
+		case y == 2: // meta, title, then the tab bar
 			_, spans := m.detailTabBar(max(1, width-2*detailPad))
 			for i, s := range spans {
 				if x >= s.start && x < s.end {
 					return m, m.switchDetailTab(detailTab(i))
 				}
 			}
-		case m.detailTab == tabCriteria && p.Y-1 >= m.detailBodyTop():
-			return m, m.clickCriterion(x, m.detailScroll+p.Y-1-m.detailBodyTop())
-		case m.detailTab == tabRelations && p.Y-1 >= m.detailBodyTop():
-			return m, m.clickRelation(p.X, p.Y, m.detailScroll+p.Y-1-m.detailBodyTop())
+		case m.detailTab == tabCriteria && y >= m.detailBodyTop():
+			return m, m.clickCriterion(x, m.detailScroll+y-m.detailBodyTop())
+		case m.detailTab == tabRelations && y >= m.detailBodyTop():
+			return m, m.clickRelation(p.X, p.Y, m.detailScroll+y-m.detailBodyTop())
 		}
 		return m, nil
 	}
@@ -161,15 +166,15 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		start, end := m.data.starts[column], m.boardEnd(column)
 		position := m.board.positions[m.data.rows[start].value]
-		if p.Y == 1 {
+		if y == 0 {
 			index = min(end-1, start+1+position.cursor)
 		} else {
-			index = start + 1 + position.top + (p.Y-2)/cardHeight
+			index = start + 1 + position.top + (y-1)/cardHeight
 			if index >= end {
 				return m, nil
 			}
 		}
-	case p.Y == 1:
+	case y == 0:
 		if c, ok := m.layout(width).columnAt(p.X); ok && c.field != "" {
 			// A second click on the sorted column reverses it.
 			value := c.field
@@ -182,7 +187,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		index = m.top + p.Y - bodyTop
+		index = m.top + y - 1
 	}
 	if index < 0 || index >= len(m.data.rows) {
 		return m, nil

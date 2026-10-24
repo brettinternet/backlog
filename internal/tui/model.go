@@ -538,7 +538,7 @@ func (m *Model) switchView(n int) {
 		return
 	}
 	if m.held == nil && !m.unsettled() && !m.loads[listLoad].shown {
-		m.held = &heldFrame{body: m.body(max(0, m.height-2)), position: m.position()}
+		m.held = &heldFrame{body: m.body(m.bodyRows()), position: m.position()}
 	}
 	m.captureView()
 	m.serial++

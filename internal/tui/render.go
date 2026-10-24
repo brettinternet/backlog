@@ -13,13 +13,25 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Screen geometry: row 0 is the header, row 1 the column header (or the
-// detail header), and the last row the status bar. Transient state never adds
-// or removes rows, so content does not shift while sources load or edits land.
-const bodyTop = 2
+// Screen geometry: row 0 is the header and the last row the status bar. The
+// body between them starts with the column header (or the detail header). At
+// spacedHeight rows or taller, a blank row sets the body off from each bar.
+// Transient state never adds or removes rows, so content does not shift while
+// sources load or edits land.
+const spacedHeight = 30
 
-func (m Model) page() int   { return max(1, m.height-3) }
-func (m Model) split() bool { return m.detailOpen && m.width >= 120 }
+func (m Model) gap() int {
+	if m.height >= spacedHeight {
+		return 1
+	}
+	return 0
+}
+
+// bodyY is the screen row of the body's first line.
+func (m Model) bodyY() int    { return 1 + m.gap() }
+func (m Model) bodyRows() int { return max(0, m.height-2-2*m.gap()) }
+func (m Model) page() int     { return max(1, m.bodyRows()-1) }
+func (m Model) split() bool   { return m.detailOpen && m.width >= 120 }
 
 // cell sanitizes and clips provider text to exactly width terminal cells.
 func cell(s string, width int) string {

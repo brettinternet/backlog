@@ -52,6 +52,23 @@ func TestMouseNavigation(t *testing.T) {
 	if m.view != 1 {
 		t.Fatal("view tab click missed")
 	}
+	// A tall terminal sets the body off from both bars; clicks follow it.
+	m = shellFixture(30)
+	m.opts.Now = func() time.Time { return now }
+	m.height = spacedHeight
+	click(10, drawnRow(t, m, "BL-5 "))
+	if m.selected != 5 {
+		t.Fatalf("tall click selected %d", m.selected)
+	}
+	click(10, m.height-2)
+	if m.selected != 5 {
+		t.Fatal("spacer click selected a row")
+	}
+	header := drawnRow(t, m, "Status")
+	click(drawnAt(t, m, header, "Status"), header)
+	if !strings.Contains(m.query, "sort:status") {
+		t.Fatal("tall header click did not sort")
+	}
 	m = shellFixture(3)
 	m.opts.Now = func() time.Time { return now }
 	m.width = 160
