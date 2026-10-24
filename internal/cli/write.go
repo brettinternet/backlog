@@ -412,7 +412,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		return batch(ctx, cmd, cfg, args[:1], changes)
 	}})
-	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Aliases: []string{"s"}, Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}, &urfave.StringFlag{Name: "text", Usage: "Replace the section with `TEXT` (- reads stdin) instead of opening $EDITOR"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "edit", Usage: "Edit an item in $EDITOR, or replace a section with --text", ArgsUsage: "ID", Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "section", Aliases: []string{"s"}, Usage: "Edit only section `NAME`: description, criteria, dod, plan, notes, or summary"}, &urfave.StringFlag{Name: "text", Usage: "Replace the section with `TEXT` (- reads stdin) instead of opening $EDITOR"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() != 1 {
 			return writeUsage("edit requires exactly one ID")
 		}
