@@ -69,3 +69,9 @@ updated    2026-10-23T19:21:51Z
 - [ ] Tests pass
 - [ ] Changelog updated
 ```
+
+Check off definition-of-done items with `--dod`:
+
+```sh
+bl ac SHOP-8 check 1 --dod --evidence 'go test ./... passed'
+```

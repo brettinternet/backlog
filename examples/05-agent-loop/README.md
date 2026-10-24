@@ -41,6 +41,9 @@ BL-3  in-progress  medium  Add password reset
 
 `done` writes, then releases the claim. Heartbeat before half the claim TTL.
 Run `bl instructions workflow` for the full rules an agent should follow.
+Agents on several hosts share claims through a
+[remote authority](../../docs/cli.md#remote-authority); `bl` commands don't
+change.
 
 ## Handing off from the TUI
 

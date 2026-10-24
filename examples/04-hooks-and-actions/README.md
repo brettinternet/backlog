@@ -17,6 +17,17 @@ bl trust --show
 bl trust
 ```
 
+Preview what an action would run, without running it:
+
+```text
+$ bl action branch BL-4 --dry-run
+argv: git switch --create bl-4-write-onboarding-docs
+cwd:  /tmp/shop
+env:  BL_BRANCH BL_EVENT_ID BL_EVENT_ORIGIN BL_HOOK_DEPTH BL_ITEM_ID …
+```
+
+`bl doctor` checks that every trusted hook and action resolves.
+
 A `before` hook that exits nonzero rejects the write:
 
 ```text
