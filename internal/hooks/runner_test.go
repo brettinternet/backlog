@@ -271,6 +271,31 @@ func TestResultFilePrecedenceAndBound(t *testing.T) {
 	}
 }
 
+// A failed after hook records the end of its stderr, past the capture limit,
+// bounded and stripped of terminal controls; success records nothing.
+func TestFinishedMessageIsBoundedStderrTail(t *testing.T) {
+	root := t.TempDir()
+	failing := filepath.Join(root, "failing")
+	executable(t, failing, "#!/bin/sh\nprintf 'noise %09000d\\n' 1 >&2\nprintf '\\033[31mfatal: boom\\033[0m\\n' >&2\nexit 3\n")
+	cfg := runnerConfig(t,
+		project.HookConfig{Name: "failing", On: "item.created", Run: []string{failing}},
+		project.HookConfig{Name: "quiet", On: "item.created", Run: []string{"/bin/sh", "-c", "echo note >&2"}},
+	)
+	if err := hooks.RunEvent(context.Background(), cfg, automationEvent("event-stderr", "item.created"), root); err != nil {
+		t.Fatal(err)
+	}
+	messages := map[string]string{}
+	for _, event := range finishedEvents(t, cfg) {
+		messages[event.Name] = event.Message
+	}
+	if got := messages["failing"]; got != "fatal: boom" {
+		t.Fatalf("failed hook message = %q", got)
+	}
+	if got := messages["quiet"]; got != "" {
+		t.Fatalf("ok hook message = %q", got)
+	}
+}
+
 // Invalid placeholder values are refused before process start, not passed to
 // executables where they could become flags, paths, or terminal controls.
 func TestUnsafeAndMissingPlaceholdersRefuseWithoutRunning(t *testing.T) {
@@ -286,7 +311,7 @@ func TestUnsafeAndMissingPlaceholdersRefuseWithoutRunning(t *testing.T) {
 			t.Fatal(err)
 		}
 		finished := finishedEvents(t, cfg)
-		if len(finished) != 1 || finished[0].Outcome != "refused" {
+		if len(finished) != 1 || finished[0].Outcome != "refused" || !strings.Contains(finished[0].Message, "{result.path}") {
 			t.Fatalf("placeholder result=%v: %+v", result, finished)
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {

@@ -78,7 +78,8 @@ func RunAction(ctx context.Context, cfg project.Config, invocation ActionInvocat
 		Ref: event.Ref, Resource: event.Resource, Item: event.Item, Actor: event.Actor,
 		Origin: "action", Cause: stringPointer(event.ID), Depth: event.Depth + 1,
 		Name: action.Name, Outcome: result.outcome, ExitCode: intPointer(result.exitCode),
-		Duration: result.duration, Result: result.result, Versions: []string{event.ID, action.Name}}
+		Duration: result.duration, Result: result.result, Message: finishedMessage(result),
+		Versions: []string{event.ID, action.Name}}
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultTimeout)
 	defer cancel()
 	var appended []Event
