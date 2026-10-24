@@ -56,6 +56,7 @@ criterion, not in Notes by number:
 ```sh
 bl show ID --json
 bl ac ID check 1 --evidence "Required verification command passed." --if-version VERSION --json
+bl ac ID check 1 --dod --evidence "Definition-of-done check passed." --if-version VERSION --json
 ```
 
 A stale version exits 4 without writing. Reread the item and reassess the

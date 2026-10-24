@@ -46,7 +46,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "criteria", Description: "Change acceptance criteria on one backlog item."}, s.criteria)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "criteria", Description: "Change acceptance criteria or definition-of-done items on one backlog item."}, s.criteria)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "events", Description: "Read project events after a cursor, filtered by an optional event query. Poll with since set to the returned cursor."}, s.events)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "action", Description: "Run a configured action on one item. Set confirm to acknowledge confirmation."}, s.action)
 	s.server.AddResource(&mcp.Resource{URI: InstructionsURI, Name: "bl instructions", Description: "Version-matched bl agent instructions", MIMEType: "text/markdown"}, s.instructions)
@@ -160,6 +160,7 @@ type CriteriaArgs struct {
 	Index     int    `json:"index,omitempty"`
 	Text      string `json:"text,omitempty"`
 	Evidence  string `json:"evidence,omitempty"`
+	List      string `json:"list,omitempty" jsonschema:"criteria (default) or dod"`
 }
 
 func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs) (*mcp.CallToolResult, any, error) {
@@ -541,7 +542,12 @@ func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args Crit
 	if !ok {
 		return failed[any]("rejected", "operation must be check, uncheck, add, or remove")
 	}
-	m := model.Mutation{Op: op, Section: "Acceptance criteria", Index: args.Index, Text: args.Text}
+	lists := map[string]string{"": "Acceptance criteria", "criteria": "Acceptance criteria", "dod": "Definition of done"}
+	section, ok := lists[args.List]
+	if !ok {
+		return failed[any]("usage", "list must be criteria or dod")
+	}
+	m := model.Mutation{Op: op, Section: section, Index: args.Index, Text: args.Text}
 	if op == model.AddCriterion {
 		if strings.TrimSpace(args.Text) == "" || strings.ContainsAny(args.Text, "\r\n") {
 			return failed[any]("usage", "criterion must be nonempty and single-line")
