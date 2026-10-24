@@ -96,7 +96,7 @@ func (s *Source) Catalog() ([]project.Milestone, []string, error) {
 }
 
 func (s *Source) candidates(ctx context.Context, archive bool) ([]sourceCandidate, error) {
-	paths, err := scanPartitions(ctx, s.root, &Report{})
+	paths, err := scanPartitions(ctx, s.root, &Report{}, false)
 	if err != nil {
 		return nil, err
 	}

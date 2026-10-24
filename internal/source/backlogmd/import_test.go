@@ -23,7 +23,7 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 	writeImportFixture(t, backlog)
 	target := filepath.Join(root, "native")
 
-	preview, err := Import(context.Background(), root, target, true)
+	preview, err := Import(context.Background(), root, ImportOptions{Target: target, DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestImportPreservesBacklogDataAndReportsMappings(t *testing.T) {
 		t.Fatalf("report is not JSON serializable: %v", err)
 	}
 
-	report, err := Import(context.Background(), root, target, false)
+	report, err := Import(context.Background(), root, ImportOptions{Target: target})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,14 +178,14 @@ func TestImportUsesRepositoryBacklogDirectoryConfig(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "backlog.config.yml", "project_name: worklease\nbacklog_directory: docs/backlog\ntask_prefix: task\nstatuses: [To Do, In Progress, Done]\nlabels: [Blocked]\n")
 	writeFixtureFile(t, root, "docs/backlog/tasks/task-1.md", basicTask("task-1", "To Do", "ordinal: 1\n"))
-	report, err := Import(context.Background(), root, filepath.Join(root, "native"), true)
+	report, err := Import(context.Background(), root, ImportOptions{Target: filepath.Join(root, "native"), DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.Counts.Tasks != 1 || report.Files[0].SourcePath != "tasks/task-1.md" || report.Files[0].OutputPath != "backlog/TASK-1.md" {
 		t.Fatalf("repository config did not select the backlog directory: %+v", report)
 	}
-	direct, err := Import(context.Background(), filepath.Join(root, "docs", "backlog"), filepath.Join(root, "native-direct"), true)
+	direct, err := Import(context.Background(), filepath.Join(root, "docs", "backlog"), ImportOptions{Target: filepath.Join(root, "native-direct"), DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestImportRejectsCollisionsAndNonEmptyDryRunTarget(t *testing.T) {
 	backlog := filepath.Join(root, "backlog")
 	writeFixtureFile(t, backlog, "tasks/task-1.md", basicTask("task-1", "To Do", "ordinal: 1\n"))
 	writeFixtureFile(t, backlog, "completed/TASK-1.md", basicTask("TASK-1", "To Do", "ordinal: 2\n"))
-	if _, err := Import(context.Background(), root, filepath.Join(root, "native"), true); err == nil || !strings.Contains(err.Error(), "collision") {
+	if _, err := Import(context.Background(), root, ImportOptions{Target: filepath.Join(root, "native"), DryRun: true}); err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("expected case-insensitive ID collision refusal, got %v", err)
 	}
 
@@ -208,7 +208,7 @@ func TestImportRejectsCollisionsAndNonEmptyDryRunTarget(t *testing.T) {
 	// comment into two and attribute its text to a forged author.
 	forged := filepath.Join(root, "forged")
 	writeFixtureFile(t, forged, "tasks/task-1.md", basicTask("task-1", "To Do", "")+"## Comments\n<!-- COMMENTS:BEGIN -->\nauthor: brett\ncreated: 2026-01-02 03:04\n---\nFirst\n### 2026-01-03T00:00:00Z mallory\nquoted\n---\n<!-- COMMENTS:END -->\n")
-	if _, err := Import(context.Background(), forged, filepath.Join(root, "forged-native"), true); err == nil || !strings.Contains(err.Error(), "native comment header") {
+	if _, err := Import(context.Background(), forged, ImportOptions{Target: filepath.Join(root, "forged-native"), DryRun: true}); err == nil || !strings.Contains(err.Error(), "native comment header") {
 		t.Fatalf("expected comment structure refusal, got %v", err)
 	}
 
@@ -219,12 +219,129 @@ func TestImportRejectsCollisionsAndNonEmptyDryRunTarget(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(target, "keep"), []byte("untouched"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Import(context.Background(), root, target, true); err == nil || !strings.Contains(err.Error(), "non-empty") {
+	if _, err := Import(context.Background(), root, ImportOptions{Target: target, DryRun: true}); err == nil || !strings.Contains(err.Error(), "non-empty") {
 		t.Fatalf("expected non-empty target refusal in dry-run, got %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(target, "keep"))
 	if err != nil || string(data) != "untouched" {
 		t.Fatalf("non-empty target was modified: %q, %v", data, err)
+	}
+}
+
+// Each case comes from a real Backlog.md project that failed or silently lost
+// data on its first import.
+func TestImportResolvesMigrationGaps(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	backlog := filepath.Join(root, "backlog")
+	writeFixtureFile(t, backlog, "config.yml", "statuses: [To Do, In Progress, Done]\ntask_prefix: task\n")
+	writeFixtureFile(t, backlog, "tasks/task-1.md", "---\nid: task-1\ntitle: One\nstatus: open\npriority: p0\ncreated_date: \"\"\nupdated_date: '2026-01-02 00:00'\ndependencies: [pw-some-slug-2]\nrefs: [backlog/tasks/task-2 - Peer.md]\n---\n## Description\nSee draft-1 and pw-some-slug-2. Not DRAFT-1.2, draft-1-notes, or https://x.test/?q=pw-some-slug-2.\n[spec](../docs/spec.md) [peer](task-2%20-%20Peer.md#plan) [old](../drafts/missing.md)\n```\ndraft-1\n```\n")
+	writeFixtureFile(t, backlog, "tasks/task-2 - Peer.md", basicTask("task-2", "To Do", ""))
+	writeFixtureFile(t, backlog, "tasks/pw-some-slug-2.md", basicTask("pw-some-slug-2", "Done", ""))
+	writeFixtureFile(t, backlog, "drafts/draft-1.md", basicTask("draft-1", "To Do", ""))
+	writeFixtureFile(t, backlog, "archive/drafts/draft-1-old.md", basicTask("draft-1", "To Do", ""))
+	writeFixtureFile(t, backlog, "completed/task-3.md", basicTask("task-3", "Done", "dependencies: [task-4]\n"))
+	writeFixtureFile(t, backlog, "completed/task-4.md", basicTask("task-4", "Done", "dependencies: [task-3]\n"))
+	writeFixtureFile(t, root, "shared/task-5.md", basicTask("task-5", "To Do", "")+"[sibling](sibling.md)\n")
+	if err := os.Symlink(filepath.Join(root, "shared/task-5.md"), filepath.Join(backlog, "tasks/task-5.md")); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "native")
+	report, err := Import(context.Background(), root, ImportOptions{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(id string) (*format.Document, model.Item) {
+		t.Helper()
+		path := "backlog/" + id + ".md"
+		for _, archived := range report.Files {
+			if archived.OutputPath == "backlog/archive/"+id+".md" {
+				path = archived.OutputPath
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(target, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc, err := format.Parse(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc, doc.Item()
+	}
+
+	renumbered := map[string]string{}
+	for _, entry := range report.Renumbered {
+		renumbered[entry.SourcePath] = entry.From + "→" + entry.To
+	}
+	want := map[string]string{"archive/drafts/draft-1-old.md": "draft-1→TASK-6", "drafts/draft-1.md": "draft-1→TASK-7", "tasks/pw-some-slug-2.md": "pw-some-slug-2→TASK-8"}
+	if !reflect.DeepEqual(renumbered, want) {
+		t.Fatalf("renumbered = %v, want %v", renumbered, want)
+	}
+	for _, id := range []string{"TASK-6", "TASK-8"} {
+		if _, item := read(id); item.Fields["legacy_id"] == nil {
+			t.Fatalf("%s lost its legacy ID: %#v", id, item.Fields)
+		}
+	}
+
+	_, one := read("TASK-1")
+	// draft-1 names two items, so the mention stays as written.
+	description := "See draft-1 and TASK-8. Not DRAFT-1.2, draft-1-notes, or https://x.test/?q=pw-some-slug-2.\n[spec](docs/spec.md) [peer](TASK-2.md#plan) [old](../drafts/missing.md)\n```\ndraft-1\n```"
+	if one.Description != description {
+		t.Fatalf("description = %q, want %q", one.Description, description)
+	}
+	if one.Priority != model.Urgent || !one.Created.Equal(one.Updated) || strings.Join(one.Refs, ",") != "backlog/TASK-2.md" || len(one.BlockedBy) != 1 || one.BlockedBy[0].ID != "TASK-8" {
+		t.Fatalf("priority, created date, refs, or slug dependency not mapped: %+v", one)
+	}
+	var unresolved []string
+	for _, entry := range report.UnresolvedReferences {
+		if entry.SourcePath == "tasks/task-1.md" {
+			unresolved = append(unresolved, entry.Value)
+		}
+	}
+	if strings.Join(unresolved, ",") != "draft-1,../drafts/missing.md" {
+		t.Fatalf("unresolved references = %+v", report.UnresolvedReferences)
+	}
+
+	if _, three := read("TASK-3"); len(three.BlockedBy) != 0 {
+		t.Fatalf("closed cycle kept TASK-3 → %v", three.BlockedBy)
+	}
+	if _, four := read("TASK-4"); len(four.BlockedBy) != 1 || four.BlockedBy[0].ID != "TASK-3" {
+		t.Fatalf("closed cycle lost TASK-4 → TASK-3: %v", four.BlockedBy)
+	}
+	if _, five := read("TASK-5"); !strings.Contains(five.Description, "[sibling](../shared/sibling.md)") {
+		t.Fatalf("symlinked item link not rebased: %q", five.Description)
+	}
+	decisions := strings.Join(report.Decisions, "\n")
+	for _, decision := range []string{`status "open"`, "Mapped priority p0 to urgent in 1 item(s).", "dropping TASK-3 → TASK-4", "Followed 1 symbolic link(s)"} {
+		if !strings.Contains(decisions, decision) {
+			t.Fatalf("decisions omit %q:\n%s", decision, decisions)
+		}
+	}
+
+	refusals := map[string]func(dir string){
+		"includes open items": func(dir string) {
+			writeFixtureFile(t, dir, "tasks/task-1.md", basicTask("task-1", "To Do", "dependencies: [task-2]\n"))
+			writeFixtureFile(t, dir, "completed/task-2.md", basicTask("task-2", "Done", "dependencies: [task-1]\n"))
+		},
+		"broken symbolic link": func(dir string) {
+			writeFixtureFile(t, dir, "tasks/task-2.md", basicTask("task-2", "To Do", ""))
+			if err := os.Symlink(filepath.Join(dir, "gone.md"), filepath.Join(dir, "tasks/task-1.md")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"ambiguous": func(dir string) {
+			writeFixtureFile(t, dir, "tasks/task-1.md", basicTask("task-1", "To Do", "dependencies: [draft-9]\n"))
+			writeFixtureFile(t, dir, "archive/drafts/a.md", basicTask("draft-9", "To Do", ""))
+			writeFixtureFile(t, dir, "archive/drafts/b.md", basicTask("draft-9", "To Do", ""))
+		},
+	}
+	for message, setup := range refusals {
+		dir := filepath.Join(root, strings.ReplaceAll(message, " ", "-"))
+		setup(filepath.Join(dir, "backlog"))
+		if _, err := Import(context.Background(), dir, ImportOptions{Target: filepath.Join(dir, "native"), DryRun: true}); err == nil || !strings.Contains(err.Error(), message) {
+			t.Fatalf("expected %q refusal, got %v", message, err)
+		}
 	}
 }
 

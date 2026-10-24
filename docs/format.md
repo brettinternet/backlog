@@ -173,8 +173,8 @@ An edit rewrites only the lines whose values changed. Golden tests hold every ot
 
 - Every write sets `updated` and is atomic (design.md D8).
 - New keys and new files use the table's key order, then unknown keys (lexical in new files). Sections follow the order above.
-- New lists use flow style (`[a, b]`). Empty lists and unset values are removed.
-- New strings are plain when YAML allows, otherwise quoted. Edits keep each existing value's quoting and list style, including for list adds and removes.
+- New lists use flow style (`[a, b]`) unless the line would pass 80 columns, then block style. Empty lists and unset values are removed. New output passes Prettier's defaults.
+- New strings are plain when YAML allows, otherwise double-quoted. Edits keep each existing value's quoting and list style, including for list adds and removes.
 - Clearing a section removes its heading.
 - Text written into a section, note, comment, or new file can't add, remove, or hide a section (a pasted `## Summary`, an unclosed fence), and a comment can't contain a comment header. Such writes fail with `invalid-value`. Added criteria are one line.
 - Each mutation returns an exact inverse bound to the new content hash. Applying it checks the version and restores the original bytes except `updated`.

@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,6 +56,83 @@ func TestImportDryRunAndDestinationRefusal(t *testing.T) {
 	}
 	if after := get(t, filepath.Join(target, "backlog", "TASK-01.2.md")); after != before {
 		t.Fatal("refused import modified target")
+	}
+}
+
+// Catches an in-place cutover that loses uncommitted work, leaves Backlog.md
+// files behind, or produces a project bl check rejects.
+func TestImportInPlaceCutover(t *testing.T) {
+	testkit.Isolate(t)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_AUTHOR_DATE", "2026-03-04T05:06:07Z")
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		if data, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, data)
+		}
+	}
+	git("init", "--initial-branch=main")
+	git("config", "user.name", "Test")
+	git("config", "user.email", "test@example.invalid")
+	for _, dir := range []string{"backlog/tasks", "backlog/docs"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(t, filepath.Join(root, "backlog/config.yml"), "project_name: Example\nstatuses: [To Do, In Progress, Done]\ntask_prefix: task\n")
+	taskFile := filepath.Join(root, "backlog/tasks/task-1 - First.md")
+	put(t, taskFile, "---\nid: task-1\ntitle: First\nstatus: To Do\n---\n\n## Description\n\nSee [docs](../docs/readme.md).\n")
+	put(t, filepath.Join(root, "backlog/docs/readme.md"), "kept\n")
+	git("add", ".")
+	git("commit", "-m", "backlog")
+
+	put(t, filepath.Join(root, ".gitignore"), "backlog/drafts/\n")
+	git("add", ".gitignore")
+	git("commit", "-m", "ignore")
+	if err := os.MkdirAll(filepath.Join(root, "backlog/drafts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ignored := filepath.Join(root, "backlog/drafts/draft-1.md")
+	put(t, ignored, "---\nid: draft-1\ntitle: Ignored\nstatus: To Do\n---\n")
+	if code, out, _ := writeRun(root, "", "import", "backlog-md", "--in-place"); code == 0 || !strings.Contains(out, "removes only files committed") || get(t, ignored) == "" {
+		t.Fatalf("ignored source: %d %s", code, out)
+	}
+	if err := os.Remove(ignored); err != nil {
+		t.Fatal(err)
+	}
+	put(t, taskFile+".tmp", "dirty")
+	if code, out, _ := writeRun(root, "", "import", "backlog-md", "--in-place", "--dry-run"); code == 0 || !strings.Contains(out, "commit or stash") {
+		t.Fatalf("dirty source: %d %s", code, out)
+	}
+	if err := os.Remove(taskFile + ".tmp"); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := writeRun(root, "", "import", "backlog-md", "--in-place", "--dry-run")
+	if code != 0 || stderr != "" || !strings.Contains(out, "backlog/config.yml") {
+		t.Fatalf("dry-run: %d %s %s", code, out, stderr)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "backlog.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote config: %v", err)
+	}
+	if code, out, stderr = writeRun(root, "", "import", "backlog-md", "--in-place"); code != 0 || stderr != "" {
+		t.Fatalf("import: %d %s %s", code, out, stderr)
+	}
+	for _, gone := range []string{"backlog/config.yml", "backlog/tasks"} {
+		if _, err := os.Lstat(filepath.Join(root, gone)); !os.IsNotExist(err) {
+			t.Fatalf("%s survived the cutover: %v", gone, err)
+		}
+	}
+	if get(t, filepath.Join(root, "backlog/docs/readme.md")) != "kept\n" {
+		t.Fatal("cutover changed docs")
+	}
+	item := get(t, filepath.Join(root, "backlog/TASK-1.md"))
+	if !strings.Contains(item, "created: 2026-03-04T05:06:07Z") || !strings.Contains(item, "[docs](docs/readme.md)") {
+		t.Fatalf("created date or link not migrated:\n%s", item)
+	}
+	if code, out, stderr = writeRun(root, "", "check"); code != 0 || stderr != "" {
+		t.Fatalf("check: %d %s %s", code, out, stderr)
 	}
 }
 

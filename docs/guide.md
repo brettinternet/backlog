@@ -54,9 +54,19 @@ closed. [Readiness](readiness.md) has the full rules.
 
 ## Import Backlog.md
 
-Import reads the files directly and never changes the source. The destination
-must be empty or absent, even for a dry run. Keep it outside the current
-checkout, or project discovery finds the old backlog first:
+Import reads the files directly. To switch a repository over, commit the
+Backlog.md files, then replace them with the native project in place:
+
+```text
+bl import backlog-md --in-place --dry-run
+bl import backlog-md --in-place
+bl check
+```
+
+Review the result with `git status` and commit it. To import into a separate
+directory and leave the source unchanged, use `--to` with an empty or absent
+directory outside the current checkout, or project discovery finds the old
+backlog first:
 
 ```sh
 bl import backlog-md old-backlog --to ../imported --dry-run --json

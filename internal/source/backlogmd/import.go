@@ -6,9 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -32,6 +35,32 @@ type Report struct {
 	Decisions            []string              `json:"decisions"`
 	Skipped              []SkippedContent      `json:"skipped"`
 	UnresolvedMilestones []UnresolvedMilestone `json:"unresolvedMilestones"`
+	Renumbered           []RenumberedID        `json:"renumbered"`
+	UnresolvedReferences []UnresolvedReference `json:"unresolvedReferences"`
+	InPlace              bool                  `json:"inPlace"`
+	Removed              []string              `json:"removed"`
+}
+
+// ImportOptions selects the destination. InPlace writes the native project into the
+// source's project root, then removes the imported Backlog.md files.
+type ImportOptions struct {
+	Target  string
+	DryRun  bool
+	InPlace bool
+}
+
+type RenumberedID struct {
+	SourcePath string `json:"sourcePath"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+}
+
+// UnresolvedReference is body text that may name a moved item or file but was
+// left as written.
+type UnresolvedReference struct {
+	SourcePath string `json:"sourcePath"`
+	Value      string `json:"value"`
+	Reason     string `json:"reason"`
 }
 
 type OutputCounts struct {
@@ -71,6 +100,7 @@ type UnresolvedMilestone struct {
 }
 
 type sourceConfig struct {
+	projectRoot string
 	root        string
 	configPath  string
 	config      map[string]any
@@ -82,26 +112,33 @@ type sourceConfig struct {
 }
 
 type taskInput struct {
-	doc             sourceDocument
-	sourcePath      string
-	id              string
-	title           string
-	status          string
-	typeName        string
-	due             string
-	created         time.Time
-	updated         time.Time
-	createdFallback bool
-	ordinal         *big.Int
-	rank            string
-	archived        bool
-	draft           bool
-	outputPath      string
-	outputBytes     []byte
-	milestone       string
-	mappedStatus    string
-	refMap          map[string]string
-	nativeID        string
+	doc           sourceDocument
+	sourcePath    string
+	id            string
+	title         string
+	status        string
+	typeName      string
+	due           string
+	created       time.Time
+	updated       time.Time
+	createdFrom   string
+	file          string
+	path          string
+	ordinal       *big.Int
+	rank          string
+	archived      bool
+	draft         bool
+	outputPath    string
+	outputBytes   []byte
+	milestone     string
+	mappedStatus  string
+	refMap        map[string]string
+	nativeID      string
+	legacyID      string
+	refs          []string
+	dropped       map[string]bool
+	priority      model.Priority
+	priorityAlias string
 }
 
 type milestoneInput struct {
@@ -122,34 +159,42 @@ type outputPlan struct {
 
 // Import reads and validates a Backlog.md source directly, then either writes
 // the resulting native project or returns the same validated plan without
-// writing when dryRun is true. target must be absent or an empty directory.
-func Import(ctx context.Context, input, target string, dryRun bool) (Report, error) {
+// writing when DryRun is true. Target must be absent or an empty directory;
+// InPlace instead writes into the source's project root and removes the
+// imported source files, which must be committed in Git.
+func Import(ctx context.Context, input string, options ImportOptions) (Report, error) {
 	if err := ctx.Err(); err != nil {
 		return Report{}, err
 	}
-	if strings.TrimSpace(input) == "" || strings.TrimSpace(target) == "" {
-		return Report{}, fmt.Errorf("input and target directories are required")
+	if strings.TrimSpace(input) == "" {
+		return Report{}, fmt.Errorf("input directory is required")
+	}
+	if options.InPlace == (strings.TrimSpace(options.Target) != "") {
+		return Report{}, fmt.Errorf("choose a target directory or an in-place import")
 	}
 	inputAbs, err := filepath.Abs(input)
 	if err != nil {
 		return Report{}, fmt.Errorf("resolve input: %w", err)
 	}
-	targetAbs, err := filepath.Abs(target)
-	if err != nil {
-		return Report{}, fmt.Errorf("resolve target: %w", err)
-	}
-	existed, err := validateTarget(targetAbs)
-	if err != nil {
-		return Report{}, err
-	}
 	source, err := locateSource(inputAbs)
 	if err != nil {
 		return Report{}, err
 	}
+	targetAbs, existed := source.projectRoot, false
+	if !options.InPlace {
+		targetAbs, err = filepath.Abs(options.Target)
+		if err != nil {
+			return Report{}, fmt.Errorf("resolve target: %w", err)
+		}
+		existed, err = validateTarget(targetAbs)
+		if err != nil {
+			return Report{}, err
+		}
+	}
 	report := Report{
-		Input: inputAbs, Target: targetAbs, DryRun: dryRun,
+		Input: inputAbs, Target: targetAbs, DryRun: options.DryRun, InPlace: options.InPlace,
 		OutputPaths: []string{}, Files: []FileReport{}, Configuration: []FieldMapping{},
-		Decisions: []string{},
+		Decisions: []string{}, Renumbered: []RenumberedID{}, UnresolvedReferences: []UnresolvedReference{}, Removed: []string{},
 	}
 	if err := ctx.Err(); err != nil {
 		return report, err
@@ -157,13 +202,22 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	if err := collectSkipped(source.root, source.configPath, &report); err != nil {
 		return report, err
 	}
-	taskFiles, err := scanPartitions(ctx, source.root, &report)
+	taskFiles, err := scanPartitions(ctx, source.root, &report, true)
 	if err != nil {
 		return report, err
 	}
 	milestoneFiles, err := scanMilestones(ctx, source.root, &report)
 	if err != nil {
 		return report, err
+	}
+	links := 0
+	for _, candidate := range append(append([]sourceCandidate(nil), taskFiles...), milestoneFiles...) {
+		if candidate.path != candidate.absolute {
+			links++
+		}
+	}
+	if links > 0 {
+		report.Decisions = append(report.Decisions, fmt.Sprintf("Followed %d symbolic link(s) to the Markdown files they name; the targets are left in place.", links))
 	}
 	tasks := make([]taskInput, 0, len(taskFiles))
 	indexed := 0
@@ -175,8 +229,15 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		if err != nil {
 			return report, fmt.Errorf("%s: %w", candidate.relative, err)
 		}
-		if task.createdFallback {
-			report.Decisions = append(report.Decisions, fmt.Sprintf("%s has no created timestamp; used the updated timestamp or source file modification time.", task.sourcePath))
+		if task.createdFrom != "" {
+			// Git history is only consulted here: the live adapter reads on every list.
+			if first, ok := gitCreated(ctx, task.file); ok && (task.createdFrom == createdFromModTime || !first.After(task.updated)) {
+				if task.createdFrom == createdFromModTime {
+					task.updated = first
+				}
+				task.created, task.createdFrom = first, "its first Git commit"
+			}
+			report.Decisions = append(report.Decisions, fmt.Sprintf("%s has no created timestamp; used %s.", task.sourcePath, task.createdFrom))
 		}
 		for _, key := range []string{"criteria", "dod"} {
 			original := task.doc.body.originals[key]
@@ -205,7 +266,7 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	if err != nil {
 		return report, err
 	}
-	idMap, err := makeIDMap(tasks, prefix)
+	refs, err := assignIDs(tasks, prefix, &report)
 	if err != nil {
 		return report, err
 	}
@@ -218,14 +279,36 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	}
 	assignRanks(tasks)
 	statuses, statusLookup, workflow, ready := makeStatuses(source, tasks)
+	noteUnconfiguredStatuses(source, tasks, statusLookup, &report)
+	categories := map[string]string{}
+	for _, status := range statuses {
+		categories[status.Key] = status.Category
+	}
+	closed := func(task *taskInput) bool {
+		category := model.StatusCategory(categories[taskStatusKey(task.status, statusLookup)])
+		return task.archived || category == model.Done || category == model.Canceled
+	}
+	if err := breakClosedCycles(tasks, refs, closed, &report); err != nil {
+		return report, err
+	}
+	rewriter := newReferenceRewriter(source, tasks, refs, &report)
+	for i := range tasks {
+		if err := rewriter.rewrite(&tasks[i]); err != nil {
+			return report, fmt.Errorf("%s: %w", tasks[i].sourcePath, err)
+		}
+	}
 
 	plan := outputPlan{files: map[string][]byte{}, target: targetAbs, existed: existed}
+	aliases := map[string]int{}
 	for i := range tasks {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		if err := mapTask(&tasks[i], idMap, milestoneByKey, milestoneByTitle, statusLookup, &report); err != nil {
+		if err := mapTask(&tasks[i], refs, milestoneByKey, milestoneByTitle, statusLookup, &report); err != nil {
 			return report, fmt.Errorf("%s: %w", tasks[i].sourcePath, err)
+		}
+		if tasks[i].priorityAlias != "" {
+			aliases[tasks[i].priorityAlias+" to "+string(tasks[i].priority)]++
 		}
 		if _, exists := plan.files[tasks[i].outputPath]; exists {
 			return report, fmt.Errorf("output path collision: %s", tasks[i].outputPath)
@@ -239,6 +322,9 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		if tasks[i].archived {
 			report.Counts.Archived++
 		}
+	}
+	for _, alias := range slices.Sorted(maps.Keys(aliases)) {
+		report.Decisions = append(report.Decisions, fmt.Sprintf("Mapped priority %s in %d item(s).", alias, aliases[alias]))
 	}
 	for _, milestone := range milestones {
 		var output project.Milestone
@@ -313,7 +399,18 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
-	if !dryRun {
+	if options.InPlace {
+		cutover, err := planCutover(ctx, source, plan, append(taskFiles, milestoneFiles...))
+		if err != nil {
+			return report, err
+		}
+		report.Removed = cutover.removedPaths()
+		if !options.DryRun {
+			return report, cutover.apply(ctx)
+		}
+		return report, nil
+	}
+	if !options.DryRun {
 		if err := writePlan(ctx, plan); err != nil {
 			return report, err
 		}
@@ -321,8 +418,11 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 	return report, nil
 }
 
+// absolute is the file to read; path is its entry in the source tree, which
+// differs only for a followed symbolic link.
 type sourceCandidate struct {
 	absolute  string
+	path      string
 	relative  string
 	partition string
 	archived  bool
@@ -369,6 +469,7 @@ func locateSource(input string) (sourceConfig, error) {
 		if source.projectName == "" {
 			source.projectName = filepath.Base(input)
 		}
+		source.projectRoot = input
 		return source, nil
 	}
 	folderConfigPath := filepath.Join(input, "config.yml")
@@ -386,6 +487,7 @@ func locateSource(input string) (sourceConfig, error) {
 				if source.projectName == "" {
 					source.projectName = filepath.Base(projectRoot)
 				}
+				source.projectRoot = projectRoot
 				return source, nil
 			}
 		}
@@ -407,6 +509,7 @@ func locateSource(input string) (sourceConfig, error) {
 		if source.projectName == "" {
 			source.projectName = filepath.Base(input)
 		}
+		source.projectRoot = filepath.Dir(input)
 		return source, nil
 	}
 	backlogRoot := filepath.Join(input, "backlog")
@@ -430,6 +533,7 @@ func locateSource(input string) (sourceConfig, error) {
 		if source.projectName == "" {
 			source.projectName = filepath.Base(input)
 		}
+		source.projectRoot = input
 		return source, nil
 	}
 	return sourceConfig{}, fmt.Errorf("%s is not a Backlog.md project or backlog directory", input)
@@ -524,7 +628,10 @@ func validateTarget(target string) (bool, error) {
 	return true, nil
 }
 
-func scanPartitions(ctx context.Context, root string, report *Report) ([]sourceCandidate, error) {
+// scanPartitions lists task files. With followLinks, a symbolic link to a
+// Markdown file is read through; any other link is refused. Without it, links
+// are skipped and reported.
+func scanPartitions(ctx context.Context, root string, report *Report, followLinks bool) ([]sourceCandidate, error) {
 	definitions := []sourceCandidate{
 		{partition: "tasks"},
 		{partition: "completed", completed: true},
@@ -550,21 +657,22 @@ func scanPartitions(ctx context.Context, root string, report *Report) ([]sourceC
 			if err != nil {
 				return err
 			}
+			file := path
 			if entry.Type()&os.ModeSymlink != 0 {
-				report.Skipped = append(report.Skipped, SkippedContent{Path: filepath.ToSlash(relative), Reason: "symbolic links are not imported"})
-				if entry.IsDir() {
-					return filepath.SkipDir
+				if !followLinks {
+					report.Skipped = append(report.Skipped, SkippedContent{Path: filepath.ToSlash(relative), Reason: "symbolic links are not imported"})
+					return nil
 				}
+				if file, err = followLink(path); err != nil {
+					return fmt.Errorf("%s: %w", filepath.ToSlash(relative), err)
+				}
+			} else if entry.IsDir() {
 				return nil
-			}
-			if entry.IsDir() {
-				return nil
-			}
-			if !entry.Type().IsRegular() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			} else if !entry.Type().IsRegular() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
 				report.Skipped = append(report.Skipped, SkippedContent{Path: filepath.ToSlash(relative), Reason: "only regular Markdown task files are imported"})
 				return nil
 			}
-			result = append(result, sourceCandidate{absolute: path, relative: filepath.ToSlash(relative), partition: definition.partition, archived: definition.archived, draft: definition.draft, completed: definition.completed})
+			result = append(result, sourceCandidate{absolute: file, path: path, relative: filepath.ToSlash(relative), partition: definition.partition, archived: definition.archived, draft: definition.draft, completed: definition.completed})
 			return nil
 		})
 		if err != nil {
@@ -594,21 +702,18 @@ func scanMilestones(ctx context.Context, root string, report *Report) ([]sourceC
 			if err != nil {
 				return err
 			}
+			file := path
 			if entry.Type()&os.ModeSymlink != 0 {
-				report.Skipped = append(report.Skipped, SkippedContent{Path: filepath.ToSlash(relative), Reason: "symbolic links are not imported"})
-				if entry.IsDir() {
-					return filepath.SkipDir
+				if file, err = followLink(path); err != nil {
+					return fmt.Errorf("%s: %w", filepath.ToSlash(relative), err)
 				}
+			} else if entry.IsDir() {
 				return nil
-			}
-			if entry.IsDir() {
-				return nil
-			}
-			if !entry.Type().IsRegular() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			} else if !entry.Type().IsRegular() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
 				report.Skipped = append(report.Skipped, SkippedContent{Path: filepath.ToSlash(relative), Reason: "only regular Markdown milestone files are imported"})
 				return nil
 			}
-			result = append(result, sourceCandidate{absolute: path, relative: filepath.ToSlash(relative), partition: definition.partition, archived: definition.archived})
+			result = append(result, sourceCandidate{absolute: file, path: path, relative: filepath.ToSlash(relative), partition: definition.partition, archived: definition.archived})
 			return nil
 		})
 		if err != nil {
@@ -617,6 +722,41 @@ func scanMilestones(ctx context.Context, root string, report *Report) ([]sourceC
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].relative < result[j].relative })
 	return result, nil
+}
+
+// followLink resolves a symbolic link to the regular Markdown file it names.
+// Anything else is refused rather than skipped, so no item goes missing.
+func followLink(path string) (string, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("broken symbolic link (%w); restore its target or remove it", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || !strings.EqualFold(filepath.Ext(target), ".md") {
+		return "", fmt.Errorf("symbolic link to %s, which is not a Markdown file; replace the link with the file or remove it", target)
+	}
+	return target, nil
+}
+
+// gitCreated returns the author time of the commit that added path, following
+// renames. It reports false outside Git or for an uncommitted file.
+func gitCreated(ctx context.Context, path string) (time.Time, bool) {
+	output, err := exec.CommandContext(ctx, "git", "-C", filepath.Dir(path), "log", "--follow", "--diff-filter=A", "--format=%aI", "--", filepath.Base(path)).Output()
+	if err != nil {
+		return time.Time{}, false
+	}
+	lines := strings.Fields(string(output))
+	if len(lines) == 0 {
+		return time.Time{}, false
+	}
+	created, err := time.Parse(time.RFC3339, lines[len(lines)-1])
+	if err != nil {
+		return time.Time{}, false
+	}
+	return created.UTC(), true
 }
 
 func collectSkipped(root, configPath string, report *Report) error {
@@ -661,6 +801,8 @@ func collectSkipped(root, configPath string, report *Report) error {
 	}
 	return nil
 }
+
+const createdFromModTime = "the file modification time"
 
 func readTask(candidate sourceCandidate) (taskInput, error) {
 	data, err := os.ReadFile(candidate.absolute)
@@ -723,11 +865,12 @@ func readTaskBytes(candidate sourceCandidate, data []byte) (taskInput, error) {
 	if err != nil {
 		return taskInput{}, fmt.Errorf("updated_date: %w", err)
 	}
-	createdFallback := !createdOK
+	createdFrom := ""
 	if !createdOK {
 		if updatedOK {
-			created = updated
+			created, createdFrom = updated, "the updated timestamp"
 		} else {
+			createdFrom = createdFromModTime
 			stat, err := os.Stat(candidate.absolute)
 			if err != nil {
 				return taskInput{}, err
@@ -748,8 +891,8 @@ func readTaskBytes(candidate sourceCandidate, data []byte) (taskInput, error) {
 	return taskInput{
 		doc: doc, sourcePath: candidate.relative,
 		id: id, title: title, status: status, typeName: typeName, due: due, created: created, updated: updated,
-		createdFallback: createdFallback,
-		ordinal:         ordinal, archived: candidate.archived, draft: candidate.draft,
+		createdFrom: createdFrom, file: candidate.absolute, path: candidate.path,
+		ordinal: ordinal, archived: candidate.archived, draft: candidate.draft,
 		milestone: milestone,
 	}, nil
 }
@@ -778,30 +921,34 @@ func readMilestone(candidate sourceCandidate) (milestoneInput, error) {
 	return milestoneInput{doc: doc, sourcePath: candidate.relative, id: id, name: name, description: description, archived: candidate.archived}, nil
 }
 
-// makeIDMap maps each canonical source ID to its native ID. Drafts outside the
-// native prefix get the next IDs after its highest one, as Backlog.md's draft
-// promote would, because a native ID never changes when a draft is promoted.
-func makeIDMap(tasks []taskInput, prefix string) (map[string]string, error) {
-	result := make(map[string]string, len(tasks))
-	seen := make(map[string]string, len(tasks))
+// assignIDs gives each task its native ID and output path, and returns the
+// reference lookup from each source ID key to its native ID. Drafts outside
+// the native prefix get the next IDs after its highest one, as Backlog.md's
+// draft promote would, because a native ID never changes when a draft is
+// promoted. IDs that aren't PREFIX-N, such as slugs, are renumbered the same
+// way. Renumbered items keep the source ID as legacy_id, so archived drafts
+// that reused an ID each get their own. A reference to a reused ID resolves to
+// the only unarchived holder; with none or several, it is ambiguous ("").
+func assignIDs(tasks []taskInput, prefix string, report *Report) (map[string]string, error) {
+	kept := map[string]string{}
+	holders := map[string][]int{}
 	highest := new(big.Int)
-	drafts := []string{}
-	for _, task := range tasks {
-		upper := strings.ToUpper(task.id)
-		if !validBacklogID(upper) {
-			return nil, fmt.Errorf("invalid task ID %q in %s", task.id, task.sourcePath)
+	var renumber []int
+	for i, task := range tasks {
+		upper := strings.ToUpper(strings.TrimSpace(task.id))
+		key := refKey(upper)
+		holders[key] = append(holders[key], i)
+		taskPrefix, number, _ := strings.Cut(key, "-")
+		if !validBacklogID(upper) || task.draft && taskPrefix != prefix {
+			renumber = append(renumber, i)
+			continue
 		}
-		canonical := canonicalID(upper)
-		if previous, exists := seen[canonical]; exists {
+		if previous, exists := kept[key]; exists {
 			return nil, fmt.Errorf("task ID collision after native lookup normalization: %s and %s", previous, task.sourcePath)
 		}
-		seen[canonical] = task.sourcePath
-		result[canonical] = upper
-		taskPrefix, number, _ := strings.Cut(canonical, "-")
+		kept[key] = task.sourcePath
+		tasks[i].nativeID = upper
 		if taskPrefix != prefix {
-			if task.draft {
-				drafts = append(drafts, canonical)
-			}
 			continue
 		}
 		first, _, _ := strings.Cut(number, ".")
@@ -809,12 +956,59 @@ func makeIDMap(tasks []taskInput, prefix string) (map[string]string, error) {
 			highest = n
 		}
 	}
-	sort.Slice(drafts, func(i, j int) bool { return idLess(drafts[i], drafts[j]) })
-	for _, draft := range drafts {
+	sort.SliceStable(renumber, func(i, j int) bool {
+		a, b := strings.ToUpper(tasks[renumber[i]].id), strings.ToUpper(tasks[renumber[j]].id)
+		if validBacklogID(a) != validBacklogID(b) {
+			return validBacklogID(a)
+		}
+		if validBacklogID(a) {
+			return idLess(canonicalID(a), canonicalID(b))
+		}
+		return a < b
+	})
+	for _, i := range renumber {
 		highest = new(big.Int).Add(highest, big.NewInt(1))
-		result[draft] = prefix + "-" + highest.String()
+		tasks[i].nativeID = prefix + "-" + highest.String()
+		tasks[i].legacyID = tasks[i].id
+		report.Renumbered = append(report.Renumbered, RenumberedID{SourcePath: tasks[i].sourcePath, From: tasks[i].id, To: tasks[i].nativeID})
 	}
-	return result, nil
+	if len(renumber) > 0 {
+		report.Decisions = append(report.Decisions, fmt.Sprintf("Renumbered %d item(s) whose IDs were drafts outside %s, not PREFIX-N, or reused; each keeps its old ID as legacy_id.", len(renumber), prefix))
+	}
+	refs := make(map[string]string, len(holders))
+	for key, indexes := range holders {
+		var live []int
+		for _, i := range indexes {
+			if !tasks[i].archived {
+				live = append(live, i)
+			}
+		}
+		switch {
+		case len(indexes) == 1:
+			refs[key] = tasks[indexes[0]].nativeID
+		case len(live) == 1:
+			refs[key] = tasks[live[0]].nativeID
+		default:
+			refs[key] = ""
+		}
+	}
+	for i := range tasks {
+		tasks[i].outputPath = filepath.ToSlash(filepath.Join("backlog", tasks[i].nativeID+".md"))
+		if tasks[i].archived {
+			tasks[i].outputPath = filepath.ToSlash(filepath.Join("backlog", "archive", tasks[i].nativeID+".md"))
+		}
+	}
+	return refs, nil
+}
+
+// refKey is the lookup key for a source ID: canonical when it is PREFIX-N,
+// otherwise upper-cased.
+func refKey(id string) string {
+	upper := strings.ToUpper(strings.TrimSpace(id))
+	if validBacklogID(upper) {
+		return canonicalID(upper)
+	}
+	return upper
 }
 
 // idLess orders valid canonical IDs by prefix, then numerically by component.
@@ -909,7 +1103,7 @@ func nativePrefix(source sourceConfig, tasks []taskInput) (string, error) {
 	prefix := strings.TrimSpace(source.taskPrefix)
 	if prefix == "" {
 		for _, task := range tasks {
-			if !task.archived && !task.draft {
+			if !task.archived && !task.draft && validBacklogID(strings.ToUpper(task.id)) {
 				prefix, _, _ = strings.Cut(task.id, "-")
 				break
 			}
@@ -917,7 +1111,7 @@ func nativePrefix(source sourceConfig, tasks []taskInput) (string, error) {
 	}
 	if prefix == "" {
 		for _, task := range tasks {
-			if !task.draft {
+			if !task.draft && validBacklogID(strings.ToUpper(task.id)) {
 				prefix, _, _ = strings.Cut(task.id, "-")
 				break
 			}
@@ -1083,12 +1277,8 @@ func statusCategory(value string) model.StatusCategory {
 }
 
 func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestoneByTitle map[string]string, statusLookup map[string]string, report *Report) error {
-	id := idMap[canonicalID(task.id)]
-	task.nativeID = id
-	statusKey, ok := statusLookup[statusIdentity(task.status)]
-	if !ok {
-		statusKey = statusKeyForTask(task.status)
-	}
+	id := task.nativeID
+	statusKey := taskStatusKey(task.status, statusLookup)
 	task.mappedStatus = statusKey
 	task.refMap = idMap
 	refs, err := mergedLists(task.doc.fields, "assignee", "assignees")
@@ -1103,12 +1293,17 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 	if err != nil {
 		return err
 	}
-	for i, dependency := range dependencies {
-		dependencies[i], err = rewriteRef(dependency, idMap)
+	kept := dependencies[:0]
+	for _, dependency := range dependencies {
+		value, err := rewriteRef(dependency, idMap)
 		if err != nil {
 			return fmt.Errorf("dependencies: %w", err)
 		}
+		if !task.dropped[value] {
+			kept = append(kept, value)
+		}
 	}
+	dependencies = kept
 	var parent *model.Ref
 	parentValue, hasParent, err := mergedScalar(task.doc.fields, "parent_task_id", "parent")
 	if err != nil {
@@ -1121,10 +1316,6 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 		}
 		parsed := parseReference(value)
 		parent = &parsed
-	}
-	allRefs, err := mergedLists(task.doc.fields, "references", "documentation", "refs")
-	if err != nil {
-		return err
 	}
 	files, err := mergedLists(task.doc.fields, "modified_files", "files")
 	if err != nil {
@@ -1157,10 +1348,14 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 	if err != nil {
 		return err
 	}
-	priority := model.Priority(strings.ToLower(priorityValue))
-	if priority != "" && priority != model.Urgent && priority != model.High && priority != model.Medium && priority != model.Low {
-		return fmt.Errorf("unsupported priority %q", priorityValue)
+	priority := model.Priority(strings.ToLower(strings.TrimSpace(priorityValue)))
+	if alias, ok := priorityAliases[string(priority)]; ok {
+		task.priorityAlias, priority = string(priority), alias
 	}
+	if priority != "" && priority != model.Urgent && priority != model.High && priority != model.Medium && priority != model.Low {
+		return fmt.Errorf("unsupported priority %q; use urgent, high, medium, or low", priorityValue)
+	}
+	task.priority = priority
 	milestone := task.milestone
 	if milestone != "" {
 		if mapped, found := milestoneByKey[strings.ToLower(milestone)]; found {
@@ -1184,8 +1379,11 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 		Status: statusKey, Priority: priority, Rank: task.rank, Due: task.due,
 		Assignees: refs, Labels: labels, Milestone: milestone,
 		Parent: parent, DuplicateOf: duplicateOf, BlockedBy: make([]model.Ref, 0, len(dependencies)),
-		Related: make([]model.Ref, 0, len(related)), Refs: allRefs, Files: files, Description: task.doc.body.sections["description"],
+		Related: make([]model.Ref, 0, len(related)), Refs: task.refs, Files: files, Description: task.doc.body.sections["description"],
 		Created: created, Updated: updated, Fields: unknownFields(task.doc.fields),
+	}
+	if _, exists := item.Fields["legacy_id"]; task.legacyID != "" && !exists {
+		item.Fields["legacy_id"] = task.legacyID
 	}
 	for _, ref := range dependencies {
 		item.BlockedBy = append(item.BlockedBy, parseReference(ref))
@@ -1211,16 +1409,152 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 	if err := verifyBody(doc.Item(), task.doc.body, task.updated); err != nil {
 		return fmt.Errorf("native item validation: %w", err)
 	}
-	task.outputPath = filepath.ToSlash(filepath.Join("backlog", id+".md"))
-	if task.archived {
-		task.outputPath = filepath.ToSlash(filepath.Join("backlog", "archive", id+".md"))
-	}
 	task.outputBytes = output
 	task.milestone = milestone
 	return nil
 }
 
-func statusKeyForTask(value string) string { return statusKey(value) }
+// priorityAliases maps common priority scales onto the native one.
+var priorityAliases = map[string]model.Priority{
+	"p0": model.Urgent, "critical": model.Urgent,
+	"p1": model.High,
+	"p2": model.Medium, "normal": model.Medium,
+	"p3": model.Low, "later": model.Low,
+}
+
+func taskStatusKey(status string, lookup map[string]string) string {
+	if key, ok := lookup[statusIdentity(status)]; ok {
+		return key
+	}
+	return statusKey(status)
+}
+
+// noteUnconfiguredStatuses reports task statuses the source config doesn't
+// list, which Backlog.md tolerates but which may be typos.
+func noteUnconfiguredStatuses(source sourceConfig, tasks []taskInput, lookup map[string]string, report *Report) {
+	if len(source.statuses) == 0 {
+		return
+	}
+	configured := map[string]bool{"draft": true}
+	for _, status := range source.statuses {
+		configured[statusIdentity(status)] = true
+	}
+	counts := map[string]int{}
+	for _, task := range tasks {
+		if !configured[statusIdentity(task.status)] {
+			counts[task.status]++
+		}
+	}
+	for _, status := range slices.Sorted(maps.Keys(counts)) {
+		report.Decisions = append(report.Decisions, fmt.Sprintf("%d item(s) have status %q, which the source config doesn't list; imported as %s.", counts[status], status, taskStatusKey(status, lookup)))
+	}
+}
+
+// breakClosedCycles drops dependency cycles that only closed items take part
+// in, which bl check would otherwise reject: within such a cycle, each edge to
+// an equal or higher ID goes, leaving only edges to lower IDs. A cycle through
+// an open item is unfinished work, so it is refused.
+func breakClosedCycles(tasks []taskInput, refs map[string]string, closed func(*taskInput) bool, report *Report) error {
+	index := make(map[string]int, len(tasks))
+	for i := range tasks {
+		index[tasks[i].nativeID] = i
+	}
+	graph := make([][]int, len(tasks))
+	for i := range tasks {
+		dependencies, err := mergedLists(tasks[i].doc.fields, "dependencies", "blocked_by")
+		if err != nil {
+			return fmt.Errorf("%s: %w", tasks[i].sourcePath, err)
+		}
+		for _, dependency := range dependencies {
+			value, err := rewriteRef(dependency, refs)
+			if err != nil {
+				return fmt.Errorf("%s: dependencies: %w", tasks[i].sourcePath, err)
+			}
+			if j, ok := index[value]; ok {
+				graph[i] = append(graph[i], j)
+			}
+		}
+	}
+	for _, component := range stronglyConnected(graph) {
+		if len(component) == 1 && !slices.Contains(graph[component[0]], component[0]) {
+			continue
+		}
+		members := map[int]bool{}
+		ids := make([]string, 0, len(component))
+		open := false
+		for _, i := range component {
+			members[i] = true
+			ids = append(ids, tasks[i].nativeID)
+			open = open || !closed(&tasks[i])
+		}
+		sort.Slice(ids, func(i, j int) bool { return idLess(ids[i], ids[j]) })
+		if open {
+			return fmt.Errorf("dependency cycle among %s includes open items; remove one of these dependencies in the source and import again", strings.Join(ids, ", "))
+		}
+		var dropped []string
+		for _, i := range component {
+			for _, j := range graph[i] {
+				blocker := tasks[j].nativeID
+				if !members[j] || idLess(blocker, tasks[i].nativeID) || tasks[i].dropped[blocker] {
+					continue
+				}
+				if tasks[i].dropped == nil {
+					tasks[i].dropped = map[string]bool{}
+				}
+				tasks[i].dropped[blocker] = true
+				dropped = append(dropped, tasks[i].nativeID+" → "+blocker)
+			}
+		}
+		sort.Strings(dropped)
+		report.Decisions = append(report.Decisions, fmt.Sprintf("Broke a dependency cycle among closed items %s by dropping %s.", strings.Join(ids, ", "), strings.Join(dropped, ", ")))
+	}
+	return nil
+}
+
+// stronglyConnected returns the strongly connected components of graph
+// (Tarjan's algorithm).
+func stronglyConnected(graph [][]int) [][]int {
+	index, low := make([]int, len(graph)), make([]int, len(graph))
+	onStack := make([]bool, len(graph))
+	var stack []int
+	var components [][]int
+	next := 1
+	var visit func(int)
+	visit = func(v int) {
+		index[v], low[v] = next, next
+		next++
+		stack = append(stack, v)
+		onStack[v] = true
+		for _, w := range graph[v] {
+			if index[w] == 0 {
+				visit(w)
+				low[v] = min(low[v], low[w])
+			} else if onStack[w] {
+				low[v] = min(low[v], index[w])
+			}
+		}
+		if low[v] != index[v] {
+			return
+		}
+		var component []int
+		for {
+			w := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			onStack[w] = false
+			component = append(component, w)
+			if w == v {
+				break
+			}
+		}
+		components = append(components, component)
+	}
+	for v := range graph {
+		if index[v] == 0 {
+			visit(v)
+		}
+	}
+	return components
+}
 
 func renderNativeBody(body parsedBody, fallback time.Time) string {
 	var sections []struct{ name, key, value string }
@@ -1408,12 +1742,16 @@ func rewriteRef(value string, idMap map[string]string) (string, error) {
 	if !hasSource {
 		id = value
 	}
-	id = strings.ToUpper(id)
-	if !validBacklogID(id) {
-		return "", fmt.Errorf("invalid task reference %q", value)
-	}
-	if mapped, ok := idMap[canonicalID(id)]; ok {
+	mapped, ok := idMap[refKey(id)]
+	switch {
+	case ok && mapped == "":
+		return "", fmt.Errorf("ambiguous reference %q: several items have that ID; make their IDs unique in the source and import again", value)
+	case ok:
 		id = mapped
+	case !validBacklogID(strings.ToUpper(id)):
+		return "", fmt.Errorf("invalid task reference %q", value)
+	default:
+		id = strings.ToUpper(id)
 	}
 	if hasSource {
 		return source + ":" + id, nil
@@ -1488,10 +1826,13 @@ func mapReportedField(key string, original any, task taskInput) (string, any) {
 		return "assignees", value
 	case "dependencies", "blocked_by":
 		value, _ := mergedLists(task.doc.fields, "dependencies", "blocked_by")
+		kept := value[:0]
 		for i := range value {
-			value[i], _ = rewriteRef(value[i], task.refMap)
+			if value[i], _ = rewriteRef(value[i], task.refMap); !task.dropped[value[i]] {
+				kept = append(kept, value[i])
+			}
 		}
-		return "blocked_by", value
+		return "blocked_by", kept
 	case "parent_task_id", "parent":
 		value, _, _ := mergedScalar(task.doc.fields, "parent_task_id", "parent")
 		value, _ = rewriteRef(value, task.refMap)
@@ -1499,8 +1840,7 @@ func mapReportedField(key string, original any, task taskInput) (string, any) {
 	case "ordinal", "rank":
 		return "rank", task.rank
 	case "references", "documentation", "refs":
-		value, _ := mergedLists(task.doc.fields, "references", "documentation", "refs")
-		return "refs", value
+		return "refs", task.refs
 	case "modified_files", "files":
 		value, _ := mergedLists(task.doc.fields, "modified_files", "files")
 		return "files", value
@@ -1526,7 +1866,7 @@ func mapReportedField(key string, original any, task taskInput) (string, any) {
 		return "due", task.due
 	default:
 		if key == "priority" {
-			return key, strings.ToLower(stringValue(original))
+			return key, string(task.priority)
 		}
 		return key, original
 	}
@@ -1735,11 +2075,6 @@ func scalarString(value any) (string, bool) {
 	}
 }
 
-func stringValue(value any) string {
-	text, _ := scalarString(value)
-	return text
-}
-
 func optionalStringField(fields map[string]any, key string) (string, error) {
 	value, exists := fields[key]
 	if !exists || value == nil {
@@ -1763,17 +2098,23 @@ func optionalDateField(fields map[string]any, key string) (string, error) {
 	return optionalStringField(fields, key)
 }
 
+// readDateField reads a timestamp from either key. An empty string counts as
+// absent, as Backlog.md writes created_date: "" for some tasks.
 func readDateField(fields map[string]any, preferred, alternate string) (time.Time, bool, error) {
 	var preferredTime, alternateTime time.Time
 	var hasPreferred, hasAlternate bool
-	if value, ok := fields[preferred]; ok && value != nil {
+	present := func(value any) bool {
+		text, isText := value.(string)
+		return value != nil && (!isText || strings.TrimSpace(text) != "")
+	}
+	if value, ok := fields[preferred]; ok && present(value) {
 		parsed, err := parseLegacyTime(value)
 		if err != nil {
 			return time.Time{}, false, err
 		}
 		preferredTime, hasPreferred = parsed, true
 	}
-	if value, ok := fields[alternate]; ok && value != nil {
+	if value, ok := fields[alternate]; ok && present(value) {
 		parsed, err := parseLegacyTime(value)
 		if err != nil {
 			return time.Time{}, false, err

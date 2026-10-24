@@ -1,16 +1,18 @@
 # Backlog.md import
 
 ```text
-bl import backlog-md [PATH] [--to DIR] [--dry-run] [--json]
+bl import backlog-md [PATH] [--to DIR | --in-place] [--dry-run] [--json]
 ```
 
-Reads Backlog.md files directly (never the Backlog.md CLI) and writes a new
-native project. The source is never changed.
+Reads Backlog.md files directly (never the Backlog.md CLI) and writes a native
+project, either into a new directory, leaving the source unchanged, or in place
+of the Backlog.md files (below).
 
 | Input | Accepted |
 | --- | --- |
 | PATH | A Backlog.md directory, or a repository root with `backlog/config.yml` or `backlog.config.yml` (honoring a relative `backlog_directory`) |
 | `--to` | A project directory that is empty or absent, even for `--dry-run` |
+| `--in-place` | Instead of `--to`: write into the source's project root and remove the imported Backlog.md files |
 
 Output:
 
@@ -24,20 +26,49 @@ DIR/backlog/archive/<ID>.md
 and counts without writing. To rehearse a full cutover, see
 [below](#standalone-cutover-rehearsal).
 
+## In-place cutover
+
+```text
+bl import backlog-md --in-place --dry-run   # review the report
+bl import backlog-md --in-place
+bl check
+git status                                  # review, then commit
+```
+
+`--in-place` writes `backlog.yaml` and the items beside the Backlog.md folder,
+then removes every imported task, draft, archive, and milestone file and
+`config.yml`. Docs, decisions, and other files stay. Empty partition folders are
+removed.
+
+It refuses, before writing anything, when:
+
+- the project isn't a Git checkout, or the Backlog.md folder or config has
+  uncommitted changes, so every removed file stays recoverable with `git`;
+- a file to remove isn't in the index: ignored, behind a symlinked folder, or
+  in a nested repository;
+- no task or milestone files were found;
+- `backlog.yaml` or `backlog.local.yaml` exists;
+- a planned output file exists.
+
+Output files are created without replacing anything, and are removed again if
+any write fails. Source files are removed only after every output is written.
+Stop every Backlog.md writer first, as in step 1 of the rehearsal.
+
 ## Item mapping
 
 | Backlog.md | Native |
 | --- | --- |
-| `id` | `id`, upper-cased, keeping padding and dots (`task-012.3` → `TASK-012.3`). Drafts may be renumbered (below). |
-| `title`, `type`, `priority`, `labels`, `milestone` | Same names. Status names become generated status keys. |
+| `id` | `id`, upper-cased, keeping padding and dots (`task-012.3` → `TASK-012.3`). Drafts and slug IDs may be renumbered (below). |
+| `title`, `type`, `labels`, `milestone` | Same names. Status names become generated status keys. |
+| `priority` | Same name. `p0` and `critical` become `urgent`, `p1` `high`, `p2` and `normal` `medium`, `p3` and `later` `low` (noted). Other values fail with the accepted list. |
 | `due_date` (or `due`) | `due` |
 | `assignee` | `assignees` |
-| `dependencies` | `blocked_by`, rewritten to imported IDs (including archived) |
+| `dependencies` | `blocked_by`, rewritten to imported IDs (including archived). Cycles are broken or refused (below). |
 | `parent_task_id` | `parent` |
 | `ordinal` | Spaced `rank` keys in numeric ordinal order; ties and missing ordinals follow source path |
-| `references`, `documentation` | `refs`, both lists in order |
+| `references`, `documentation` | `refs`, both lists in order. A path to an imported item becomes its output path. |
 | `modified_files` | `files` |
-| `created_date`, `updated_date` | `created`, `updated` in UTC to the second. No time zone means UTC. A missing `updated` uses `created`. A missing `created` uses `updated`, else the file's mtime (noted). Invalid dates fail. |
+| `created_date`, `updated_date` | `created`, `updated` in UTC to the second. No time zone means UTC. An empty value counts as missing. A missing `updated` uses `created`. A missing `created` uses the file's first Git commit, unless that is after `updated`; otherwise `updated`, else the file's mtime (noted). Invalid dates fail. |
 | Other frontmatter | Kept as unknown fields |
 | Description, Acceptance Criteria, Definition of Done, (Implementation) Plan, (Implementation) Notes, (Final) Summary | Matching native sections |
 | Comments block | Native comments; unstructured text gets author `unknown` |
@@ -60,11 +91,49 @@ Text, order, and checked state are kept; fenced code is untouched.
 - Native IDs don't change on promotion, so drafts outside the task prefix are
   renumbered after the highest task ID, in draft order, as
   `backlog draft promote` would. With `TASK-20` the highest, `DRAFT-1` becomes
-  `TASK-21`. References follow, and the report shows the new ID.
+  `TASK-21`. Archived drafts often reuse a live draft's ID; each gets its own.
+- IDs that aren't `PREFIX-N` (slugs like `pw-some-slug-2`) are renumbered after
+  the drafts.
+
+A renumbered item keeps its old ID in `legacy_id`, and the report lists each in
+`renumbered`. References follow. A dependency on an ID several items had
+resolves to the only unarchived holder, else fails.
+
+### References and links
+
+Text in every section and comment is rewritten for the new layout:
+
+- A standalone mention of a renumbered ID becomes the new ID. `DRAFT-1.2`,
+  `draft-1-notes`, and `drafts/draft-1.md` are left alone.
+- A relative Markdown link to an imported item points at its output file;
+  other relative links are rebased so they still name the same file.
+
+```text
+tasks/task-1.md: [spec](../docs/spec.md) [peer](task-2%20-%20Peer.md#plan)
+backlog/TASK-1.md: [spec](docs/spec.md) [peer](TASK-2.md#plan)
+```
+
+Rebasing assumes the native project replaces the source in place, as
+`--in-place` does. Fenced code is untouched. A link into a Backlog.md folder
+that isn't an imported item, or a mention of an ID several items had, is left
+as written and reported in `unresolvedReferences`.
+
+### Symlinks and cycles
+
+A symlink in a task or milestone folder is read as the Markdown file it names
+(noted); its links resolve from the target's directory. In-place cutover
+removes the link, not the target. A broken link or a non-Markdown target fails.
+
+Native `check` rejects dependency cycles. In a cycle whose members are all
+closed (done, canceled, or archived), each member drops its dependencies on
+equal or higher IDs, and the report notes each dropped edge. A cycle with an
+open item fails; remove one dependency in the source.
 
 ### Refusals
 
 - IDs that collide after upper-casing or padding normalization.
+- Dependency cycles with an open item, ambiguous dependencies, broken symlinks,
+  and unknown priorities (above).
 - Text that would change native structure. Every output item is reparsed first.
   For example, a comment line shaped like a native header
   (`### 2026-01-02T03:04:00Z name`) would split the comment; indent it in the
@@ -92,7 +161,8 @@ reported.
 ## Report
 
 Without `--json`, the report prints the counts, each source file and its
-output, notes, skipped content, and unresolved milestones:
+output, notes, skipped content, unresolved milestones and references, and
+for `--in-place` the count of removed files:
 
 ```text
 Would import 4 item(s) (1 draft(s), 0 archived) and 1 milestone(s) into backlog-import
@@ -104,18 +174,21 @@ skipped backlog/config.yml default_status: Backlog.md default status has no nati
 ```
 
 Notes cover what this import guessed or changed: an inferred prefix, a created
-date taken from the file's modification time, a comment without a timestamp, an
-ambiguous milestone title, and criterion-index removal. The rules above that
+date's source, a comment without a timestamp, an ambiguous milestone title,
+criterion-index removal, renumbering, priority aliases, statuses the config
+doesn't list, followed symlinks, and dropped cycle edges. The rules above that
 always apply aren't repeated.
 
 The JSON report, in the envelope's `data`, adds each field's original and output
-value per source file, config mappings, and output paths. Notes are in
-`decisions`. `outputPaths` are absolute; each file's `outputPath` is relative to
+value per source file, config mappings, output paths, `renumbered`
+(`sourcePath`, `from`, `to`), `unresolvedReferences` (`sourcePath`, `value`,
+`reason`), and for `--in-place` the project-relative `removed` paths. Notes are
+in `decisions`. `outputPaths` are absolute; each file's `outputPath` is relative to
 the destination.
 
 Skipped and reported: documentation, decisions, locks, unsupported archive
-folders, symlinks or non-Markdown files in task and milestone folders, and
-config settings without a native equivalent.
+folders, non-Markdown files in task and milestone folders, and config settings
+without a native equivalent.
 
 ## Standalone cutover rehearsal
 
