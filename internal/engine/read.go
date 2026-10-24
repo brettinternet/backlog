@@ -108,7 +108,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 			}
 		}
 	}
-	coordination := cfg.Coordination.Worklease != nil
+	coordination := cfg.Coordination.Enabled()
 	claims := map[model.Ref]Claim{}
 	if coordination {
 		var err error

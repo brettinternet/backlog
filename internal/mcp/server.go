@@ -22,7 +22,6 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
-	"github.com/brettinternet/backlog/internal/worklease"
 )
 
 const InstructionsURI = "bl://instructions"
@@ -37,10 +36,7 @@ type Server struct {
 }
 
 func New(cfg project.Config) *Server {
-	s := &Server{cfg: cfg, server: mcp.NewServer(&mcp.Implementation{Name: "bl", Version: "dev"}, nil)}
-	if cfg.Coordination.Worklease != nil {
-		s.coordinator = worklease.New(cfg)
-	}
+	s := &Server{cfg: cfg, coordinator: engine.NewCoordinator(cfg), server: mcp.NewServer(&mcp.Implementation{Name: "bl", Version: "dev"}, nil)}
 	mcp.AddTool(s.server, &mcp.Tool{Name: "claim", Description: "Claim an item with explicit caller ownership."}, s.claim)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "release", Description: "Release the caller matching claim."}, s.release)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "heartbeat", Description: "Renew a caller-managed claim."}, s.heartbeat)

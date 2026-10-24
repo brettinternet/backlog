@@ -147,11 +147,15 @@ func (s *workspaceSource) Read(ctx context.Context, id string) (model.Item, erro
 }
 func ProjectContext(ctx context.Context, cfg project.Config) context.Context {
 	_, caller := Coordination(ctx)
-	var coordinator model.Coordinator
-	if cfg.Coordination.Worklease != nil {
-		coordinator = worklease.New(cfg)
+	return WithClaimEvents(WithCoordination(ctx, NewCoordinator(cfg), caller), cfg)
+}
+
+// NewCoordinator builds the configured claim system, or nil when none is.
+func NewCoordinator(cfg project.Config) model.Coordinator {
+	if !cfg.Coordination.Enabled() {
+		return nil
 	}
-	return WithClaimEvents(WithCoordination(ctx, coordinator, caller), cfg)
+	return worklease.New(cfg)
 }
 func (s *workspaceSource) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	i, err := ApplyWrite(ProjectContext(ctx, s.cfg), s.cfg, s.mutation(m))
@@ -222,7 +226,7 @@ func workspaceRanking(ctx context.Context, cfg project.Config, items []model.Ite
 	var warnings []string
 	for _, p := range cfg.Workspace.Projects {
 		configs[p.Project.ID] = p
-		if p.Coordination.Worklease == nil {
+		if !p.Coordination.Enabled() {
 			continue
 		}
 		var local []model.Item
@@ -251,7 +255,7 @@ func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived bool) 
 	archives := map[model.Ref]bool{}
 	stale := map[model.Ref]bool{}
 	for _, p := range cfg.Workspace.Projects {
-		s.Query.Coordination = s.Query.Coordination || p.Coordination.Worklease != nil
+		s.Query.Coordination = s.Query.Coordination || p.Coordination.Enabled()
 		reads, err := loadReads(ProjectContext(ctx, p), p, archived, true)
 		if err != nil {
 			return s, err

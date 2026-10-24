@@ -123,7 +123,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 	for i, item := range in.Items {
 		config, me, coordination := in.Config, in.Me, in.Coordination
 		if p, ok := in.Projects[item.Project]; ok {
-			config, me, coordination = p.Ready, []string{p.Me.Default}, p.Coordination.Worklease != nil
+			config, me, coordination = p.Ready, []string{p.Me.Default}, p.Coordination.Enabled()
 		}
 		e := Explanation{Ref: item.Ref, Readiness: Ready, Reasons: []Reason{}, Priority: item.Priority, Rank: item.Rank}
 		add := func(code string, refs []model.Ref, values []string) {

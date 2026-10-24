@@ -314,7 +314,7 @@ func (p *Projector) run() {
 				req.snapshot = workspaceView
 			}
 			coordinator, caller := Coordination(req.ctx)
-			coordination := p.cfg.Workspace == nil && p.cfg.Coordination.Worklease != nil
+			coordination := p.cfg.Workspace == nil && p.cfg.Coordination.Enabled()
 			now := p.now()
 			refresh := coordination && (!claimsLoaded || req.refreshClaims)
 			if refresh {
@@ -398,7 +398,7 @@ func (p *Projector) run() {
 					var warnings []string
 					ranking, claimStates, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs)
 					for _, project := range p.cfg.Workspace.Projects {
-						base.Coordination = base.Coordination || project.Coordination.Worklease != nil
+						base.Coordination = base.Coordination || project.Coordination.Enabled()
 					}
 					if len(warnings) > 0 {
 						result.Warning = fmt.Errorf("%s", strings.Join(warnings, "; "))

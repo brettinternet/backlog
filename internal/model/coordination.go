@@ -15,7 +15,6 @@ type ClaimInfo struct {
 	Resources []string  `json:"resources"`
 	Session   string    `json:"session"`
 	Agent     string    `json:"agent"`
-	Host      string    `json:"host,omitempty"`
 	Item      string    `json:"item,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
@@ -81,9 +80,6 @@ func (c ClaimInfo) Label(session string, now time.Time) string {
 	}
 	if session != "" && c.Session == session {
 		return "mine"
-	}
-	if c.Host != "" {
-		return c.Agent + "@" + c.Host
 	}
 	return c.Agent
 }

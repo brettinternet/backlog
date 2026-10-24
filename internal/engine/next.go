@@ -51,7 +51,7 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 	if err = RequireSession(caller); err != nil {
 		return out, err
 	}
-	if c == nil || cfg.Coordination.Worklease == nil {
+	if c == nil || !cfg.Coordination.Enabled() {
 		return out, source.Refuse("unavailable", "coordination is not configured")
 	}
 	var item model.Item
@@ -107,7 +107,7 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 			// Ignore the claim overlay for selection: known contention must be
 			// observable as an attempt, and List cannot authorize an acquire.
 			selection := cfg
-			selection.Coordination.Worklease = nil
+			selection.Coordination = project.CoordinationConfig{}
 			snap, e := LoadReads(ctx, selection, false)
 			if e != nil {
 				return out, e

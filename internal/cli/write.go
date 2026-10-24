@@ -71,7 +71,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if cmd.IsSet("if-version") && (len(ids) != 1 || cmd.String("if-version") == "") {
 			return writeUsage("--if-version requires exactly one ID and a nonempty version")
 		}
-		if cfg.Coordination.Worklease != nil && len(ids) > 1 {
+		if cfg.Coordination.Enabled() && len(ids) > 1 {
 			_, category, changes := engine.StatusTarget(cfg, model.Mutation{Op: model.Batch, Changes: changes})
 			if changes && category == model.Active {
 				return writeUsage("coordination refuses multi-item activation")

@@ -218,7 +218,7 @@ func TestBulkOverlayExpiryAndReadiness(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(100, 0)
 	item := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}, Category: model.Todo}
-	c := &coordinator{claims: []model.ClaimInfo{{Resources: []string{"tasks:BL-1"}, Agent: "agent", Host: "host", Session: "other", ExpiresAt: now.Add(time.Second)}}}
+	c := &coordinator{claims: []model.ClaimInfo{{Resources: []string{"tasks:BL-1"}, Agent: "agent@host", Session: "other", ExpiresAt: now.Add(time.Second)}}}
 	ctx := engine.WithCoordination(context.Background(), c, model.CallerContext{Session: "loop"})
 	states, labels, err := engine.ClaimStates(ctx, []model.Item{item}, now)
 	if err != nil || labels[item.Ref] != "agent@host" {
@@ -266,7 +266,7 @@ func TestProjectionRetriesCanceledClaimLookup(t *testing.T) {
 			t.Parallel()
 			cfg := coordinationConfig()
 			c := &canceledListCoordinator{
-				coordinator: coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent", Host: "host", ExpiresAt: time.Now().Add(time.Hour)}}},
+				coordinator: coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent@host", ExpiresAt: time.Now().Add(time.Hour)}}},
 				cancelCall:  1,
 				started:     make(chan struct{}),
 			}
@@ -340,7 +340,7 @@ func TestProjectionStatusRefreshDoesNotWaitForCanceledClaimPoll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	c := &slowRefreshCoordinator{
-		coordinator: coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent", Host: "host", ExpiresAt: time.Now().Add(time.Hour)}}},
+		coordinator: coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent@host", ExpiresAt: time.Now().Add(time.Hour)}}},
 		started:     make(chan struct{}, 1),
 		release:     make(chan struct{}),
 	}
@@ -405,7 +405,7 @@ func TestProjectionClaimExpiryWithoutPolling(t *testing.T) {
 	t.Parallel()
 	cfg := coordinationConfig()
 	backend := fakeSource(t, "tasks")
-	c := &coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent", Host: "host", ExpiresAt: time.Unix(101, 0)}}}
+	c := &coordinator{claims: []model.ClaimInfo{{ID: "claim", Resources: []string{"tasks:BL-1"}, Session: "other", Agent: "agent@host", ExpiresAt: time.Unix(101, 0)}}}
 	ctx := engine.WithCoordination(context.Background(), c, model.CallerContext{Session: "loop"})
 	store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
 	defer store.Close()

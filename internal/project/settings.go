@@ -92,6 +92,10 @@ type ViewConfig struct {
 type CoordinationConfig struct {
 	Worklease *struct{} `yaml:"worklease,omitempty" json:"worklease,omitempty"`
 }
+
+// Enabled reports whether any claim system is configured.
+func (c CoordinationConfig) Enabled() bool { return c.Worklease != nil }
+
 type HookConfig struct {
 	Name    string   `yaml:"name" json:"name"`
 	On      string   `yaml:"on" json:"on"`

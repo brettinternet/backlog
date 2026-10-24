@@ -196,7 +196,7 @@ func StatusTarget(cfg project.Config, m model.Mutation) (string, model.StatusCat
 }
 func coordinatedWrite(ctx context.Context, cfg project.Config, m model.Mutation, read func() (model.Item, error), write func() (model.Item, error)) (model.Item, error) {
 	target, category, changes := StatusTarget(cfg, m)
-	if cfg.Coordination.Worklease == nil || !changes {
+	if !cfg.Coordination.Enabled() || !changes {
 		return write()
 	}
 	c, caller := Coordination(ctx)

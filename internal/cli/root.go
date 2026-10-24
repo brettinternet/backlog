@@ -30,7 +30,6 @@ import (
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/brettinternet/backlog/internal/tui"
-	"github.com/brettinternet/backlog/internal/worklease"
 )
 
 type BuildInfo struct {
@@ -339,11 +338,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 						if caller.Session == "" {
 							caller.Session = os.Getenv("WORKLEASE_SESSION_ID")
 						}
-						var coordinator model.Coordinator
-						if cfg.Coordination.Worklease != nil {
-							coordinator = worklease.New(cfg)
-						}
-						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, coordinator, caller), cfg)
+						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, engine.NewCoordinator(cfg), caller), cfg)
 					}
 				}
 				if selected.Name != "mcp" {

@@ -78,7 +78,7 @@ func diagnoseRun(cfg project.Config, label string, run []string, cwd string, has
 				}
 			case !placeholders[key]:
 				return "", fmt.Errorf("unknown placeholder {%s}", key)
-			case key == "resource" && cfg.Coordination.Worklease == nil:
+			case key == "resource" && !cfg.Coordination.Enabled():
 				return "", fmt.Errorf("{resource} needs coordination, which is not configured")
 			}
 			return "x", nil
