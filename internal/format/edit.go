@@ -247,6 +247,20 @@ func (d *Document) sectionEdit(name, text string, appendText bool) ([]byte, erro
 	return d.splice(at, at, prefix+"## "+name+d.nl+d.nl+text+suffix), nil
 }
 
+// checkRefValues names a written reference value that isn't an item ID, which
+// parsing would otherwise report only by frontmatter line.
+func checkRefValues(field string, values []string) error {
+	if !slices.Contains([]string{"parent", "duplicate_of", "blocked_by", "related"}, field) {
+		return nil
+	}
+	for _, v := range values {
+		if !validRef(parseRef(v)) {
+			return fmt.Errorf("invalid-value: %s value %q is not an item ID", field, v)
+		}
+	}
+	return nil
+}
+
 // structureChanged reports edits whose text would add, remove, or swallow a
 // recognized section (for example an unclosed fence or a pasted heading).
 func structureChanged(before, after *Document, target string, removable bool) bool {
@@ -292,8 +306,22 @@ func (d *Document) Apply(m model.Mutation, now time.Time) (*Document, model.Muta
 		}
 		data = next.Bytes()
 	case model.Set, model.Unset:
+		values, _ := m.Value.([]string)
+		if text, ok := m.Value.(string); ok && text != "" {
+			values = []string{text}
+		}
+		if m.Op == model.Set {
+			if err := checkRefValues(m.Field, values); err != nil {
+				return fail(err)
+			}
+		}
 		data, err = d.fieldEdit(m.Field, m.Value, m.Op == model.Unset)
 	case model.Add, model.Remove:
+		if text, ok := m.Value.(string); ok && m.Op == model.Add {
+			if err := checkRefValues(m.Field, []string{text}); err != nil {
+				return fail(err)
+			}
+		}
 		var values []string
 		f, ok := d.fields[m.Field]
 		if ok {

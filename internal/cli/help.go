@@ -29,8 +29,8 @@ Examples:
   bl new 'Fix login !high #bug @me'
   bl new 'Write the guide' --status draft --ac 'Covers setup'`
 
-const setHelp = `FIELD=VALUE sets a field, FIELD+=VALUE adds a list entry, and FIELD-=VALUE
-removes one. List values are comma-separated; an empty value clears a field.
+const setHelp = `FIELD=VALUE sets a field, FIELD+=VALUE adds list entries, and FIELD-=VALUE
+removes them. List values are comma-separated; an empty value clears a field.
 
 Fields: title status type priority assignees labels milestone parent
 blocked_by related duplicate_of rank due refs files

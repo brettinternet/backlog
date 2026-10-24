@@ -195,6 +195,9 @@ In code, the pure codec takes a clock and returns bytes; the native source owns 
 | `duplicate-section` | error | no |
 | `merge-conflict` | error | Resolve the two kinds of hunk that `bl` understands. When the sides differ only in `updated`, the later timestamp wins. When both sides only add whole comments, both are kept in timestamp order and exact duplicates dropped. Both marker styles (`merge` and `diff3`) are read. Other hunks are left for you, and the file stays an error until they're gone. |
 | `dangling-ref` | warning | no |
+| `invalid-ref` | warning | no |
 | `noncanonical` | info | Normalize line endings and the trailing newline |
+
+`invalid-ref` flags a `refs` entry that is neither a URL nor a path: one without a slash or a dot that names no file at the repository root, or an item ID. Item IDs belong in `related`; write `./NAME` for an extensionless file that doesn't exist yet.
 
 Exit status is 0 when there are no errors and 5 otherwise, so CI can run `bl check`.

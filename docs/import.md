@@ -11,7 +11,7 @@ of the Backlog.md files (below).
 | Input | Accepted |
 | --- | --- |
 | PATH | A Backlog.md directory, or a repository root with `backlog/config.yml` or `backlog.config.yml` (honoring a relative `backlog_directory`) |
-| `--to` | A project directory that is empty or absent, even for `--dry-run` |
+| `--to` | A project directory that is empty or absent, even for `--dry-run`. Refusing one that holds the Backlog.md folder suggests `--in-place`. |
 | `--in-place` | Instead of `--to`: write into the source's project root and remove the imported Backlog.md files |
 
 Output:
@@ -67,7 +67,7 @@ Stop every Backlog.md writer first, as in step 1 of the rehearsal.
 | `dependencies` | `blocked_by`, rewritten to imported IDs (including archived). Cycles are broken or refused (below). |
 | `parent_task_id` | `parent` |
 | `ordinal` | Spaced `rank` keys in numeric ordinal order; ties and missing ordinals follow source path |
-| `references`, `documentation` | `refs`, both lists in order. A path to an imported item becomes its output path. |
+| `references`, `documentation` | `refs`, both lists in order, so the distinction between them is lost. A path to an imported item becomes its output path. An imported item's ID moves to `related`, following renumbering (noted). A value that is neither a URL nor a path, such as a commit hash, stays in an unknown `references` field and is reported in `unresolvedReferences`. |
 | `modified_files` | `files` |
 | `created_date`, `updated_date` | `created`, `updated` in UTC to the second. No time zone means UTC. An empty value counts as missing. A missing `updated` uses `created`. A missing `created` uses the file's first Git commit, unless that is after `updated`; otherwise `updated`, else the file's mtime (noted). Invalid dates fail. |
 | Other frontmatter | Kept as unknown fields |

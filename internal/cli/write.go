@@ -260,15 +260,21 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			case "assignee":
 				field = "assignees"
 			}
-			var v any = value
-			if op == model.Set && engine.ListField(field) {
-				values := []string{}
-				if value != "" {
-					values = strings.Split(value, ",")
-				}
-				v = values
+			if !engine.ListField(field) {
+				changes = append(changes, model.Mutation{Op: op, Field: field, Value: value})
+				continue
 			}
-			changes = append(changes, model.Mutation{Op: op, Field: field, Value: v})
+			values := []string{}
+			if value != "" {
+				values = strings.Split(value, ",")
+			}
+			if op == model.Set {
+				changes = append(changes, model.Mutation{Op: op, Field: field, Value: values})
+				continue
+			}
+			for _, entry := range values {
+				changes = append(changes, model.Mutation{Op: op, Field: field, Value: entry})
+			}
 		}
 		if len(changes) == 0 {
 			return writeUsage("set requires field assignments")

@@ -120,6 +120,7 @@ func TestCheckReportsEveryFindingCodeWithLocations(t *testing.T) {
 	put(t, filepath.Join(root, "items", "BL-13.md"), maintenanceItem("BL-13", "todo", "blocked_by: [BL-999]\n", ""))
 	put(t, filepath.Join(root, "items", "BL-14.md"), maintenanceItem("BL-14", "todo", "", "<<<<<<< ours\nnot yaml\n=======\nalso not yaml\n>>>>>>> theirs\n"))
 	put(t, filepath.Join(root, "items", "BL-15.md"), strings.TrimSuffix(strings.ReplaceAll(maintenanceItem("BL-15", "todo", "", ""), "\n", "\r\n"), "\r\n"))
+	put(t, filepath.Join(root, "items", "BL-16.md"), maintenanceItem("BL-16", "todo", "refs: [BL-2, 0c32301, docs/x.md, items, \"https://example.com/a\"]\n", ""))
 
 	code, output, stderr := writeRun(root, "", "check")
 	if code != 5 || stderr != "" {
@@ -138,11 +139,14 @@ func TestCheckReportsEveryFindingCodeWithLocations(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"invalid-frontmatter", "missing-required", "invalid-value", "filename-mismatch", "duplicate-id",
-		"unknown-status", "blocker-cycle", "parent-cycle", "duplicate-section", "merge-conflict", "dangling-ref", "noncanonical",
+		"unknown-status", "blocker-cycle", "parent-cycle", "duplicate-section", "merge-conflict", "dangling-ref", "invalid-ref", "noncanonical",
 	} {
 		if !codes[expected] {
 			t.Errorf("check omitted %s: %#v", expected, findings)
 		}
+	}
+	if strings.Count(output, `"invalid-ref"`) != 2 || !strings.Contains(output, "path: BL-2") || !strings.Contains(output, "path: 0c32301") {
+		t.Errorf("invalid-ref should flag only BL-2 and 0c32301: %s", output)
 	}
 	foundArchivePath := false
 	for _, finding := range findings {

@@ -198,10 +198,11 @@ Jira single-assignee replacement (including clearing) requires `--yes` (MCP
 | --- | --- |
 | Fields | `title status type priority assignees labels milestone parent blocked_by related duplicate_of rank due refs files` (`label`, `assignee` are aliases) |
 | `=` | Set. Lists take comma-separated values. An empty value clears. |
-| `+=`, `-=` | Add or remove one list entry; idempotent |
+| `+=`, `-=` | Add or remove comma-separated list entries; idempotent |
 | References | `parent`, `blocked_by`, `related`, `duplicate_of` expand ID shorthand like `new` |
 
-Unknown fields, statuses, and priorities exit 5 and list allowed values. Types,
+Unknown fields, statuses, and priorities exit 5 and list allowed values. A
+reference that isn't an item ID exits 5 naming the field and value. Types,
 labels, and milestones are free text.
 
 ### `bl start ID` and `bl done ID`

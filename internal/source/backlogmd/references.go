@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/brettinternet/backlog/internal/format"
 )
 
 // referenceRewriter updates text for the move from Backlog.md files to native
@@ -17,6 +19,7 @@ type referenceRewriter struct {
 	items      map[string]string // canonical source file → output path
 	partitions []string
 	renamed    map[string]string // refKey of a renumbered ID → native ID, "" if ambiguous
+	ids        map[string]string // refKey of any source ID → native ID, "" if ambiguous
 	mentions   *regexp.Regexp
 	reported   map[UnresolvedReference]bool
 	report     *Report
@@ -28,7 +31,7 @@ var (
 )
 
 func newReferenceRewriter(source sourceConfig, tasks []taskInput, refs map[string]string, report *Report) *referenceRewriter {
-	r := &referenceRewriter{project: source.projectRoot, items: map[string]string{}, renamed: map[string]string{}, reported: map[UnresolvedReference]bool{}, report: report}
+	r := &referenceRewriter{project: source.projectRoot, items: map[string]string{}, renamed: map[string]string{}, ids: refs, reported: map[UnresolvedReference]bool{}, report: report}
 	for _, partition := range []string{"tasks", "completed", "drafts", "milestones", "archive"} {
 		r.partitions = append(r.partitions, canonical(filepath.Join(source.root, partition)))
 	}
@@ -64,14 +67,28 @@ func (r *referenceRewriter) rewrite(task *taskInput) error {
 	if err != nil {
 		return err
 	}
-	for i, ref := range refs {
+	task.refs, task.relatedRefs, task.otherRefs = nil, nil, nil
+	for _, ref := range refs {
 		if !external(ref) {
 			if output, ok := r.items[canonical(filepath.Join(r.project, filepath.FromSlash(ref)))]; ok {
-				refs[i] = output
+				ref = output
+			} else if id, ok := r.ids[refKey(ref)]; ok && id != "" {
+				if id != task.nativeID && !slices.Contains(task.relatedRefs, id) {
+					task.relatedRefs = append(task.relatedRefs, id)
+				}
+				continue
+			} else if ok {
+				r.unresolved(task, ref, "several items had this ID; kept in the references field")
+				task.otherRefs = append(task.otherRefs, ref)
+				continue
+			} else if path := filepath.Join(r.project, filepath.FromSlash(ref)); !format.PathLikeRef(ref) && !fileExists(path) && !isDir(path) {
+				r.unresolved(task, ref, "neither a URL nor a path; kept in the references field")
+				task.otherRefs = append(task.otherRefs, ref)
+				continue
 			}
 		}
+		task.refs = append(task.refs, ref)
 	}
-	task.refs = refs
 	body := &task.doc.body
 	for key, text := range body.sections {
 		body.sections[key] = r.text(task, text)
