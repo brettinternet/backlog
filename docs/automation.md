@@ -53,11 +53,14 @@ Tests run these examples with fake `tell`, `wt`, `worklease`, and `herdr`.
 
 ```sh
 bl action work 12 --yes
+bl action work 12 --dry-run
 ```
 
 Run from the CLI, MCP `action` (`name`, `id`, `confirm`), or the TUI `!` menu,
 palette, or `key:`. An action is offered only when its `when` query matches the
-item; missing or unsafe placeholders disable it with a reason.
+item; missing or unsafe placeholders disable it with a reason. `--dry-run`
+(MCP `dryRun: true`) prints the expanded argv, cwd, and environment names, or
+that reason, without running, logging, or confirming.
 
 | Field | Meaning |
 | --- | --- |
@@ -97,6 +100,11 @@ Chain dependent steps on `hook.finished` with `if: "hook:NAME outcome:ok"`. No
 hook runs for an event deeper than 3; nested `bl` calls inherit cause and depth.
 A hook ends when its process exits; `bl` stops reading output a backgrounded
 child holds open after one second, and the child keeps running.
+
+`bl doctor` checks trusted hooks and actions statically: `run[0]` on `PATH`,
+known placeholders, timeouts, queries, and `on` event types. Untrusted ones are
+reported as inert and not inspected. Hooks have no dry run; use the doctor
+check and `bl action --dry-run`. See [cli.md](cli.md#bl-doctor---online).
 
 `cwd` defaults to where the originating command ran, through the whole chain;
 for sync-originated chains, the control root.
