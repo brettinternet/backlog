@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -277,7 +279,7 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 	if refused := c.refuseHostLocal(ctx, item); refused != nil {
 		return *refused
 	}
-	v, err := c.call(ctx, caller, "acquire", "--resource", key, "--wait", "0s", "--work-key", item.Ref.Source+":"+item.Ref.ID)
+	v, err := c.call(ctx, caller, "acquire", "--resource", key, "--wait", "0s", "--work-key", workKey(c.Config.Project.ID, item.Ref.ID, key))
 	if err != nil || !v.OK {
 		return mutationFailure(v, err)
 	}
@@ -288,6 +290,36 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 		return model.ClaimResult{Outcome: "uncertain", Reason: "unavailable", Message: "invalid acquire grant"}
 	}
 	return model.ClaimResult{Outcome: "acquired", Resource: key, Claim: v.wireClaim.info(), ExpiresAt: v.ExpiresAt}
+}
+
+// workKey labels a claim for people with the project ID and the item's
+// display ID. bl never matches claims on it. It keeps Worklease's public-text
+// limits and drops what a remote authority would redact, cutting the project
+// ID first; the resource key stands in if nothing printable remains.
+func workKey(projectID, itemID, resource string) string {
+	printable := func(s string) string {
+		return strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+				return -1
+			}
+			return r
+		}, strings.ToValidUTF8(s, "")))
+	}
+	truncate := func(s string, n int) string {
+		for len(s) > max(n, 0) {
+			_, size := utf8.DecodeLastRuneInString(s)
+			s = s[:len(s)-size]
+		}
+		return s
+	}
+	label := truncate(printable(itemID), 1024)
+	if label == "" {
+		return resource
+	}
+	if prefix := strings.TrimSpace(truncate(printable(projectID), 1023-len(label))); prefix != "" {
+		label = prefix + " " + label
+	}
+	return label
 }
 
 // refuseHostLocal stops a host-local project key from reaching a remote

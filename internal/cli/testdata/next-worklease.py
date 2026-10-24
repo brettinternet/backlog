@@ -86,7 +86,9 @@ elif op == "acquire":
             response.update(ok=False, error=dict(reason="already-claimed", message="held elsewhere", details=dict(holder=holder)))
         else:
             key = argv[argv.index("--work-key") + 1]
-            item = root / os.environ.get("BL_FAKE_ITEMS", "items") / (key.split(":")[1] + ".md")
+            project, _, item_id = key.rpartition(" ")
+            assert project, "work key lacks the project ID"
+            item = root / os.environ.get("BL_FAKE_ITEMS", "items") / (item_id + ".md")
             assert "status: todo" in item.read_text(), "status changed before claim"
             claim = dict(claimId="claim-" + session, resources=[resource], workKey=key, sessionId=session, agentId="agent", authorityId="authority", active=True, expiresAt="2030-01-01T00:00:00Z", pending=os.environ.get("BL_FAKE_PENDING") == "1")
             state["claims"][session] = claim
