@@ -153,6 +153,17 @@ func validateFiles(files []checkedFile, parseFindings []source.Finding) []source
 				findings = append(findings, source.Finding{Code: "unknown-status", Severity: "error", Path: f.path, Line: f.doc.FieldLine("status"), Message: "status is not defined in project config: " + f.item.Status})
 			}
 		}
+		for _, ref := range f.item.Refs {
+			if format.PathLikeRef(ref) {
+				continue
+			}
+			if root := f.source.options.ControlRoot; root != "" {
+				if _, err := os.Stat(filepath.Join(root, ref)); err == nil {
+					continue
+				}
+			}
+			findings = append(findings, source.Finding{Code: "invalid-ref", Severity: "warning", Path: f.path, Line: f.doc.FieldLine("refs"), Message: "refs entry is neither a URL nor a path: " + ref})
+		}
 		if line := format.NoncanonicalLine(f.data); line > 0 {
 			findings = append(findings, source.Finding{Code: "noncanonical", Severity: "info", Path: f.path, Line: line, Message: "normalize line endings and add a final newline"})
 		}

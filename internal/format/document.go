@@ -330,6 +330,17 @@ func (d *Document) FieldLine(key string) int {
 	return 1
 }
 
+// PathLikeRef reports whether a refs entry reads as a URL or a
+// repository-relative path: it contains a slash or a dot and isn't an item ID.
+// A bare word such as BL-12 or a commit hash doesn't; callers that can check
+// the repository also accept a top-level file such as Makefile.
+func PathLikeRef(ref string) bool {
+	if ref == "" || strings.TrimSpace(ref) != ref || idPattern.MatchString(strings.ToUpper(ref)) {
+		return false
+	}
+	return strings.ContainsAny(ref, "/.")
+}
+
 // validRef requires the native grammar for local refs. A qualified ref keeps
 // the named source's own ID (issues:128, jira:10001), which may be any
 // provider's format, so it only has to be a non-empty single-line token.

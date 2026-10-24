@@ -460,10 +460,8 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 			case []string:
 				values = v
 			case string:
-				if op == model.Set && v != "" {
+				if v != "" {
 					values = strings.Split(v, ",")
-				} else if op != model.Set {
-					values = []string{v}
 				}
 			default:
 				return failed[any]("rejected", "list field values must be strings")

@@ -66,6 +66,27 @@ func writeOK(t *testing.T, root, stdin string, args ...string) string {
 	return out
 }
 
+// += and -= split comma lists like =, so related+=A,B adds two IDs rather than
+// one invalid reference reported by frontmatter line.
+func TestSetCommaListEntries(t *testing.T) {
+	root := writeFixture(t)
+	path := filepath.Join(root, "items/BL-012.md")
+	writeOK(t, root, "", "set", "12", "related+=7,8", "labels+=x,y", "labels-=bug,keep")
+	if text := get(t, path); !strings.Contains(text, "labels: [x, y]") || !strings.Contains(text, "related: [BL-7, BL-8]") {
+		t.Fatalf("comma entries not applied:\n%s", text)
+	}
+	writeOK(t, root, "", "set", "12", "related-=7,8")
+	if strings.Contains(get(t, path), "related") {
+		t.Fatalf("related-= kept entries:\n%s", get(t, path))
+	}
+	for _, value := range []string{"not an id", ""} {
+		code, out, _ := writeRun(root, "", "set", "12", "related+=7,"+value)
+		if code != 5 || !strings.Contains(out, `related value \"`+value+`\"`) || strings.Contains(out, "line") {
+			t.Fatalf("invalid reference %q: %d %s", value, code, out)
+		}
+	}
+}
+
 // Auto-commit must stay off by default, require trust for project-enabled Git
 // hooks, and commit a multi-item command exactly once through the real CLI.
 func TestAutoCommitCLI(t *testing.T) {

@@ -137,6 +137,8 @@ type taskInput struct {
 	nativeID      string
 	legacyID      string
 	refs          []string
+	relatedRefs   []string // references naming imported items
+	otherRefs     []string // references that are neither URLs nor paths
 	dropped       map[string]bool
 	priority      model.Priority
 	priorityAlias string
@@ -199,6 +201,9 @@ func Import(ctx context.Context, input string, options ImportOptions) (Report, e
 		}
 		existed, err = validateTarget(targetAbs)
 		if err != nil {
+			if within(canonical(targetAbs), canonical(source.root)) {
+				return Report{}, fmt.Errorf("%w; to replace the Backlog.md files in this project, use --in-place instead of --to", err)
+			}
 			return Report{}, err
 		}
 	}
@@ -303,10 +308,15 @@ func Import(ctx context.Context, input string, options ImportOptions) (Report, e
 		return report, err
 	}
 	rewriter := newReferenceRewriter(source, tasks, refs, &report)
+	moved := 0
 	for i := range tasks {
 		if err := rewriter.rewrite(&tasks[i]); err != nil {
 			return report, fmt.Errorf("%s: %w", tasks[i].sourcePath, err)
 		}
+		moved += len(tasks[i].relatedRefs)
+	}
+	if moved > 0 {
+		report.Decisions = append(report.Decisions, fmt.Sprintf("Moved %d reference(s) naming imported items to related.", moved))
 	}
 
 	plan := outputPlan{files: map[string][]byte{}, target: targetAbs, existed: existed}
@@ -1357,6 +1367,11 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 			return fmt.Errorf("related: %w", err)
 		}
 	}
+	for _, id := range task.relatedRefs {
+		if !slices.Contains(related, id) {
+			related = append(related, id)
+		}
+	}
 	duplicateValue, hasDuplicate, err := mergedScalar(task.doc.fields, "duplicate_of")
 	if err != nil {
 		return err
@@ -1410,6 +1425,9 @@ func mapTask(task *taskInput, idMap map[string]string, milestoneByKey, milestone
 	}
 	if _, exists := item.Fields["legacy_id"]; task.legacyID != "" && !exists {
 		item.Fields["legacy_id"] = task.legacyID
+	}
+	if len(task.otherRefs) > 0 {
+		item.Fields["references"] = task.otherRefs
 	}
 	for _, ref := range dependencies {
 		item.BlockedBy = append(item.BlockedBy, parseReference(ref))

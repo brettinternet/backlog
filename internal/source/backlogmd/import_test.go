@@ -222,6 +222,9 @@ func TestImportRejectsCollisionsAndNonEmptyDryRunTarget(t *testing.T) {
 	if _, err := Import(context.Background(), root, ImportOptions{Target: target, DryRun: true}); err == nil || !strings.Contains(err.Error(), "non-empty") {
 		t.Fatalf("expected non-empty target refusal in dry-run, got %v", err)
 	}
+	if _, err := Import(context.Background(), root, ImportOptions{Target: backlog, DryRun: true}); err == nil || !strings.Contains(err.Error(), "use --in-place") {
+		t.Fatalf("expected the Backlog.md folder as target to suggest --in-place, got %v", err)
+	}
 	data, err := os.ReadFile(filepath.Join(target, "keep"))
 	if err != nil || string(data) != "untouched" {
 		t.Fatalf("non-empty target was modified: %q, %v", data, err)
@@ -235,7 +238,7 @@ func TestImportResolvesMigrationGaps(t *testing.T) {
 	root := t.TempDir()
 	backlog := filepath.Join(root, "backlog")
 	writeFixtureFile(t, backlog, "config.yml", "statuses: [To Do, In Progress, Done]\ntask_prefix: task\n")
-	writeFixtureFile(t, backlog, "tasks/task-1.md", "---\nid: task-1\ntitle: One\nstatus: open\npriority: p0\ncreated_date: \"\"\nupdated_date: '2026-01-02 00:00'\ndependencies: [pw-some-slug-2]\nrefs: [backlog/tasks/task-2 - Peer.md]\n---\n## Description\nSee draft-1 and pw-some-slug-2. Not DRAFT-1.2, draft-1-notes, or https://x.test/?q=pw-some-slug-2.\n[spec](../docs/spec.md) [peer](task-2%20-%20Peer.md#plan) [old](../drafts/missing.md)\n```\ndraft-1\n```\n")
+	writeFixtureFile(t, backlog, "tasks/task-1.md", "---\nid: task-1\ntitle: One\nstatus: open\npriority: p0\ncreated_date: \"\"\nupdated_date: '2026-01-02 00:00'\ndependencies: [pw-some-slug-2]\nrefs: [backlog/tasks/task-2 - Peer.md, pw-some-slug-2, task-2, 0c32301]\n---\n## Description\nSee draft-1 and pw-some-slug-2. Not DRAFT-1.2, draft-1-notes, or https://x.test/?q=pw-some-slug-2.\n[spec](../docs/spec.md) [peer](task-2%20-%20Peer.md#plan) [old](../drafts/missing.md)\n```\ndraft-1\n```\n")
 	writeFixtureFile(t, backlog, "tasks/task-2 - Peer.md", basicTask("task-2", "To Do", ""))
 	writeFixtureFile(t, backlog, "tasks/pw-some-slug-2.md", basicTask("pw-some-slug-2", "Done", ""))
 	writeFixtureFile(t, backlog, "drafts/draft-1.md", basicTask("draft-1", "To Do", ""))
@@ -293,13 +296,17 @@ func TestImportResolvesMigrationGaps(t *testing.T) {
 	if one.Priority != model.Urgent || !one.Created.Equal(one.Updated) || strings.Join(one.Refs, ",") != "backlog/TASK-2.md" || len(one.BlockedBy) != 1 || one.BlockedBy[0].ID != "TASK-8" {
 		t.Fatalf("priority, created date, refs, or slug dependency not mapped: %+v", one)
 	}
+	// Backlog.md references may name items or commits, which aren't paths.
+	if !reflect.DeepEqual(one.Related, []model.Ref{{ID: "TASK-8"}, {ID: "TASK-2"}}) || !reflect.DeepEqual(one.Fields["references"], []any{"0c32301"}) {
+		t.Fatalf("item references not moved to related (%v) or other references not kept: %#v", one.Related, one.Fields)
+	}
 	var unresolved []string
 	for _, entry := range report.UnresolvedReferences {
 		if entry.SourcePath == "tasks/task-1.md" {
 			unresolved = append(unresolved, entry.Value)
 		}
 	}
-	if strings.Join(unresolved, ",") != "draft-1,../drafts/missing.md" {
+	if strings.Join(unresolved, ",") != "0c32301,draft-1,../drafts/missing.md" {
 		t.Fatalf("unresolved references = %+v", report.UnresolvedReferences)
 	}
 
@@ -313,7 +320,7 @@ func TestImportResolvesMigrationGaps(t *testing.T) {
 		t.Fatalf("symlinked item link not rebased: %q", five.Description)
 	}
 	decisions := strings.Join(report.Decisions, "\n")
-	for _, decision := range []string{`status "open"`, "Mapped priority p0 to urgent in 1 item(s).", "dropping TASK-3 → TASK-4", "Followed 1 symbolic link(s)"} {
+	for _, decision := range []string{`status "open"`, "Mapped priority p0 to urgent in 1 item(s).", "dropping TASK-3 → TASK-4", "Followed 1 symbolic link(s)", "Moved 2 reference(s) naming imported items to related."} {
 		if !strings.Contains(decisions, decision) {
 			t.Fatalf("decisions omit %q:\n%s", decision, decisions)
 		}
