@@ -521,7 +521,7 @@ func (m Model) titleCell(r screenRow, row engine.Row, width int, selected bool) 
 		}
 		rest := ansi.Truncate(labels.String(), width-used, "…")
 		if strings.TrimSpace(rest) != "…" {
-			text += t.faint.render(rest)
+			text += t.muted.render(rest)
 			used += ansi.StringWidth(rest)
 		}
 	}
