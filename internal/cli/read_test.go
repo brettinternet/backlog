@@ -258,6 +258,11 @@ func TestReadProjectionAndExplain(t *testing.T) {
 			t.Fatalf("projection %v: %d %s %s", args, code, out, stderr)
 		}
 	}
+	// A silent empty next in a pipe looked like a hang to agents.
+	code, out, stderr := run("-C", root, "next", "id:nothing")
+	if code != 0 || out != "" || !strings.Contains(stderr, "No ready items") {
+		t.Fatalf("empty next: %d %q %q", code, out, stderr)
+	}
 	// ls defaults to is:open and loads archive/ only for is:archived (query.md).
 	if err := os.MkdirAll(filepath.Join(root, "items", "archive"), 0700); err != nil {
 		t.Fatal(err)
@@ -273,7 +278,7 @@ func TestReadProjectionAndExplain(t *testing.T) {
 			}
 		}
 	}
-	code, out, _ := run("-C", root, "next", "--explain", "--json")
+	code, out, _ = run("-C", root, "next", "--explain", "--json")
 	var envelope struct {
 		Data struct {
 			Items        []struct{ ID string }

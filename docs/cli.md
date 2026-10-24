@@ -545,7 +545,9 @@ BL-3  todo               Third
   a workspace.
 - Rows fit the terminal width (80 columns when piped), counting wide characters.
 - Grouped `ls` prints `value (count)` before each group, `none` for unset.
-- `No items.` (`No ready items.` for `next`) prints only on a terminal.
+- `No items.` prints only on a terminal. `next` with nothing ready always says
+  so, with a hint to use `--explain`: on stdout at a terminal, otherwise on
+  stderr.
 - Colors follow the terminal palette. `NO_COLOR`, `TERM=dumb`, and pipes print
   no escape sequences.
 - Text output strips terminal escape sequences and control characters; table

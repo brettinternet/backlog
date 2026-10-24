@@ -17,7 +17,6 @@ import (
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
-	"go.yaml.in/yaml/v3"
 )
 
 // Report is the complete, JSON-serializable import plan and result. File
@@ -264,7 +263,7 @@ func Import(ctx context.Context, input, target string, dryRun bool) (Report, err
 		Ready:      ready,
 		Defaults:   project.DefaultsConfig{DOD: append([]string(nil), source.dod...)},
 	}
-	configBytes, err := yaml.Marshal(settings)
+	configBytes, err := format.MarshalConfig(settings)
 	if err != nil {
 		return report, fmt.Errorf("encode native project config: %w", err)
 	}

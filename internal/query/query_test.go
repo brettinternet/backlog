@@ -109,7 +109,7 @@ func TestErrors(t *testing.T) {
 		pos        int
 		suggestion string
 	}{
-		{`x      lable:tui`, 7, "label"}, {`is:raedy`, 3, "ready"}, {`label:`, 6, ""}, {`id:a,`, 5, ""}, {`id:,a`, 3, ""}, {`label:>a`, 6, ""}, {`due:2026-02-30`, 4, ""}, {`updated:999999999999999999w`, 8, ""}, {`"abc`, 0, ""}, {`abc\`, 3, ""}, {`-`, 1, ""}, {`field.:x`, 0, ""}, {`sort:bogus`, 5, ""}, {`group:status,label`, 0, ""}, {`-sort:id`, 0, ""}, {`sort:id sort:title`, 8, ""}, {`group:label group:type`, 12, ""},
+		{`x      lable:tui`, 7, "label"}, {`is:raedy`, 3, "ready"}, {`label:`, 6, ""}, {`id:a,`, 5, ""}, {`id:,a`, 3, ""}, {`label:>a`, 6, ""}, {`due:2026-02-30`, 4, ""}, {`updated:999999999999999999w`, 8, ""}, {`"abc`, 0, ""}, {`abc\`, 3, ""}, {`-`, 1, ""}, {`field.:x`, 0, ""}, {`sort:bogus`, 5, ""}, {`group:status,label`, 0, ""}, {`-sort:id`, 0, ""}, {`sort:id sort:title`, 8, ""}, {`group:label group:type`, 12, ""}, {`is:open | is:closed`, 8, ""}, {`a && b`, 2, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
@@ -119,6 +119,11 @@ func TestErrors(t *testing.T) {
 				t.Fatalf("error = %#v, want position %d suggestion %q", err, tc.pos, tc.suggestion)
 			}
 		})
+	}
+	for _, quoted := range []string{`"|"`, `\|`, `a|b`} {
+		if _, err := query.Parse(quoted, query.Options{}); err != nil {
+			t.Fatalf("%s: %v", quoted, err)
+		}
 	}
 	_, err := query.Parse(`x      lable:tui`, query.Options{})
 	if err.Error() != `unknown field "lable" at 7; did you mean "label"?` {

@@ -8,7 +8,7 @@ assignees:
   - '@one'
   # keep intervening comment
   - '@two'
-  - '@three'
+  - "@three"
 priority: high
 custom: {nested: [a, b]} # untouched unknown field
 created: 2026-10-21T17:06:00Z

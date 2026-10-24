@@ -42,7 +42,9 @@ escape  = BACKSLASH char                    ; includes quotes and backslashes
 - `\` escapes the next character anywhere, including quotes, whitespace, and
   commas. A trailing `\` or unclosed quote is an error, as is an empty value.
 - A quoted or escaped field prefix is plain text (`"label:tui"`).
-- Commas separate alternatives only in field values.
+- Commas separate alternatives only in field values. There is no `|` or `&`
+  operator: a bare `|`, `||`, `&`, or `&&` term is an error. Quote or escape it
+  to search for it.
 
 Field names, `is:`/`has:` values, categories, statuses, priorities, claim
 values, and outcomes ignore case. Labels, handles, IDs, and other exact values

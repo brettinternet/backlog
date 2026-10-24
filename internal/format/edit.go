@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/brettinternet/backlog/internal/model"
 	"go.yaml.in/yaml/v3"
@@ -15,12 +16,70 @@ func (d *Document) splice(start, end int, text string) []byte {
 	return []byte(strings.Join(d.lines[:start], "") + text + strings.Join(d.lines[end:], ""))
 }
 func encode(n *yaml.Node) string {
+	preferDoubleQuotes(n, false)
+	return rawEncode(n)
+}
+func rawEncode(n *yaml.Node) string {
 	var b bytes.Buffer
 	e := yaml.NewEncoder(&b)
 	e.SetIndent(2)
 	_ = e.Encode(n)
 	_ = e.Close()
 	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// preferDoubleQuotes double-quotes each unstyled string that YAML must quote,
+// as Prettier does, unless it contains a double quote. YAML would single-quote
+// it, and Prettier would rewrite that.
+func preferDoubleQuotes(n *yaml.Node, flow bool) {
+	flow = flow || n.Style&yaml.FlowStyle != 0
+	switch n.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode, yaml.MappingNode:
+		for _, child := range n.Content {
+			preferDoubleQuotes(child, flow)
+		}
+	case yaml.ScalarNode:
+		if n.Style != 0 || strings.Contains(n.Value, `"`) {
+			return
+		}
+		probe := &yaml.Node{Kind: yaml.ScalarNode, Tag: n.Tag, Value: n.Value}
+		text := rawEncode(probe)
+		if flow {
+			text = strings.TrimPrefix(rawEncode(&yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle, Content: []*yaml.Node{probe}}), "[")
+		}
+		if strings.HasPrefix(text, "'") {
+			n.Style = yaml.DoubleQuotedStyle
+		}
+	}
+}
+
+// printWidth is Prettier's default. Flow lists that would exceed it are written
+// in block style, so bl-written frontmatter is stable under Prettier.
+const printWidth = 80
+
+// renderField renders one frontmatter line, or a block when the value is a nonempty
+// map or a list too long for one line. A comment follows the key.
+func renderField(key, n *yaml.Node, comment, nl string) string {
+	text := encode(key) + ":"
+	if n.Kind == yaml.SequenceNode && n.Style&yaml.FlowStyle != 0 && utf8.RuneCountInString(text+" "+encode(n)) > printWidth {
+		block := *n
+		block.Style &^= yaml.FlowStyle
+		n = &block
+	}
+	if (n.Kind == yaml.SequenceNode || n.Kind == yaml.MappingNode) && n.Style&yaml.FlowStyle == 0 && len(n.Content) > 0 {
+		if comment != "" {
+			text += " " + comment
+		}
+		for _, line := range strings.Split(encode(n), "\n") {
+			text += nl + "  " + line
+		}
+		return text + nl
+	}
+	text += " " + encode(n)
+	if comment != "" {
+		text += " " + comment
+	}
+	return text + nl
 }
 func scalar(value string, style yaml.Style) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value, Style: style & (yaml.SingleQuotedStyle | yaml.DoubleQuotedStyle)}
@@ -94,23 +153,7 @@ func (d *Document) fieldEdit(key string, value any, unset bool) ([]byte, error) 
 		if comment == "" {
 			comment = old.key.LineComment
 		}
-		text := encode(scalar(key, old.key.Style)) + ":"
-		if n.Kind == yaml.SequenceNode && n.Style&yaml.FlowStyle == 0 {
-			if comment != "" {
-				text += " " + comment
-			}
-			text += d.nl
-			for _, child := range n.Content {
-				text += "  - " + encode(child) + d.nl
-			}
-		} else {
-			text += " " + encode(n)
-			if comment != "" {
-				text += " " + comment
-			}
-			text += d.nl
-		}
-		return d.splice(old.span.start, old.span.end, normalize(text, d.nl)), nil
+		return d.splice(old.span.start, old.span.end, normalize(renderField(scalar(key, old.key.Style), n, comment, d.nl), d.nl)), nil
 	}
 	// Insert known keys immediately before the next canonical successor, without
 	// moving existing keys or their comments. Unknown keys append at the end.
@@ -124,7 +167,7 @@ func (d *Document) fieldEdit(key string, value any, unset bool) ([]byte, error) 
 			}
 		}
 	}
-	return d.splice(at, at, normalize(encode(scalar(key, 0))+": "+encode(n), d.nl)+d.nl), nil
+	return d.splice(at, at, normalize(renderField(scalar(key, 0), n, "", d.nl), d.nl)), nil
 }
 func normalize(text, nl string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", nl)
@@ -457,13 +500,13 @@ func Serialize(item model.Item) ([]byte, error) {
 				return nil, err
 			}
 		}
-		if n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode {
+		if n.Kind == yaml.SequenceNode {
 			n.Style = yaml.FlowStyle
 		}
 		if k == "created" || k == "updated" {
 			n.Tag = "!!timestamp"
 		}
-		b.WriteString(encode(scalar(k, 0)) + ": " + encode(n) + "\n")
+		b.WriteString(renderField(scalar(k, 0), n, "", "\n"))
 	}
 	b.WriteString("---\n")
 	if description := strings.Trim(normalize(item.Description, "\n"), "\r\n"); description != "" {
@@ -506,4 +549,15 @@ func Serialize(item model.Item) ([]byte, error) {
 		return nil, fmt.Errorf("invalid-value: text must not add, remove, or hide sections or comments; fence code and avoid level-2 section headings")
 	}
 	return data, nil
+}
+
+// MarshalConfig encodes project config with two-space indentation and
+// Prettier's quoting, so a bl-written backlog.yaml is stable under Prettier.
+func MarshalConfig(v any) ([]byte, error) {
+	var n yaml.Node
+	if err := n.Encode(v); err != nil {
+		return nil, err
+	}
+	preferDoubleQuotes(&n, false)
+	return []byte(rawEncode(&n) + "\n"), nil
 }
