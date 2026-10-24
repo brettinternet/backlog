@@ -28,6 +28,19 @@ func Coordination(ctx context.Context) (model.Coordinator, model.CallerContext) 
 	return v.coordinator, v.caller
 }
 
+// ClaimHistory reads an item's retained claims for display. A failure comes
+// back as a message so the caller can still show the item.
+func ClaimHistory(ctx context.Context, c model.Coordinator, resource string) ([]model.ClaimEpoch, string) {
+	if c == nil || resource == "" {
+		return nil, ""
+	}
+	epochs, err := c.History(ctx, resource)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return epochs, ""
+}
+
 type TransitionResult struct {
 	Claim  *model.ClaimResult `json:"claim,omitempty"`
 	Status string             `json:"status"`

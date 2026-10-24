@@ -1,6 +1,9 @@
 # Agent workflow
 
-Use one stable, distinct session for the whole loop. With coordination configured,
+Use one stable, distinct session for the whole loop. Prefer the harness's own
+session or loop-run ID (for example CLAUDE_CODE_SESSION_ID or PI_SESSION_ID) so
+the recorded claim leads back to a transcript; generate a UUID only when the
+harness has none. With coordination configured,
 select, claim, and start in one operation; never treat a status change as a claim.
 Plain `bl next --explain --json` is read-only.
 

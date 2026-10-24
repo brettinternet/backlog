@@ -99,7 +99,12 @@ metadata and only that section key. A missing section is `""`.
 - Native reads return stored edges only; inverse edges aren't computed.
 - Nonempty criteria and DoD also appear as `criteria` and `dod` arrays of
   `{text, checked, evidence?}`. The Markdown sections include evidence lines.
-- With coordination enabled, `data.resource` is the item's claim key.
+- With coordination enabled, `data.resource` is the item's claim key, and
+  `data.claims` lists the item's past and current claims from Worklease
+  history, oldest first: `{claimId, session, agent, acquiredAt, endedAt?,
+  endReason?, expiresAt?}`. An open claim has no `endedAt`. If history can't be
+  read, `data.claimsError` says why and `show` still succeeds. Text output adds
+  a Claims section.
 
 `item.version` is the source's opaque version: a content hash for files, a
 composite fingerprint for GitHub. Pass it unchanged to `--if-version`.

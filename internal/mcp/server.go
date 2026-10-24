@@ -317,7 +317,9 @@ func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs
 			return failed[any](reason(err), err.Error())
 		}
 	}
-	return nil, itemjson.NewDetail(items[0], resource), nil
+	detail := itemjson.NewDetail(items[0], resource)
+	detail.Claims, detail.ClaimsError = engine.ClaimHistory(ctx, s.coordinator, resource)
+	return nil, detail, nil
 }
 func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
 	if args.Title == "" {

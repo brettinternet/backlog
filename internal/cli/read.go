@@ -212,21 +212,25 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if section != "" {
 				sections = map[string]string{section: sections[section]}
 			}
-			if cmd.Bool("json") {
-				resource := ""
-				if c, _ := engine.Coordination(ctx); c != nil {
-					var e error
-					resource, e = c.Resource(i)
-					if e != nil {
-						return writeError(e)
-					}
+			resource := ""
+			c, _ := engine.Coordination(ctx)
+			if c != nil {
+				var e error
+				if resource, e = c.Resource(i); e != nil && cmd.Bool("json") {
+					return writeError(e)
 				}
-				return success(out, "show", itemjson.Detail{Resource: resource, Item: itemjson.NewSummary(i), Metadata: itemjson.Metadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD})
+			}
+			detail := itemjson.Detail{Resource: resource, Item: itemjson.NewSummary(i), Metadata: itemjson.Metadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD}
+			if section == "" {
+				detail.Claims, detail.ClaimsError = engine.ClaimHistory(ctx, c, resource)
+			}
+			if cmd.Bool("json") {
+				return success(out, "show", detail)
 			}
 			if section != "" {
 				return writeLine(out, sections[section])
 			}
-			return writeShow(out, cfg, i, sections)
+			return writeShow(out, cfg, i, detail)
 		}},
 		{Name: "next", Usage: "Rank ready items", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Explain every included and excluded item"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim the top ready item for --session, resuming its claim first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {

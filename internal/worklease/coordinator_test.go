@@ -284,3 +284,25 @@ func TestWorkKeyStaysPublicText(t *testing.T) {
 		}
 	}
 }
+
+// A released item keeps its sessions in history, the only way back to who
+// worked it once the active claim list forgets it.
+func TestHistoryKeepsReleasedClaims(t *testing.T) {
+	history := successFixture(map[string]any{"epochs": []any{
+		map[string]any{"claimId": "current", "sessionId": "loop-b", "agentId": "b", "status": "open", "acquiredAt": "2030-01-02T00:00:00Z", "resources": []string{"coordination:generic:[REDACTED]"}},
+		map[string]any{"claimId": "past", "sessionId": "loop-a", "agentId": "a", "status": "complete", "endReason": "released", "acquiredAt": "2030-01-01T00:00:00Z", "endedAt": "2030-01-01T01:00:00Z", "resources": []string{"coordination:generic:[REDACTED]"}},
+	}})
+	list := successFixture(map[string]any{"claims": []any{map[string]any{"claimId": "current", "resources": []string{"resource"}, "expiresAt": "2030-01-02T00:15:00Z"}}})
+	c := cliFixture(t, []step{{[]string{"--json", "history", "--resource", "resource", "--limit", "1000"}, history}, {[]string{"--json", "list"}, list}})
+	epochs, err := c.History(context.Background(), "resource")
+	if err != nil || len(epochs) != 2 {
+		t.Fatalf("history lost: %+v %v", epochs, err)
+	}
+	past, current := epochs[0], epochs[1]
+	if past.Session != "loop-a" || past.Agent != "a" || past.EndReason != "released" || !past.EndedAt.Equal(time.Date(2030, 1, 1, 1, 0, 0, 0, time.UTC)) || !past.ExpiresAt.IsZero() {
+		t.Fatalf("released epoch: %+v", past)
+	}
+	if current.Session != "loop-b" || !current.EndedAt.IsZero() || !current.ExpiresAt.Equal(time.Date(2030, 1, 2, 0, 15, 0, 0, time.UTC)) {
+		t.Fatalf("open epoch: %+v", current)
+	}
+}

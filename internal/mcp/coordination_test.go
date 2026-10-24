@@ -60,6 +60,9 @@ func (c *callCoordinator) Heartbeat(_ context.Context, caller model.CallerContex
 	c.renewed = append(c.renewed, caller.Session)
 	return model.ClaimResult{Outcome: "renewed", ExpiresAt: time.Unix(2000, 0)}
 }
+func (c *callCoordinator) History(context.Context, string) ([]model.ClaimEpoch, error) {
+	return nil, nil
+}
 func (c *callCoordinator) List(context.Context) ([]model.ClaimInfo, error) {
 	var out []model.ClaimInfo
 	for _, claim := range c.claims {

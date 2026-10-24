@@ -37,6 +37,9 @@ type Detail struct {
 	Sections map[string]string `json:"sections"`
 	Criteria []model.Criterion `json:"criteria,omitempty"`
 	DoD      []model.Criterion `json:"dod,omitempty"`
+	// Claims and ClaimsError report the resource's Worklease history.
+	Claims      []model.ClaimEpoch `json:"claims,omitempty"`
+	ClaimsError string             `json:"claimsError,omitempty"`
 }
 
 func NewDetail(i model.Item, resource string) Detail {

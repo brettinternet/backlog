@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
@@ -196,7 +197,8 @@ var sectionTitles = [][2]string{
 }
 
 // writeShow prints the item's set fields, aligned, then its nonempty sections.
-func writeShow(out io.Writer, cfg project.Config, i model.Item, sections map[string]string) error {
+func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.Detail) error {
+	sections := detail.Sections
 	p, names := paletteFor(out), refsFor(cfg)
 	ref := func(r *model.Ref) string {
 		if r == nil {
@@ -250,6 +252,21 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, sections map[str
 	for _, s := range sectionTitles {
 		if text := sections[s[0]]; text != "" {
 			b.WriteString("\n" + p.paint("1", "## "+s[1]) + "\n" + textutil.Sanitize(text) + "\n")
+		}
+	}
+	if len(detail.Claims) > 0 || detail.ClaimsError != "" {
+		b.WriteString("\n" + p.paint("1", "## Claims") + "\n")
+		if detail.ClaimsError != "" {
+			b.WriteString(textutil.Line(detail.ClaimsError) + "\n")
+		}
+		for _, c := range detail.Claims {
+			end := "open"
+			if !c.EndedAt.IsZero() {
+				end = c.EndReason + " " + timestamp(c.EndedAt)
+			} else if !c.ExpiresAt.IsZero() {
+				end = "expires " + timestamp(c.ExpiresAt)
+			}
+			b.WriteString(textutil.Line(c.Session+"  "+c.Agent+"  "+timestamp(c.AcquiredAt)+"  "+strings.TrimSpace(end)) + "\n")
 		}
 	}
 	_, err := io.WriteString(out, b.String())

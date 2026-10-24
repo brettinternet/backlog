@@ -69,6 +69,7 @@ func (c *coordinator) Heartbeat(context.Context, model.CallerContext) model.Clai
 	c.renewed++
 	return model.ClaimResult{Outcome: "renewed", ExpiresAt: time.Unix(200, 0)}
 }
+func (c *coordinator) History(context.Context, string) ([]model.ClaimEpoch, error) { return nil, nil }
 func (c *coordinator) List(context.Context) ([]model.ClaimInfo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

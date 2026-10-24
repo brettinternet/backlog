@@ -29,6 +29,9 @@ func (contendedCoordinator) ResumeAcquire(context.Context, model.CallerContext, 
 	panic("unexpected replay")
 }
 func (contendedCoordinator) List(context.Context) ([]model.ClaimInfo, error) { return nil, nil }
+func (contendedCoordinator) History(context.Context, string) ([]model.ClaimEpoch, error) {
+	return nil, nil
+}
 func (contendedCoordinator) VerifyRun(context.Context, model.CallerContext, string) model.ClaimResult {
 	panic("unexpected run verification")
 }

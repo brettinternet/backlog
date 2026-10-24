@@ -39,7 +39,7 @@ error.details.retryAt.
 Session-required (2), claim-held/run-mismatch (4), and contention (7) are
 coordination reasons. Claim/release/heartbeat return separate claim outcomes;
 status writes include transition.status and transition.claim. Show includes
-resource when coordination is enabled. Redacted provider membership is unknown,
+resource and claim history (claims, or claimsError) when coordination is enabled. Redacted provider membership is unknown,
 never permission to write or acquire again.
 Treat item versions as opaque strings and pass them verbatim to
 --if-version whenever a write depends on previously read content.

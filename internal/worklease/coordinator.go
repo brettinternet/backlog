@@ -45,6 +45,15 @@ type envelope struct {
 	} `json:"error"`
 	Claim  *wireClaim  `json:"claim"`
 	Claims []wireClaim `json:"claims"`
+	Epochs []struct {
+		ClaimID    string     `json:"claimId"`
+		SessionID  string     `json:"sessionId"`
+		AgentID    string     `json:"agentId"`
+		Status     string     `json:"status"`
+		EndReason  string     `json:"endReason"`
+		AcquiredAt time.Time  `json:"acquiredAt"`
+		EndedAt    *time.Time `json:"endedAt"`
+	} `json:"epochs"`
 	wireClaim
 	Receipt struct {
 		Result struct {
@@ -114,8 +123,8 @@ func (c *Coordinator) call(ctx context.Context, caller model.CallerContext, args
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	argv := append([]string{"--json"}, args...)
-	// runs/list/profile have no selector flag; all contextual commands select explicitly.
-	if len(args) > 0 && args[0] != "runs" && args[0] != "list" && args[0] != "profile" {
+	// runs/list/profile/history have no selector flag; all contextual commands select explicitly.
+	if len(args) > 0 && !slices.Contains([]string{"runs", "list", "profile", "history"}, args[0]) {
 		argv = append(argv, "--session", caller.Session)
 	}
 	cmd := exec.CommandContext(ctx, "worklease", argv...)
@@ -392,6 +401,42 @@ func (c *Coordinator) List(ctx context.Context) ([]model.ClaimInfo, error) {
 		claims = append(claims, *w.info())
 	}
 	return claims, nil
+}
+
+// History reads the resource's retained epochs. An open epoch takes its lease
+// expiry from the active claim list when that list is readable.
+func (c *Coordinator) History(ctx context.Context, resource string) ([]model.ClaimEpoch, error) {
+	v, err := c.call(ctx, model.CallerContext{}, "history", "--resource", resource, "--limit", "1000")
+	if err != nil {
+		return nil, err
+	}
+	if !v.OK {
+		return nil, fmt.Errorf("worklease history unavailable: %s", v.Error.Message)
+	}
+	epochs := make([]model.ClaimEpoch, 0, len(v.Epochs))
+	open := false
+	for _, w := range v.Epochs {
+		e := model.ClaimEpoch{ID: w.ClaimID, Session: w.SessionID, Agent: w.AgentID, AcquiredAt: w.AcquiredAt, EndReason: w.EndReason}
+		if w.EndedAt != nil {
+			e.EndedAt = *w.EndedAt
+		} else {
+			open = true
+		}
+		epochs = append(epochs, e)
+	}
+	if open {
+		if list, err := c.call(ctx, model.CallerContext{}, "list"); err == nil && list.OK {
+			for n := range epochs {
+				for _, w := range list.Claims {
+					if epochs[n].EndedAt.IsZero() && w.ClaimID == epochs[n].ID {
+						epochs[n].ExpiresAt = w.ExpiresAt
+					}
+				}
+			}
+		}
+	}
+	slices.SortStableFunc(epochs, func(a, b model.ClaimEpoch) int { return a.AcquiredAt.Compare(b.AcquiredAt) })
+	return epochs, nil
 }
 func (c *Coordinator) VerifyRun(ctx context.Context, caller model.CallerContext, resource string) model.ClaimResult {
 	mismatch := model.ClaimResult{Outcome: "unavailable", Reason: "run-mismatch", Message: "run does not verify a live held claim for this session and resource"}

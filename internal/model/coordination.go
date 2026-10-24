@@ -18,6 +18,18 @@ type ClaimInfo struct {
 	Item      string    `json:"item,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
+
+// ClaimEpoch is one retained claim on an item's resource. An open epoch has
+// no end; ExpiresAt is set when its current lease is known.
+type ClaimEpoch struct {
+	ID         string    `json:"claimId"`
+	Session    string    `json:"session"`
+	Agent      string    `json:"agent"`
+	AcquiredAt time.Time `json:"acquiredAt"`
+	EndedAt    time.Time `json:"endedAt,omitzero"`
+	EndReason  string    `json:"endReason,omitempty"`
+	ExpiresAt  time.Time `json:"expiresAt,omitzero"`
+}
 type ClaimOutcome string
 
 const (
@@ -70,6 +82,8 @@ type Coordinator interface {
 	Release(context.Context, CallerContext, Item, string) ClaimResult
 	Heartbeat(context.Context, CallerContext) ClaimResult
 	List(context.Context) ([]ClaimInfo, error)
+	// History lists retained claim epochs for one resource, oldest first.
+	History(context.Context, string) ([]ClaimEpoch, error)
 	VerifyRun(context.Context, CallerContext, string) ClaimResult
 }
 

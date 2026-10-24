@@ -85,7 +85,7 @@ Pass `cursor` back as `since` to continue: `more` means another page is ready,
 otherwise poll later. An unknown `since` returns `not-found`.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
-coordination, `resource`, like `bl show --json`. Edge targets in `metadata`
+coordination, `resource`, `claims`, and `claimsError`, like `bl show --json`. Edge targets in `metadata`
 are always `source:id`. With coordination, a status `update` adds `transition`.
 
 ## Claims
