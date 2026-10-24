@@ -3,11 +3,14 @@ id: BL-007.2
 title: Original title
 status: todo
 priority: high
-assignees: ['@one', '@two']
+assignees: ["@one", "@two"]
 labels: [one, two]
 created: 2026-10-21T17:06:00Z
 updated: 2026-10-22T09:15:42Z
-custom: {nested: [a, b]}
+custom:
+  nested:
+    - a
+    - b
 ---
 
 Description with **Markdown**.

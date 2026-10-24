@@ -141,13 +141,20 @@ func writeEmpty(out io.Writer, message string) error {
 	return err
 }
 
-func writeNext(out io.Writer, cfg project.Config, data nextData) error {
+// writeNext says when nothing is ready even in a pipe, where silence looks like
+// a hang or failure, but there on stderr so stdout stays a pure item list.
+func writeNext(out, errOut io.Writer, cfg project.Config, data nextData) error {
 	table := newItemTable(out, cfg, data.Items)
 	if err := table.writeAll(data.Items); err != nil {
 		return err
 	}
 	if len(data.Items) == 0 && len(data.Explanations) == 0 {
-		return writeEmpty(out, "No ready items.")
+		message := "No ready items. Run bl next --explain to see why."
+		if !terminal(out) {
+			out = errOut
+		}
+		_, err := fmt.Fprintln(out, message)
+		return err
 	}
 	if len(data.Explanations) == 0 {
 		return nil

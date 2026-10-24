@@ -10,13 +10,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
 	"github.com/brettinternet/backlog/internal/textutil"
 	urfave "github.com/urfave/cli/v3"
-	"go.yaml.in/yaml/v3"
 )
 
 var initPrefixPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*$`)
@@ -179,7 +179,7 @@ func initialize(directory, prefix, sourcePath string) (initResult, error) {
 		Workflow: project.WorkflowConfig{Start: "in-progress", Done: "done"},
 		Ready:    project.ReadyConfig{Statuses: []string{"todo"}, SatisfiedBy: []string{"done", "canceled"}, SkipContainers: true},
 	}
-	data, err := yaml.Marshal(settings)
+	data, err := format.MarshalConfig(settings)
 	if err != nil {
 		return initResult{}, &Error{Reason: "internal", Message: err.Error()}
 	}

@@ -110,6 +110,9 @@ func Parse(input string, options Options) (Query, error) {
 			if v.Text == "" {
 				return q, fail(v.Pos, "expected value")
 			}
+			if t.Field == "" && input[v.Pos:p.i] == v.Text && slices.Contains([]string{"|", "||", "&", "&&"}, v.Text) {
+				return q, fail(v.Pos, fmt.Sprintf("%q is not an operator; terms are ANDed, a comma ORs values in one field (status:todo,done), and %q searches for it", v.Text, `"`+v.Text+`"`))
+			}
 			if err = validateValue(t.Field, v); err != nil {
 				return q, err
 			}

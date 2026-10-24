@@ -299,16 +299,16 @@ func TestRenumberRewritesAllReferenceFormsAndRefusesAmbiguityAndCollision(t *tes
 		t.Fatal(err)
 	}
 	updatedReferrer := get(t, filepath.Join(root, "items", "BL-8.md"))
-	for _, ref := range []string{"parent: BL-30", "blocked_by: [BL-30, 'tasks:BL-30']", "related: [BL-30, 'tasks:BL-30']", "duplicate_of: tasks:BL-30"} {
+	for _, ref := range []string{"parent: BL-30", `blocked_by: [BL-30, "tasks:BL-30"]`, `related: [BL-30, "tasks:BL-30"]`, "duplicate_of: tasks:BL-30"} {
 		if !strings.Contains(updatedReferrer, ref) {
 			t.Errorf("reference form %q was not rewritten: %s", ref, updatedReferrer)
 		}
 	}
-	if !strings.Contains(get(t, filepath.Join(root, "items", "archive", "BL-7.md")), "related: ['tasks:BL-30']") {
+	if !strings.Contains(get(t, filepath.Join(root, "items", "archive", "BL-7.md")), `related: ["tasks:BL-30"]`) {
 		t.Fatal("archived qualified reference was not rewritten")
 	}
 	otherSourceRef := get(t, filepath.Join(root, "other", "BL-9.md"))
-	if !strings.Contains(otherSourceRef, "related: [BL-9, 'tasks:BL-30']") {
+	if !strings.Contains(otherSourceRef, `related: [BL-9, "tasks:BL-30"]`) {
 		t.Fatalf("renumber changed unrelated unqualified ref or missed qualified ref: %s", otherSourceRef)
 	}
 	code, output, stderr = writeRun(root, "", "check")

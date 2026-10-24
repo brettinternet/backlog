@@ -254,7 +254,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				if cmd.Bool("json") {
 					return success(out, "next", data)
 				}
-				return writeNext(out, cfg, data)
+				return writeNext(out, errOut, cfg, data)
 			}
 			s, err := load(ctx, cfg, false)
 			if err != nil {
@@ -292,7 +292,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if cmd.Bool("json") {
 				return success(out, "next", data)
 			}
-			return writeNext(out, cfg, data)
+			return writeNext(out, errOut, cfg, data)
 		}},
 	}
 }

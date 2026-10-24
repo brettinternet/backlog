@@ -13,8 +13,9 @@ import (
 )
 
 func importCommands(directory *string, out io.Writer) []*urfave.Command {
-	return []*urfave.Command{{Name: "import", Usage: "Import another tracker into a new native project", Category: categoryProject, Action: groupHelp("use bl import backlog-md [PATH] --to DIR"), Commands: []*urfave.Command{{Name: "backlog-md", Usage: "Import Backlog.md files", ArgsUsage: "[PATH]", Flags: []urfave.Flag{
+	return []*urfave.Command{{Name: "import", Usage: "Import another tracker into a new native project", Category: categoryProject, Action: groupHelp("use bl import backlog-md [PATH] --to DIR or --in-place"), Commands: []*urfave.Command{{Name: "backlog-md", Usage: "Import Backlog.md files", ArgsUsage: "[PATH]", Flags: []urfave.Flag{
 		&urfave.StringFlag{Name: "to", Value: "backlog-import", Usage: "Create the project in `DIR`, which must be empty or absent"},
+		&urfave.BoolFlag{Name: "in-place", Usage: "Replace the committed Backlog.md files with the native project"},
 		&urfave.BoolFlag{Name: "dry-run", Usage: "Print the import plan without writing"},
 	}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() > 1 {
@@ -27,14 +28,20 @@ func importCommands(directory *string, out io.Writer) []*urfave.Command {
 		if !filepath.IsAbs(input) {
 			input = filepath.Join(*directory, input)
 		}
-		target := cmd.String("to")
-		if target == "" {
-			return &Error{Reason: "usage", Message: "--to must not be empty"}
+		options := backlogmd.ImportOptions{DryRun: cmd.Bool("dry-run"), InPlace: cmd.Bool("in-place")}
+		if options.InPlace && cmd.IsSet("to") {
+			return &Error{Reason: "usage", Message: "use --to or --in-place, not both"}
 		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(*directory, target)
+		if !options.InPlace {
+			options.Target = cmd.String("to")
+			if options.Target == "" {
+				return &Error{Reason: "usage", Message: "--to must not be empty"}
+			}
+			if !filepath.IsAbs(options.Target) {
+				options.Target = filepath.Join(*directory, options.Target)
+			}
 		}
-		report, err := backlogmd.Import(ctx, input, target, cmd.Bool("dry-run"))
+		report, err := backlogmd.Import(ctx, input, options)
 		if err != nil {
 			return &Error{Reason: "rejected", Message: err.Error(), Data: report}
 		}
@@ -79,6 +86,16 @@ func printImport(out io.Writer, directory string, report backlogmd.Report) error
 	}
 	for _, milestone := range report.UnresolvedMilestones {
 		lines = append(lines, fmt.Sprintf("unresolved milestone %s: %q (%s)", milestone.TaskID, milestone.Value, milestone.SourcePath))
+	}
+	for _, reference := range report.UnresolvedReferences {
+		lines = append(lines, fmt.Sprintf("unresolved reference %s in %s: %s", reference.Value, reference.SourcePath, reference.Reason))
+	}
+	if report.InPlace {
+		verb = "removed"
+		if report.DryRun {
+			verb = "would remove"
+		}
+		lines = append(lines, fmt.Sprintf("%s %d Backlog.md file(s), including config; docs and decisions stay", verb, len(report.Removed)))
 	}
 	for _, line := range lines {
 		// Paths, IDs, and milestone values come from the imported files.

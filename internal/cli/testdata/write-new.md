@@ -4,7 +4,7 @@ title: New item
 status: todo
 type: feature
 priority: high
-assignees: ['@agent']
+assignees: ["@agent"]
 labels: [fresh]
 parent: BL-99
 blocked_by: [BL-012]

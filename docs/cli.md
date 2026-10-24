@@ -401,13 +401,14 @@ Creates `backlog.yaml` and the item directory (default prefix `BL`, path
 when it comes from a shared `origin` remote. Run inside Git. An existing config
 is never overwritten (exit 5, nothing created).
 
-### `bl import backlog-md [PATH] [--to DIR] [--dry-run]`
+### `bl import backlog-md [PATH] [--to DIR | --in-place] [--dry-run]`
 
-Imports Backlog.md files into a new native project. PATH defaults to the current
+Imports Backlog.md files into a native project. PATH defaults to the current
 directory and may be a repository root or backlog directory. `--to` defaults to
 `backlog-import`. The destination must be empty or absent, even for a dry run
-(exit 5 otherwise). `--dry-run` prints the report without writing. The source is
-never changed. See [Import](import.md).
+(exit 5 otherwise), and the source is unchanged. `--in-place` instead writes
+into the source project and removes the committed Backlog.md files.
+`--dry-run` prints the report without writing. See [Import](import.md).
 
 ### `bl config [show]`
 
@@ -545,7 +546,9 @@ BL-3  todo               Third
   a workspace.
 - Rows fit the terminal width (80 columns when piped), counting wide characters.
 - Grouped `ls` prints `value (count)` before each group, `none` for unset.
-- `No items.` (`No ready items.` for `next`) prints only on a terminal.
+- `No items.` prints only on a terminal. `next` with nothing ready always says
+  so, with a hint to use `--explain`: on stdout at a terminal, otherwise on
+  stderr.
 - Colors follow the terminal palette. `NO_COLOR`, `TERM=dumb`, and pipes print
   no escape sequences.
 - Text output strips terminal escape sequences and control characters; table
