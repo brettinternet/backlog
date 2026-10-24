@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/instructions"
 	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
@@ -50,6 +51,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "criteria", Description: "Change acceptance criteria on one backlog item."}, s.criteria)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "events", Description: "Read project events after a cursor, filtered by an optional event query. Poll with since set to the returned cursor."}, s.events)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "action", Description: "Run a configured action on one item. Set confirm to acknowledge confirmation."}, s.action)
 	s.server.AddResource(&mcp.Resource{URI: InstructionsURI, Name: "bl instructions", Description: "Version-matched bl agent instructions", MIMEType: "text/markdown"}, s.instructions)
 	return s
@@ -101,6 +103,20 @@ type NextArgs struct {
 type QueryArgs struct {
 	Query string `json:"query" jsonschema:"bl query-language expression."`
 }
+type EventsArgs struct {
+	Since string `json:"since,omitempty" jsonschema:"Exclusive event ID; pass the previous cursor to continue."`
+	Query string `json:"query,omitempty" jsonschema:"bl events query; event terms changed:, hook:, action:, and outcome: are enabled."`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum events to return (0 or omitted: 100)."`
+}
+type EventsResult struct {
+	Events []hooks.Event `json:"events"`
+	Cursor string        `json:"cursor,omitempty"`
+	More   bool          `json:"more"`
+}
+
+// defaultEventLimit bounds an events call that omits limit.
+const defaultEventLimit = 100
+
 type ShowArgs struct {
 	ID string `json:"id"`
 }
@@ -262,6 +278,26 @@ func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryAr
 	}
 	snap.Query.Sort(items, parsed.Sort)
 	return nil, ItemsResult{itemjson.Summaries(items)}, nil
+}
+func (s *Server) events(ctx context.Context, _ *mcp.CallToolRequest, args EventsArgs) (*mcp.CallToolResult, any, error) {
+	if args.Limit < 0 {
+		return failed[any]("usage", "limit must be nonnegative")
+	}
+	if args.Limit == 0 {
+		args.Limit = defaultEventLimit
+	}
+	q, err := query.Parse(args.Query, query.Options{Hook: true})
+	if err != nil {
+		return failed[any]("usage", err.Error())
+	}
+	if _, err = engine.LoadReads(ctx, s.cfg, false); err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	page, err := engine.ReadEvents(ctx, s.cfg, args.Since, engine.EventMatcher(s.cfg, q), args.Limit)
+	if err != nil {
+		return failed[any](reason(err), engine.ErrorMessage(err))
+	}
+	return nil, EventsResult{page.Events, page.Cursor, page.More}, nil
 }
 func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs) (*mcp.CallToolResult, any, error) {
 	if args.ID == "" {

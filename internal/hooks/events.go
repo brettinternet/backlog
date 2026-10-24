@@ -50,6 +50,7 @@ type Event struct {
 	ExitCode      *int              `json:"exitCode,omitempty"`
 	Duration      time.Duration     `json:"duration,omitempty"`
 	Result        map[string]any    `json:"result,omitempty"`
+	Message       string            `json:"message,omitempty"`
 }
 
 // Log retains rotated segments: cursors and dedupe identities never silently
@@ -353,6 +354,9 @@ func (l Log) Event(ctx context.Context, id string) (Event, error) {
 	return event, err
 }
 
+// ErrUnknownCursor reports a since ID the log does not hold.
+var ErrUnknownCursor = errors.New("unknown event cursor")
+
 func (l Log) Read(ctx context.Context, since string) ([]Event, error) {
 	var result []Event
 	err := l.Update(ctx, func(tx *Transaction) error {
@@ -365,7 +369,7 @@ func (l Log) Read(ctx context.Context, since string) ([]Event, error) {
 				return err
 			}
 			if exists == 0 {
-				return fmt.Errorf("unknown event cursor %q", since)
+				return fmt.Errorf("%w %q", ErrUnknownCursor, since)
 			}
 		}
 		rows, err := tx.db.QueryContext(ctx, `SELECT data FROM events WHERE id>? ORDER BY id`, since)

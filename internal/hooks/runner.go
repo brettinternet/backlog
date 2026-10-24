@@ -23,10 +23,12 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/textutil"
 )
 
 const (
 	resultLimit      = 8 << 10
+	messageLimit     = 1 << 10
 	afterConcurrency = 4
 	defaultTimeout   = 30 * time.Second
 )
@@ -200,7 +202,7 @@ func runEvent(ctx context.Context, cfg project.Config, log Log, event Event, cwd
 			Origin: "hook", Cause: stringPointer(event.ID), Depth: event.Depth + 1,
 			Name: candidate.hook.Name, Outcome: result.outcome,
 			ExitCode: intPointer(result.exitCode), Duration: result.duration,
-			Result:   result.result,
+			Result: result.result, Message: finishedMessage(result),
 			Versions: []string{event.ID, candidate.hook.Name, hookVersion(candidate.hook)},
 		}
 		var appended bool
@@ -323,13 +325,22 @@ func executeWithOutput(ctx context.Context, cfg project.Config, hook project.Hoo
 	cmd := exec.CommandContext(hookCtx, argv[0], argv[1:]...)
 	cmd.Dir = runCWD
 	cmd.Stdin = bytes.NewReader(data)
-	var stdout, stderr limitedBuffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stdout limitedBuffer
+	// A before hook rejects with its first stderr line; a finished event
+	// reports the end of stderr, where a failing command's error usually is.
+	var stderr interface {
+		io.Writer
+		Bytes() []byte
+	} = &limitedBuffer{}
+	if captureResult {
+		stderr = &tailBuffer{}
+	}
+	cmd.Stdout, cmd.Stderr = &stdout, stderr
 	if out != nil {
 		cmd.Stdout = io.MultiWriter(&stdout, out)
 	}
 	if errOut != nil {
-		cmd.Stderr = io.MultiWriter(&stderr, errOut)
+		cmd.Stderr = io.MultiWriter(stderr, errOut)
 	}
 	cmd.Env = hookEnvironment(cfg, event, resultPath)
 	// A backgrounded grandchild can hold the output pipes open after the hook
@@ -633,6 +644,32 @@ func firstLine(stderr []byte) string {
 	return strings.TrimSpace(strings.TrimSuffix(line, "\r"))
 }
 
+// finishedMessage explains a failure as bounded display text: the end of
+// stderr for a nonzero exit or timeout, otherwise the refusal or exec error.
+func finishedMessage(result execution) string {
+	if result.outcome == "ok" {
+		return ""
+	}
+	if result.outcome == "timeout" || result.exitCode > 0 {
+		lines := strings.TrimSpace(textutil.Sanitize(string(result.stderr)))
+		if len(lines) > messageLimit {
+			lines = lines[len(lines)-messageLimit:]
+			if _, rest, ok := strings.Cut(lines, "\n"); ok {
+				lines = rest
+			}
+			lines = strings.TrimSpace(strings.ToValidUTF8(lines, ""))
+		}
+		if lines != "" {
+			return lines
+		}
+	}
+	message := strings.TrimSpace(textutil.Sanitize(result.message))
+	if len(message) > messageLimit {
+		message = strings.ToValidUTF8(message[:messageLimit], "")
+	}
+	return message
+}
+
 func stringPointer(value string) *string { return &value }
 func intPointer(value int) *int          { return &value }
 
@@ -655,3 +692,16 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	}
 	return original, nil
 }
+
+// tailBuffer retains the last resultLimit bytes written.
+type tailBuffer struct{ data []byte }
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.data = append(b.data, p...)
+	if over := len(b.data) - resultLimit; over > 0 {
+		b.data = append(b.data[:0], b.data[over:]...)
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) Bytes() []byte { return b.data }

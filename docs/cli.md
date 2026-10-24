@@ -400,8 +400,8 @@ env:  BL_BRANCH BL_EVENT_ID BL_EVENT_ORIGIN BL_HOOK_DEPTH BL_ITEM_ID BL_ITEM_REF
 ### `bl events [--follow|-f] [--since ID] [QUERY]`
 
 Reads the project event log. JSON returns `data.events`; `--follow` prints one
-envelope per line with `data.event`. `--since` is exclusive; an unknown ID is an
-error. See [Events](events.md).
+envelope per line with `data.event`. `--since` is exclusive; an unknown ID is
+`not-found`. See [Events](events.md).
 
 ## Project commands
 

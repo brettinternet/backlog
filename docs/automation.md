@@ -94,7 +94,7 @@ time out after 30 seconds and are refused beyond causal depth 3.
 | Phase | Behavior |
 | --- | --- |
 | `before` | Only for `item.created`, `item.updated`, `item.archived`. Runs in order with the proposed event on stdin. The first nonzero exit or timeout rejects the write (exit 5) with the hook's first stderr line. |
-| `after` | Handed to a detached `bl` runner by the process that appended the event. Up to four run concurrently per event. Each appends a `hook.finished` event with `outcome` (`ok`, `failed`, `timeout`, `refused`), exit code, duration, and result. Nothing retries. |
+| `after` | Handed to a detached `bl` runner by the process that appended the event. Up to four run concurrently per event. Each appends a `hook.finished` event with `outcome` (`ok`, `failed`, `timeout`, `refused`), exit code, duration, result, and `message`. Nothing retries. |
 
 Chain dependent steps on `hook.finished` with `if: "hook:NAME outcome:ok"`. No
 hook runs for an event deeper than 3; nested `bl` calls inherit cause and depth.
@@ -108,6 +108,12 @@ check and `bl action --dry-run`. See [cli.md](cli.md#bl-doctor---online).
 
 `cwd` defaults to where the originating command ran, through the whole chain;
 for sync-originated chains, the control root.
+
+A `hook.finished` or `action.finished` event that isn't `ok` carries `message`
+when there's something to say: why the run was refused or couldn't start, or
+for a nonzero exit or timeout the last lines of stderr. It's at most 1 KiB with
+terminal controls stripped. It's display text for debugging, not a contract for
+parsing; chain on `outcome:` instead. Stdout is never included.
 
 ## Results
 

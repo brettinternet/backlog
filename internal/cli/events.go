@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
-	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
@@ -36,69 +34,29 @@ func eventsCommand(directory *string, out io.Writer) *urfave.Command {
 			}
 			return &Error{Reason: "unavailable", Message: err.Error()}
 		}
-		log := hooks.New(cfg.Paths.StateDir, cfg.Project.ID)
 		cursor := cmd.String("since")
-		snapshot := query.Snapshot{Settings: cfg.Settings, Me: []string{cfg.Me.Default}, States: map[model.Ref]query.State{}}
-		match := func(e hooks.Event) bool {
-			var item model.Item
-			data, _ := json.Marshal(e.Item)
-			_ = json.Unmarshal(data, &item)
-			snapshot.Now = e.Time
-			state := query.State{}
-			if change, ok := e.Changes["readiness"]; ok {
-				state.Readiness = fmt.Sprint(change.To)
-			}
-			if change, ok := e.Changes["archived"]; ok {
-				state.Archived = change.To == true
-			}
-			snapshot.States[item.Ref] = state
-			event := query.Event{Type: e.Type, Outcome: e.Outcome}
-			if e.Type == "hook.finished" {
-				event.Hook = e.Name
-			}
-			if e.Type == "action.finished" {
-				event.Action = e.Name
-			}
-			for field := range e.Changes {
-				event.Changed = append(event.Changed, field)
-			}
-			return q.Match(item, snapshot, &event)
-		}
+		match := engine.EventMatcher(cfg, q)
 		emit := func() error {
-			events, err := log.Read(ctx, cursor)
+			page, err := engine.ReadEvents(ctx, cfg, cursor, match, 0)
 			if err != nil {
-				return &Error{Reason: "unavailable", Message: err.Error()}
+				return writeError(err)
 			}
-			matched := make([]hooks.Event, 0, len(events))
-			for _, e := range events {
-				cursor = e.ID
-				if !match(e) {
-					continue
-				}
-				matched = append(matched, e)
-				if cmd.Bool("follow") {
-					if cmd.Bool("json") {
-						err = success(out, "events", struct {
-							Event hooks.Event `json:"event"`
-						}{e})
-					} else {
-						_, err = fmt.Fprintf(out, "%s %s %s\n", e.ID, textutil.Line(e.Type), textutil.Line(e.Ref))
-					}
-					if err != nil {
-						return err
-					}
-				}
+			cursor = page.Cursor
+			if !cmd.Bool("follow") && cmd.Bool("json") {
+				return success(out, "events", struct {
+					Events []hooks.Event `json:"events"`
+				}{page.Events})
 			}
-			if !cmd.Bool("follow") {
-				if cmd.Bool("json") {
-					return success(out, "events", struct {
-						Events []hooks.Event `json:"events"`
-					}{matched})
+			for _, e := range page.Events {
+				if cmd.Bool("follow") && cmd.Bool("json") {
+					err = success(out, "events", struct {
+						Event hooks.Event `json:"event"`
+					}{e})
+				} else {
+					_, err = fmt.Fprintf(out, "%s %s %s\n", e.ID, textutil.Line(e.Type), textutil.Line(e.Ref))
 				}
-				for _, e := range matched {
-					if _, err = fmt.Fprintf(out, "%s %s %s\n", e.ID, textutil.Line(e.Type), textutil.Line(e.Ref)); err != nil {
-						return err
-					}
+				if err != nil {
+					return err
 				}
 			}
 			return nil

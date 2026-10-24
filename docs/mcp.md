@@ -47,6 +47,7 @@ The `bl://instructions` resource serves the `bl instructions` overview.
 | `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`remove`), `index`, `text`, `evidence` | `bl ac` |
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
+| `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `claim`, `release` | `id`, `session`, `run` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
@@ -76,6 +77,10 @@ and write tools return `item`, each an item summary:
 ```json
 {"item":{"source":"tasks","id":"BL-2","title":"Add sign-in page","status":"in-progress","category":"active","priority":"high","version":"VERSION"}}
 ```
+
+`events` returns `events` like `bl events --json`, plus `cursor` and `more`.
+Pass `cursor` back as `since` to continue: `more` means another page is ready,
+otherwise poll later. An unknown `since` returns `not-found`.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
 coordination, `resource`, like `bl show --json`. Edge targets in `metadata`
