@@ -12,6 +12,7 @@ type ActionArgs struct {
 	Name    string `json:"name" jsonschema:"Configured action name"`
 	ID      string `json:"id" jsonschema:"Item ID or source-qualified ref"`
 	Confirm bool   `json:"confirm,omitempty" jsonschema:"Explicitly acknowledge the action confirmation"`
+	DryRun  bool   `json:"dryRun,omitempty" jsonschema:"Return the expanded argv, cwd, and environment names without running"`
 }
 
 func (s *Server) action(ctx context.Context, _ *mcp.CallToolRequest, args ActionArgs) (*mcp.CallToolResult, any, error) {
@@ -19,6 +20,13 @@ func (s *Server) action(ctx context.Context, _ *mcp.CallToolRequest, args Action
 		return failed[any]("usage", "name and id are required")
 	}
 	ctx = engine.WithCoordination(ctx, s.coordinator, model.CallerContext{})
+	if args.DryRun {
+		preview, err := engine.PreviewAction(ctx, s.cfg, args.Name, args.ID)
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+		return nil, preview, nil
+	}
 	result, err := engine.Action(engine.WithEventOrigin(ctx, "mcp"), s.cfg, args.Name, args.ID, args.Confirm)
 	if err != nil {
 		return failed[any](reason(err), err.Error())

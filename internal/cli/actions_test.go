@@ -90,6 +90,23 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "probe.json")); !os.IsNotExist(err) {
 		t.Fatal("confirmation refusal ran probe")
 	}
+	// Dry runs share expansion with execution but must not run, log, or confirm.
+	code, out, _ := writeRun(root, "", "action", "confirm", "12", "--dry-run")
+	if code != 0 || !strings.Contains(out, `"argv":["`+os.Args[0]+`","-test.run=^TestActionProbeProcess$"]`) || !strings.Contains(out, `"BL_RESULT"`) {
+		t.Fatalf("dry run: %d %s", code, out)
+	}
+	if code, out, _ = writeRun(root, "", "action", "resource", "12", "--dry-run"); code != 5 || !strings.Contains(out, "{resource}") {
+		t.Fatalf("dry run refusal: %d %s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "probe.json")); !os.IsNotExist(err) {
+		t.Fatal("dry run ran probe")
+	}
+	if _, out, _ = writeRun(root, "", "events"); strings.Contains(out, "action.finished") {
+		t.Fatalf("dry run appended an event: %s", out)
+	}
+	if code, out, _ = writeRun(root, "", "doctor"); code != 5 || !strings.Contains(out, "action resource: {resource} needs coordination") || !strings.Contains(out, "action resource: must-not-run: not found on PATH") {
+		t.Fatalf("doctor hooks: %d %s", code, out)
+	}
 	conflict := append([]project.ActionConfig(nil), cfg.Actions...)
 	conflict[0].Key = "j"
 	if err := tui.ValidateKeys(nil, conflict...); err == nil || !strings.Contains(err.Error(), "conflicting") {
@@ -111,6 +128,10 @@ func TestActionsAcrossAdaptersAndPTY(t *testing.T) {
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "action", Arguments: map[string]any{"name": "confirm", "id": "12"}})
 	if err != nil || !result.IsError {
 		t.Fatalf("MCP confirmation: %+v %v", result, err)
+	}
+	result, err = session.CallTool(ctx, &sdk.CallToolParams{Name: "action", Arguments: map[string]any{"name": "confirm", "id": "12", "dryRun": true}})
+	if err != nil || result.IsError {
+		t.Fatalf("MCP dry run: %+v %v", result, err)
 	}
 	result, err = session.CallTool(ctx, &sdk.CallToolParams{Name: "action", Arguments: map[string]any{"name": "probe", "id": "12"}})
 	if err != nil || result.IsError {

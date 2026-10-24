@@ -58,6 +58,9 @@ func TestClonedConfigIsInertUntilTrust(t *testing.T) {
 		code, out, _ := run(append([]string{"-C", clone}, args...)...)
 		if args[0] == "doctor" {
 			assertDoctor(t, code, out, true)
+			if !strings.Contains(out, `"name":"hooks","status":"warn","message":"hook canary is untrusted and inert; action canary is untrusted and inert"`) {
+				t.Fatalf("untrusted hooks not reported inert: %s", out)
+			}
 		}
 		if args[0] == "ls" && (code != 6 || !strings.Contains(out, "untrusted")) {
 			t.Fatalf("source not gated: %d %s", code, out)
@@ -181,7 +184,7 @@ func assertDoctor(t *testing.T, code int, out string, failed bool) {
 	if result.OK == failed || (failed && code != 5) || (!failed && code != 0) {
 		t.Fatalf("doctor status: %d %s", code, out)
 	}
-	want := []string{"config", "trust", "control-root", "local-config", "cache", "worklease", "sources"}
+	want := []string{"config", "trust", "hooks", "control-root", "local-config", "cache", "worklease", "sources"}
 	if len(result.Data.Checks) != len(want) {
 		t.Fatalf("missing checks: %s", out)
 	}

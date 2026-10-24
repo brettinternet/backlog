@@ -378,12 +378,24 @@ Inspect and recover the same session instead.
 
 ## Automation
 
-### `bl action NAME ID [--yes|-y]`
+### `bl action NAME ID [--yes|-y] [--dry-run]`
 
 Runs a trusted configured action on one matching item. `confirm: true` actions
 need an interactive yes or `--yes`; otherwise they refuse without running. JSON
 `data` has `event` (the `action.finished` event), optional `message`, and
 `detached: true` for background actions. See [Automation](automation.md).
+
+`--dry-run` resolves `when` and expands placeholders through the same path as a
+run, then prints the argv, cwd, and environment variable names. It runs nothing,
+appends no event, and needs no `--yes`. JSON `data` has `name`, `ref`, `argv`,
+`cwd`, and `env`. A disabled action fails as a real run would (exit 5) with the
+reason, such as the placeholder that could not expand.
+
+```text
+argv: wt switch --create bl-12-debounce-detail-rendering
+cwd:  /home/me/project
+env:  BL_BRANCH BL_EVENT_ID BL_EVENT_ORIGIN BL_HOOK_DEPTH BL_ITEM_ID BL_ITEM_REF BL_PROJECT_ID BL_RESULT BL_ROOT BL_SOURCE HOME PATH
+```
 
 ### `bl events [--follow|-f] [--since ID] [QUERY]`
 
@@ -451,6 +463,7 @@ banner and still browses native sources.
 ```text
 pass  config        Configuration is valid
 pass  trust         All effective privileged declarations are trusted
+pass  hooks         Trusted hooks and actions resolve
 warn  control-root  Default branch is unknown (control checkout: master)
                     Fix: Set the local origin/HEAD symbolic ref to the repository's default branch
 skip  local-config  No backlog.local.yaml
@@ -459,11 +472,19 @@ pass  worklease     Worklease 1.10.1 (schema v2)
 pass  sources       Sources are configured; no network checks requested
 ```
 
-Seven checks: `config`, `trust`, `control-root`, `local-config`, `cache`, `worklease`, `sources`.
+Eight checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `sources`.
 Each has a `status` (`pass`, `warn`, `fail`, `skip`), `message`, and `fix`. JSON
 `data.checks` lists all of them. Any failure exits 5 (`rejected`); warnings
 alone exit 0. Invalid config fails `config` and skips the checks that need it.
 
+- `hooks` fails when a trusted hook or action has a `run[0]` that is not on
+  `PATH` (or an absolute path that is not executable), an unknown placeholder,
+  `{result.KEY}` outside a hook on `hook.finished` or `action.finished`,
+  `{resource}` without coordination, an empty `run`, an invalid `timeout` or
+  `when`, or an unknown `on` event type. Each finding names the hook or action.
+  Checks that load already enforces, such as `phase` and `if`, are not
+  repeated. Untrusted declarations are reported as inert (warn) and are not
+  inspected. Item-dependent expansion is left to `bl action --dry-run`.
 - `control-root` compares the branch with local `origin/HEAD`, then
   `init.defaultBranch`, then `main`/`master`. It never fetches.
 - `local-config` warns when `backlog.local.yaml` is tracked or not ignored.

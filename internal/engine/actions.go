@@ -99,6 +99,16 @@ func Action(ctx context.Context, cfg project.Config, name, id string, confirmed 
 	return ExecuteAction(ctx, cfg, choice)
 }
 
+// PreviewAction resolves an action exactly as Action would, without
+// confirmation, and returns what it would run instead of running it.
+func PreviewAction(ctx context.Context, cfg project.Config, name, id string) (hooks.ActionPreview, error) {
+	choice, err := PrepareAction(ctx, cfg, name, id, true)
+	if err != nil {
+		return hooks.ActionPreview{}, err
+	}
+	return hooks.PreviewAction(cfg, choice.Invocation)
+}
+
 func ExecuteAction(ctx context.Context, cfg project.Config, choice ActionChoice) (hooks.ActionResult, error) {
 	if choice.Detach {
 		return hooks.StartAction(cfg, choice.Invocation)

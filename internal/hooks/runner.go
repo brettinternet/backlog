@@ -240,36 +240,71 @@ func execute(ctx context.Context, cfg project.Config, hook project.HookConfig, e
 	return executeWithOutput(ctx, cfg, hook, event, cwd, captureResult, nil, nil)
 }
 
-func executeWithOutput(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool, out, errOut io.Writer) execution {
+// prepared is everything a run decides before starting a process. Dry runs
+// stop here, so a preview cannot drift from execution.
+type prepared struct {
+	argv    []string
+	cwd     string
+	timeout time.Duration
+}
+
+func prepare(cfg project.Config, hook project.HookConfig, event Event, cwd string) (prepared, execution) {
+	refused := func(message string) (prepared, execution) {
+		return prepared{}, execution{outcome: "refused", exitCode: -1, message: message}
+	}
 	argv := make([]string, len(hook.Run))
 	for i, arg := range hook.Run {
 		expanded, err := expand(arg, cfg, event)
 		if err != nil {
-			return execution{outcome: "refused", exitCode: -1, message: err.Error()}
+			return refused(err.Error())
 		}
 		argv[i] = expanded
 	}
 	if len(argv) == 0 || argv[0] == "" {
-		return execution{outcome: "refused", exitCode: -1, message: "hook run is empty"}
+		return refused("hook run is empty")
 	}
 	runCWD := cwd
 	if runCWD == "" {
 		var err error
 		runCWD, err = os.Getwd()
 		if err != nil {
-			return execution{outcome: "failed", exitCode: -1, message: err.Error()}
+			return prepared{}, execution{outcome: "failed", exitCode: -1, message: err.Error()}
 		}
 	}
 	if hook.CWD != "" {
 		expanded, err := expand(hook.CWD, cfg, event)
 		if err != nil {
-			return execution{outcome: "refused", exitCode: -1, message: err.Error()}
+			return refused(err.Error())
 		}
 		runCWD = expanded
 		if !filepath.IsAbs(runCWD) {
 			runCWD = filepath.Join(cwd, runCWD)
 		}
 	}
+	timeout, err := hookTimeout(hook)
+	if err != nil {
+		return refused(err.Error())
+	}
+	return prepared{argv: argv, cwd: runCWD, timeout: timeout}, execution{}
+}
+
+func hookTimeout(hook project.HookConfig) (time.Duration, error) {
+	if hook.Timeout == "" {
+		return defaultTimeout, nil
+	}
+	timeout, err := time.ParseDuration(hook.Timeout)
+	if err != nil || timeout <= 0 {
+		return 0, fmt.Errorf("invalid hook timeout")
+	}
+	return timeout, nil
+}
+
+func executeWithOutput(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool, out, errOut io.Writer) execution {
+	run, failure := prepare(cfg, hook, event, cwd)
+	if failure.outcome != "" {
+		return failure
+	}
+	argv, runCWD, timeout := run.argv, run.cwd, run.timeout
 	resultFile, err := os.CreateTemp("", "bl-hook-result-*")
 	if err != nil {
 		return execution{outcome: "failed", exitCode: -1, message: err.Error()}
@@ -281,13 +316,6 @@ func executeWithOutput(ctx context.Context, cfg project.Config, hook project.Hoo
 	}
 	defer os.Remove(resultPath)
 
-	timeout := defaultTimeout
-	if hook.Timeout != "" {
-		timeout, err = time.ParseDuration(hook.Timeout)
-		if err != nil || timeout <= 0 {
-			return execution{outcome: "refused", exitCode: -1, message: "invalid hook timeout"}
-		}
-	}
 	hookCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	data, err := json.Marshal(event)
@@ -392,6 +420,31 @@ func expand(input string, cfg project.Config, event Event) (string, error) {
 	values := map[string]string{"id": item.Ref.ID, "ref": event.Ref, "source": event.Source,
 		"url": item.URL, "root": cfg.Discovery.ControlRoot, "branch": model.BranchName(item),
 		"resource": event.Resource}
+	return scanPlaceholders(input, func(key string) (string, error) {
+		var value string
+		var ok bool
+		if name, isResult := strings.CutPrefix(key, "result."); isResult {
+			value, ok = event.Result[name].(string)
+		} else {
+			value, ok = values[key]
+		}
+		if !ok {
+			return "", fmt.Errorf("missing hook placeholder {%s}", key)
+		}
+		if err := validateValue(value); err != nil {
+			return "", fmt.Errorf("refused hook placeholder {%s}: %w", key, err)
+		}
+		return value, nil
+	})
+}
+
+// placeholders are the D21 names; {result.KEY} is checked separately.
+var placeholders = map[string]bool{"id": true, "ref": true, "source": true, "url": true,
+	"root": true, "branch": true, "resource": true}
+
+// scanPlaceholders is the one parser for {NAME} syntax, shared by execution and
+// static diagnosis so the two cannot disagree about what a placeholder is.
+func scanPlaceholders(input string, value func(key string) (string, error)) (string, error) {
 	var out strings.Builder
 	for n := 0; n < len(input); {
 		if input[n] != '{' {
@@ -405,24 +458,14 @@ func expand(input string, cfg project.Config, event Event) (string, error) {
 		}
 		end += n + 1
 		key := input[n+1 : end]
-		var value string
-		var ok bool
-		if strings.HasPrefix(key, "result.") {
-			name := strings.TrimPrefix(key, "result.")
-			if name == "" {
-				return "", fmt.Errorf("invalid result placeholder {%s}", key)
-			}
-			value, ok = event.Result[name].(string)
-		} else {
-			value, ok = values[key]
+		if key == "result." {
+			return "", fmt.Errorf("invalid result placeholder {%s}", key)
 		}
-		if !ok {
-			return "", fmt.Errorf("missing hook placeholder {%s}", key)
+		v, err := value(key)
+		if err != nil {
+			return "", err
 		}
-		if err := validateValue(value); err != nil {
-			return "", fmt.Errorf("refused hook placeholder {%s}: %w", key, err)
-		}
-		out.WriteString(value)
+		out.WriteString(v)
 		n = end + 1
 	}
 	return out.String(), nil

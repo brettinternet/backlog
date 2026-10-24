@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/worklease"
 	urfave "github.com/urfave/cli/v3"
@@ -83,16 +85,16 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "doctor", Usage: "Diagnose configuration, trust, cache, coordination, and sources", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, and sources", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, configErr := loadConfig(cmd, *directory)
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
 			if configErr != nil {
 				checks[0] = doctorCheck{"config", "fail", configErr.Error(), "Correct the reported configuration key or YAML syntax"}
-				for _, name := range []string{"trust", "control-root", "local-config", "cache", "worklease", "sources"} {
+				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "sources"} {
 					checks = append(checks, doctorCheck{name, "skip", "Configuration could not be loaded", "Fix configuration and rerun bl doctor"})
 				}
 			} else {
-				checks = append(checks, trustCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
+				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
 			}
 			data := doctorData{Checks: checks}
 			failed := false
@@ -125,6 +127,32 @@ func trustCheck(cfg project.Config) doctorCheck {
 		c.Status = "fail"
 		c.Message = "Untrusted: " + strings.Join(keys, ", ")
 		c.Fix = "Review bl trust --show, then run bl trust"
+	}
+	return c
+}
+
+func hooksCheck(cfg project.Config) doctorCheck {
+	c := doctorCheck{"hooks", "pass", "Trusted hooks and actions resolve", "No action needed"}
+	if len(cfg.Hooks)+len(cfg.Actions) == 0 {
+		c.Status, c.Message = "skip", "No hooks or actions"
+		return c
+	}
+	var messages, fixes []string
+	for _, d := range hooks.Diagnose(cfg) {
+		if d.Inert {
+			if c.Status == "pass" {
+				c.Status = "warn"
+			}
+		} else {
+			c.Status = "fail"
+		}
+		messages = append(messages, d.Message)
+		if !slices.Contains(fixes, d.Fix) {
+			fixes = append(fixes, d.Fix)
+		}
+	}
+	if len(messages) > 0 {
+		c.Message, c.Fix = strings.Join(messages, "; "), strings.Join(fixes, "; ")
 	}
 	return c
 }

@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -98,6 +99,36 @@ func RunAction(ctx context.Context, cfg project.Config, invocation ActionInvocat
 		}
 	}
 	return ActionResult{Event: finished, Message: result.message}, nil
+}
+
+// ActionPreview is what an action would run. Env lists names only.
+type ActionPreview struct {
+	Name string   `json:"name"`
+	Ref  string   `json:"ref"`
+	Argv []string `json:"argv"`
+	CWD  string   `json:"cwd"`
+	Env  []string `json:"env"`
+}
+
+// PreviewAction stops the shared execution path before any process, file, or
+// event is created.
+func PreviewAction(cfg project.Config, invocation ActionInvocation) (ActionPreview, error) {
+	if err := CheckAction(cfg, invocation); err != nil {
+		return ActionPreview{}, err
+	}
+	action, _ := actionConfig(cfg, invocation.Name)
+	run, failure := prepare(cfg, project.HookConfig{Name: action.Name, Run: action.Run, CWD: action.CWD}, invocation.Event, invocation.CWD)
+	if failure.outcome == "refused" {
+		return ActionPreview{}, source.Refuse("rejected", failure.message)
+	} else if failure.outcome != "" {
+		return ActionPreview{}, errors.New(failure.message)
+	}
+	preview := ActionPreview{Name: action.Name, Ref: invocation.Event.Ref, Argv: run.argv, CWD: run.cwd}
+	for _, entry := range hookEnvironment(cfg, invocation.Event, "") {
+		name, _, _ := strings.Cut(entry, "=")
+		preview.Env = append(preview.Env, name)
+	}
+	return preview, nil
 }
 
 // StartAction hands the already prepared context to a detached bl process.

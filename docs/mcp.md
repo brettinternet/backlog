@@ -46,7 +46,7 @@ The `bl://instructions` resource serves the `bl instructions` overview.
 | `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run` | `bl set`, `bl archive`, `bl edit --section` |
 | `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`remove`), `index`, `text`, `evidence` | `bl ac` |
-| `action` | `name`, `id`, `confirm` | `bl action` |
+| `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `claim`, `release` | `id`, `session`, `run` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |

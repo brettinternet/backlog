@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	urfave "github.com/urfave/cli/v3"
@@ -14,7 +15,7 @@ import (
 )
 
 func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfave.Command {
-	return &urfave.Command{Name: "action", Usage: "Run a configured action on an item", ArgsUsage: "NAME ID", Category: categoryAutomation, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Skip the confirmation prompt"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+	return &urfave.Command{Name: "action", Usage: "Run a configured action on an item", ArgsUsage: "NAME ID", Category: categoryAutomation, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Skip the confirmation prompt"}, &urfave.BoolFlag{Name: "dry-run", Usage: "Show what would run without running it"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if cmd.Args().Len() != 2 {
 			return writeUsage("action requires NAME ID")
 		}
@@ -23,6 +24,16 @@ func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfa
 			return err
 		}
 		ctx = engine.WithEventCWD(ctx, *directory)
+		if cmd.Bool("dry-run") {
+			preview, err := engine.PreviewAction(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
+			if err != nil {
+				return writeError(err)
+			}
+			if cmd.Bool("json") {
+				return success(out, "action", preview)
+			}
+			return writeLine(out, fmt.Sprintf("argv: %s\ncwd:  %s\nenv:  %s", quoteArgv(preview.Argv), preview.CWD, strings.Join(preview.Env, " ")))
+		}
 		choice, err := engine.PrepareAction(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1), true)
 		if err != nil {
 			return writeError(err)
@@ -58,4 +69,16 @@ func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfa
 		}
 		return nil
 	}}
+}
+
+// quoteArgv quotes only arguments that would not read back as one word.
+func quoteArgv(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, arg := range argv {
+		quoted[i] = arg
+		if arg == "" || strings.ContainsAny(arg, " \t\n\"'\\$`*?[]{}()<>|&;#~") {
+			quoted[i] = strconv.Quote(arg)
+		}
+	}
+	return strings.Join(quoted, " ")
 }
