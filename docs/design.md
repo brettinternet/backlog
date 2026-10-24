@@ -300,7 +300,7 @@ bl set ID... FIELD=V FIELD+=V FIELD-=V
 bl start ID | bl done ID             workflow transitions
 bl note ID TEXT|- | bl comment ID TEXT|-
 bl ac ID (check|uncheck) N... | bl ac ID check N --evidence TEXT
-bl ac ID add TEXT | bl ac ID rm N
+bl ac ID add TEXT | bl ac ID rm N   --dod targets definition of done
 bl edit ID [--section S]             open $EDITOR
 bl archive ID... | bl unarchive ID...
 bl claim ID | bl release ID | bl heartbeat    claims (§9)
@@ -328,7 +328,7 @@ bl instructions [TOPIC] | bl mcp
   | 7 | Contention (claimed elsewhere) | `contention` |
 
   Exit codes and reasons are a public contract with tests. Error `details` is always an object (empty when there is no additional metadata). `-C` failures include `flag` and `path`; unexpected arguments include `argument`. Help remains plain text, even with `--json`.
-- **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `events`, `claim`, `release`, and `heartbeat`. They share types, validation, claim rules, and result shapes with the CLI, and the server applies one write at a time. Write tools take an optional `version` with the same meaning as `--if-version`. `criteria` takes an optional `evidence` for a single check, and `create` an optional `status`, like `bl new --status`. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. `events` reads like `bl events --since` without follow, returning at most `limit` events (default 100) and a `cursor` to poll from. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
+- **MCP tools:** `next`, `query`, `show`, `create`, `update`, `append`, `criteria`, `action`, `events`, `claim`, `release`, and `heartbeat`. They share types, validation, claim rules, and result shapes with the CLI, and the server applies one write at a time. Write tools take an optional `version` with the same meaning as `--if-version`. `criteria` takes an optional `evidence` for a single check and an optional `list` (`criteria` or `dod`, like `bl ac --dod`), and `create` an optional `status`, like `bl new --status`. `next` takes `claim`, `start`, and `session`, like `bl next --claim --start`. `events` reads like `bl events --since` without follow, returning at most `limit` events (default 100) and a `cursor` to poll from. Every call that can acquire, renew, or release a claim takes the caller context (§9): `next` with `claim`, `claim`, `release`, `heartbeat`, and an `update` that changes status while coordination is on. That context is a required `session`, plus an optional `run` for a worker under `worklease run`. Without it, the call is refused before anything is written. MCP never reads the caller context from the server's environment or an earlier call, because one `bl mcp` process can outlive the agent loop that started it.
 
 ## 8. Extensions
 

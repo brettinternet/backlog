@@ -41,13 +41,15 @@ Examples:
 
 const acHelp = `Criteria are numbered from 1. When the numbers come from an earlier read,
 pass its version with --if-version so a changed list fails instead of
-updating the wrong criterion.
+updating the wrong criterion. --dod targets definition-of-done items, which
+are numbered separately.
 
 Examples:
   bl ac 12 check 1 2
   bl ac 12 check 3 --evidence 'go test ./... passes'
   bl ac 12 add 'Docs updated'
-  bl ac 12 rm 4`
+  bl ac 12 rm 4
+  bl ac 12 check 1 --dod --evidence 'task ci passed'`
 
 func init() {
 	// Match the capitalization of every other option.

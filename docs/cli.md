@@ -224,13 +224,15 @@ bl ac 12 uncheck 2
 bl ac 12 check 1 --evidence 'go test ./... passed' --if-version VERSION
 bl ac 12 add 'Handles empty input'
 bl ac 12 rm 2
+bl ac 12 check 1 --dod --evidence 'task ci passed'
 ```
 
 Indices start at 1. `--evidence` takes one index and one line, written as an
 indented `Evidence:` line under the criterion (replacing any old one). Checking
 without it keeps evidence; unchecking removes it. Criteria renumber when one is
 removed, and evidence moves with its criterion. Always pass `--if-version` when
-the indices came from an earlier read.
+the indices came from an earlier read. `--dod` applies the same operations to
+definition-of-done items, which are numbered separately from criteria.
 
 ### `bl edit ID [--section S]`
 

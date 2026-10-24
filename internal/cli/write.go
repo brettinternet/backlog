@@ -353,7 +353,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return batch(ctx, cmd, cfg, args[:1], []model.Mutation{m})
 		}})
 	}
-	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria", ArgsUsage: "ID (check|uncheck N... | add TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Aliases: []string{"e"}, Usage: "Record `TEXT` as evidence when checking one criterion"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, or remove acceptance criteria or definition of done", ArgsUsage: "ID (check|uncheck N... | add TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Aliases: []string{"e"}, Usage: "Record `TEXT` as evidence when checking one criterion"}, &urfave.BoolFlag{Name: "dod", Usage: "Change definition-of-done items instead of acceptance criteria"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		args := cmd.Args().Slice()
 		if len(args) < 3 {
 			return writeUsage("ac requires ID, check|uncheck|add|rm, and text or index")
@@ -366,13 +366,17 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if cmd.IsSet("evidence") && (op != model.CheckCriterion || len(args) != 3 || strings.TrimSpace(cmd.String("evidence")) == "" || strings.ContainsAny(cmd.String("evidence"), "\r\n")) {
 			return writeUsage("--evidence requires check with exactly one index and nonempty single-line text")
 		}
+		section := "Acceptance criteria"
+		if cmd.Bool("dod") {
+			section = "Definition of done"
+		}
 		changes := []model.Mutation{}
 		if op == model.AddCriterion {
 			text := strings.Join(args[2:], " ")
 			if strings.TrimSpace(text) == "" || strings.ContainsAny(text, "\r\n") {
 				return writeUsage("criterion must be nonempty and single-line")
 			}
-			changes = append(changes, model.Mutation{Op: op, Section: "Acceptance criteria", Text: text})
+			changes = append(changes, model.Mutation{Op: op, Section: section, Text: text})
 		} else {
 			if op == model.RemoveCriterion && len(args) != 3 {
 				return writeUsage("ac rm takes one index")
@@ -382,7 +386,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				if err != nil || n < 1 {
 					return writeUsage("criterion indices must be positive integers")
 				}
-				m := model.Mutation{Op: op, Section: "Acceptance criteria", Index: n}
+				m := model.Mutation{Op: op, Section: section, Index: n}
 				if cmd.IsSet("evidence") {
 					v := cmd.String("evidence")
 					m.Evidence = &v

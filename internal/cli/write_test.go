@@ -393,6 +393,13 @@ func TestCriterionVersionAndEvidence(t *testing.T) {
 	if strings.Contains(get(t, path), "Evidence:") {
 		t.Fatal("uncheck retained evidence")
 	}
+	// DoD numbering is separate, so --dod must never touch criterion 1.
+	writeOK(t, root, "", "ac", "12", "add", "Run checks", "--dod")
+	writeOK(t, root, "", "ac", "12", "check", "1", "--dod", "--evidence", "task ci passed")
+	result = get(t, path)
+	if !strings.Contains(result, "## Definition of done\n\n- [x] Run checks\n  Evidence: task ci passed") || !strings.Contains(result, "- [ ] Second") {
+		t.Fatal(result)
+	}
 }
 
 func TestEditorRejectsAndRetains(t *testing.T) {
