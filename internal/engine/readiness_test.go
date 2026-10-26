@@ -92,7 +92,12 @@ func TestReadiness(t *testing.T) {
 		{"excluded label", func(in *engine.Input) {
 			in.Items[0].Labels = []string{"human"}
 			in.Config.ExcludeLabels = []string{"human"}
-		}, engine.Blocked, []string{"excluded-label"}},
+		}, engine.Ineligible, []string{"excluded-label"}},
+		{"excluded label and blocker", func(in *engine.Input) {
+			in.Items[0].Labels = []string{"human"}
+			in.Config.ExcludeLabels = []string{"human"}
+			in.Items[0].BlockedBy = []model.Ref{ref("BL-2")}
+		}, engine.Ineligible, []string{"blocker", "excluded-label"}},
 		{"assigned others", func(in *engine.Input) { in.Items[0].Assignees = []string{"@other"} }, engine.Waiting, []string{"assignee"}},
 		{"assigned me", func(in *engine.Input) { in.Items[0].Assignees = []string{"@me"} }, engine.Ready, []string{"candidate"}},
 		{"assigned both", func(in *engine.Input) { in.Items[0].Assignees = []string{"@other", "@me"} }, engine.Ready, []string{"candidate"}},

@@ -262,10 +262,10 @@ Readiness is one of these values, and each has a reason:
 | Readiness | Meaning |
 | --- | --- |
 | `ready` | All candidate conditions hold |
-| `blocked` | A known unsatisfied blocker or an excluded label |
+| `blocked` | A known unsatisfied blocker |
 | `waiting` | Assigned to or claimed by someone else |
 | `unknown` | A missing, unresolvable, or stale blocker |
-| `ineligible` | Status or container |
+| `ineligible` | Status, container, or an excluded label |
 
 A known unsatisfied blocker means `blocked`, even when other edges are unknown.
 

@@ -33,7 +33,7 @@ bl next --explain -n 0
 SHOP-2  ready  high  Cart page
 
 SHOP-2  ready       high · unblocks 0
-SHOP-3  blocked     high · unblocks 0 · excluded-label: needs-design
+SHOP-3  ineligible  high · unblocks 0 · excluded-label: needs-design
 SHOP-4  ineligible  medium · unblocks 0 · status: active
 SHOP-5  ineligible  medium · unblocks 0 · status: active
 SHOP-1  ineligible  unset · unblocks 0 · container: SHOP-2, SHOP-3

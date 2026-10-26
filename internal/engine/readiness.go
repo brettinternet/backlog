@@ -200,9 +200,9 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		for _, reason := range e.Reasons {
 			state := Unknown
 			switch reason.Code {
-			case "archived", "status", "container":
+			case "archived", "status", "container", "excluded-label":
 				state = Ineligible
-			case "blocker", "excluded-label":
+			case "blocker":
 				state = Blocked
 			case "assignee", "claimed":
 				state = Waiting
