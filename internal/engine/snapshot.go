@@ -26,6 +26,7 @@ type SourceState struct {
 	Error    string
 	Cursor   source.Cursor
 	Initial  bool // the bounded startup snapshot; the first full load is running
+	Loading  bool // a load is running
 }
 
 // Snapshot is immutable. Successive snapshots share unchanged item records.
@@ -132,6 +133,13 @@ func cloneMutation(m model.Mutation) model.Mutation {
 }
 func (s *Snapshot) fork() *Snapshot {
 	return &Snapshot{Generation: s.Generation + 1, records: maps.Clone(s.records), sources: maps.Clone(s.sources)}
+}
+
+// withSource replaces one source's state and shares the immutable records.
+func (s *Snapshot) withSource(id string, state SourceState) *Snapshot {
+	n := &Snapshot{Generation: s.Generation + 1, records: s.records, sources: maps.Clone(s.sources)}
+	n.sources[id] = state
+	return n
 }
 
 // latest replaces an unread value. Producers serialize calls; readers never

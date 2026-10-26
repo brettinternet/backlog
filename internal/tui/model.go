@@ -77,9 +77,10 @@ type prepared struct {
 	widths          widths
 }
 type snapshotMsg struct {
-	snapshot *engine.Snapshot
-	sources  []sourceBadge
-	syncing  bool
+	snapshot   *engine.Snapshot
+	sources    []sourceBadge
+	syncing    bool
+	refreshing bool
 }
 type projectionMsg engine.Projection
 type foldedMsg struct {
@@ -126,6 +127,7 @@ type Model struct {
 	failure                  string
 	sources                  []sourceBadge
 	syncing                  bool
+	refreshing               bool // a source load is running; only the status bar shows it
 	snapshots                <-chan *engine.Snapshot
 	snapshot                 *engine.Snapshot
 	request                  uint64
@@ -250,9 +252,10 @@ func (m Model) waitSnapshot() tea.Cmd {
 			return nil
 		case s := <-m.snapshots:
 			sources := make([]sourceBadge, 0, len(m.opts.Sources))
-			syncing := false
+			syncing, refreshing := false, false
 			for _, id := range m.opts.Sources {
 				status := s.Source(id)
+				refreshing = refreshing || status.Loading
 				badge := sourceBadge{id: id, state: "synced"}
 				switch {
 				case status.Error != "":
@@ -265,7 +268,7 @@ func (m Model) waitSnapshot() tea.Cmd {
 				}
 				sources = append(sources, badge)
 			}
-			return snapshotMsg{s, sources, syncing}
+			return snapshotMsg{s, sources, syncing, refreshing}
 		}
 	}
 }
@@ -567,7 +570,7 @@ type NoticeMsg string
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	m = next.(Model)
-	busy := [loadKinds]bool{listLoad: m.listPending(), statusLoad: m.stale() || m.syncing, detailLoad: m.detailLoading}
+	busy := [loadKinds]bool{listLoad: m.listPending(), statusLoad: m.stale() || m.syncing || m.refreshing, detailLoad: m.detailLoading}
 	commands := []tea.Cmd{cmd}
 	for kind := range m.loads {
 		commands = append(commands, m.loads[kind].track(loadKind(kind), busy[kind]))
@@ -628,7 +631,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.syncing && !msg.syncing && len(m.data.rows) == 0 {
 			m.loading = true
 		}
-		m.snapshot, m.sources, m.syncing = msg.snapshot, msg.sources, msg.syncing
+		m.snapshot, m.sources, m.syncing, m.refreshing = msg.snapshot, msg.sources, msg.syncing, msg.refreshing
 		m.project()
 		return m, m.waitSnapshot()
 	case projectionMsg:

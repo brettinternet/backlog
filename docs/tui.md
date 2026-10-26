@@ -46,7 +46,7 @@ assignee picker ([Jira](jira.md#writes)).
 | `●` after the ID | Edit pending |
 | `!` after the ID | Edit failed or conflicted; open the item for detail |
 | `•` in the gutter | Marked |
-| `✓` `~` `!` in the header | Source synced, partial, error; no mark while syncing |
+| `✓` `~` `!` in the header | Source synced, partial, error; no mark until the first sync finishes, then the last result while a refresh runs |
 
 **Header:** view tabs and one badge per source. Untrusted hooks, actions, or
 adapters replace the badges with `⚠ Untrusted project config · bl trust --show`;
@@ -78,7 +78,7 @@ While a source syncs, an empty list stays blank, then shows loading after 300 ms
 never "No matching items." Switching tabs keeps the old rows until the new ones
 are ready, or loading shows.
 
-`R` refreshes now. Remote sources poll once a minute and show up to 256 cached
+`R` refreshes now, with `↻` once it takes over 300 ms. Remote sources poll once a minute and show up to 256 cached
 rows before the network answers. Cached rows appear in Open, but a stale item is
 never ready in Next, and a stale done blocker doesn't satisfy a dependency.
 Quota errors stay visible until the provider's retry time.

@@ -369,6 +369,12 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 	provisional := false
 	cursor := source.Cursor{}
 	load := func() {
+		// publish replaces the state, which clears Loading.
+		s.send(func(st *storeState) {
+			status := st.snapshot.sources[id]
+			status.Loading = true
+			st.publish(st.snapshot.withSource(id, status))
+		})
 		delta, err := w.backend.Load(s.ctx, cursor)
 		caps := w.backend.Info().Capabilities
 		s.capabilitiesMu.Lock()

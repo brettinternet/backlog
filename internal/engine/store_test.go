@@ -233,7 +233,9 @@ func TestInitialSnapshotBeforeFullLoad(t *testing.T) {
 				t.Fatal("initial item was not published")
 			}
 			close(gate)
-			full := awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Generation > first.Generation })
+			full := awaitSnapshot(t, s, func(s *engine.Snapshot) bool {
+				return s.Generation > first.Generation && !s.Source("tasks").Loading
+			})
 			if _, _, ok := full.Get(initial.Ref); ok || full.Len() != 1 || full.Source("tasks").Coverage != coverage {
 				t.Fatal("authoritative load retained removed initial item or lost coverage")
 			}
@@ -759,4 +761,28 @@ func TestBacklogMDStoreUndo(t *testing.T) {
 	if err != nil || string(data) != original {
 		t.Fatalf("undo lost provider bytes: %s %v", data, err)
 	}
+}
+
+// Catches a refresh indicator that never clears, including after a failed load.
+func TestSourceLoadingClearsAfterLoad(t *testing.T) {
+	t.Parallel()
+	backend := fakeSource(t, "remote")
+	gate := make(chan struct{})
+	backend.loadGate = gate
+	s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"remote": backend})
+	defer s.Close()
+	awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Source("remote").Loading })
+	close(gate)
+	awaitSnapshot(t, s, func(s *engine.Snapshot) bool {
+		st := s.Source("remote")
+		return st.Coverage == source.Complete && !st.Loading
+	})
+	backend.mu.Lock()
+	backend.loadFailures = 1
+	backend.mu.Unlock()
+	s.Refresh()
+	awaitSnapshot(t, s, func(s *engine.Snapshot) bool {
+		st := s.Source("remote")
+		return st.Error != "" && !st.Loading
+	})
 }
