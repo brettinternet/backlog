@@ -57,6 +57,7 @@ type Item struct {
 	Rank                                 string
 	Assignees, Labels                    []string
 	Milestone, Due                       string
+	Sprint                               string // Stable provider key; resolve state through a Sprint catalog.
 	Parent                               *Ref
 	Children, BlockedBy, Blocks, Related []Ref
 	DuplicateOf                          *Ref
@@ -69,9 +70,30 @@ type Item struct {
 	Created, Updated                     time.Time
 	URL, Version                         string
 	Fields                               map[string]any
-	// Names maps opaque Status and Assignees values to provider display
+	// Names maps opaque Status, Assignees and Sprint values to provider display
 	// names. Display only: queries, @me, claims and writes use the values.
 	Names map[string]string
+}
+
+// SprintState is the sprint's own lifecycle, not the item's. Providers report
+// it in a catalog refreshed every sync, because it changes without bumping
+// any issue's updated time.
+type SprintState string
+
+const (
+	SprintActive SprintState = "active"
+	SprintFuture SprintState = "future"
+	SprintClosed SprintState = "closed"
+)
+
+// Sprint is one catalog entry: a Linear cycle or a Jira sprint.
+type Sprint struct {
+	Key    string      `json:"key"`
+	Name   string      `json:"name"`
+	State  SprintState `json:"state"`
+	Start  time.Time   `json:"start,omitzero"`
+	End    time.Time   `json:"end,omitzero"`
+	Source string      `json:"source"`
 }
 
 // Capabilities is deny-by-default: absent operations are unavailable.

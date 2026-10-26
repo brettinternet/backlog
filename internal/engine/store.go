@@ -29,6 +29,7 @@ type Store struct {
 	subMu          sync.Mutex
 	subscribers    map[chan *Snapshot]struct{}
 	results        sync.Map // outstanding result channels, completed exactly once
+	sprints        atomic.Bool
 }
 type sourceWorker struct {
 	backend source.Source
@@ -84,6 +85,7 @@ func OpenProjectStore(ctx context.Context, cfg project.Config) (*Store, error) {
 func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry) *Store {
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, capabilities: make(map[string]model.Capabilities, len(registry)), events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}
+	s.sprints.Store(WantsSprints(cfg))
 	initial := &Snapshot{records: map[model.Ref]*record{}, sources: map[string]SourceState{}}
 	st := &storeState{store: s, snapshot: initial, workers: map[string]*sourceWorker{}, pending: map[model.Ref]bool{}, superseded: map[model.Ref]string{}}
 	for id, backend := range registry {
@@ -218,6 +220,14 @@ func (s *Store) history(direction int) <-chan error {
 	return result
 }
 
+// UseSprints enables provider sprint data, refreshing sources the first time.
+// Like Refresh it performs no I/O on the caller.
+func (s *Store) UseSprints() {
+	if !s.sprints.Swap(true) {
+		s.Refresh()
+	}
+}
+
 // Refresh is a manual resync: remote sources run a full reconciliation instead
 // of their change window. Periodic watcher refreshes keep their normal cost.
 func (s *Store) Refresh() {
@@ -335,11 +345,15 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			// individual items, not the full transfer slice or search closure.
 			defer func() { delta = source.Delta{} }()
 			n := st.snapshot.fork()
-			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor, Initial: initial}
+			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor, Initial: initial, Sprints: delta.Sprints}
+			for k := range status.Sprints {
+				status.Sprints[k].Source = id
+			}
 			if err != nil {
 				status.Error = err.Error()
 				status.Coverage = source.Unknown
 				status.Cursor = n.sources[id].Cursor
+				status.Sprints = n.sources[id].Sprints
 				for ref, old := range n.records {
 					if ref.Source == id {
 						r := *old
@@ -364,7 +378,8 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 					old := n.records[ref]
 					// Loads list active items only, so a session-archived record seen here
 					// was unarchived externally; a version check alone would keep it hidden.
-					if old == nil || old.item.Version != i.Version || old.archived != delta.Archived[i.Ref] || old.stale != delta.Stale[i.Ref] {
+					// Versions exclude the read-only sprint; compare it directly.
+					if old == nil || old.item.Version != i.Version || old.item.Sprint != i.Sprint || old.item.Names[i.Sprint] != i.Names[i.Sprint] || old.archived != delta.Archived[i.Ref] || old.stale != delta.Stale[i.Ref] {
 						edit := EditState{}
 						if old != nil {
 							edit = old.edit
@@ -419,6 +434,7 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 		})
 		request := cursor
 		request.Reconcile = w.reconcile.Swap(false)
+		request.Sprints = s.sprints.Load()
 		delta, err := w.backend.Load(s.ctx, request)
 		caps := w.backend.Info().Capabilities
 		s.capabilitiesMu.Lock()

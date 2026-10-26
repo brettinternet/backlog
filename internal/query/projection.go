@@ -163,6 +163,8 @@ func (s Snapshot) groupContext(ctx context.Context, items []model.Item, key stri
 			values = i.Labels
 		case "milestone":
 			values = []string{i.Milestone}
+		case "sprint":
+			values = []string{i.Sprint}
 		case "type":
 			values = []string{i.Type}
 		case "parent":
@@ -195,6 +197,9 @@ func (s Snapshot) groupContext(ctx context.Context, items []model.Item, key stri
 	return out
 }
 func (s Snapshot) groupCompare(key, a, b string) int {
+	if key == "sprint" {
+		return s.compareSprintGroups(a, b)
+	}
 	var order []string
 	switch key {
 	case "status":

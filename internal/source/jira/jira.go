@@ -3,11 +3,13 @@ package jira
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -37,6 +39,9 @@ type Source struct {
 	base   string
 	client remote.Client
 	mu     sync.Mutex
+	// sprintField is discovered once per process on the first sprint load.
+	sprintField           string
+	sprintFieldDiscovered bool
 }
 
 // CanonicalSite is also the claim identity: neither JQL nor project keys enter it.
@@ -78,7 +83,10 @@ func (s *Source) request(ctx context.Context, c remote.Credential, method, path 
 			return source.Refuse("rejected", "invalid Jira request")
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, method, s.base+"/rest/api/3/"+path, &buf)
+	if !strings.HasPrefix(path, "/rest/") {
+		path = "/rest/api/3/" + path
+	}
+	req, err := http.NewRequestWithContext(ctx, method, s.base+path, &buf)
 	if err != nil {
 		return source.Refuse("rejected", "invalid Jira request")
 	}
@@ -151,28 +159,209 @@ type issue struct {
 			InwardIssue, OutwardIssue *struct{ ID, Key string }
 		}
 	}
+	// Sprints holds the discovered sprint field, which has no fixed name.
+	Sprints []sprint `json:"-"`
+}
+type sprint struct {
+	ID                               int64
+	Name, State                      string
+	BoardID, OriginBoardID           int64
+	StartDate, EndDate, CompleteDate time.Time
+}
+
+const sprintSchema = "com.pyxis.greenhopper.jira:gh-sprint"
+const sprintBoardLimit = 10
+
+// decode reads the dynamic sprint field alongside the fixed issue fields.
+func (s *Source) decode(raw json.RawMessage) (issue, error) {
+	var row issue
+	if err := json.Unmarshal(raw, &row); err != nil {
+		return issue{}, err
+	}
+	if s.sprintField == "" {
+		return row, nil
+	}
+	var extra struct{ Fields map[string]json.RawMessage }
+	if err := json.Unmarshal(raw, &extra); err != nil {
+		return issue{}, err
+	}
+	if value := extra.Fields[s.sprintField]; len(value) > 0 && string(value) != "null" {
+		if err := json.Unmarshal(value, &row.Sprints); err != nil {
+			return issue{}, err
+		}
+	}
+	return row, nil
+}
+
+// discoverSprintField finds the board sprint custom field by schema, not ID:
+// its customfield number differs per site.
+func (s *Source) discoverSprintField(ctx context.Context, c remote.Credential) error {
+	if s.sprintFieldDiscovered {
+		return nil
+	}
+	var fields []struct {
+		ID     string
+		Schema struct{ Custom string }
+	}
+	if err := s.request(ctx, c, http.MethodGet, "field", nil, &fields); err != nil {
+		return err
+	}
+	for _, field := range fields {
+		if field.Schema.Custom == sprintSchema && strings.HasPrefix(field.ID, "customfield_") {
+			s.sprintField = field.ID
+			break
+		}
+	}
+	s.sprintFieldDiscovered = true
+	return nil
+}
+func (s *Source) fields() string {
+	if s.sprintField != "" {
+		return fields + "," + s.sprintField
+	}
+	return fields
+}
+func (s *Source) sprintKey(id int64) string {
+	return strings.TrimPrefix(s.o.Site, "https://") + "/sprint/" + fmt.Sprint(id)
+}
+
+// currentSprint resolves an issue in several sprints to its open sprint
+// (active, else the earliest future), otherwise to the latest closed one.
+func currentSprint(sprints []sprint) (sprint, bool) {
+	rank := func(x sprint) int {
+		switch strings.ToLower(x.State) {
+		case "active":
+			return 0
+		case "future":
+			return 1
+		}
+		return 2
+	}
+	closed := func(x sprint) time.Time {
+		if !x.CompleteDate.IsZero() {
+			return x.CompleteDate
+		}
+		return x.EndDate
+	}
+	best, found := sprint{}, false
+	for _, x := range sprints {
+		if !found {
+			best, found = x, true
+			continue
+		}
+		a, b := rank(x), rank(best)
+		switch {
+		case a != b:
+			if a < b {
+				best = x
+			}
+		case a == 1 && !x.StartDate.Equal(best.StartDate):
+			if best.StartDate.IsZero() || !x.StartDate.IsZero() && x.StartDate.Before(best.StartDate) {
+				best = x
+			}
+		case a == 2 && !closed(x).Equal(closed(best)):
+			if closed(x).After(closed(best)) {
+				best = x
+			}
+		case x.ID < best.ID:
+			best = x
+		}
+	}
+	return best, found
+}
+
+// catalog merges sprints seen on issues with each board's open sprints, so a
+// future sprint without in-scope issues still decides sprint:next. A seen
+// sprint missing from its listed board's open sprints has closed. Agile API
+// failure degrades to the states embedded in the search response.
+func (s *Source) catalog(ctx context.Context, c remote.Credential, rows map[string]issue) ([]model.Sprint, []source.Finding) {
+	seen := map[int64]sprint{}
+	boards := map[int64]bool{}
+	for _, row := range rows {
+		for _, x := range row.Sprints {
+			if x.ID <= 0 {
+				continue
+			}
+			if _, ok := seen[x.ID]; !ok || x.BoardID != 0 {
+				seen[x.ID] = x
+			}
+			if board := cmp.Or(x.BoardID, x.OriginBoardID); board > 0 {
+				boards[board] = true
+			}
+		}
+	}
+	var findings []source.Finding
+	ids := slices.Sorted(maps.Keys(boards))
+	if len(ids) > sprintBoardLimit {
+		ids = ids[:sprintBoardLimit]
+		findings = append(findings, source.Finding{Code: "jira-sprint-boards", Severity: "warning", Message: fmt.Sprintf("Jira sprint states refresh from the first %d boards only", sprintBoardLimit)})
+	}
+	listed := map[int64]bool{}
+	open := map[int64]sprint{}
+	for _, board := range ids {
+		var r struct{ Values []sprint }
+		if err := s.request(ctx, c, http.MethodGet, fmt.Sprintf("/rest/agile/1.0/board/%d/sprint?state=active,future&maxResults=50", board), nil, &r); err != nil || r.Values == nil {
+			findings = append(findings, source.Finding{Code: "jira-agile-unavailable", Severity: "warning", Message: "Jira Agile sprint list unavailable; sprint states come from issue fields"})
+			listed, open = map[int64]bool{}, map[int64]sprint{}
+			break
+		}
+		listed[board] = true
+		for _, x := range r.Values {
+			if x.ID > 0 {
+				open[x.ID] = x
+			}
+		}
+	}
+	for id, x := range open {
+		seen[id] = x
+	}
+	out := make([]model.Sprint, 0, len(seen))
+	for id, x := range seen {
+		state := model.SprintClosed
+		switch strings.ToLower(x.State) {
+		case "active":
+			state = model.SprintActive
+		case "future":
+			state = model.SprintFuture
+		}
+		if _, ok := open[id]; !ok && listed[cmp.Or(x.BoardID, x.OriginBoardID)] {
+			state = model.SprintClosed
+		}
+		end := x.EndDate
+		if !x.CompleteDate.IsZero() {
+			end = x.CompleteDate
+		}
+		out = append(out, model.Sprint{Key: s.sprintKey(id), Name: x.Name, State: state, Start: x.StartDate, End: end, Source: s.o.ID})
+	}
+	slices.SortFunc(out, func(a, b model.Sprint) int { return strings.Compare(a.Key, b.Key) })
+	return out, findings
 }
 
 const fields = "summary,description,status,resolution,assignee,labels,created,updated,issuelinks"
 
-func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error) {
+func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return source.Delta{}, err
 	}
+	if cursor.Sprints {
+		if err = s.discoverSprintField(ctx, c); err != nil {
+			return source.Delta{}, err
+		}
+	}
 	d := source.Delta{Coverage: source.Partial, Findings: []source.Finding{{Code: "visible-scope", Severity: "warning", Message: "Jira search covers visible indexed issues only; omissions and estimates are not deletion evidence"}}}
 	token := ""
 	seen := map[string]bool{}
 	rows := map[string]issue{}
 	for page := 0; page < 1000; page++ {
-		body := map[string]any{"jql": s.o.JQL, "fields": strings.Split(fields, ","), "maxResults": 100}
+		body := map[string]any{"jql": s.o.JQL, "fields": strings.Split(s.fields(), ","), "maxResults": 100}
 		if token != "" {
 			body["nextPageToken"] = token
 		}
 		var r struct {
-			Issues        []issue
+			Issues        []json.RawMessage
 			IsLast        *bool
 			NextPageToken string
 			Total         *int
@@ -183,7 +372,11 @@ func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error
 		if r.Issues == nil || r.IsLast == nil {
 			return source.Delta{}, source.Refuse("unavailable", "missing Jira pagination evidence")
 		}
-		for _, row := range r.Issues {
+		for _, raw := range r.Issues {
+			row, err := s.decode(raw)
+			if err != nil {
+				return source.Delta{}, source.Refuse("unavailable", "invalid Jira response")
+			}
 			if !numeric(row.ID) {
 				return source.Delta{}, source.Refuse("unavailable", "invalid Jira issue identity")
 			}
@@ -201,6 +394,12 @@ func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error
 					return source.Delta{}, err
 				}
 				d.Items = append(d.Items, item)
+			}
+			if cursor.Sprints {
+				var findings []source.Finding
+				d.Sprints, findings = s.catalog(ctx, c, rows)
+				d.Findings = append(d.Findings, findings...)
+				d.Cursor = source.Cursor{Sprints: true}
 			}
 			return d, nil
 		}
@@ -225,9 +424,13 @@ func (s *Source) read(ctx context.Context, c remote.Credential, id string) (mode
 	if !numeric(id) {
 		return model.Item{}, source.Refuse("invalid-id", "use the numeric Jira issue ID")
 	}
-	var row issue
-	if err := s.request(ctx, c, http.MethodGet, "issue/"+id+"?fields="+fields, nil, &row); err != nil {
+	var raw json.RawMessage
+	if err := s.request(ctx, c, http.MethodGet, "issue/"+id+"?fields="+s.fields(), nil, &raw); err != nil {
 		return model.Item{}, err
+	}
+	row, err := s.decode(raw)
+	if err != nil {
+		return model.Item{}, source.Refuse("unavailable", "invalid Jira response")
 	}
 	if row.ID != id {
 		return model.Item{}, source.Refuse("unavailable", "Jira identity changed")
@@ -406,9 +609,18 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 		return model.Item{}, err
 	}
 	item.Fields["jiraTransitions"] = choices
+	// The sprint is read-only and fetched only on demand, so it stays out of
+	// the fingerprint: reads with and without it must agree for --if-version.
 	raw, _ := json.Marshal(item)
 	sum := sha256.Sum256(raw)
 	item.Version = hex.EncodeToString(sum[:])
+	if x, ok := currentSprint(row.Sprints); ok && x.ID > 0 {
+		item.Sprint = s.sprintKey(x.ID)
+		if item.Names == nil {
+			item.Names = map[string]string{}
+		}
+		item.Names[item.Sprint] = x.Name
+	}
 	return item, nil
 }
 func timestamp(out *time.Time, value string) error {

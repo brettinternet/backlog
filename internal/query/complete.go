@@ -86,6 +86,15 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 				add(v.Key, v.Name)
 			}
 		}
+	case "sprint":
+		for _, v := range sprintValues {
+			add(v, "")
+		}
+		for _, v := range s.Sprints {
+			if v.Name != "" {
+				add(v.Name, "")
+			}
+		}
 	case "is":
 		for _, v := range isValues {
 			add(v, "")

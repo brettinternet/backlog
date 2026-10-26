@@ -19,6 +19,7 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
 	"github.com/brettinternet/backlog/internal/testkit"
@@ -46,6 +47,8 @@ type fixture struct {
 	size, requests, batches                                                        int
 	changed, relationOverflow                                                      bool
 	blocker, trashed                                                               bool // TEST-1 blocks TEST-2; TEST-1 trashed
+	cycleActive, wantCycle                                                         bool
+	cycleQueries                                                                   int
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -95,7 +98,16 @@ func (f *fixture) row(n int) map[string]any {
 		labels = append(labels, map[string]string{"id": labelID, "name": name})
 	}
 	r["labels"] = conn(labels, "")
+	if f.wantCycle && n == 1 {
+		r["cycle"] = map[string]any{"id": cycleID, "name": nil, "number": 7}
+	}
 	return r
+}
+
+const cycleID = "70000000-0000-0000-0000-000000000007"
+
+func (f *fixture) cycles() map[string]any {
+	return conn([]any{map[string]any{"id": cycleID, "number": 7, "name": nil, "startsAt": "2026-10-26T00:00:00Z", "endsAt": "2026-11-09T00:00:00Z", "isActive": f.cycleActive, "isFuture": !f.cycleActive}}, "")
 }
 func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	authorization := "linear-canary-secret"
@@ -117,6 +129,12 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	f.requests++
 	q, v := req.Query, req.Variables
+	f.wantCycle = strings.Contains(q, "cycle{id name number}")
+	listCycles := strings.Contains(q, cycleFields)
+	if listCycles {
+		f.cycleQueries++
+		q = strings.Replace(strings.Replace(q, "$cyclesAfter:DateTimeOrDuration!,", "", 1), cycleFields+" ", "", 1)
+	}
 	emit := func(data any) { _ = json.NewEncoder(w).Encode(map[string]any{"data": data}) }
 	if v["count"] != nil && v["count"] != float64(250) {
 		f.t.Errorf("page cap not 250: %v", v["count"])
@@ -184,7 +202,11 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		if f.brokenPage {
 			delete(c, "pageInfo")
 		}
-		emit(map[string]any{"team": map[string]any{"id": teamID, "issues": c}})
+		team := map[string]any{"id": teamID, "issues": c}
+		if listCycles {
+			team["cycles"] = f.cycles()
+		}
+		emit(map[string]any{"team": team})
 	case detailQuery:
 		id, _ := v["id"].(string)
 		n, _ := strconv.Atoi(strings.TrimPrefix(id, "TEST-"))
@@ -646,4 +668,51 @@ func FuzzProviderJSON(f *testing.F) {
 			t.Fatal("provider error leaked")
 		}
 	})
+}
+
+// Catches sprint:current going stale when only the cycle catalog changes: an
+// incremental load sees no updated issue, yet the cycle became active. Also
+// catches the catalog costing an extra request or cycles altering versions.
+func TestCycleCatalogRefreshesWithoutIssueUpdate(t *testing.T) {
+	s, f := fixtureSource(t)
+	f.size = 2
+	ctx := context.Background()
+	now := s.o.Now()
+	s.o.Now = func() time.Time { return now }
+	wrapped := remote.New(s, cache.New(t.TempDir(), "cycles", "lin", "scope"), s.o.Secrets)
+	plain, err := wrapped.Load(ctx, source.Cursor{})
+	if err != nil || f.cycleQueries != 0 || plain.Sprints != nil || plain.Items[0].Sprint != "" {
+		t.Fatalf("cycle work without demand: queries=%d %v", f.cycleQueries, err)
+	}
+	now = now.Add(time.Minute)
+	d, err := wrapped.Load(ctx, source.Cursor{Sprints: true})
+	if err != nil || f.cycleQueries != 1 || len(d.Sprints) != 1 || d.Sprints[0].Name != "Cycle 7" {
+		t.Fatalf("enabling cycles: queries=%d sprints=%+v %v", f.cycleQueries, d.Sprints, err)
+	}
+	item := d.Items[slices.IndexFunc(d.Items, func(i model.Item) bool { return i.Ref.ID == "TEST-1" })]
+	if item.Sprint != cycleID || item.Version != plain.Items[0].Version {
+		t.Fatalf("cached row did not gain its cycle or version changed: %+v", item)
+	}
+	current, err := query.Parse("sprint:current", query.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func(d source.Delta) query.Snapshot {
+		return query.Snapshot{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "lin", Type: "linear"}}}, Sprints: d.Sprints}
+	}
+	if current.Match(item, snapshot(d), nil) {
+		t.Fatal("future cycle matched sprint:current")
+	}
+	f.cycleActive = true // no issue updatedAt changes
+	now = now.Add(time.Minute)
+	requests := f.requests
+	// A process without sprint demand shares the cache; demand stays sticky.
+	d, err = wrapped.Load(ctx, source.Cursor{})
+	if err != nil || f.requests-requests != 2 { // same as an unchanged window without cycles
+		t.Fatalf("incremental load: requests=%d %v", f.requests-requests, err)
+	}
+	item = d.Items[slices.IndexFunc(d.Items, func(i model.Item) bool { return i.Ref.ID == "TEST-1" })]
+	if item.Sprint != cycleID || !current.Match(item, snapshot(d), nil) {
+		t.Fatalf("sprint:current missed the activated cycle: sprint=%q catalog=%+v", item.Sprint, d.Sprints)
+	}
 }

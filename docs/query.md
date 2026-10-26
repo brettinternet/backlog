@@ -75,6 +75,7 @@ snapshot.
 | `assignee` | Handle, `me`, or `none` |
 | `label`, `type`, `milestone`, `source` | Exact value, or `none` |
 | `parent` | ID, or `none` |
+| `sprint` | `current` (active), `next` (earliest future), `none`, or a sprint key or name. Linear and Jira only. |
 | `blocked-by`, `blocks` | ID. `blocks` is derived from the loaded target's blockers; the item's own list counts only for targets that aren't loaded. |
 | `created`, `updated`, `due` | Ordered. See [Dates](#dates). |
 | `text` | Word or phrase in the title or body |
@@ -136,11 +137,13 @@ break by `next`, then ID, then source. Items without a `next` rank follow ranked
 ones.
 
 `group:` takes one of `status`, `category`, `priority`, `assignee`, `label`,
-`milestone`, `type`, `parent`, `source`, or `none` (the default). Items with
+`milestone`, `sprint`, `type`, `parent`, `source`, or `none` (the default). Items with
 several labels or assignees appear in each group. Groups follow status order,
 category order, priority order (unset last), or milestone catalog order
 (including archived milestones); undeclared values follow, then other keys sort
 by value. An empty group value is unset. Sort order holds within each group.
+Sprint groups run current, next, other future sprints by start, closed sprints
+(most recent first), then none.
 
 ## Errors
 
@@ -153,7 +156,8 @@ unknown field "lable" at 7; did you mean "label"?
 
 The TUI keeps the last valid result while you type. Ordered operators work only
 on priority and dates. Unknown statuses, labels, types, milestones, sources, and
-assignees are errors in the CLI and warnings in the TUI. Unknown IDs, raw
+assignees are errors in the CLI and warnings in the TUI, as is `sprint:` when no
+Linear or Jira source is configured ("no source provides sprints"). Unknown IDs, raw
 fields, and text are fine; they just may not match.
 
 ## Completion

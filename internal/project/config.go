@@ -486,6 +486,11 @@ func validateSettings(node *yaml.Node) error {
 	if n := field(node, "root"); n != nil && n.Value != "primary" && n.Value != "checkout" {
 		return fail(n, "root", "must be primary or checkout")
 	}
+	if ready := field(node, "ready"); ready != nil {
+		if n := field(ready, "sprint"); n != nil && n.Value != "current" && n.Value != "next" {
+			return fail(n, "ready.sprint", "must be current or next")
+		}
+	}
 	for _, group := range []string{"hooks", "actions", "views", "workspaces"} {
 		if list := field(node, group); list != nil {
 			seenNames := map[string]bool{}

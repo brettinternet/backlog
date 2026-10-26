@@ -510,6 +510,7 @@ func overviewLines(item model.Item, request detailRequest) []string {
 	if item.Milestone != "" {
 		add("Milestone", textutil.Line(milestoneName(item.Milestone, request.milestones)))
 	}
+	add("Sprint", textutil.Line(cmp.Or(item.Names[item.Sprint], item.Sprint)))
 	add("Due", textutil.Line(item.Due))
 	add("Type", textutil.Line(item.Type))
 	if item.Parent != nil {

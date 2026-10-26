@@ -227,7 +227,7 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 	fields := [][2]string{
 		{"status", cmp.Or(i.Names[i.Status], i.Status)}, {"priority", string(i.Priority)}, {"type", i.Type},
 		{"assignees", strings.Join(assignees, ", ")}, {"labels", strings.Join(i.Labels, ", ")},
-		{"milestone", i.Milestone}, {"due", i.Due}, {"parent", ref(i.Parent)},
+		{"milestone", i.Milestone}, {"sprint", cmp.Or(i.Names[i.Sprint], i.Sprint)}, {"due", i.Due}, {"parent", ref(i.Parent)},
 		{"children", list(i.Children)}, {"blocked by", list(i.BlockedBy)}, {"blocks", list(i.Blocks)},
 		{"related", list(i.Related)}, {"duplicate of", ref(i.DuplicateOf)},
 		{"refs", strings.Join(i.Refs, ", ")}, {"files", strings.Join(i.Files, ", ")},

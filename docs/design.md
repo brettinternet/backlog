@@ -89,6 +89,7 @@ Non-goals:
 | D28 | **Evidence and merges.** Evidence for a criterion is written under that criterion, never in Notes by number, so it can't point at the wrong one after a renumber. A file with conflict markers fails to parse with `merge-conflict`. `bl check --fix` resolves the two conflicts that every edit and comment produce, `updated` and appended comments, and leaves anything else for you. `bl` doesn't install a Git merge driver, because a driver needs per-clone Git config and runs without the project's lock. |
 | D29 | **Drafts.** A draft is an item in a `backlog`-category status, so it is open but never ready. `bl init` and `bl import backlog-md` configure a `draft` status, and `bl new --status draft` creates one without a moment in which it is ready to claim. Native IDs never change on promotion, so the importer numbers Backlog.md drafts in the source prefix, as `backlog draft promote` would. A Backlog.md source keeps its folders: changing a status to or from draft moves the file between `drafts/` and `tasks/` and allocates an ID there, as `draft promote` and `task demote` do, and also rewrites references, which Backlog.md 1.52 leaves dangling. |
 | D30 | **Workspaces.** Compose independently resolved project contexts, including statuses, trust, events and claims. In composed views only, source keys are `url.QueryEscape(project.id)/source-id`, giving stable identity even when projects reuse source and item IDs. Bare relation IDs stay project/source local; explicit `source:ID` edges resolve only when unique in the loaded scope. Ambiguous or absent targets remain unknown. Workspace scope is a worker projection, not a merged project configuration. |
+| D31 | **Sprints.** Linear cycles and Jira sprints share one model: an item carries one opaque sprint key (its display name in `Names`), and each source publishes a sprint catalog of key, name, state (`active`, `future`, `closed`) and dates. `current` is the active sprint and `next` the earliest future one, per source, resolved from the catalog rather than the clock, so a sprint starting changes results without any issue update. The catalog refreshes on every sync, independent of the incremental issue cursor. Sprint work is demand-gated: sources request sprint data only when a query, view, group or `ready.sprint` mentions sprints, and that demand is sticky in the shared cache so a sprint-free process never strips cached keys. Item versions exclude the sprint, so write CAS is identical in both modes. A `sprint:` term with no Linear or Jira source is an error. Jira reads one request per distinct board (at most 10) for open sprints, not one per sync; the Agile API is on the same host, so no re-trust. Writing the sprint, GitHub Projects iterations (which fit the same model) and native sprints are not implemented. |
 
 ## 4. Architecture
 
@@ -225,6 +226,7 @@ defaults: {type: task, dod: ["task ci passes on the final commit"]}   # applied 
 views:
   - {name: Next, query: "is:ready", sort: next}
   - {name: Mine, query: "assignee:me is:open"}
+  - {name: Sprint, query: "sprint:current", layout: board}   # Linear or Jira sources
 coordination: {worklease: {}}
 hooks: []     # requires `bl trust`
 actions: []   # requires `bl trust`
@@ -260,6 +262,7 @@ An item is a **candidate** when all of the following hold:
 2. Every `blockedBy` target is known, and its category is in `ready.satisfiedBy` (default `[done, canceled]`).
 3. It has no open children (`ready.skipContainers`, default true).
 4. It carries no label from `ready.excludeLabels`.
+   With `ready.sprint` (`current` or `next`), it is in that sprint (D31).
 5. It is not assigned only to other people.
 6. With Worklease enabled, no other holder has claimed it.
 
@@ -271,7 +274,7 @@ Readiness is one of these values, and each has a reason:
 | `blocked` | A known unsatisfied blocker |
 | `waiting` | Assigned to or claimed by someone else |
 | `unknown` | A missing, unresolvable, or stale blocker |
-| `ineligible` | Status, container, or an excluded label |
+| `ineligible` | Status, container, an excluded label, or outside `ready.sprint` |
 
 A known unsatisfied blocker means `blocked`, even when other edges are unknown.
 

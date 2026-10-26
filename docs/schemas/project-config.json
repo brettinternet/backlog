@@ -216,6 +216,12 @@
         },
         "skipContainers": {
           "type": "boolean"
+        },
+        "sprint": {
+          "enum": [
+            "current",
+            "next"
+          ]
         }
       }
     },

@@ -460,7 +460,7 @@ func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, groupe
 			}
 			header := screenRow{group: g, value: group.Value, header: label, groupKey: groupKey, count: len(group.Rows), collapsed: folded[group.Value], ordinal: p.items + min(1, len(group.Rows))}
 			// A header names its value like its rows: the first provider name wins.
-			if groupKey == "status" || groupKey == "assignee" {
+			if groupKey == "status" || groupKey == "assignee" || groupKey == "sprint" {
 				for _, row := range group.Rows {
 					if name := row.Names[group.Value]; name != "" {
 						header.row.Names = map[string]string{group.Value: name}
@@ -542,6 +542,9 @@ func (m *Model) requestProjection(refreshClaims bool) {
 	if m.editor.open {
 		q.Text, q.Complete = m.editor.text, true
 		q.Field, q.Prefix, _, _ = m.editor.completion()
+	}
+	if m.opts.Store != nil && (q.Field == "sprint" || engine.MentionsSprint(q.Text)) {
+		m.opts.Store.UseSprints()
 	}
 	m.request = m.opts.Projector.RequestQuery(m.snapshot, q)
 }

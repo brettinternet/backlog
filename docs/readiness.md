@@ -33,7 +33,7 @@ The first matching state wins, but every applicable reason is kept:
 
 | State | Reasons |
 | --- | --- |
-| `ineligible` | Archived, status not in `ready.statuses`, an open container, or an excluded label |
+| `ineligible` | Archived, status not in `ready.statuses`, an open container, an excluded label, or outside `ready.sprint` (reason `sprint`) |
 | `blocked` | A known unsatisfied blocker |
 | `waiting` | Assigned only to others, or claimed by someone else |
 | `unknown` | An unresolved or stale blocker, or an unknown claim |

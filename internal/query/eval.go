@@ -34,6 +34,8 @@ type Snapshot struct {
 	States       map[model.Ref]State
 	Next         []model.Ref
 	Coordination bool
+	// Sprints is the merged provider sprint catalog; roles derive from it.
+	Sprints []model.Sprint
 	// TextMatches holds optional snapshot-bound FTS candidates. Missing entries
 	// use the in-memory evaluator; candidates are always post-filtered.
 	TextMatches map[string]map[model.Ref]bool
@@ -49,6 +51,23 @@ func (q Query) Validate(s Snapshot) []error {
 			continue
 		}
 		switch t.Field {
+		case "sprint":
+			if !s.SprintCapable() {
+				errors = append(errors, fail(t.Pos, "no source provides sprints"))
+				continue
+			}
+			for _, v := range t.Values {
+				if slices.Contains(sprintValues, strings.ToLower(v.Text)) || slices.ContainsFunc(s.Sprints, func(sprint model.Sprint) bool {
+					return sprint.Key == v.Text || strings.EqualFold(sprint.Name, v.Text)
+				}) {
+					continue
+				}
+				names := slices.Clone(sprintValues)
+				for _, sprint := range s.Sprints {
+					names = append(names, sprint.Name)
+				}
+				errors = append(errors, &Error{Pos: v.Pos, Message: fmt.Sprintf("unknown sprint value %q", v.Text), Suggestion: closest(v.Text, names)})
+			}
 		case "status", "label", "milestone", "type", "source", "assignee":
 			known := s.values(t.Field)
 			for _, v := range t.Values {
@@ -165,6 +184,8 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 		return scalar(i.Type, text)
 	case "milestone":
 		return scalar(i.Milestone, text)
+	case "sprint":
+		return matchSprint(i, s, text)
 	case "source":
 		return scalar(i.Ref.Source, text)
 	case "parent":

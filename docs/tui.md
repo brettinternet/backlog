@@ -112,6 +112,7 @@ views:
     group: milestone
     layout: list        # list | board | tree
     columns: [id, priority, status, title, updated]
+  - {name: Sprint, query: "sprint:current", layout: board}
 ```
 
 Explicit `sort` and `group` override query directives. Columns are `id`,

@@ -25,8 +25,9 @@ type SourceState struct {
 	Coverage source.Coverage
 	Error    string
 	Cursor   source.Cursor
-	Initial  bool // the bounded startup snapshot; the first full load is running
-	Loading  bool // a load is running
+	Initial  bool           // the bounded startup snapshot; the first full load is running
+	Loading  bool           // a load is running
+	Sprints  []model.Sprint // last loaded catalog, retained across failed loads
 }
 
 // Snapshot is immutable. Successive snapshots share unchanged item records.
@@ -68,6 +69,15 @@ func (s *Snapshot) Get(ref model.Ref) (model.Item, EditState, bool) {
 	return cloneItem(*r.item), e, true
 }
 func (s *Snapshot) Source(id string) SourceState { return s.sources[id] }
+
+// Sprints merges source catalogs in source order. The slice is shared.
+func (s *Snapshot) Sprints() []model.Sprint {
+	var out []model.Sprint
+	for _, id := range slices.Sorted(maps.Keys(s.sources)) {
+		out = append(out, s.sources[id].Sprints...)
+	}
+	return out
+}
 func cloneValue(v any) any {
 	switch v := v.(type) {
 	case map[string]any:

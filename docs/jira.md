@@ -103,6 +103,20 @@ Requests share a serial host/account scheduler and bounded bodies. A 429 records
 `Retry-After`; requests are refused until the deadline and a later refresh
 retries. No mutation is automatically replayed.
 
+### Sprints
+
+Sprints (design.md D31) are read only when a query, view, group, or
+`ready.sprint` mentions them. The sprint field is discovered once per process
+from `GET /rest/api/3/field` (`schema.custom` is
+`com.pyxis.greenhopper.jira:gh-sprint`). An issue in several sprints resolves to
+its active sprint, else its earliest future one, else its latest closed one.
+Each sync lists open sprints with
+`GET /rest/agile/1.0/board/{id}/sprint?state=active,future` for every distinct
+board seen on issues, up to 10 (`jira-sprint-boards` reports the rest), so a
+sprint starting is seen without an issue update. If the Agile API fails, the
+`jira-agile-unavailable` warning is reported and sprint states come from issues.
+Sprint keys are `SITE/sprint/ID`.
+
 ## Writes
 
 Enable `allowWrites: true` deliberately. Supported operations are one status

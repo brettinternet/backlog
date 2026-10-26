@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +40,9 @@ type fixture struct {
 	writes, searches                                      int
 	now                                                   time.Time
 	last                                                  map[string]any
+	sprints, boardSprints                                 []any
+	agileDown                                             bool
+	fieldCalls, boardCalls                                int
 }
 
 func doc(text string) map[string]any {
@@ -56,7 +61,11 @@ func (f *fixture) row(id string) map[string]any {
 	if id == "10001" {
 		links = append(links, map[string]any{"id": "9", "type": map[string]string{"id": "1", "name": "Blocks"}, "inwardIssue": map[string]string{"id": "10002", "key": "OTHER-2"}})
 	}
-	return map[string]any{"id": id, "key": f.key, "fields": map[string]any{"summary": "Synthetic", "description": doc("café & body"), "status": map[string]any{"id": "1", "name": f.status, "statusCategory": map[string]string{"key": f.category}}, "resolution": resolution, "assignee": assignee, "labels": []string{"synthetic"}, "created": "2026-10-22T09:39:39.500-0600", "updated": "2026-10-23T00:00:00.000+0000", "issuelinks": links}}
+	fields := map[string]any{"summary": "Synthetic", "description": doc("café & body"), "status": map[string]any{"id": "1", "name": f.status, "statusCategory": map[string]string{"key": f.category}}, "resolution": resolution, "assignee": assignee, "labels": []string{"synthetic"}, "created": "2026-10-22T09:39:39.500-0600", "updated": "2026-10-23T00:00:00.000+0000", "issuelinks": links}
+	if id == "10001" && f.sprints != nil {
+		fields["customfield_10020"] = f.sprints
+	}
+	return map[string]any{"id": id, "key": f.key, "fields": fields}
 }
 func setup(t *testing.T, cloudIDs ...string) (*jira.Source, *fixture, *remote.Secrets) {
 	t.Helper()
@@ -94,6 +103,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	if f.cloudID != "" {
 		prefix = "/ex/jira/" + f.cloudID
 	}
+	if board, ok := strings.CutPrefix(r.URL.Path, prefix+"/rest/agile/1.0/board/"); ok {
+		f.boardCalls++
+		if f.agileDown || board != "7/sprint" || r.URL.Query().Get("state") != "active,future" {
+			w.WriteHeader(403)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"values": f.boardSprints})
+		return
+	}
 	if !strings.HasPrefix(r.URL.Path, prefix+"/rest/api/3/") {
 		f.t.Errorf("wrong gateway path: %s", r.URL.Path)
 	}
@@ -106,6 +124,12 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			site = "https://other.atlassian.net"
 		}
 		result = map[string]string{"baseUrl": site}
+	case path == "field":
+		f.fieldCalls++
+		result = []any{
+			map[string]any{"id": "customfield_10001", "name": "Sprint", "schema": map[string]string{"custom": "com.example:sprint-lookalike"}},
+			map[string]any{"id": "customfield_10020", "name": "Iteration", "schema": map[string]string{"custom": "com.pyxis.greenhopper.jira:gh-sprint"}},
+		}
 	case path == "myself":
 		result = map[string]any{"accountId": "user-1", "active": true}
 	case path == "search/jql":
@@ -342,5 +366,65 @@ func TestDiscoveredTransitionsAndVersionedWrites(t *testing.T) {
 	var diagnostic remote.ScheduleDiagnostic
 	if _, err = s.Apply(ctx, mutation); !errors.As(err, &diagnostic) || diagnostic.Code != "rate-limited" {
 		t.Fatalf("rate-limited write: %v", err)
+	}
+}
+
+func sprintRow(id int, state, start, complete string) map[string]any {
+	row := map[string]any{"id": id, "name": "Sprint " + strconv.Itoa(id), "state": state, "boardId": 7}
+	if start != "" {
+		row["startDate"] = start
+	}
+	if complete != "" {
+		row["completeDate"] = complete
+	}
+	return row
+}
+
+// Catches a multi-sprint issue resolving to a stale closed sprint or a later
+// future one, a hardcoded sprint field, and sprint requests or version drift
+// when no caller asked for sprints.
+func TestSprintSelectionAndCatalog(t *testing.T) {
+	s, f, _ := setup(t)
+	ctx := context.Background()
+	f.sprints = []any{
+		sprintRow(40, "closed", "2026-09-01T00:00:00.000Z", "2026-09-14T00:00:00.000Z"),
+		sprintRow(43, "future", "2026-11-15T00:00:00.000Z", ""),
+		sprintRow(42, "future", "2026-11-01T00:00:00.000Z", ""),
+		sprintRow(41, "closed", "2026-09-15T00:00:00.000Z", "2026-10-01T00:00:00.000Z"),
+	}
+	f.boardSprints = []any{sprintRow(42, "future", "2026-11-01T00:00:00.000Z", ""), sprintRow(43, "future", "2026-11-15T00:00:00.000Z", ""), sprintRow(44, "future", "2026-11-29T00:00:00.000Z", "")}
+	plain, err := s.Load(ctx, source.Cursor{})
+	if err != nil || f.fieldCalls+f.boardCalls != 0 || plain.Sprints != nil || plain.Items[0].Sprint != "" {
+		t.Fatalf("sprint work without demand: field=%d board=%d %+v %v", f.fieldCalls, f.boardCalls, plain.Sprints, err)
+	}
+	d, err := s.Load(ctx, source.Cursor{Sprints: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := d.Items[0]
+	if item.Sprint != "example.atlassian.net/sprint/42" || item.Names[item.Sprint] != "Sprint 42" || item.Version != plain.Items[0].Version {
+		t.Fatalf("selected %q (%q), version changed %v", item.Sprint, item.Names[item.Sprint], item.Version != plain.Items[0].Version)
+	}
+	states := map[string]model.SprintState{}
+	for _, sprint := range d.Sprints {
+		states[strings.TrimPrefix(sprint.Key, "example.atlassian.net/sprint/")] = sprint.State
+	}
+	if len(states) != 5 || states["44"] != model.SprintFuture || states["41"] != model.SprintClosed || f.fieldCalls != 1 || f.boardCalls != 1 {
+		t.Fatalf("catalog %v field=%d board=%d", states, f.fieldCalls, f.boardCalls)
+	}
+	// Active wins over future; with only closed sprints the latest closed wins.
+	f.sprints = append(f.sprints, sprintRow(45, "active", "2026-10-20T00:00:00.000Z", ""))
+	if item = read(t, s); item.Sprint != "example.atlassian.net/sprint/45" {
+		t.Fatalf("active sprint not selected: %q", item.Sprint)
+	}
+	f.sprints = []any{sprintRow(41, "closed", "", "2026-10-01T00:00:00.000Z"), sprintRow(40, "closed", "", "2026-09-14T00:00:00.000Z")}
+	if item = read(t, s); item.Sprint != "example.atlassian.net/sprint/41" {
+		t.Fatalf("latest closed sprint not selected: %q", item.Sprint)
+	}
+	// A closed board sprint list degrades to issue-embedded states with a warning.
+	f.agileDown = true
+	d, err = s.Load(ctx, source.Cursor{Sprints: true})
+	if err != nil || len(d.Sprints) != 2 || f.fieldCalls != 1 || !slices.ContainsFunc(d.Findings, func(f source.Finding) bool { return f.Code == "jira-agile-unavailable" }) {
+		t.Fatalf("agile fallback: %+v %+v %v", d.Sprints, d.Findings, err)
 	}
 }

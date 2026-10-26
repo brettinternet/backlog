@@ -68,7 +68,11 @@ func Metadata(i model.Item) map[string]any {
 		}
 		return out
 	}
-	return map[string]any{"type": i.Type, "rank": i.Rank, "assignees": i.Assignees, "labels": i.Labels, "milestone": i.Milestone, "due": i.Due, "parent": ref(i.Parent), "children": refs(i.Children), "blockedBy": refs(i.BlockedBy), "blocks": refs(i.Blocks), "related": refs(i.Related), "duplicateOf": ref(i.DuplicateOf), "refs": i.Refs, "files": i.Files, "created": i.Created, "updated": i.Updated, "url": i.URL, "fields": i.Fields}
+	out := map[string]any{"type": i.Type, "rank": i.Rank, "assignees": i.Assignees, "labels": i.Labels, "milestone": i.Milestone, "due": i.Due, "parent": ref(i.Parent), "children": refs(i.Children), "blockedBy": refs(i.BlockedBy), "blocks": refs(i.Blocks), "related": refs(i.Related), "duplicateOf": ref(i.DuplicateOf), "refs": i.Refs, "files": i.Files, "created": i.Created, "updated": i.Updated, "url": i.URL, "fields": i.Fields}
+	if i.Sprint != "" {
+		out["sprint"] = i.Sprint
+	}
+	return out
 }
 
 func Sections(i model.Item) map[string]string {

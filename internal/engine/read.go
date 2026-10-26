@@ -40,19 +40,21 @@ type ReadSnapshot struct {
 
 // LoadReads loads active items. With archived set, it also loads archive/ on
 // demand (query.md is:archived); those items are marked archived and never ready.
-func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnapshot, error) {
+// Sprint data loads only when queries, a view, or ready.sprint use it.
+func LoadReads(ctx context.Context, cfg project.Config, archived bool, queries ...string) (ReadSnapshot, error) {
+	sprints := WantsSprints(cfg, queries...)
 	var s ReadSnapshot
 	var err error
 	if cfg.Workspace != nil {
-		s, err = loadWorkspaceReads(ctx, cfg, archived)
+		s, err = loadWorkspaceReads(ctx, cfg, archived, sprints)
 	} else {
-		s, err = loadReads(ctx, cfg, archived, false)
+		s, err = loadReads(ctx, cfg, archived, false, sprints)
 	}
 	deriveBlocks(s.Query.Items)
 	return s, err
 }
 
-func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted bool) (ReadSnapshot, error) {
+func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted, sprints bool) (ReadSnapshot, error) {
 	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
 	s.ctx = ctx
 	s.stale = map[model.Ref]bool{}
@@ -71,7 +73,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		if err != nil {
 			return s, err
 		}
-		delta, err := loadObservation(ctx, backend, source.Cursor{})
+		delta, err := loadObservation(ctx, backend, source.Cursor{Sprints: sprints})
 		if err != nil {
 			return s, err
 		}
@@ -83,7 +85,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 			}
 			// The second load's search index also covers archived items. Merge
 			// observations so a partial archive scan retains unseen rows as stale.
-			if delta, err = loadObservation(ctx, backend, source.Cursor{IncludeArchive: true}); err != nil {
+			if delta, err = loadObservation(ctx, backend, source.Cursor{IncludeArchive: true, Sprints: sprints}); err != nil {
 				return s, err
 			}
 			if delta.Archived == nil {
@@ -93,6 +95,10 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 				}
 			}
 			delta = source.Merge(active, delta)
+		}
+		for _, sprint := range delta.Sprints {
+			sprint.Source = c.ID
+			s.Query.Sprints = append(s.Query.Sprints, sprint)
 		}
 		for ref, stale := range delta.Stale {
 			s.stale[ref] = stale
@@ -126,7 +132,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		}
 	}
 	s.Query.Coordination = coordination
-	s.input = Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims}
+	s.input = Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims, Sprints: s.Query.Sprints}
 	s.Ranking = Evaluate(s.input)
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)

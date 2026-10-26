@@ -112,6 +112,7 @@ Keep the header fields synchronous; only the body waits.
 | `updated` | timestamp | yes | RFC 3339 UTC to the second. Set on every write. |
 
 Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md).
+Native items have no sprint: `sprint:` filters and `group:sprint` read Linear and Jira sources (design.md D31), and a `sprint` key here is an ordinary raw field.
 
 References are local by default, and a local reference must be a native ID. `source:ID` names another source in the same project, using that source's own ID: `api:API-1`, `issues:128`, `jira:10001`. In a [workspace](design.md#5-projects-configuration-and-trust), `source:ID` resolves only when one loaded item matches; to name another project, qualify the source with its escaped project ID:
 

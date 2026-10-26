@@ -52,7 +52,9 @@ func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta,
 	var loaded source.Delta
 	delta, err := s.cache.RemoteRefresh(ctx, func(cursor source.Cursor) (source.Delta, error) {
 		called = true
-		cursor.IncludeArchive, cursor.Reconcile = request.IncludeArchive, request.Reconcile
+		// Sprint demand is sticky per cache so a sprint-free process sharing it
+		// cannot strip sprint keys and the catalog from stored rows.
+		cursor.IncludeArchive, cursor.Reconcile, cursor.Sprints = request.IncludeArchive, request.Reconcile, cursor.Sprints || request.Sprints
 		delta, err := s.backend.Load(ctx, cursor)
 		if err != nil {
 			return source.Delta{}, s.safeError(err)
@@ -63,7 +65,7 @@ func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta,
 	if err != nil && !called {
 		// Cursors are disposable. An unavailable cache starts a fresh provider
 		// enumeration rather than preventing reads or trusting lost state.
-		delta, err = s.backend.Load(ctx, source.Cursor{IncludeArchive: request.IncludeArchive})
+		delta, err = s.backend.Load(ctx, source.Cursor{IncludeArchive: request.IncludeArchive, Sprints: request.Sprints})
 		if err == nil {
 			return s.cleanDelta(delta)
 		}
@@ -204,6 +206,10 @@ func (s *Source) cleanDelta(delta source.Delta) (source.Delta, error) {
 		return clean
 	}
 	delta.Stale, delta.Archived = cleanRefs(delta.Stale), cleanRefs(delta.Archived)
+	for n := range delta.Sprints {
+		sprint := &delta.Sprints[n]
+		sprint.Key, sprint.Name, sprint.Source = s.secrets.Redact(sprint.Key), s.secrets.Redact(sprint.Name), s.secrets.Redact(sprint.Source)
+	}
 	for index, finding := range delta.Findings {
 		finding.Code, finding.Severity = s.secrets.Redact(finding.Code), s.secrets.Redact(finding.Severity)
 		finding.Path, finding.Message = s.secrets.Redact(finding.Path), s.secrets.Redact(finding.Message)

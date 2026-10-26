@@ -76,6 +76,8 @@ type ReadyConfig struct {
 	SatisfiedBy    []string `yaml:"satisfiedBy,omitempty" json:"satisfiedBy,omitempty"`
 	ExcludeLabels  []string `yaml:"excludeLabels,omitempty" json:"excludeLabels,omitempty"`
 	SkipContainers bool     `yaml:"skipContainers,omitempty" json:"skipContainers"`
+	// Sprint (current or next) makes items outside that sprint ineligible.
+	Sprint string `yaml:"sprint,omitempty" json:"sprint,omitempty"`
 }
 type DefaultsConfig struct {
 	Type string   `yaml:"type,omitempty" json:"type,omitempty"`

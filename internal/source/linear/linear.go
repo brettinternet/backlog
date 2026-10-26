@@ -40,6 +40,8 @@ type Source struct {
 	mu         sync.Mutex
 	active     bool
 	writeScope atomic.Bool
+	// sprints stays set once a load requested cycles, so detail reads carry them.
+	sprints atomic.Bool
 }
 
 func New(o Options) (*Source, error) {
@@ -183,6 +185,7 @@ type issue struct {
 	Assignee                                *struct{ ID, Name string }
 	Labels                                  connection[struct{ ID, Name string }]
 	Parent                                  *entity
+	Cycle                                   *cycle
 	Relations, InverseRelations             *connection[relation]
 }
 
@@ -194,6 +197,48 @@ const listFields = `id identifier updatedAt team{id} project{id}`
 const listQuery = `query($team:String!,$after:String,$count:Int!){team(id:$team){id issues(first:$count,after:$after,includeArchived:true,orderBy:updatedAt){nodes{` + listFields + `} pageInfo{hasNextPage endCursor}}}}`
 const incrementalQuery = `query($team:String!,$after:String,$count:Int!,$since:DateTimeOrDuration!){team(id:$team){id issues(first:$count,after:$after,includeArchived:true,orderBy:updatedAt,filter:{updatedAt:{gte:$since}}){nodes{` + listFields + `} pageInfo{hasNextPage endCursor}}}}`
 const detailQuery = `query($id:String!){issue(id:$id){` + issueFields + `}}`
+
+// Cycle data is requested only on demand. The catalog rides on the first list
+// page, so it refreshes every load at no extra request. Closed cycles older
+// than cycleHorizon are dropped; their items show the raw key.
+const cycleFields = `cycles(first:100,filter:{endsAt:{gt:$cyclesAfter}}){nodes{id number name startsAt endsAt isActive isFuture}}`
+const cycleHorizon = 26 * 7 * 24 * time.Hour
+
+type cycle struct {
+	ID, Name           string
+	Number             float64
+	StartsAt, EndsAt   time.Time
+	IsActive, IsFuture bool
+}
+
+func (s *Source) issueFields() string {
+	if s.sprints.Load() {
+		return issueFields + " cycle{id name number}"
+	}
+	return issueFields
+}
+func withCycles(q string) string {
+	q = strings.Replace(q, "query(", "query($cyclesAfter:DateTimeOrDuration!,", 1)
+	return strings.Replace(q, "team(id:$team){id ", "team(id:$team){id "+cycleFields+" ", 1)
+}
+func (c cycle) name() string {
+	if c.Name != "" {
+		return c.Name
+	}
+	return fmt.Sprintf("Cycle %g", c.Number)
+}
+func (s *Source) sprint(c cycle) model.Sprint {
+	name := c.name()
+	state := model.SprintClosed
+	switch {
+	case c.IsActive:
+		state = model.SprintActive
+	case c.IsFuture:
+		state = model.SprintFuture
+	}
+	return model.Sprint{Key: c.ID, Name: name, State: state, Start: c.StartsAt, End: c.EndsAt, Source: s.o.ID}
+}
+
 const entityFields = `id identifier team{id} project{id}`
 const relationsQuery = `query($id:String!,$after:String,$count:Int!){issue(id:$id){id relations(first:$count,after:$after){nodes{type relatedIssue{` + entityFields + `}} pageInfo{hasNextPage endCursor}}}}`
 const inverseQuery = `query($id:String!,$after:String,$count:Int!){issue(id:$id){id inverseRelations(first:$count,after:$after){nodes{type issue{` + entityFields + `}} pageInfo{hasNextPage endCursor}}}}`
@@ -208,6 +253,9 @@ type syncCursor struct {
 	Reconciled     time.Time
 	Scope          string
 	IncludeArchive bool
+	// Sprints is sticky: processes sharing the cache must not drop cycle keys
+	// from rows a sprint-enabled process already stored.
+	Sprints bool
 }
 
 func (s *Source) scope() string {
@@ -240,7 +288,13 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if err != nil {
 		return source.Delta{}, err
 	}
-	reconcile := cursor.Reconcile || state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || state.IncludeArchive != cursor.IncludeArchive
+	sprints := cursor.Sprints || state.Sprints
+	if sprints {
+		s.sprints.Store(true)
+	}
+	// Enabling sprints rescans so already cached rows gain their cycle keys.
+	reconcile := cursor.Reconcile || state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || state.IncludeArchive != cursor.IncludeArchive || sprints != state.Sprints
+	var catalog []model.Sprint
 	windows := []time.Time{since.Add(-changeOverlap)}
 	if reconcile {
 		windows = []time.Time{{}, since.Add(-30 * 24 * time.Hour)}
@@ -255,6 +309,12 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 			vars["since"] = window.Format(time.RFC3339Nano)
 		}
 		for page := 0; ; page++ {
+			cycles := sprints && catalog == nil
+			pageQuery := q
+			if cycles {
+				pageQuery = withCycles(q)
+				vars["cyclesAfter"] = start.Add(-cycleHorizon).Format(time.RFC3339Nano)
+			}
 			if page >= 1000 {
 				return source.Delta{}, source.Refuse("unavailable", "Linear issue page budget exceeded")
 			}
@@ -262,13 +322,27 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 				Team *struct {
 					ID     string
 					Issues connection[issue]
+					Cycles *connection[cycle]
 				}
 			}
-			if err = s.query(ctx, c, q, vars, &r); err != nil {
+			if err = s.query(ctx, c, pageQuery, vars, &r); err != nil {
 				return source.Delta{}, err
 			}
+			delete(vars, "cyclesAfter")
 			if r.Team == nil || r.Team.ID != s.o.Team || r.Team.Issues.Nodes == nil {
 				return source.Delta{}, source.Refuse("unavailable", "Linear team unavailable")
+			}
+			if cycles {
+				if r.Team.Cycles == nil || r.Team.Cycles.Nodes == nil {
+					return source.Delta{}, source.Refuse("unavailable", "Linear cycles unavailable")
+				}
+				catalog = []model.Sprint{}
+				for _, node := range r.Team.Cycles.Nodes {
+					if !uuid(node.ID) {
+						return source.Delta{}, source.Refuse("unavailable", "invalid Linear cycle")
+					}
+					catalog = append(catalog, s.sprint(node))
+				}
 			}
 			for _, row := range r.Team.Issues.Nodes {
 				if !uuid(row.ID) || row.Team == nil || row.Team.ID != s.o.Team {
@@ -336,8 +410,9 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if reconcile {
 		state.Reconciled = start
 	}
-	raw, _ := json.Marshal(syncCursor{Watermark: start, Reconciled: state.Reconciled, Scope: s.scope(), IncludeArchive: cursor.IncludeArchive})
-	delta.Cursor = source.Cursor{Value: string(raw), IncludeArchive: cursor.IncludeArchive}
+	delta.Sprints = catalog
+	raw, _ := json.Marshal(syncCursor{Watermark: start, Reconciled: state.Reconciled, Scope: s.scope(), IncludeArchive: cursor.IncludeArchive, Sprints: sprints})
+	delta.Cursor = source.Cursor{Value: string(raw), IncludeArchive: cursor.IncludeArchive, Sprints: sprints}
 	return delta, nil
 }
 
@@ -356,7 +431,7 @@ func (s *Source) details(ctx context.Context, c remote.Credential, ids []string)
 	}
 	q.WriteString("){")
 	for i := range ids {
-		fmt.Fprintf(&q, "i%d:issue(id:$id%d){%s relations(first:%d){nodes{type relatedIssue{%s}} pageInfo{hasNextPage endCursor}} inverseRelations(first:%d){nodes{type issue{%s}} pageInfo{hasNextPage endCursor}}}", i, i, issueFields, relationBatchPageSize, entityFields, relationBatchPageSize, entityFields)
+		fmt.Fprintf(&q, "i%d:issue(id:$id%d){%s relations(first:%d){nodes{type relatedIssue{%s}} pageInfo{hasNextPage endCursor}} inverseRelations(first:%d){nodes{type issue{%s}} pageInfo{hasNextPage endCursor}}}", i, i, s.issueFields(), relationBatchPageSize, entityFields, relationBatchPageSize, entityFields)
 	}
 	q.WriteString("}")
 	var result map[string]*issue
@@ -446,7 +521,7 @@ func (s *Source) read(ctx context.Context, c remote.Credential, id string) (mode
 }
 func (s *Source) detail(ctx context.Context, c remote.Credential, id string) (issue, error) {
 	var r struct{ Issue *issue }
-	if err := s.query(ctx, c, detailQuery, map[string]any{"id": id}, &r); err != nil {
+	if err := s.query(ctx, c, `query($id:String!){issue(id:$id){`+s.issueFields()+`}}`, map[string]any{"id": id}, &r); err != nil {
 		return issue{}, err
 	}
 	if r.Issue == nil {
@@ -611,9 +686,15 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 		a, b := item.Edges[i], item.Edges[j]
 		return string(a.Kind)+a.Target.Source+":"+a.Target.ID < string(b.Kind)+b.Target.Source+":"+b.Target.ID
 	})
+	// The cycle is read-only and fetched only on demand, so it stays out of the
+	// fingerprint: reads with and without cycles must agree for --if-version.
 	raw, _ := json.Marshal(item)
 	hash := sha256.Sum256(raw)
 	item.Version = hex.EncodeToString(hash[:])
+	if row.Cycle != nil {
+		item.Sprint = row.Cycle.ID
+		item.Names[row.Cycle.ID] = row.Cycle.name()
+	}
 	return item, nil
 }
 

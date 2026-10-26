@@ -108,7 +108,7 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 			// observable as an attempt, and List cannot authorize an acquire.
 			selection := cfg
 			selection.Coordination = project.CoordinationConfig{}
-			snap, e := LoadReads(ctx, selection, false)
+			snap, e := LoadReads(ctx, selection, false, options.Query)
 			if e != nil {
 				return out, e
 			}

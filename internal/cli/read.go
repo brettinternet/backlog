@@ -39,8 +39,8 @@ type nextData struct {
 }
 
 func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
-	load := func(ctx context.Context, cfg project.Config, archived bool) (engine.ReadSnapshot, error) {
-		snapshot, err := engine.LoadReads(ctx, cfg, archived)
+	load := func(ctx context.Context, cfg project.Config, archived bool, text string) (engine.ReadSnapshot, error) {
+		snapshot, err := engine.LoadReads(ctx, cfg, archived, text)
 		if err != nil {
 			if auth := oauthCLIError(err); auth != nil {
 				return snapshot, auth
@@ -116,7 +116,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if !hasIs {
 				text += " is:open"
 			}
-			s, err := load(ctx, cfg, archived)
+			s, err := load(ctx, cfg, archived, text)
 			if err != nil {
 				return err
 			}
@@ -259,7 +259,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				}
 				return writeNext(out, errOut, cfg, data)
 			}
-			s, err := load(ctx, cfg, false)
+			s, err := load(ctx, cfg, false, strings.Join(cmd.Args().Slice(), " "))
 			if err != nil {
 				return err
 			}
@@ -331,9 +331,9 @@ func outputWidth(out io.Writer) int {
 	return 80
 }
 
-// groupName is the provider display name of an opaque status or assignee group value.
+// groupName is the provider display name of an opaque status, assignee or sprint group value.
 func groupName(field string, g query.Group) string {
-	if field != "status" && field != "assignee" {
+	if field != "status" && field != "assignee" && field != "sprint" {
 		return ""
 	}
 	for _, i := range g.Items {

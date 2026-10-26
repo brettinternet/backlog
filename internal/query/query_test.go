@@ -137,6 +137,14 @@ func TestErrors(t *testing.T) {
 	if errs := parse(t, `status:"in progress" label:perf milestone:m-2 assignee:me label:NONE type:NONE assignee:NONE`, false).Validate(s); len(errs) != 0 {
 		t.Fatal(errs)
 	}
+	if errs := parse(t, "sprint:current", false).Validate(s); len(errs) != 1 || errs[0].Error() != "no source provides sprints at 0" {
+		t.Fatalf("sprint without a capable source: %v", errs)
+	}
+	s.Settings.Sources = []project.SourceConfig{{ID: "lin", Type: "linear"}}
+	s.Sprints = []model.Sprint{{Key: "c1", Name: "Cycle 1", State: model.SprintActive, Source: "lin"}}
+	if errs := parse(t, `sprint:current sprint:next sprint:none sprint:c1 sprint:"cycle 1"`, false).Validate(s); len(errs) != 0 {
+		t.Fatal(errs)
+	}
 	s.Coordination = false
 	for _, f := range []string{"claimed:me", "is:claimed", "has:claim"} {
 		if len(parse(t, f, false).Validate(s)) != 1 {

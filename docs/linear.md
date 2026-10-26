@@ -158,6 +158,16 @@ relation types, and incomplete nested reads fail closed. Teams with more than
 Edges to other teams or projects stay as external references, so an unloaded
 blocker is unknown, never satisfied.
 
+### Cycles
+
+Cycles are sprints (design.md D31), read only when a query, view, group, or
+`ready.sprint` mentions them. Each scan's first page also lists the team's
+cycles ending within the last 26 weeks or later, so no request is added and a
+cycle starting is seen without any issue update. Issues carry `cycle{id}`; an
+unnamed cycle displays as `Cycle N`. Enabling cycles forces reconciliation so
+cached issues gain their cycle. Assigning an issue to a cycle is assumed to bump
+its `updatedAt`; reconciliation corrects it within the hour otherwise.
+
 ## Writes and claims
 
 ```sh

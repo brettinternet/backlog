@@ -47,9 +47,9 @@ type Query struct {
 }
 type Options struct{ Hook bool }
 
-var fields = strings.Fields("id status category priority assignee label type milestone source parent blocked-by blocks created updated due text claimed is has changed hook action outcome sort group")
+var fields = strings.Fields("id status category priority assignee label type milestone sprint source parent blocked-by blocks created updated due text claimed is has changed hook action outcome sort group")
 var sortKeys = strings.Fields("next priority rank updated created due id title status")
-var groupKeys = strings.Fields("status category priority assignee label milestone type parent source none")
+var groupKeys = strings.Fields("status category priority assignee label milestone sprint type parent source none")
 var isValues = strings.Fields("open closed ready blocked waiting unknown mine claimed archived pending")
 var hasValues = strings.Fields("parent children blockers assignee due criteria claim")
 var categories = strings.Fields("backlog todo active done canceled")

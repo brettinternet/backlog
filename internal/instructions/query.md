@@ -16,6 +16,8 @@ predicates. Use is:ready or is:blocked for engine readiness; has:criteria
 checks for acceptance criteria. category:backlog matches drafts. Claim
 predicates (claimed:me, claimed:others, claimed:none, is:claimed, has:claim)
 require coordination; an unknown claim never matches claimed:none.
+With Linear or Jira sources, sprint:current, sprint:next, sprint:none, or a
+sprint name scopes work to a cycle or sprint.
 
 Lists default to is:open unless an is: term is present. Use is:closed for closed
 items and is:archived to load archives. Next always ranks ready candidates;

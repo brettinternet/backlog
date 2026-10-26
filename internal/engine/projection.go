@@ -398,7 +398,7 @@ func (p *Projector) run() {
 				if cap(items) < req.snapshot.Len() {
 					items = make([]model.Item, 0, req.snapshot.Len())
 				}
-				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, Items: items, States: make(map[model.Ref]query.State, req.snapshot.Len())}
+				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, Items: items, States: make(map[model.Ref]query.State, req.snapshot.Len()), Sprints: req.snapshot.Sprints()}
 				if p.cfg.Me.Default != "" {
 					base.Me = []string{p.cfg.Me.Default}
 				}
@@ -444,10 +444,10 @@ func (p *Projector) run() {
 					}
 					base.States[ref] = state
 				}
-				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates})
+				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates, Sprints: base.Sprints})
 				if p.cfg.Workspace != nil {
 					var warnings []string
-					ranking, claimStates, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs)
+					ranking, claimStates, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs, base.Sprints)
 					for _, project := range p.cfg.Workspace.Projects {
 						base.Coordination = base.Coordination || project.Coordination.Enabled()
 					}

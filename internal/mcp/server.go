@@ -187,7 +187,7 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 		}
 		return nil, result, nil
 	}
-	snap, err := engine.LoadReads(ctx, s.cfg, false)
+	snap, err := engine.LoadReads(ctx, s.cfg, false, args.Query)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
@@ -259,7 +259,7 @@ func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryAr
 		text += " is:open"
 	}
 	ctx = engine.WithCoordination(ctx, s.coordinator, model.CallerContext{})
-	snap, err := engine.LoadReads(ctx, s.cfg, archived)
+	snap, err := engine.LoadReads(ctx, s.cfg, archived, text)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}

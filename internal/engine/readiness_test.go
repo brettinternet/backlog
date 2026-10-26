@@ -98,6 +98,16 @@ func TestReadiness(t *testing.T) {
 			in.Config.ExcludeLabels = []string{"human"}
 			in.Items[0].BlockedBy = []model.Ref{ref("BL-2")}
 		}, engine.Ineligible, []string{"blocker", "excluded-label"}},
+		{"outside sprint", func(in *engine.Input) {
+			in.Config.Sprint = "current"
+			in.Sprints = []model.Sprint{{Key: "s1", State: model.SprintActive}, {Key: "s2", State: model.SprintFuture}}
+			in.Items[0].Sprint = "s2"
+		}, engine.Ineligible, []string{"sprint"}},
+		{"in sprint", func(in *engine.Input) {
+			in.Config.Sprint = "current"
+			in.Sprints = []model.Sprint{{Key: "s1", State: model.SprintActive}}
+			in.Items[0].Sprint = "s1"
+		}, engine.Ready, []string{"candidate"}},
 		{"assigned others", func(in *engine.Input) { in.Items[0].Assignees = []string{"@other"} }, engine.Waiting, []string{"assignee"}},
 		{"assigned me", func(in *engine.Input) { in.Items[0].Assignees = []string{"@me"} }, engine.Ready, []string{"candidate"}},
 		{"assigned both", func(in *engine.Input) { in.Items[0].Assignees = []string{"@other", "@me"} }, engine.Ready, []string{"candidate"}},

@@ -22,6 +22,9 @@ type Cursor struct {
 	// Reconcile requests a full scan instead of a change window. It is a
 	// per-load request, never persisted with the cursor.
 	Reconcile bool
+	// Sprints asks a sprint-capable provider for item sprint keys and a
+	// fresh sprint catalog. Without it, providers make no sprint requests.
+	Sprints bool
 }
 type Finding struct {
 	Code, Severity, Path, Message string
@@ -44,8 +47,11 @@ type Delta struct {
 	// change window. It never refreshes an already stale row or proves absence.
 	RetainUnseen bool
 	// Stale rows may be displayed, but cannot satisfy dependencies or be ready.
-	Stale  map[model.Ref]bool
-	Cursor Cursor
+	Stale map[model.Ref]bool
+	// Sprints is the provider's complete sprint catalog for this response,
+	// refreshed on every sprint-enabled load independently of the cursor.
+	Sprints []model.Sprint
+	Cursor  Cursor
 	// TextSearch optionally narrows matches for this snapshot. Nil results or
 	// errors require in-memory fallback.
 	TextSearch func(context.Context, string) (map[model.Ref]bool, error)

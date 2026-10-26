@@ -9,6 +9,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 )
 
 type Readiness string
@@ -43,6 +44,7 @@ type Input struct {
 	Archived, Stale map[model.Ref]bool
 	Coordination    bool
 	Claims          map[model.Ref]Claim
+	Sprints         []model.Sprint // catalog for ready.sprint
 }
 type Reason struct {
 	Code   string            `json:"code"`
@@ -121,6 +123,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		}
 	}
 	out := Result{Items: make([]Explanation, n), Candidates: []model.Ref{}}
+	sprints := query.Snapshot{Sprints: in.Sprints}
 	for i, item := range in.Items {
 		config, me, coordination := in.Config, in.Me, in.Coordination
 		if p, ok := in.Projects[item.Project]; ok {
@@ -176,6 +179,16 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		if len(labels) > 0 {
 			add("excluded-label", nil, labels)
 		}
+		if config.Sprint != "" {
+			if _, role, _ := sprints.Sprint(item.Sprint); role != config.Sprint {
+				var values []string
+				if item.Sprint != "" {
+					values = []string{item.Sprint}
+				}
+				add("sprint", nil, values)
+				e.Reasons[len(e.Reasons)-1].names = item.Names
+			}
+		}
 		if len(item.Assignees) > 0 {
 			mine := false
 			for _, assignee := range item.Assignees {
@@ -202,7 +215,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		for _, reason := range e.Reasons {
 			state := Unknown
 			switch reason.Code {
-			case "archived", "status", "container", "excluded-label":
+			case "archived", "status", "container", "excluded-label", "sprint":
 				state = Ineligible
 			case "blocker":
 				state = Blocked
