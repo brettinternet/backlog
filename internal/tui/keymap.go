@@ -355,8 +355,10 @@ func (m Model) disabledReason(a action) string {
 			return "view is not configured"
 		}
 	}
-	if a.id == "assign-me" && m.opts.Me == "" {
-		return "no current user is configured"
+	if a.id == "assign-me" {
+		if row, ok := m.selectedRow(); ok && m.opts.Me[row.Ref.Source] == "" {
+			return "no current user is configured"
+		}
 	}
 	if a.id == "repeat" && m.lastEdit == nil {
 		return "no edit to repeat"

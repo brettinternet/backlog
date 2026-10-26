@@ -214,7 +214,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				return project.SavedView{ID: scope + ":" + v.Name, ViewConfig: v}, err
 			},
 			Context: session, Store: store, Projector: projector, Sources: sources, Project: cmp.Or(cfg.Project.Name, cfg.Project.ID),
-			Statuses: cfg.Statuses, Workflow: cfg.Workflow, Labels: cfg.Labels, Milestones: cfg.Milestones, Me: cfg.Me.Default,
+			Statuses: cfg.Statuses, Workflow: cfg.Workflow, Labels: cfg.Labels, Milestones: cfg.Milestones, Me: cfg.Identities(),
 			Read: func(readCtx context.Context, ref model.Ref) (model.Item, error) {
 				item, err := engine.ReadItem(readCtx, cfg, ref)
 				store.Observe(ref, item, err)

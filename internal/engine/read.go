@@ -58,9 +58,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted,
 	s := ReadSnapshot{Query: query.Snapshot{Items: []model.Item{}, Settings: cfg.Settings, Now: time.Now(), States: map[model.Ref]query.State{}}}
 	s.ctx = ctx
 	s.stale = map[model.Ref]bool{}
-	if cfg.Me.Default != "" {
-		s.Query.Me = []string{cfg.Me.Default}
-	}
+	s.Query.Me = cfg.Identities()
 	archivedRefs := map[model.Ref]bool{}
 	for n, c := range cfg.Sources {
 		if skipUntrusted {
@@ -210,25 +208,15 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 		}
 	}
 	if c.Type == "jira" {
-		var account *project.AccountConfig
 		site, err := jira.CanonicalSite(c.Site)
 		if err != nil {
 			return nil, err
 		}
-		for _, candidate := range cfg.Accounts["jira"] {
-			accountSite, siteErr := jira.CanonicalSite(candidate.Host)
-			if siteErr == nil && accountSite == site && (candidate.Name == c.Account || candidate.User == c.Account) {
-				if account != nil {
-					return nil, source.Refuse("unavailable", "ambiguous Jira account")
-				}
-				copy := candidate
-				account = &copy
-			}
+		account, err := cfg.SourceAccount(c)
+		if err != nil {
+			return nil, source.Refuse("unavailable", err.Error())
 		}
-		if account == nil {
-			return nil, source.Refuse("unavailable", "Jira user account not configured")
-		}
-		backend, err := jira.New(jira.Options{ID: c.ID, Site: site, JQL: c.JQL, CloudID: c.CloudID, HardLinkTypes: c.HardLinkTypes, UnsuccessfulResolutions: c.UnsuccessfulResolutions, Account: *account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg)})
+		backend, err := jira.New(jira.Options{ID: c.ID, Site: site, JQL: c.JQL, CloudID: c.CloudID, HardLinkTypes: c.HardLinkTypes, UnsuccessfulResolutions: c.UnsuccessfulResolutions, Account: account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg)})
 		if err != nil {
 			return nil, err
 		}
@@ -236,24 +224,14 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			Source      project.SourceConfig
 			User, Email string
 		}{c, account.User, account.Email})
-		return remote.New(backend, providerCache(cfg, c.ID, string(identity), *account), providerSecrets), nil
+		return remote.New(backend, providerCache(cfg, c.ID, string(identity), account), providerSecrets), nil
 	}
 	if c.Type == "linear" {
-		var account *project.AccountConfig
-		for _, candidate := range cfg.Accounts["linear"] {
-			if candidate.Name == c.Account || candidate.User == c.Account {
-				if account != nil {
-					return nil, source.Refuse("unavailable", "ambiguous Linear account")
-				}
-				copy := candidate
-				copy.Provider = "linear"
-				account = &copy
-			}
+		account, err := cfg.SourceAccount(c)
+		if err != nil {
+			return nil, source.Refuse("unavailable", err.Error())
 		}
-		if account == nil {
-			return nil, source.Refuse("unavailable", "Linear user account not configured")
-		}
-		backend, err := linear.New(linear.Options{ID: c.ID, Organization: c.Site, Team: c.Team, Project: c.Project, Account: *account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg)})
+		backend, err := linear.New(linear.Options{ID: c.ID, Organization: c.Site, Team: c.Team, Project: c.Project, Account: account, AllowWrites: c.AllowWrites, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg)})
 		if err != nil {
 			return nil, err
 		}
@@ -261,26 +239,16 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			Source project.SourceConfig
 			User   string
 		}{c, account.User})
-		return remote.New(backend, providerCache(cfg, c.ID, string(identity), *account), providerSecrets), nil
+		return remote.New(backend, providerCache(cfg, c.ID, string(identity), account), providerSecrets), nil
 	}
 	if c.Type == "github" {
 		host := c.Host
 		if host == "" {
 			host = "github.com"
 		}
-		var account *project.AccountConfig
-		for _, candidate := range cfg.Accounts["github"] {
-			if candidate.Host == host && (candidate.Name == c.Account || candidate.User == c.Account) {
-				if account != nil {
-					return nil, source.Refuse("unavailable", "ambiguous GitHub account")
-				}
-				copy := candidate
-				copy.Provider = "github"
-				account = &copy
-			}
-		}
-		if account == nil {
-			return nil, source.Refuse("unavailable", "GitHub user account not configured")
+		account, err := cfg.SourceAccount(c)
+		if err != nil {
+			return nil, source.Refuse("unavailable", err.Error())
 		}
 		aliases := map[string]string{}
 		for _, configured := range cfg.Sources {
@@ -298,7 +266,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 				aliases[key] = configured.ID
 			}
 		}
-		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: *account, Project: c.GitHubProject, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg), SourceIDs: aliases})
+		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: account, Project: c.GitHubProject, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg), SourceIDs: aliases})
 		if err != nil {
 			return nil, err
 		}
@@ -308,7 +276,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 			User    string
 			Aliases map[string]string
 		}{c, account.User, aliases})
-		return remote.New(backend, providerCache(cfg, c.ID, string(identity), *account), providerSecrets), nil
+		return remote.New(backend, providerCache(cfg, c.ID, string(identity), account), providerSecrets), nil
 	}
 	if c.Type == "external" {
 		return external.New(external.Options{ID: c.ID, Run: c.Run, Dir: cfg.Discovery.ControlRoot})

@@ -47,11 +47,11 @@ type Source struct {
 
 // CanonicalSite is also the claim identity: neither JQL nor project keys enter it.
 func CanonicalSite(site string) (string, error) {
-	u, err := url.Parse(site)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || !strings.HasSuffix(strings.ToLower(u.Hostname()), ".atlassian.net") {
+	canonical := project.CanonicalJiraSite(site)
+	if canonical == "" {
 		return "", source.Refuse("rejected", "Jira requires an HTTPS Atlassian Cloud site origin")
 	}
-	return "https://" + strings.ToLower(u.Hostname()), nil
+	return canonical, nil
 }
 func New(o Options) (*Source, error) {
 	site, err := CanonicalSite(o.Site)

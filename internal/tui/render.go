@@ -492,7 +492,7 @@ func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool)
 			extra = " +" + strconv.Itoa(min(9, len(row.Assignees)-1))
 		}
 		style := t.muted
-		if m.opts.Me != "" && id == m.opts.Me {
+		if m.isMe(row.Ref.Source, id) {
 			style = t.accent
 		}
 		return style.render(cell(cmp.Or(row.Names[id], id), c.width-ansi.StringWidth(extra))) + t.muted.render(extra)

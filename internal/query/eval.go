@@ -29,7 +29,7 @@ type Event struct {
 type Snapshot struct {
 	Items        []model.Item
 	Settings     project.Settings
-	Me           []string
+	Me           map[string]string // source ID to the caller's assignee value there
 	Now          time.Time
 	States       map[model.Ref]State
 	Next         []model.Ref
@@ -42,6 +42,11 @@ type Snapshot struct {
 	// TextMatches holds optional snapshot-bound FTS candidates. Missing entries
 	// use the in-memory evaluator; candidates are always post-filtered.
 	TextMatches map[string]map[model.Ref]bool
+}
+
+func (s Snapshot) mine(i model.Item) bool {
+	me := s.Me[i.Ref.Source]
+	return me != "" && slices.Contains(i.Assignees, me)
 }
 
 // Validate returns all snapshot-dependent errors in input order. TUI callers can
@@ -179,12 +184,7 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 		return compare(a-b, v.Op)
 	case "assignee":
 		if lower == "me" {
-			for _, a := range i.Assignees {
-				if slices.Contains(s.Me, a) {
-					return true
-				}
-			}
-			return false
+			return s.mine(i)
 		}
 		return list(i.Assignees)
 	case "label":
@@ -250,12 +250,7 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 		case "ready", "blocked", "waiting", "unknown":
 			return state.Readiness == lower || lower == "unknown" && state.Readiness == ""
 		case "mine":
-			for _, a := range i.Assignees {
-				if slices.Contains(s.Me, a) {
-					return true
-				}
-			}
-			return false
+			return s.mine(i)
 		case "claimed":
 			return s.Coordination && (state.Claim == "me" || state.Claim == "others")
 		case "archived":

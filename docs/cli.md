@@ -172,7 +172,8 @@ echo 'Long description' | bl new 'Write docs' --body -
 ```
 
 - [Quick-add tokens](query.md#shared-quick-add-parser) set fields. `@me` uses
-  `me.default`.
+  your identity in the target source: its account `user` for a provider,
+  else `me.default`.
 - `^` and `<` references accept ID shorthand and store the target's real ID
   (`<1` stores `BL-1`, or `BL-001` if that file exists). An unqualified ID
   missing from `--source` but found in exactly one other native source is

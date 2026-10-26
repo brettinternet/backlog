@@ -22,7 +22,7 @@ func TestQuickAddExpandsToSameItem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(Options{Me: "alice", Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}})
+	m := New(Options{Me: map[string]string{"tasks": "alice"}, Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}})
 	m.capture = captureState{open: true, line: newLine(line), source: "tasks"}
 	m.expandCapture(false)
 	if m.capture.errorText != "" {

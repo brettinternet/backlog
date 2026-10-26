@@ -292,7 +292,7 @@ func (m Model) card(index, width int) (string, string) {
 	}
 	if len(row.Assignees) > 0 {
 		style := t.muted
-		if m.opts.Me != "" && row.Assignees[0] == m.opts.Me {
+		if m.isMe(row.Ref.Source, row.Assignees[0]) {
 			style = t.accent
 		}
 		right = append(right, style.render(ansi.Truncate(textutil.Line(cmp.Or(row.Names[row.Assignees[0]], row.Assignees[0])), 12, "\u2026")))

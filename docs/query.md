@@ -92,7 +92,9 @@ Notes:
 - `is:ready` and the other readiness values come from the engine
   ([readiness](readiness.md)). Stale items and stale blockers are `unknown`,
   even if the cached status is done.
-- `is:mine` matches any of your configured handles.
+- `assignee:me` and `is:mine` compare with your identity in the item's
+  source: the source account's `user` for GitHub, Linear, and Jira, else
+  `me.default`.
 - `has:blockers` means the item lists blockers, satisfied or not.
   `has:criteria` means acceptance criteria, not DoD.
 - Claim terms use the bulk claim list. An expired claim is free. A failed or
@@ -181,7 +183,8 @@ defaults, ID allocation, or I/O. It's shared by the TUI, `bl new`, and MCP.
   escape is title text; quotes inside a token allow spaces (`#"two words"`).
 - Title words join with single spaces. A title is required.
 - Priority prefixes ignore case and must be unique (`!h`).
-- `@me` needs a caller handle. Other handles keep their `@`.
+- `@me` needs an identity in the target source (as `assignee:me`). Other
+  handles keep their `@`.
 - List tokens collect without duplicates; a repeated scalar token keeps the
   last value. `^` and `<` accept `source:ID`.
 - Empty values, invalid priorities, and unfinished quotes or escapes fail with

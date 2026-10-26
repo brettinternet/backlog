@@ -571,7 +571,7 @@ func matches(cfg project.Config, hook project.HookConfig, event Event) (bool, er
 		return false, err
 	}
 	item := eventItem(event)
-	snapshot := query.Snapshot{Settings: cfg.Settings, Me: []string{cfg.Me.Default}, States: map[model.Ref]query.State{}}
+	snapshot := query.Snapshot{Settings: cfg.Settings, Me: cfg.Identities(), States: map[model.Ref]query.State{}}
 	state := query.State{}
 	if change, ok := event.Changes["readiness"]; ok {
 		state.Readiness = fmt.Sprint(change.To)

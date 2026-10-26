@@ -297,9 +297,9 @@ func (m Model) captureChips() string {
 	if strings.TrimSpace(line) == "" {
 		return t.faint.render("!priority  @assignee  #label  ~milestone  :type  ^parent  <blocker")
 	}
-	item, err := query.QuickAdd(line, m.opts.Me)
+	item, err := query.QuickAdd(line, m.opts.Me[m.capture.source])
 	if err != nil {
-		item, err = query.QuickAdd("x "+line, m.opts.Me)
+		item, err = query.QuickAdd("x "+line, m.opts.Me[m.capture.source])
 	}
 	if err != nil {
 		return t.yellow.render(textutil.Line(err.Error()))

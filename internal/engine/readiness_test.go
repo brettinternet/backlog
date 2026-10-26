@@ -15,7 +15,7 @@ import (
 func ref(id string) model.Ref   { return model.Ref{Source: "tasks", ID: id} }
 func item(id string) model.Item { return model.Item{Ref: ref(id), Category: model.Todo} }
 func input(items ...model.Item) engine.Input {
-	return engine.Input{Items: items, Config: project.ReadyConfig{Statuses: []string{"todo"}, SatisfiedBy: []string{"done", "canceled"}, SkipContainers: true}, Me: []string{"@me"}}
+	return engine.Input{Items: items, Config: project.ReadyConfig{Statuses: []string{"todo"}, SatisfiedBy: []string{"done", "canceled"}, SkipContainers: true}, Me: map[string]string{"tasks": "@me"}}
 }
 func explanation(result engine.Result, id string) engine.Explanation {
 	for _, e := range result.Items {

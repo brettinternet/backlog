@@ -508,7 +508,7 @@ func TestEditKeysMutateFakeSource(t *testing.T) {
 					if test.name == "remove blocker" {
 						items[0].BlockedBy = []model.Ref{{Source: "tasks", ID: "BL-2"}}
 					}
-					m, backend := editFixture(t, items, allEditCapabilities, Options{Me: "@me", Labels: []string{"configured"}, Milestones: []project.Milestone{{Key: "m-1", Name: "First milestone"}}})
+					m, backend := editFixture(t, items, allEditCapabilities, Options{Me: map[string]string{"tasks": "@me"}, Labels: []string{"configured"}, Milestones: []project.Milestone{{Key: "m-1", Name: "First milestone"}}})
 					if marked {
 						m = editPress(m, "space")
 						m = editPress(m, "j")

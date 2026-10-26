@@ -789,7 +789,7 @@ func loadEventGraph(ctx context.Context, tx *sql.Tx, affected map[string]bool) (
 func graphReadiness(cfg project.Config, graph map[model.Ref]graphRecord) map[model.Ref]Explanation {
 	// Events carry no sprint catalog, so sprint-source items stay ineligible
 	// under ready.sprint rather than reporting ready for out-of-sprint work.
-	in := Input{Config: cfg.Ready, Me: []string{cfg.Me.Default}, Archived: map[model.Ref]bool{}, Sources: cfg.Sources}
+	in := Input{Config: cfg.Ready, Me: cfg.Identities(), Archived: map[model.Ref]bool{}, Sources: cfg.Sources}
 	for ref, r := range graph {
 		in.Items = append(in.Items, model.Item{Ref: ref, Category: r.Category, Parent: r.Parent, Children: r.Children, BlockedBy: r.BlockedBy, Labels: r.Labels, Assignees: r.Assignees})
 		in.Archived[ref] = r.Archived
@@ -863,7 +863,7 @@ func itemChanges(before, after model.Item) map[string]hooks.Change {
 // EventMatcher evaluates q, parsed with query.Options{Hook: true}, against
 // logged events. Readiness and archive state come from each event's changes.
 func EventMatcher(cfg project.Config, q query.Query) func(hooks.Event) bool {
-	snapshot := query.Snapshot{Settings: cfg.Settings, Me: []string{cfg.Me.Default}, States: map[model.Ref]query.State{}}
+	snapshot := query.Snapshot{Settings: cfg.Settings, Me: cfg.Identities(), States: map[model.Ref]query.State{}}
 	return func(e hooks.Event) bool {
 		var item model.Item
 		data, _ := json.Marshal(e.Item)

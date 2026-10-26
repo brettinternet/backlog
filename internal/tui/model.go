@@ -30,7 +30,7 @@ type Options struct {
 	Workflow                                project.WorkflowConfig
 	Labels                                  []string
 	Milestones                              []project.Milestone
-	Me                                      string
+	Me                                      map[string]string // source ID to the caller's assignee value there
 	CreateSource, CreateStatus, DefaultType string
 	DefaultDoD                              []string
 	ValidateItem                            func(model.Item) error
@@ -296,6 +296,13 @@ func (m Model) waitDetail() tea.Cmd {
 		}
 	}
 }
+
+// isMe reports whether assignee is the caller's identity in source.
+func (m Model) isMe(source, assignee string) bool {
+	me := m.opts.Me[source]
+	return me != "" && assignee == me
+}
+
 func (m Model) selectedRow() (engine.Row, bool) {
 	if m.detached != nil && m.detailOpen {
 		return *m.detached, true

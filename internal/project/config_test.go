@@ -2,6 +2,7 @@ package project_test
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -301,5 +302,29 @@ func TestXDGDefaultsAndRelativePaths(t *testing.T) {
 				t.Fatalf("relative %s accepted: %v", name, err)
 			}
 		})
+	}
+}
+
+// Each provider stores assignees in its own form, so "mine" must use the
+// source's account user there; me.default would match no remote item.
+func TestIdentitiesPerSource(t *testing.T) {
+	t.Parallel()
+	cfg := project.Config{Me: project.MeConfig{Default: "@brett"}, Accounts: map[string][]project.AccountConfig{
+		"linear": {{Name: "work", User: "11111111-1111-1111-1111-111111111111"}, {Name: "home", User: "22222222-2222-2222-2222-222222222222"}},
+		"github": {{Host: "github.com", User: "brett"}, {Host: "ghe.example.com", User: "bdavis"}},
+		"jira":   {{Host: "https://acme.atlassian.net", User: "acct-1"}},
+	}}
+	cfg.Sources = []project.SourceConfig{
+		{ID: "tasks", Type: "native"},
+		{ID: "lin", Type: "linear", Account: "home"},
+		{ID: "gh", Type: "github", Account: "brett"},
+		{ID: "ghe", Type: "github", Host: "ghe.example.com", Account: "bdavis"},
+		{ID: "jira", Type: "jira", Site: "https://ACME.atlassian.net/", Account: "acct-1"},
+		{ID: "missing", Type: "linear", Account: "nobody"},
+	}
+	got := cfg.Identities()
+	want := map[string]string{"tasks": "@brett", "lin": "22222222-2222-2222-2222-222222222222", "gh": "brett", "ghe": "bdavis", "jira": "acct-1"}
+	if !maps.Equal(got, want) {
+		t.Fatalf("identities = %v, want %v", got, want)
 	}
 }

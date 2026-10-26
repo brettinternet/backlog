@@ -399,9 +399,7 @@ func (p *Projector) run() {
 					items = make([]model.Item, 0, req.snapshot.Len())
 				}
 				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, Items: items, States: make(map[model.Ref]query.State, req.snapshot.Len()), Sprints: req.snapshot.Sprints(), SprintsLoading: req.snapshot.SprintsPending()}
-				if p.cfg.Me.Default != "" {
-					base.Me = []string{p.cfg.Me.Default}
-				}
+				base.Me = p.cfg.Identities()
 				for ref, r := range req.snapshot.records {
 					if req.ctx.Err() != nil {
 						break

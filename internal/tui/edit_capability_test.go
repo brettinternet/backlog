@@ -51,7 +51,7 @@ func TestUnsupportedEditKeysOnlyShowReason(t *testing.T) {
 			if test.item.Ref.ID != "" {
 				item = test.item
 			}
-			m, backend := editFixture(t, []model.Item{item}, model.Capabilities{}, Options{Me: "@me"})
+			m, backend := editFixture(t, []model.Item{item}, model.Capabilities{}, Options{Me: map[string]string{"tasks": "@me"}})
 			if test.criteria {
 				m.detailOpen, m.detailFocus, m.detailTab = true, true, tabCriteria
 			}

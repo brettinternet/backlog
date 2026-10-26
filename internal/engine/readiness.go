@@ -40,7 +40,7 @@ type Input struct {
 	Projects        map[string]project.Config // Per-item policy in a composed workspace.
 	Items           []model.Item
 	Config          project.ReadyConfig
-	Me              []string
+	Me              map[string]string // source ID to the caller's assignee value there
 	Archived, Stale map[model.Ref]bool
 	Coordination    bool
 	Claims          map[model.Ref]Claim
@@ -131,9 +131,9 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		sprintSources[source.ID] = source.Sprints()
 	}
 	for i, item := range in.Items {
-		config, me, coordination := in.Config, in.Me, in.Coordination
+		config, coordination := in.Config, in.Coordination
 		if p, ok := in.Projects[item.Project]; ok {
-			config, me, coordination = p.Ready, []string{p.Me.Default}, p.Coordination.Enabled()
+			config, coordination = p.Ready, p.Coordination.Enabled()
 		}
 		e := Explanation{Ref: item.Ref, Readiness: Ready, Reasons: []Reason{}, Priority: item.Priority, Rank: item.Rank}
 		add := func(code string, refs []model.Ref, values []string) {
@@ -196,11 +196,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			}
 		}
 		if len(item.Assignees) > 0 {
-			mine := false
-			for _, assignee := range item.Assignees {
-				mine = mine || slices.Contains(me, assignee)
-			}
-			if !mine {
+			if me := in.Me[item.Ref.Source]; me == "" || !slices.Contains(item.Assignees, me) {
 				add("assignee", nil, slices.Clone(item.Assignees))
 				e.Reasons[len(e.Reasons)-1].names = item.Names
 			}

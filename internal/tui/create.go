@@ -291,10 +291,10 @@ func captureItem(fields []captureField, source string) (model.Item, error) {
 // expandCapture moves quick-add into the full form. Tab may open the form
 // before a title is typed (untitled); its title field takes the title there.
 func (m *Model) expandCapture(untitled bool) {
-	item, err := query.QuickAdd(m.capture.line.text, m.opts.Me)
+	item, err := query.QuickAdd(m.capture.line.text, m.opts.Me[m.capture.source])
 	if err != nil && untitled {
 		// Only a missing title fails if a placeholder title alone parses.
-		if parsed, retry := query.QuickAdd("x "+m.capture.line.text, m.opts.Me); retry == nil && parsed.Title == "x" {
+		if parsed, retry := query.QuickAdd("x "+m.capture.line.text, m.opts.Me[m.capture.source]); retry == nil && parsed.Title == "x" {
 			item, err = parsed, nil
 			item.Title = ""
 		}

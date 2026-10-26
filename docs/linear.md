@@ -49,7 +49,8 @@ Status and assignee values are UUIDs, but `bl` displays the state and user
 names: in the TUI list, board, detail, pickers, and filter completion, and in
 CLI text. A configured status name wins. Stored values, `--json`, queries,
 `assignee:me`, claims, and writes keep the UUID; pickers and completion insert
-it, so you rarely need to look one up.
+it, so you rarely need to look one up. `assignee:me` and the Mine view match
+the account's `user` UUID, not `me.default`.
 
 ### API key
 

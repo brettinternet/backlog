@@ -37,20 +37,21 @@ func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 	case "a":
 		return m.beginPicker(pickerAssignees), true
 	case "A":
-		if m.opts.Me == "" {
-			m.notice = "Disabled: no current user is configured."
-			return nil, true
-		}
 		row, ok := m.selectedRow()
 		if !ok {
 			m.notice = "Select an item before editing."
+			return nil, true
+		}
+		me := m.opts.Me[row.Ref.Source]
+		if me == "" {
+			m.notice = "Disabled: no current user is configured."
 			return nil, true
 		}
 		if reason := m.pickerCapability(row.Ref, pickerAssignees); reason != "" {
 			m.notice = "Disabled: " + reason
 			return nil, true
 		}
-		action := editAction{kind: editSelfToggle, me: m.opts.Me}
+		action := editAction{kind: editSelfToggle, me: me}
 		m.startEdit(action)
 		return m.editCommand(action, false), true
 	case "#":

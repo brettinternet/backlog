@@ -168,7 +168,14 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if err != nil {
 			return err
 		}
-		item, err := query.QuickAdd(strings.Join(cmd.Args().Slice(), " "), cfg.Me.Default)
+		sourceID := cmd.String("source")
+		if sourceID == "" {
+			if len(cfg.Sources) != 1 {
+				return writeUsage("new requires --source with multiple or no sources")
+			}
+			sourceID = cfg.Sources[0].ID
+		}
+		item, err := query.QuickAdd(strings.Join(cmd.Args().Slice(), " "), cfg.Identities()[sourceID])
 		if err != nil {
 			return writeUsage(err.Error())
 		}
@@ -196,13 +203,6 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		}
 		if item.Status == "" && len(cfg.Statuses) > 0 {
 			item.Status = cfg.Statuses[0].Key
-		}
-		sourceID := cmd.String("source")
-		if sourceID == "" {
-			if len(cfg.Sources) != 1 {
-				return writeUsage("new requires --source with multiple or no sources")
-			}
-			sourceID = cfg.Sources[0].ID
 		}
 		if item.Parent != nil {
 			parent, err := ResolveRef(ctx, cfg, sourceID, *item.Parent)
