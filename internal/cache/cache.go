@@ -249,6 +249,22 @@ func (s Store) lock(ctx context.Context) (*os.File, error) {
 		}
 	}
 }
+
+// tryLock acquires the refresh lock only if it is free.
+func (s Store) tryLock() (*os.File, bool, error) {
+	f, err := os.OpenFile(s.Path+".lock", os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, false, err
+	}
+	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EINTR) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return f, true, nil
+}
 func unlock(f *os.File) { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }
 
 func (s Store) open(ctx context.Context) (*sql.DB, error) {

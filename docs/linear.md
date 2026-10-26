@@ -96,7 +96,7 @@ says to revoke in Linear settings. See [OAuth](oauth.md).
 | Scan | When | Reads |
 | --- | --- | --- |
 | Change window | Every minute | Issues updated since the last scan's start, minus two minutes |
-| Reconciliation | Startup and hourly | Every issue (including archived) and both relation directions, plus a 30-day overlap |
+| Reconciliation | Startup, hourly, and on `R` in the TUI | Every issue (including archived) and both relation directions, plus a 30-day overlap |
 
 Pages hold at most **250** items. Details and initial relations are batched
 **10 issues** at a time, **25 relations** per direction per issue, with further
@@ -120,7 +120,19 @@ Deleting one bumps both issues. The change window therefore picks up new and
 removed blockers, and the derived "blocking" list, within a minute. Until the
 next reconciliation, the source issue's own `blocks` and `related` fields can
 be stale, and so can a blocker reference to an issue that has been trashed
-(BL-90). The 30-day overlap recovers issues missed by a moving cursor
+(BL-90). Deletions and moves out of scope never appear in a change window.
+Single-issue reads don't wait for reconciliation:
+
+- `bl next --claim` reads each candidate fresh before acquiring it, and skips
+  it (`changed` in `--explain`) if that read shows it closed, archived, gone,
+  or newly blocked.
+- A fresh read from `bl show`, the TUI detail pane, or a write's preflight
+  replaces the issue's cached row, or marks it stale if the issue is gone. The
+  TUI updates the row at once.
+- `R` in the TUI runs a full reconciliation. The minute poll keeps the cost
+  of a change window.
+
+The 30-day overlap recovers issues missed by a moving cursor
 (as in Worklease v1.9.3); it isn't a retention limit. The schedule survives
 restarts with the cursor. Changing archive visibility or loading an old cursor
 forces reconciliation.

@@ -52,7 +52,7 @@ func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta,
 	var loaded source.Delta
 	delta, err := s.cache.RemoteRefresh(ctx, func(cursor source.Cursor) (source.Delta, error) {
 		called = true
-		cursor.IncludeArchive = request.IncludeArchive
+		cursor.IncludeArchive, cursor.Reconcile = request.IncludeArchive, request.Reconcile
 		delta, err := s.backend.Load(ctx, cursor)
 		if err != nil {
 			return source.Delta{}, s.safeError(err)
@@ -75,12 +75,29 @@ func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta,
 	}
 	return s.guardSearch(delta), s.safeError(err)
 }
+
+// Read is a fresh provider read. It also refreshes the item's cached row, so a
+// relation edit or deletion that a change window cannot see reaches later reads
+// now, not at the next reconciliation. The cache write is best effort.
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	item, err := s.backend.Read(ctx, id)
 	if err != nil {
-		return model.Item{}, s.safeError(err)
+		err = s.safeError(err)
+		var refusal *source.Error
+		if errors.As(err, &refusal) && refusal.Reason == "not-found" {
+			_, _ = s.cache.RemoteObserve(ctx, model.Ref{Source: s.Info().ID, ID: id}, nil)
+		}
+		return model.Item{}, err
 	}
-	return s.cleanItem(item)
+	clean, err := s.cleanItem(item)
+	if err != nil {
+		return model.Item{}, err
+	}
+	// Scans never load comments; keep cached rows the same shape.
+	row := clean
+	row.Comments = nil
+	_, _ = s.cache.RemoteObserve(ctx, clean.Ref, &row)
+	return clean, nil
 }
 func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	if m.Op != model.Create {

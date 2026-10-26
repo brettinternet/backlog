@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,6 +35,7 @@ type ReadSnapshot struct {
 	searchers []func(context.Context, string) (map[model.Ref]bool, error)
 	stale     map[model.Ref]bool
 	ctx       context.Context
+	input     Input
 }
 
 // LoadReads loads active items. With archived set, it also loads archive/ on
@@ -118,7 +121,8 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted 
 		}
 	}
 	s.Query.Coordination = coordination
-	s.Ranking = Evaluate(Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims})
+	s.input = Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims}
+	s.Ranking = Evaluate(s.input)
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)
 		claim := string(claims[e.Ref])
@@ -371,6 +375,37 @@ func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.
 		matches = append(matches, item)
 	}
 	return matches, nil
+}
+
+// reassess ranks one item again after a fresh read replaces its row. A fresh
+// read is not stale; a provider that reports archival keeps it unready.
+func (s *ReadSnapshot) reassess(fresh model.Item) Explanation {
+	in := s.input
+	in.Items = slices.Clone(in.Items)
+	for n := range in.Items {
+		if in.Items[n].Ref == fresh.Ref {
+			in.Items[n] = fresh
+		}
+	}
+	in.Archived, in.Stale = maps.Clone(in.Archived), maps.Clone(in.Stale)
+	in.Archived[fresh.Ref] = in.Archived[fresh.Ref] || fresh.Fields["archived"] == true
+	delete(in.Stale, fresh.Ref)
+	for _, e := range Evaluate(in).Items {
+		if e.Ref == fresh.Ref {
+			return e
+		}
+	}
+	return Explanation{Ref: fresh.Ref}
+}
+
+// remoteSource reports a provider whose cached snapshot can lag the provider.
+func remoteSource(cfg project.Config, id string) bool {
+	for _, c := range cfg.Sources {
+		if c.ID == id {
+			return c.Type == "linear" || c.Type == "github" || c.Type == "jira"
+		}
+	}
+	return false
 }
 
 func (s *ReadSnapshot) Parse(text string) (query.Query, error) {

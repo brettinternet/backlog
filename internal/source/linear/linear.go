@@ -218,7 +218,8 @@ const changeOverlap = 2 * time.Minute
 const detailBatchSize = 10
 const relationBatchPageSize = 25
 
-// Load reads only the overlapping change window between hourly reconciliations.
+// Load reads only the overlapping change window between hourly or requested
+// reconciliations.
 // Reconciliation scans all rows and relations, including a 30-day recovery window
 // for moving-order gaps. Neither traversal is an absence proof.
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
@@ -238,7 +239,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if err != nil {
 		return source.Delta{}, err
 	}
-	reconcile := state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || state.IncludeArchive != cursor.IncludeArchive
+	reconcile := cursor.Reconcile || state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || state.IncludeArchive != cursor.IncludeArchive
 	windows := []time.Time{since.Add(-changeOverlap)}
 	if reconcile {
 		windows = []time.Time{{}, since.Add(-30 * 24 * time.Hour)}

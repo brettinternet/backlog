@@ -119,6 +119,8 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 			if len(q.Sort) > 0 || q.Group != "" {
 				return out, source.Refuse("usage", "next uses readiness ranking; sort and group are not supported")
 			}
+			// changed records remote candidates a fresh read made unready.
+			changed := map[model.Ref]bool{}
 			byRef := make(map[model.Ref]model.Item, len(snap.Query.Items))
 			for _, candidate := range snap.Query.Items {
 				byRef[candidate.Ref] = candidate
@@ -136,6 +138,8 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 							code := "selection-stopped"
 							if !q.Match(candidate, snap.Query, nil) {
 								code = "query"
+							} else if changed[explanation.Ref] {
+								code = "changed"
 							} else if attempt, ok := attempts[explanation.Ref]; ok {
 								code = string(attempt.Outcome)
 								if attempt.Reason != "" {
@@ -152,6 +156,19 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 				candidate := byRef[ref]
 				if !q.Match(candidate, snap.Query, nil) {
 					continue
+				}
+				// A provider's minute change window can miss relation edits and
+				// deletions, so confirm the cached row before acquiring it.
+				if remoteSource(cfg, ref.Source) {
+					fresh, e := ReadItem(ctx, selection, ref)
+					if e != nil && ErrorReason(e) != "not-found" {
+						return out, e
+					}
+					if e != nil || snap.reassess(fresh).Readiness != Ready || !q.Match(fresh, snap.Query, nil) {
+						changed[ref] = true
+						continue
+					}
+					candidate = fresh
 				}
 				// Reinspect for each attempt so a same-session inspection race
 				// cannot authorize walking past newly held/pending ownership.

@@ -19,6 +19,9 @@ const (
 type Cursor struct {
 	Value          string
 	IncludeArchive bool
+	// Reconcile requests a full scan instead of a change window. It is a
+	// per-load request, never persisted with the cursor.
+	Reconcile bool
 }
 type Finding struct {
 	Code, Severity, Path, Message string

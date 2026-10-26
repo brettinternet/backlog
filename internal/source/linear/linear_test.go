@@ -343,7 +343,27 @@ func TestRefreshBudgetAndRetainedRows(t *testing.T) {
 	if err != nil || f.requests-requests != 106 || len(d.Stale) != 0 || len(d.Items[0].BlockedBy) != 1 || d.Items[0].Version == before.Version {
 		t.Fatalf("failed reconciliation advanced cursor: requests=%d stale=%d err=%v", f.requests-requests, len(d.Stale), err)
 	}
-	t.Log("1000 issues: unchanged refresh=2 requests; one change=3; hourly reconciliation=106; no stale retained rows")
+	// A relation edit is invisible to the change window. A fresh read (show,
+	// detail, write preflight) refreshes the cached row, and a requested
+	// reconciliation rescans everything without waiting for the hour.
+	f.block = false
+	now = now.Add(time.Minute)
+	requests = f.requests
+	if d, err = wrapped.Load(ctx, source.Cursor{}); err != nil || f.requests-requests != 2 || len(d.Items[0].BlockedBy) != 1 {
+		t.Fatalf("window saw relation edit: requests=%d err=%v", f.requests-requests, err)
+	}
+	if fresh, err := wrapped.Read(ctx, d.Items[0].Ref.ID); err != nil || len(fresh.BlockedBy) != 0 {
+		t.Fatalf("fresh read: %+v %v", fresh, err)
+	}
+	if d, err = wrapped.Load(ctx, source.Cursor{}); err != nil || len(d.Items) != 1000 || len(d.Stale) != 0 || len(d.Items[0].BlockedBy) != 0 {
+		t.Fatalf("fresh read did not refresh its cached row: %v", err)
+	}
+	f.block = true
+	requests = f.requests
+	if d, err = wrapped.Load(ctx, source.Cursor{Reconcile: true}); err != nil || f.requests-requests != 106 || len(d.Items[0].BlockedBy) != 1 {
+		t.Fatalf("requested reconciliation: requests=%d err=%v", f.requests-requests, err)
+	}
+	t.Log("1000 issues: unchanged refresh=2 requests; one change=3; hourly or requested reconciliation=106; no stale retained rows")
 }
 
 func TestPageCap(t *testing.T) {

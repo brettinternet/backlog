@@ -169,7 +169,12 @@ refreshes retain unseen rows as stale. Only a fresh complete enumeration evicts
 unseen rows; complete incremental responses retain unchanged rows. Stale items
 are not ready and stale blockers cannot satisfy dependencies. Read lists, Go To,
 and `next` may use fresh partial observations; unknown coverage and error findings
-still fail closed. Workspace reranking preserves per-row staleness. This applies
+still fail closed. A change window can't see edits that leave the provider's
+change timestamp alone, so single-item reads reconcile on demand: `next --claim`
+reads a remote candidate fresh and skips it unless it is still ready, a fresh
+read from `show`, detail, or a write preflight replaces that cached row (or
+marks it stale when gone), and a manual refresh (`R`) runs a full
+reconciliation ([linear.md](linear.md#sync)). Workspace reranking preserves per-row staleness. This applies
 D12/D23 without treating partial inventories as complete for events or deletions.
 Host/account HTTP queues and user-only credential resolution follow D17 and D23.
 

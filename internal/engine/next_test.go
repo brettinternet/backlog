@@ -347,7 +347,7 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 		}
 		return row
 	}
-	missing := false
+	missing, blockOne := false, false
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Query     string
@@ -401,7 +401,7 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 				blocker := 0
 				if req.Variables["id"] == id(3) {
 					blocker = 2
-				} else if req.Variables["id"] == id(4) {
+				} else if req.Variables["id"] == id(4) || blockOne && req.Variables["id"] == id(1) {
 					blocker = 99
 				}
 				if blocker != 0 {
@@ -409,9 +409,13 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 				}
 			}
 			data = map[string]any{"issue": map[string]any{"id": req.Variables["id"], key: conn(rows)}}
+		case strings.Contains(q, "comments("):
+			data = map[string]any{"issue": map[string]any{"id": req.Variables["id"], "comments": conn([]any{})}}
 		default:
 			var n int
-			_, _ = fmt.Sscanf(req.Variables["id"].(string), "60000000-0000-0000-0000-%012d", &n)
+			if _, err := fmt.Sscanf(req.Variables["id"].(string), "TEST-%d", &n); err != nil {
+				_, _ = fmt.Sscanf(req.Variables["id"].(string), "60000000-0000-0000-0000-%012d", &n)
+			}
 			data = map[string]any{"issue": detail(n)}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
@@ -468,7 +472,17 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 	if err != nil || len(rows) != 6 {
 		t.Fatalf("partial Go To: %+v %v", rows, err)
 	}
-	result, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{})
+	// Scans batch relations; only a single-issue read sees this relation edit,
+	// as a change window misses edits that leave updatedAt alone.
+	blockOne = true
+	result, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{Explain: true})
+	if err != nil || len(result.Items) != 0 || len(c.sequence) != 0 || !slices.ContainsFunc(result.Explanations, func(e engine.NextExplanation) bool {
+		return e.Ref.ID == "TEST-1" && slices.ContainsFunc(e.Reasons, func(r engine.Reason) bool { return r.Code == "changed" })
+	}) {
+		t.Fatalf("claimed a candidate its fresh read blocks: %+v %v attempts=%v", result, err, c.sequence)
+	}
+	blockOne = false
+	result, err = engine.NextClaim(ctx, cfg, engine.NextClaimOptions{})
 	if err != nil || len(result.Items) != 1 || result.Items[0].Ref.ID != "TEST-1" || !slices.Equal(c.sequence, []string{"TEST-1"}) {
 		t.Fatalf("fresh partial claim: %+v %v attempts=%v", result, err, c.sequence)
 	}

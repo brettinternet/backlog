@@ -34,6 +34,8 @@ type sourceWorker struct {
 	backend source.Source
 	jobs    chan *editJob
 	refresh chan struct{}
+	// reconcile marks the next queued refresh as a manual full resync.
+	reconcile atomic.Bool
 }
 type editJob struct {
 	mutation model.Mutation
@@ -215,14 +217,54 @@ func (s *Store) history(direction int) <-chan error {
 	}, result)
 	return result
 }
+
+// Refresh is a manual resync: remote sources run a full reconciliation instead
+// of their change window. Periodic watcher refreshes keep their normal cost.
 func (s *Store) Refresh() {
 	result := make(chan error, 1)
 	s.request(func(st *storeState) {
 		for _, w := range st.workers {
+			w.reconcile.Store(true)
 			latest(w.refresh, struct{}{})
 		}
 		s.complete(result, nil)
 	}, result)
+}
+
+// Observe publishes a fresh source read of a loaded item, so its row agrees
+// with detail before the next scan. A not-found read marks the row stale; other
+// failures change nothing. It may wait for the engine actor, so call it from a
+// background command, never the UI loop.
+func (s *Store) Observe(ref model.Ref, item model.Item, err error) {
+	gone := ErrorReason(err) == "not-found"
+	if err != nil && !gone || !gone && item.Ref != ref {
+		return
+	}
+	item = cloneItem(item)
+	s.send(func(st *storeState) { st.observe(ref, &item, gone) })
+}
+func (st *storeState) observe(ref model.Ref, item *model.Item, gone bool) {
+	old := st.snapshot.records[ref]
+	// A pending or failed edit owns the row until it settles or is dismissed.
+	if old == nil || st.pending[ref] || old.edit.Pending || old.edit.Error != "" {
+		return
+	}
+	r := *old
+	if gone {
+		if old.stale {
+			return
+		}
+		r.stale = true
+	} else {
+		// A read that raced our own edit returns the version that edit replaced.
+		if old.item.Version == item.Version && !old.stale || st.superseded[ref] == item.Version {
+			return
+		}
+		r.item, r.stale = item, false
+	}
+	n := st.snapshot.fork()
+	n.records[ref] = &r
+	st.publish(n)
 }
 func (st *storeState) begin(job *editJob) {
 	m := job.mutation
@@ -375,7 +417,9 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			status.Loading = true
 			st.publish(st.snapshot.withSource(id, status))
 		})
-		delta, err := w.backend.Load(s.ctx, cursor)
+		request := cursor
+		request.Reconcile = w.reconcile.Swap(false)
+		delta, err := w.backend.Load(s.ctx, request)
 		caps := w.backend.Info().Capabilities
 		s.capabilitiesMu.Lock()
 		s.capabilities[id] = make(model.Capabilities, len(caps))
@@ -506,7 +550,8 @@ func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err e
 				if remote != nil {
 					prior = remote
 				}
-				n.records[ref] = &record{item: prior, edit: state, archived: job.before.archived}
+				// A preflight that finds the item gone revokes its readiness now.
+				n.records[ref] = &record{item: prior, edit: state, archived: job.before.archived, stale: job.before.stale || ErrorReason(err) == "not-found"}
 			} else {
 				n.records[ref] = &record{item: new(cloneItem(job.preview)), edit: state}
 			}

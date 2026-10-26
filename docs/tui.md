@@ -81,8 +81,12 @@ While a source syncs, an empty list stays blank, then shows loading after 300 ms
 never "No matching items." Switching tabs keeps the old rows until the new ones
 are ready, or loading shows.
 
-`R` refreshes now, with `↻` once it takes over 300 ms. Remote sources poll once a minute and show up to 256 cached
-rows before the network answers. Cached rows appear in Open, but a stale item is
+`R` refreshes now, with `↻` once it takes over 300 ms. For remote sources it
+runs a full reconciliation, which catches relation edits and deletions that the
+minute poll misses ([linear.md](linear.md#sync)). Remote sources poll once a
+minute and show up to 256 cached rows before the network answers. Opening an
+item's detail reads it fresh and updates its row; an item the provider no
+longer has turns stale. Cached rows appear in Open, but a stale item is
 never ready in Next, and a stale done blocker doesn't satisfy a dependency.
 Quota errors stay visible until the provider's retry time.
 
@@ -557,7 +561,8 @@ backlog (D14).
 
 - `internal/engine.OpenStore` runs sources in the background. `Current` returns
   an immutable snapshot in O(1); `Subscribe` delivers only the latest.
-  `Mutate`, `Undo`, `Redo`, and `Refresh` enqueue bounded requests. A full queue
+  `Mutate`, `Undo`, `Redo`, and `Refresh` enqueue bounded requests. `Observe`
+  publishes a fresh detail read from its background command. A full queue
   or an overlapping edit to one item returns `busy`, as does an edit against a
   version this session's own pending edit replaced. Only a foreign change is a
   conflict.

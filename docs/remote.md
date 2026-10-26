@@ -75,6 +75,11 @@ receipt and recovery journals (D24).
 - Rows, freshness, and the cursor commit in one SQLite transaction. Errors
   commit nothing. A per-source file lock serializes read, network, and commit
   across processes, without holding a transaction during network I/O.
+- A fresh `Read` replaces that item's cached row, or marks it stale on
+  `not-found`, without moving the cursor. It skips the write while a refresh
+  holds the lock rather than wait on the network.
+- `Cursor.Reconcile` asks for a full scan instead of a change window for one
+  load. The TUI sets it on `R`; adapters that always enumerate ignore it.
 - A warm start decodes at most two 128-row batches and marks them stale. A
   missing or damaged cache falls back to a full provider load. Correctness never
   depends on the cache.

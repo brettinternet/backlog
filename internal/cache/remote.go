@@ -96,6 +96,83 @@ CREATE TABLE IF NOT EXISTS remote_rows(batch INTEGER PRIMARY KEY, data BLOB NOT 
 	return merged, nil
 }
 
+// RemoteObserve replaces one cached row with a fresh provider read, or marks it
+// stale when item is nil because the provider reports it gone. It rewrites only
+// that row's batch and never moves the cursor, adds rows, or creates a cache.
+// It never waits: while a refresh holds the lock it reports false, and that
+// refresh's result stands.
+func (s Store) RemoteObserve(ctx context.Context, ref model.Ref, item *model.Item) (bool, error) {
+	if _, err := os.Stat(s.Path); err != nil {
+		return false, nil
+	}
+	lock, ok, err := s.tryLock()
+	if err != nil || !ok {
+		return false, err
+	}
+	defer unlock(lock)
+	db, err := s.open(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var written string
+	err = tx.QueryRowContext(ctx, `SELECT build FROM remote_state WHERE id=1`).Scan(&written)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && written != build {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT batch,data FROM remote_rows ORDER BY batch`)
+	if err != nil {
+		return false, err
+	}
+	index, found := 0, false
+	var batch source.Delta
+	for !found && rows.Next() {
+		var data []byte
+		batch = source.Delta{}
+		if err = rows.Scan(&index, &data); err == nil {
+			err = gob.NewDecoder(bytes.NewReader(data)).Decode(&batch)
+		}
+		if err != nil {
+			_ = rows.Close()
+			return false, err
+		}
+		for n := range batch.Items {
+			if batch.Items[n].Ref != ref {
+				continue
+			}
+			found = true
+			if batch.Stale == nil {
+				batch.Stale = map[model.Ref]bool{}
+			}
+			if item == nil {
+				batch.Stale[ref] = true
+			} else {
+				batch.Items[n] = *item
+				delete(batch.Stale, ref)
+			}
+		}
+	}
+	if err = errors.Join(rows.Err(), rows.Close()); err != nil || !found {
+		return false, err
+	}
+	var data bytes.Buffer
+	if err = gob.NewEncoder(&data).Encode(batch); err != nil {
+		return false, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE remote_rows SET data=? WHERE batch=?`, data.Bytes(), index); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
 func readRemote(ctx context.Context, db *sql.DB, limit int) (source.Delta, error) {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

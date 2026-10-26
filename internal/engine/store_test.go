@@ -786,3 +786,56 @@ func TestSourceLoadingClearsAfterLoad(t *testing.T) {
 		return st.Error != "" && !st.Loading
 	})
 }
+
+// Catches a row disagreeing with its fresh detail read until the next scan, or
+// a manual resync that only reruns the provider's change window.
+func TestFreshReadsAndManualResync(t *testing.T) {
+	t.Parallel()
+	backend := fakeSource(t, "tasks")
+	dependent := backend.current()
+	blocker := dependent
+	blocker.Ref.ID, blocker.Status, blocker.Category, blocker.Version = "BL-2", "done", model.Done, "v1"
+	dependent.BlockedBy = []model.Ref{blocker.Ref}
+	backend.items = []model.Item{dependent, blocker}
+	store := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
+	defer store.Close()
+	loaded := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 2 })
+	projector := engine.NewProjector(context.Background(), storeConfig())
+	defer projector.Close()
+	readiness := func(snapshot *engine.Snapshot) engine.Readiness {
+		projector.Request(snapshot, "id:BL-1")
+		select {
+		case result := <-projector.Results():
+			if result.Error != nil || len(result.Groups) != 1 || len(result.Groups[0].Rows) != 1 {
+				t.Fatalf("projection: %+v", result)
+			}
+			return result.Groups[0].Rows[0].Readiness
+		case <-time.After(5 * time.Second):
+			t.Fatal("projection timed out")
+		}
+		return ""
+	}
+	// A blocker that a fresh read finds gone can no longer satisfy BL-1.
+	store.Observe(blocker.Ref, model.Item{}, source.Refuse("not-found", "BL-2"))
+	if got := readiness(awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s != loaded })); got != engine.Unknown {
+		t.Fatalf("gone blocker readiness: %s", got)
+	}
+	reopened := blocker
+	reopened.Status, reopened.Category, reopened.Version = "todo", model.Todo, "v2"
+	store.Observe(blocker.Ref, reopened, nil)
+	snapshot := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { i, _, _ := s.Get(blocker.Ref); return i.Version == "v2" })
+	if got := readiness(snapshot); got != engine.Blocked {
+		t.Fatalf("fresh open blocker readiness: %s", got)
+	}
+	store.Refresh()
+	awaitSnapshot(t, store, func(*engine.Snapshot) bool {
+		backend.mu.Lock()
+		defer backend.mu.Unlock()
+		return len(backend.received) == 2
+	})
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if backend.received[0].Reconcile || !backend.received[1].Reconcile {
+		t.Fatalf("only a manual refresh requests reconciliation: %+v", backend.received)
+	}
+}
