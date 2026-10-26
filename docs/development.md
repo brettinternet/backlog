@@ -112,7 +112,9 @@ Owner checklist:
   publishes a prerelease that the installer's `latest` skips) and push the tag.
 - [ ] Check the notes, four archives, and checksums; after installing, check
   `bl version`.
-- [ ] Optionally update the Homebrew tap (separate owner step).
+- [ ] Within six hours, check that the
+  [Homebrew tap](https://github.com/brettinternet/homebrew-tap) committed `bl`
+  at the new version (`brew install brettinternet/tap/bl`).
 
 Install (needs curl, tar, and sha256sum or shasum):
 
