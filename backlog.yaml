@@ -71,6 +71,7 @@ labels:
     - tooling
     - release
     - spike
+    - windows
     - human
     - blocked
     - deferred
