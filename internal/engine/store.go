@@ -90,13 +90,17 @@ func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry
 	s.sprints.Store(WantsSprints(cfg))
 	initial := &Snapshot{records: map[model.Ref]*record{}, sources: map[string]SourceState{}}
 	st := &storeState{store: s, snapshot: initial, workers: map[string]*sourceWorker{}, pending: map[model.Ref]bool{}, superseded: map[model.Ref]string{}}
+	configured := make(map[string]project.SourceConfig, len(cfg.Sources))
+	for _, sc := range cfg.Sources {
+		configured[sc.ID] = sc
+	}
 	for id, backend := range registry {
 		caps := backend.Info().Capabilities
 		s.capabilities[id] = make(model.Capabilities, len(caps))
 		for op, allowed := range caps {
 			s.capabilities[id][op] = allowed
 		}
-		w := &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1), sprints: query.SprintKind(backend.Info().Kind)}
+		w := &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1), sprints: query.SprintKind(configured[id])}
 		initial.sources[id] = SourceState{Coverage: source.Unknown, SprintsPending: w.sprints && s.sprints.Load()}
 		st.workers[id] = w
 	}

@@ -75,7 +75,7 @@ snapshot.
 | `assignee` | Handle, `me`, or `none` |
 | `label`, `type`, `milestone`, `source` | Exact value, or `none` |
 | `parent` | ID, or `none` |
-| `sprint` | `current` (active), `next` (earliest future), `none`, or a sprint key or name. Linear and Jira only. |
+| `sprint` | `current` (active), `next` (earliest future), `none`, or a sprint key or name. Linear and Jira always; GitHub only with a Projects v2 source bound to an iteration field. |
 | `blocked-by`, `blocks` | ID. `blocks` is derived from the loaded target's blockers; the item's own list counts only for targets that aren't loaded. |
 | `created`, `updated`, `due` | Ordered. See [Dates](#dates). |
 | `text` | Word or phrase in the title or body |
@@ -158,7 +158,7 @@ unknown field "lable" at 7; did you mean "label"?
 The TUI keeps the last valid result while you type. Ordered operators work only
 on priority and dates. Unknown statuses, labels, types, milestones, sources, and
 assignees are errors in the CLI and warnings in the TUI, as is `sprint:` when no
-Linear or Jira source is configured ("no source provides sprints"). The first
+sprint-capable source is configured ("no source provides sprints"). The first
 sprint term in a TUI session loads the sprint catalog; until it arrives, unknown
 sprint names aren't warned about, and the results update when it lands. Unknown
 IDs, raw fields, and text are fine; they just may not match.

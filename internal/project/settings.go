@@ -55,6 +55,11 @@ type GitHubProjectConfig struct {
 	FieldID     string            `yaml:"fieldId" json:"fieldId"`
 	Options     map[string]string `yaml:"options" json:"options"`
 	AllowWrites bool              `yaml:"allowWrites,omitempty" json:"allowWrites,omitempty"`
+	// IterationFieldID optionally names the ProjectV2IterationField to use for
+	// sprints. Unset autodetects the single iteration field present; a project
+	// with none is not sprint-capable, and several with no configured choice
+	// is a refusal, not a guess.
+	IterationFieldID string `yaml:"iterationFieldId,omitempty" json:"iterationFieldId,omitempty"`
 }
 type StatusConfig struct {
 	Key      string `yaml:"key" json:"key"`

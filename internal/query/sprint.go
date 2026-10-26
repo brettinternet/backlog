@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 )
 
 // Sprint roles are resolved from the snapshot catalog, never the wall clock,
@@ -21,15 +22,19 @@ var sprintValues = []string{sprintCurrent, sprintNext, "none"}
 // SprintCapable reports whether any configured source can supply sprints.
 func (s Snapshot) SprintCapable() bool {
 	for _, source := range s.Settings.Sources {
-		if SprintKind(source.Type) {
+		if SprintKind(source) {
 			return true
 		}
 	}
 	return false
 }
 
-// SprintKind reports whether a source type can supply sprints.
-func SprintKind(kind string) bool { return kind == "linear" || kind == "jira" }
+// SprintKind reports whether a configured source can supply sprints: Linear
+// and Jira always can; a GitHub source needs a Projects v2 binding, since
+// plain Issues have no iteration concept.
+func SprintKind(c project.SourceConfig) bool {
+	return c.Type == "linear" || c.Type == "jira" || c.Type == "github" && c.GitHubProject != nil
+}
 
 // Sprint returns the catalog entry for key and its role: current (active),
 // next (the earliest future sprint of its source), future, or closed.

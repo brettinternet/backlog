@@ -145,6 +145,14 @@ func TestErrors(t *testing.T) {
 	if errs := parse(t, `sprint:current sprint:next sprint:none sprint:c1 sprint:"cycle 1"`, false).Validate(s); len(errs) != 0 {
 		t.Fatal(errs)
 	}
+	// A GitHub source is only sprint-capable with a Projects v2 binding: plain
+	// Issues have no iteration concept.
+	if query.SprintKind(project.SourceConfig{Type: "github"}) {
+		t.Fatal("github source without a Projects v2 binding is sprint-capable")
+	}
+	if !query.SprintKind(project.SourceConfig{Type: "github", GitHubProject: &project.GitHubProjectConfig{}}) {
+		t.Fatal("github source with a Projects v2 binding is not sprint-capable")
+	}
 	s.Coordination = false
 	for _, f := range []string{"claimed:me", "is:claimed", "has:claim"} {
 		if len(parse(t, f, false).Validate(s)) != 1 {

@@ -31,6 +31,14 @@ type fixture struct {
 	oauthApp, issuePermission, projectPermission    string
 	repositoryMissing                               bool
 	personalProject                                 bool
+	// iterationFieldID, secondIterationFieldID, iterations and
+	// completedIterations configure the Projects v2 iteration field returned
+	// by discovery; a project with none left unset is not sprint-capable.
+	// itemIterationID assigns the single project item to one of them.
+	iterationFieldID, secondIterationFieldID string
+	iterations, completedIterations          []map[string]any
+	itemIterationID                          string
+	lastFieldsQuery, lastSprintFieldName     string
 }
 
 func newFixture(t *testing.T) (*Source, *fixture) {
@@ -147,6 +155,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		f.option = v["optionID"].(string)
 		emit(map[string]any{"updateProjectV2ItemFieldValue": map[string]any{"projectV2Item": map[string]string{"id": "PVTI_1"}}})
 	case strings.Contains(q, "fields(first:"):
+		f.lastFieldsQuery = q
 		owner := "alice"
 		if f.oauthApp != "" {
 			owner = "owner"
@@ -155,13 +164,26 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		if f.personalProject {
 			kind = "User"
 		}
-		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "viewerCanUpdate": !f.readOnly, "owner": map[string]string{"login": owner, "__typename": kind}, "fields": map[string]any{"nodes": []any{map[string]any{"id": "PVTSSF_status", "name": "Status", "options": []any{map[string]string{"id": "todo", "name": "Todo"}, map[string]string{"id": "active", "name": "Active"}}}}, "pageInfo": map[string]any{"hasNextPage": false}}}})
+		nodes := []any{}
+		if f.iterationFieldID != "" {
+			nodes = append(nodes, map[string]any{"id": f.iterationFieldID, "name": "Sprint", "configuration": map[string]any{"iterations": f.iterations, "completedIterations": f.completedIterations}})
+		}
+		if f.secondIterationFieldID != "" {
+			nodes = append(nodes, map[string]any{"id": f.secondIterationFieldID, "name": "Sprint2", "configuration": map[string]any{"iterations": []any{}, "completedIterations": []any{}}})
+		}
+		nodes = append(nodes, map[string]any{"id": "PVTSSF_status", "name": "Status", "options": []any{map[string]string{"id": "todo", "name": "Todo"}, map[string]string{"id": "active", "name": "Active"}}})
+		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "viewerCanUpdate": !f.readOnly, "owner": map[string]string{"login": owner, "__typename": kind}, "fields": map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": false}}}})
 	case strings.Contains(q, "items(first:"):
 		f.projectPages++
 		rows := []any{}
 		next := v["after"] == nil
 		if next {
-			rows = append(rows, map[string]any{"id": "PVTI_1", "updatedAt": "2026-01-01T00:00:00Z", "content": map[string]any{"__typename": "Issue", "id": "I_1", "number": 1, "repository": map[string]string{"nameWithOwner": "owner/repo"}}, "fieldValueByName": map[string]any{"optionId": f.option, "name": map[string]string{"todo": "Todo", "active": "In Progress"}[f.option], "field": map[string]string{"id": "PVTSSF_status"}}})
+			row := map[string]any{"id": "PVTI_1", "updatedAt": "2026-01-01T00:00:00Z", "content": map[string]any{"__typename": "Issue", "id": "I_1", "number": 1, "repository": map[string]string{"nameWithOwner": "owner/repo"}}, "fieldValueByName": map[string]any{"optionId": f.option, "name": map[string]string{"todo": "Todo", "active": "In Progress"}[f.option], "field": map[string]string{"id": "PVTSSF_status"}}}
+			if strings.Contains(q, "ProjectV2ItemFieldIterationValue") {
+				row["sprint"] = map[string]any{"iterationId": f.itemIterationID}
+				f.lastSprintFieldName, _ = v["sprintFieldName"].(string)
+			}
+			rows = append(rows, row)
 		}
 		owner := "alice"
 		if f.oauthApp != "" {
@@ -333,6 +355,170 @@ func TestProjectStatusQueryAndInverse(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.option != "todo" || f.writes != 2 {
 		t.Fatalf("inverse did not restore option ID: option=%s writes=%d", f.option, f.writes)
+	}
+}
+
+// Iteration states are classified once, when the catalog is fetched from
+// discovery's configuration lists, never during query evaluation: the fixture
+// clock below is read only by classify, and items with/without sprint demand
+// must still agree on version for --if-version.
+func TestSprintCatalogClassification(t *testing.T) {
+	s, f := newFixture(t)
+	f.mu.Lock()
+	f.iterationFieldID = "PVTIF_sprint"
+	f.completedIterations = []map[string]any{{"id": "I_past", "title": "Sprint 0", "startDate": "2025-12-01", "duration": 14}}
+	f.iterations = []map[string]any{
+		{"id": "I_current", "title": "Sprint 1", "startDate": "2026-01-01", "duration": 14},
+		{"id": "I_next", "title": "Sprint 2", "startDate": "2026-01-15", "duration": 14},
+	}
+	f.itemIterationID = "I_current"
+	f.mu.Unlock()
+	s.o.Now = func() time.Time { return time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC) }
+
+	ctx := context.Background()
+	delta, err := s.Load(ctx, source.Cursor{Sprints: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !delta.Cursor.Sprints {
+		t.Fatal("cursor should record sprint demand")
+	}
+	states := map[string]model.SprintState{}
+	for _, sp := range delta.Sprints {
+		states[sp.Key] = sp.State
+	}
+	if len(states) != 3 || states["I_past"] != model.SprintClosed || states["I_current"] != model.SprintActive || states["I_next"] != model.SprintFuture {
+		t.Fatalf("classification: %+v", states)
+	}
+	item := itemByID(t, delta.Items, "1")
+	if item.Sprint != "I_current" || item.Names["I_current"] != "Sprint 1" {
+		t.Fatalf("item sprint: %+v", item)
+	}
+
+	without, err := s.Load(ctx, source.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutItem := itemByID(t, without.Items, "1")
+	if withoutItem.Sprint != "" {
+		t.Fatal("sprint leaked without demand")
+	}
+	if withoutItem.Version != item.Version {
+		t.Fatal("sprint demand changed item version; reads must agree for --if-version")
+	}
+}
+
+func itemByID(t *testing.T, items []model.Item, id string) model.Item {
+	t.Helper()
+	for _, item := range items {
+		if item.Ref.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("no item with id %q in %+v", id, items)
+	return model.Item{}
+}
+
+// A break between iterations - none covering the clock - leaves every entry
+// future rather than inventing a past state: GitHub's own iterations list
+// holds only current and upcoming entries, never elapsed ones.
+func TestSprintCatalogBreakLeavesIterationsFuture(t *testing.T) {
+	s, f := newFixture(t)
+	f.mu.Lock()
+	f.iterationFieldID = "PVTIF_sprint"
+	f.iterations = []map[string]any{
+		{"id": "I_a", "title": "Sprint A", "startDate": "2026-01-01", "duration": 10},
+		{"id": "I_b", "title": "Sprint B", "startDate": "2026-01-20", "duration": 10},
+	}
+	f.mu.Unlock()
+	s.o.Now = func() time.Time { return time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC) }
+
+	delta, err := s.Load(context.Background(), source.Cursor{Sprints: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(delta.Sprints) != 2 {
+		t.Fatalf("catalog: %+v", delta.Sprints)
+	}
+	for _, sp := range delta.Sprints {
+		if sp.State != model.SprintFuture {
+			t.Fatalf("expected future during a break, got %s=%s", sp.Key, sp.State)
+		}
+	}
+}
+
+// A project with no iteration field at all is not sprint-capable: Load must
+// succeed with an empty catalog, not error.
+func TestSprintCatalogAbsentIterationField(t *testing.T) {
+	s, _ := newFixture(t)
+	delta, err := s.Load(context.Background(), source.Cursor{Sprints: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delta.Sprints != nil || itemByID(t, delta.Items, "1").Sprint != "" {
+		t.Fatalf("expected no catalog: %+v", delta)
+	}
+}
+
+// A sprint-free load must make no iteration-shaped request.
+func TestSprintDemandGating(t *testing.T) {
+	s, f := newFixture(t)
+	f.mu.Lock()
+	f.iterationFieldID = "PVTIF_sprint"
+	f.iterations = []map[string]any{{"id": "I_current", "title": "Sprint 1", "startDate": "2026-01-01", "duration": 14}}
+	f.mu.Unlock()
+	s.o.Now = func() time.Time { return time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC) }
+
+	delta, err := s.Load(context.Background(), source.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if strings.Contains(f.lastFieldsQuery, "ProjectV2IterationField") {
+		t.Fatal("iteration field requested without sprint demand")
+	}
+	if delta.Sprints != nil || itemByID(t, delta.Items, "1").Sprint != "" {
+		t.Fatalf("sprints leaked without demand: %+v", delta)
+	}
+}
+
+// Several Projects v2 iteration fields with no configured choice is a
+// refusal, not a guess.
+func TestSprintMultipleIterationFieldsRefused(t *testing.T) {
+	s, f := newFixture(t)
+	f.mu.Lock()
+	f.iterationFieldID = "PVTIF_sprint"
+	f.secondIterationFieldID = "PVTIF_sprint2"
+	f.iterations = []map[string]any{{"id": "I_current", "title": "Sprint 1", "startDate": "2026-01-01", "duration": 14}}
+	f.mu.Unlock()
+	if _, err := s.Load(context.Background(), source.Cursor{Sprints: true}); !reason(err, "rejected") {
+		t.Fatalf("expected refusal for ambiguous iteration field: %v", err)
+	}
+}
+
+// A configured iterationFieldId selects among several candidates instead of
+// guessing.
+func TestSprintConfiguredIterationField(t *testing.T) {
+	s, f := newFixture(t)
+	s.o.Project.IterationFieldID = "PVTIF_sprint2"
+	f.mu.Lock()
+	f.iterationFieldID = "PVTIF_sprint"
+	f.secondIterationFieldID = "PVTIF_sprint2"
+	f.iterations = []map[string]any{{"id": "I_wrong", "title": "Wrong", "startDate": "2026-01-01", "duration": 14}}
+	f.mu.Unlock()
+
+	delta, err := s.Load(context.Background(), source.Cursor{Sprints: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.lastSprintFieldName != "Sprint2" {
+		t.Fatalf("expected the configured field's name, got %q", f.lastSprintFieldName)
+	}
+	if len(delta.Sprints) != 0 {
+		t.Fatalf("expected the configured (second, empty) field's catalog, not the other field's: %+v", delta.Sprints)
 	}
 }
 

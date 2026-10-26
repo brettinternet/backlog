@@ -100,6 +100,7 @@
               "id": {"type": "string", "minLength": 1},
               "fieldId": {"type": "string", "minLength": 1},
               "allowWrites": {"type": "boolean", "default": false},
+              "iterationFieldId": {"type": "string", "minLength": 1},
               "options": {
                 "type": "object",
                 "minProperties": 1,

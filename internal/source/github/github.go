@@ -31,6 +31,10 @@ type Options struct {
 	Credentials    *remote.Credentials
 	Secrets        *remote.Secrets
 	SourceIDs      map[string]string // lower-case host/repository to configured source alias
+	// Now is the clock used to classify Projects v2 iterations into active,
+	// future and closed when the catalog is fetched. Query evaluation never
+	// consults it directly.
+	Now func() time.Time
 }
 type Source struct {
 	o               Options
@@ -42,11 +46,17 @@ type Source struct {
 	issueWrite      bool
 	projectGrants   map[string]bool
 	projectWritable bool
+	// readSprints enables the iteration value and catalog on single-item reads
+	// once a sprint-enabled load or ReadSprints has requested them.
+	readSprints bool
 }
 
 func New(o Options) (*Source, error) {
 	if o.Host == "" {
 		o.Host = "github.com"
+	}
+	if o.Now == nil {
+		o.Now = time.Now
 	}
 	parts := strings.Split(o.Repo, "/")
 	if o.ID == "" || len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(o.Repo, " :@?#\\\t\r\n") || strings.ContainsAny(o.Host, "/\\ :@?#\t\r\n") || o.Account.Host != o.Host || o.Account.User == "" || o.Secrets == nil || o.Credentials == nil {
@@ -218,7 +228,7 @@ func advance(p *pageInfo, seen map[string]bool) (string, error) {
 	seen[p.EndCursor] = true
 	return p.EndCursor, nil
 }
-func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error) {
+func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.authenticate(ctx)
@@ -232,11 +242,15 @@ func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error
 	if _, err = s.request(ctx, c, http.MethodGet, s.base()+"/repos/"+s.o.Repo+"/issues?state=all&sort=updated&direction=desc&per_page=1", nil); err != nil {
 		return source.Delta{}, err
 	}
-	projects, err := s.projects(ctx, c)
+	projects, catalog, err := s.projects(ctx, c, cursor.Sprints)
 	if err != nil {
 		return source.Delta{}, err
 	}
-	delta := source.Delta{Coverage: source.Complete}
+	sprintNames := map[string]string{}
+	for _, sprint := range catalog {
+		sprintNames[sprint.Key] = sprint.Name
+	}
+	delta := source.Delta{Coverage: source.Complete, Sprints: catalog, Cursor: source.Cursor{Sprints: cursor.Sprints}}
 	vars := s.variables()
 	seen := map[string]bool{}
 	ids := map[string]bool{}
@@ -261,7 +275,7 @@ func (s *Source) Load(ctx context.Context, _ source.Cursor) (source.Delta, error
 				return source.Delta{}, source.Refuse("unavailable", "duplicate issue identity")
 			}
 			ids[row.ID] = true
-			item, err := s.item(ctx, c, row, projects[row.ID])
+			item, err := s.item(ctx, c, row, projects[row.ID], sprintNames)
 			if err != nil {
 				return source.Delta{}, err
 			}
@@ -283,6 +297,14 @@ func validNumber(id string) (int, error) {
 		return 0, source.Refuse("invalid-id", "positive issue number required")
 	}
 	return n, nil
+}
+
+// ReadSprints enables the iteration value and catalog on single-item reads.
+// The remote wrapper calls it when its cache holds sprint demand.
+func (s *Source) ReadSprints() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.readSprints = true
 }
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	s.mu.Lock()
@@ -321,11 +343,15 @@ func (s *Source) read(ctx context.Context, c remote.Credential, id string) (mode
 	if result.Repository.Issue.Number != n {
 		return model.Item{}, source.Refuse("unavailable", "issue identity changed")
 	}
-	projects, err := s.projects(ctx, c)
+	projects, catalog, err := s.projects(ctx, c, s.readSprints)
 	if err != nil {
 		return model.Item{}, err
 	}
-	return s.item(ctx, c, *result.Repository.Issue, projects[result.Repository.Issue.ID])
+	sprintNames := map[string]string{}
+	for _, sprint := range catalog {
+		sprintNames[sprint.Key] = sprint.Name
+	}
+	return s.item(ctx, c, *result.Repository.Issue, projects[result.Repository.Issue.ID], sprintNames)
 }
 func (s *Source) ref(row related) model.Ref {
 	id := s.o.Host + "/" + row.Repository.NameWithOwner
@@ -337,7 +363,7 @@ func (s *Source) ref(row related) model.Ref {
 	}
 	return model.Ref{Source: id, ID: strconv.Itoa(row.Number)}
 }
-func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p projectItem) (model.Item, error) {
+func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p projectItem, sprintNames map[string]string) (model.Item, error) {
 	if row.ID == "" || row.Number < 1 || row.UpdatedAt.IsZero() || !strings.EqualFold(row.Repository.NameWithOwner, s.o.Repo) {
 		return model.Item{}, source.Refuse("unavailable", "invalid issue identity")
 	}
@@ -431,9 +457,20 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p pro
 			}
 		}
 	}
+	// The sprint is read-only and fetched only on demand, so it stays out of
+	// the fingerprint: reads with and without it must agree for --if-version.
 	raw, _ := json.Marshal(item)
 	hash := sha256.Sum256(raw)
 	item.Version = hex.EncodeToString(hash[:])
+	if s.o.Project != nil && p.Sprint.IterationID != "" {
+		item.Sprint = p.Sprint.IterationID
+		if name := sprintNames[item.Sprint]; name != "" {
+			if item.Names == nil {
+				item.Names = map[string]string{}
+			}
+			item.Names[item.Sprint] = name
+		}
+	}
 	return item, nil
 }
 func validCategory(v string) bool {

@@ -160,6 +160,32 @@ sub-issue edges, so project-only edits and removed dependencies show up even
 when the issue's `updatedAt` doesn't change. A REST ETag `304` is only a hint.
 Inaccessible or incomplete reads fail rather than claim completeness.
 
+### Sprints
+
+Sprints (design.md D31) are read only when a query, view, group, or
+`ready.sprint` mentions them, and only for a project-bound source. The
+Projects v2 iteration field is discovered from the project's fields, not
+hardcoded: by `githubProject.iterationFieldId` if set, else the single
+iteration field present. A project with none is not sprint-capable. Several
+iteration fields with no configured choice is a refusal, not a guess:
+
+```yaml
+    githubProject:
+      owner: alice
+      number: 12
+      id: PVT_example
+      fieldId: PVTSSF_example
+      iterationFieldId: PVTIF_example   # optional; autodetects if omitted
+```
+
+GitHub marks no iteration active, so `bl` classifies states itself each time
+the catalog is fetched, never during query evaluation: an iteration in
+`completedIterations` is closed; within `iterations` (current and upcoming),
+the one with `startDate <= today < startDate + duration` is active and every
+other one is future, even if its own dates have already elapsed. A break with
+none in range leaves the whole list future, with no active sprint. Sprint keys
+are the iteration's node ID.
+
 ## Writes and claims
 
 ```sh
