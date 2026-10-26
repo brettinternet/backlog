@@ -195,7 +195,12 @@ const issueFields = `id identifier title description url createdAt updatedAt arc
 // issues multiplies GraphQL complexity. Read detail only after deduplication.
 const listFields = `id identifier updatedAt team{id} project{id}`
 const listQuery = `query($team:String!,$after:String,$count:Int!){team(id:$team){id issues(first:$count,after:$after,includeArchived:true,orderBy:updatedAt){nodes{` + listFields + `} pageInfo{hasNextPage endCursor}}}}`
-const incrementalQuery = `query($team:String!,$after:String,$count:Int!,$since:DateTimeOrDuration!){team(id:$team){id issues(first:$count,after:$after,includeArchived:true,orderBy:updatedAt,filter:{updatedAt:{gte:$since}}){nodes{` + listFields + `} pageInfo{hasNextPage endCursor}}}}`
+
+// The OR arm catches a fresh archive or trash: archiving/trashing bumps
+// archivedAt but never updatedAt (BL-99), so updatedAt alone misses it. Page
+// size, not result count, drives complexity, so the wider filter costs
+// nothing extra (BL-102).
+const incrementalQuery = `query($team:String!,$after:String,$count:Int!,$since:DateTimeOrDuration!){team(id:$team){id issues(first:$count,after:$after,includeArchived:true,orderBy:updatedAt,filter:{or:[{updatedAt:{gte:$since}},{archivedAt:{gte:$since}}]}){nodes{` + listFields + `} pageInfo{hasNextPage endCursor}}}}`
 const detailQuery = `query($id:String!){issue(id:$id){` + issueFields + `}}`
 
 // Cycle data is requested only on demand. The catalog rides on the first list
@@ -271,6 +276,11 @@ const relationBatchPageSize = 25
 // reconciliations.
 // Reconciliation scans all rows and relations, including a 30-day recovery window
 // for moving-order gaps. Neither traversal is an absence proof.
+// The watermark advances from wall-clock start, never from a row's
+// updatedAt or archivedAt, so a stale archivedAt on a trashed row can't move
+// it backward. Once the window's lower bound (watermark minus changeOverlap)
+// passes a trashed row's archivedAt, incrementalQuery's gte:$since stops
+// matching it and it drops out of the window instead of re-reading forever.
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

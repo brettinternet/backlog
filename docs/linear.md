@@ -95,7 +95,7 @@ says to revoke in Linear settings. See [OAuth](oauth.md).
 
 | Scan | When | Reads |
 | --- | --- | --- |
-| Change window | Every minute | Issues updated since the last scan's start, minus two minutes |
+| Change window | Every minute | Issues updated or archived/trashed since the last scan's start, minus two minutes |
 | Reconciliation | Startup, hourly, and on `R` in the TUI | Every issue (including archived) and both relation directions, plus a 30-day overlap |
 
 Pages hold at most **250** items. Details and initial relations are batched
@@ -127,23 +127,32 @@ Archiving or trashing an issue bumps neither its own `updatedAt` nor any
 related issue's, and restoring it (`issueUnarchive`) doesn't either: measured
 live for BL-99 against plain archive, trash, and restore, polling every 10s
 for 90s after each mutation with a watermark independent of any field the
-mutation itself could move. Only `archivedAt`/`trashed` change. So the change
-window's `filter:{updatedAt:{gte:$since}}` never matches an archive, trash, or
-restore by itself: linear.go's `Load` only re-reads a trashed row's blocked
-issues (`row.Trashed && !reconcile`, BL-92) when that row is already in the
-window for an unrelated reason, such as an edit in the same minute, not
-because the window "sees" the trash. Widening the filter to
-`{or:[{updatedAt:{gte}},{archivedAt:{gte}}]}` makes a fresh archive or trash
-appear live within a minute at no extra request cost (complexity is charged by
-page size, not result count), but not a restore: `issueUnarchive` clears
-`archivedAt` back to null, leaving no timestamp to filter on. BL-102 tracks
-reaching the trash direction this way; there is no equivalent fix for restore.
-Both directions wait for the next hourly reconciliation to correct the blocked
-issue's `BlockedBy`/`Edges` meanwhile. `bl next --claim`'s fresh per-candidate
-read (BL-89) bounds the damage either way: a candidate blocked by a blocker
-still cached as archived reads unknown and is skipped as `changed`, and one a
-stale cache still shows blocked is skipped too once the fresh read clears it.
-Deletions and moves out of scope never appear in a change window.
+mutation itself could move. Only `archivedAt`/`trashed` change. A plain
+`filter:{updatedAt:{gte:$since}}` would never match an archive, trash, or
+restore by itself, so `incrementalQuery` instead filters on
+`{or:[{updatedAt:{gte:$since}},{archivedAt:{gte:$since}}]}`: live measurement
+(BL-99, confirmed again for BL-102) shows this surfaces a fresh archive or
+trash within a minute at no extra request cost — `x-complexity` stayed 351 for
+a 250-item page whether the filter matched zero or one row, and whether it was
+the plain or OR form, because complexity is charged by page size, not result
+count. linear.go's `Load` then re-reads a trashed row's blocked issues
+(`row.Trashed && !reconcile`, BL-92) deliberately, not only when that row
+happens to be in the window for an unrelated reason such as an edit in the
+same minute. The watermark that drives `$since` always advances from
+wall-clock scan start, never from a row's `updatedAt` or `archivedAt`, so a
+trashed row's old `archivedAt` can't move it backward; once the window's lower
+bound (watermark minus the two-minute overlap) passes that `archivedAt`, the
+`gte` comparison stops matching and the row drops out of the window instead of
+re-reading forever. There is no equivalent fix for restore: `issueUnarchive`
+clears `archivedAt` back to null, leaving no timestamp to filter on — live
+measurement confirms a restored issue drops back out of the OR-filtered window
+immediately. Both directions wait for the next hourly reconciliation to
+correct the blocked issue's `BlockedBy`/`Edges` meanwhile. `bl next --claim`'s
+fresh per-candidate read (BL-89) bounds the damage either way: a candidate
+blocked by a blocker still cached as archived reads unknown and is skipped as
+`changed`, and one a stale cache still shows blocked is skipped too once the
+fresh read clears it. Deletions and moves out of scope never appear in a
+change window.
 Single-issue reads don't wait for reconciliation:
 
 - `bl next --claim` reads each candidate fresh before acquiring it, and skips

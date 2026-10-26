@@ -46,7 +46,8 @@ type fixture struct {
 	comments                                                                       []any
 	size, requests, batches                                                        int
 	changed, relationOverflow                                                      bool
-	blocker, trashed                                                               bool // TEST-1 blocks TEST-2; TEST-1 trashed
+	blocker, trashed                                                               bool   // TEST-1 blocks TEST-2; TEST-1 trashed
+	archivedAt                                                                     string // TEST-1's archivedAt when trashed, without bumping updatedAt (BL-99/BL-102)
 	cycleActive, wantCycle, noCycle                                                bool
 	cycleQueries                                                                   int
 }
@@ -193,10 +194,21 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				if offset+250 < f.size {
 					next = strconv.Itoa(offset + 250)
 				}
-			} else if f.changed || f.trashed {
+			} else if f.changed {
 				row := f.row(1)
 				row["updatedAt"] = "2026-10-23T00:01:00Z"
 				rows = append(rows, row)
+			} else if f.trashed {
+				// Trashing never bumps updatedAt (BL-99): TEST-1 matches the window
+				// only through the archivedAt arm of the OR filter, same as Linear.
+				since, sinceErr := time.Parse(time.RFC3339Nano, fmt.Sprint(v["since"]))
+				archived, archivedErr := time.Parse(time.RFC3339Nano, f.archivedAt)
+				if sinceErr != nil || archivedErr != nil {
+					f.t.Fatalf("bad since/archivedAt: since=%v (%v) archivedAt=%v (%v)", v["since"], sinceErr, f.archivedAt, archivedErr)
+				}
+				if !archived.Before(since) {
+					rows = append(rows, f.row(1))
+				}
 			}
 		}
 		c := conn(rows, next)
@@ -292,7 +304,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				id := v[fmt.Sprintf("id%d", i)].(string)
 				n, _ := strconv.Atoi(id[24:])
 				row := f.row(n)
-				if (f.changed || f.trashed) && n == 1 {
+				if f.changed && n == 1 {
 					row["updatedAt"] = "2026-10-23T00:01:00Z"
 				}
 				out, in := []any{}, []any{}
@@ -428,15 +440,43 @@ func TestTrashedBlockerRereadsBlockedIssue(t *testing.T) {
 	if err != nil || len(blocked(d).BlockedBy) != 1 {
 		t.Fatalf("initial blocker: %v", err)
 	}
+	// Trashing bumps only archivedAt, never updatedAt (BL-99/BL-90): the window
+	// must surface TEST-1 through the archivedAt arm of the OR filter alone.
 	f.trashed = true
-	now = now.Add(time.Minute)
-	d, err = wrapped.Load(ctx, source.Cursor{})
-	if err != nil {
-		t.Fatal(err)
+	f.archivedAt = now.Format(time.RFC3339Nano)
+	// The window's overlap keeps matching a trashed row for a few more minutes
+	// (gte:$since against a watermark that only moves forward), then the
+	// watermark passes archivedAt and it drops out instead of re-reading
+	// forever. want tracks that expected match/no-match sequence.
+	for minute, want := range []bool{true, true, true, false} {
+		now = now.Add(time.Minute)
+		requests := f.requests
+		d, err = wrapped.Load(ctx, source.Cursor{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.requests-requests > 2; got != want {
+			t.Fatalf("minute %d: window matched trashed row=%v want=%v (requests=%d)", minute+1, got, want, f.requests-requests)
+		}
+		if len(d.Stale) != 0 {
+			t.Fatalf("minute %d: incremental window marked a row stale: %v", minute+1, d.Stale)
+		}
+		if !want {
+			continue
+		}
+		// The cached blocker row must be flagged too, or the default view keeps it as open work.
+		if item := blocked(d); len(item.BlockedBy) != 0 || len(item.Edges) != 0 || !d.Archived[model.Ref{Source: "lin", ID: "TEST-1"}] {
+			t.Fatalf("minute %d: trashed blocker left blocked issue stale: %+v archived=%v", minute+1, item.BlockedBy, d.Archived)
+		}
 	}
-	// The cached blocker row must be flagged too, or the default view keeps it as open work.
-	if item := blocked(d); len(item.BlockedBy) != 0 || len(item.Edges) != 0 || !d.Archived[model.Ref{Source: "lin", ID: "TEST-1"}] {
-		t.Fatalf("trashed blocker left blocked issue stale: %+v archived=%v", item.BlockedBy, d.Archived)
+}
+
+// BL-102: the incremental filter widens to archivedAt so a trash or archive
+// alone (no updatedAt bump) is reachable from the minute change window.
+func TestIncrementalQueryMatchesArchivedAt(t *testing.T) {
+	const want = `filter:{or:[{updatedAt:{gte:$since}},{archivedAt:{gte:$since}}]}`
+	if !strings.Contains(incrementalQuery, want) {
+		t.Fatalf("incrementalQuery missing archivedAt OR filter %q: %s", want, incrementalQuery)
 	}
 }
 
