@@ -47,7 +47,7 @@ type fixture struct {
 	size, requests, batches                                                        int
 	changed, relationOverflow                                                      bool
 	blocker, trashed                                                               bool // TEST-1 blocks TEST-2; TEST-1 trashed
-	cycleActive, wantCycle                                                         bool
+	cycleActive, wantCycle, noCycle                                                bool
 	cycleQueries                                                                   int
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -98,7 +98,7 @@ func (f *fixture) row(n int) map[string]any {
 		labels = append(labels, map[string]string{"id": labelID, "name": name})
 	}
 	r["labels"] = conn(labels, "")
-	if f.wantCycle && n == 1 {
+	if f.wantCycle && n == 1 && !f.noCycle {
 		r["cycle"] = map[string]any{"id": cycleID, "name": nil, "number": 7}
 	}
 	return r
@@ -267,6 +267,8 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				if value != nil {
 					f.assignee = value.(string)
 				}
+			case "cycleId":
+				f.noCycle = value == nil
 			case "labelIds":
 				f.labels = nil
 				for range value.([]any) {
@@ -553,6 +555,36 @@ func TestVersionCapabilityAndWrites(t *testing.T) {
 	f.failWrite = true
 	if _, err = s.Apply(ctx, mutation("priority", "low")); err == nil || f.writes != 8 {
 		t.Fatalf("uncertain write retried: %v writes=%d", err, f.writes)
+	}
+}
+
+// Versions exclude the cycle, so a stale observed cycle must be caught before
+// dispatch even when the caller's read never asked for cycles.
+func TestSprintWrites(t *testing.T) {
+	s, f := fixtureSource(t)
+	ctx := context.Background()
+	item, err := s.Read(ctx, "TEST-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(value string, observed *string) (model.Item, error) {
+		return s.Apply(ctx, model.Mutation{Ref: item.Ref, Op: model.Set, Field: "sprint", Value: value, ExpectedVersion: item.Version, ExpectedSprint: observed})
+	}
+	for _, bad := range []struct {
+		value    string
+		observed *string
+		reason   string
+	}{{"cycle-7", new(cycleID), "rejected"}, {"", nil, "rejected"}, {"", new(""), "conflict"}} {
+		var e *source.Error
+		if _, err = set(bad.value, bad.observed); !errors.As(err, &e) || e.Reason != bad.reason || f.writes != 0 {
+			t.Fatalf("%q: expected %s without dispatch: %v writes=%d", bad.value, bad.reason, err, f.writes)
+		}
+	}
+	if item, err = set("", new(cycleID)); err != nil || item.Sprint != "" || f.writes != 1 {
+		t.Fatalf("remove: %q %v", item.Sprint, err)
+	}
+	if item, err = set(cycleID, new("")); err != nil || item.Sprint != cycleID || f.writes != 2 {
+		t.Fatalf("move: %q %v", item.Sprint, err)
 	}
 }
 func TestIncompletePaginationDoesNotAdvance(t *testing.T) {

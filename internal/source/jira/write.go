@@ -49,8 +49,8 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.Ref.Source != s.o.ID || !s.o.AllowWrites || !numeric(m.Ref.ID) || (m.Op != model.Set && m.Op != model.AppendComment) {
 		return model.Item{}, source.Refuse("rejected", "Jira write unavailable")
 	}
-	if m.Op == model.Set && m.Field != "status" && m.Field != "assignees" {
-		return model.Item{}, source.Refuse("rejected", "Jira supports only status and assignee replacement")
+	if m.Op == model.Set && m.Field != "status" && m.Field != "assignees" && m.Field != "sprint" {
+		return model.Item{}, source.Refuse("rejected", "Jira supports only status, assignee and sprint replacement")
 	}
 	text := m.Comment.Body
 	if text == "" {
@@ -70,9 +70,27 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			return model.Item{}, source.Refuse("rejected", "Jira assignee replacement requires --yes or MCP confirm")
 		}
 	}
+	var sprintID string
+	if m.Op == model.Set && m.Field == "sprint" {
+		key, ok := m.Value.(string)
+		id, found := strings.CutPrefix(key, strings.TrimSuffix(s.sprintKey(0), "0"))
+		if !ok || key != "" && (!found || !numeric(id)) || m.ExpectedSprint == nil {
+			return model.Item{}, source.Refuse("rejected", "Jira sprint must be a sprint key from this site")
+		}
+		sprintID = id
+	}
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return model.Item{}, err
+	}
+	if m.Field == "sprint" {
+		// Versions exclude the sprint, so the preflight must read it.
+		if err = s.discoverSprintField(ctx, c); err != nil {
+			return model.Item{}, err
+		}
+		if s.sprintField == "" {
+			return model.Item{}, source.Refuse("rejected", "Jira sprint field unavailable")
+		}
 	}
 	current, err := s.read(ctx, c, m.Ref.ID)
 	if err != nil {
@@ -80,6 +98,9 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	if m.ExpectedVersion == "" || m.ExpectedVersion != current.Version {
 		return model.Item{}, source.Refuse("conflict", "Jira issue, links, comments or transitions changed")
+	}
+	if m.Field == "sprint" && current.Sprint != *m.ExpectedSprint {
+		return model.Item{}, source.Refuse("conflict", "Jira sprint changed")
 	}
 	method, path := http.MethodPost, "issue/"+m.Ref.ID+"/comment"
 	var body any
@@ -100,6 +121,13 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			id = replacement[0]
 		}
 		body = map[string]any{"accountId": id}
+	} else if m.Field == "sprint" {
+		// The Agile API is on the same host, so it needs no further trust.
+		path = "/rest/agile/1.0/backlog/issue"
+		if sprintID != "" {
+			path = "/rest/agile/1.0/sprint/" + sprintID + "/issue"
+		}
+		body = map[string]any{"issues": []string{m.Ref.ID}}
 	} else {
 		target, ok := m.Value.(string)
 		choices, _ := current.Fields["jiraTransitions"].(map[string]any)

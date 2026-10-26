@@ -159,6 +159,17 @@ func (s *Source) resolveField(ctx context.Context, c remote.Credential, m model.
 			return reject()
 		}
 		return map[string]any{"priority": n}, nil
+	case "sprint":
+		// The engine resolved the cycle from the catalog; Linear rejects a
+		// cycle from another team.
+		id, ok := m.Value.(string)
+		if !ok || id != "" && !uuid(id) || m.ExpectedSprint == nil {
+			return reject()
+		}
+		if id == "" {
+			return map[string]any{"cycleId": nil}, nil
+		}
+		return map[string]any{"cycleId": id}, nil
 	case "labels":
 		names, ok := stringsValue(m.Value)
 		if !ok {
@@ -225,7 +236,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.Op == model.AppendComment && strings.TrimSpace(text) == "" {
 		return model.Item{}, source.Refuse("rejected", "comment body required")
 	}
-	if m.Op == model.Set && m.Field != "status" && m.Field != "assignees" && m.Field != "priority" && m.Field != "labels" {
+	if m.Op == model.Set && m.Field != "status" && m.Field != "assignees" && m.Field != "priority" && m.Field != "labels" && m.Field != "sprint" {
 		return model.Item{}, source.Refuse("rejected", "Linear field unavailable")
 	}
 	c, err := s.authenticate(ctx)
@@ -237,6 +248,10 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	if !s.active {
 		return model.Item{}, source.Refuse("rejected", "active Linear principal required")
+	}
+	if m.Field == "sprint" {
+		// Versions exclude the cycle, so the preflight must read it.
+		s.sprints.Store(true)
 	}
 	var input map[string]any
 	if m.Op == model.Set {
@@ -251,6 +266,9 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	if m.ExpectedVersion == "" || m.ExpectedVersion != current.Version {
 		return model.Item{}, source.Refuse("conflict", "Linear issue or relations changed")
+	}
+	if m.Field == "sprint" && current.Sprint != *m.ExpectedSprint {
+		return model.Item{}, source.Refuse("conflict", "Linear cycle changed")
 	}
 	if current.Fields["archived"] == true {
 		return model.Item{}, source.Refuse("rejected", "archived or trashed Linear issue cannot be written")

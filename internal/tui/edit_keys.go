@@ -57,6 +57,8 @@ func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 		return m.beginPicker(pickerLabels), true
 	case "m":
 		return m.beginPicker(pickerMilestone), true
+	case "w":
+		return m.beginPicker(pickerSprint), true
 	case "b":
 		return m.beginPicker(pickerBlocker), true
 	case "P":

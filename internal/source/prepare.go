@@ -74,6 +74,10 @@ func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 		result.Inverse.Value = string(before.Priority)
 		result.Item.Priority = model.Priority(value)
 		return result, nil
+	case "sprint":
+		result.Inverse.Value, result.Inverse.ExpectedSprint = before.Sprint, new(value)
+		result.Item.Sprint = value
+		return result, nil
 	case "milestone":
 		field = &result.Item.Milestone
 	case "rank":

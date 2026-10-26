@@ -120,13 +120,14 @@ Sprint keys are `SITE/sprint/ID`.
 ## Writes
 
 Enable `allowWrites: true` deliberately. Supported operations are one status
-transition, one single-assignee replacement, or one plain-text ADF comment per
-request. Multi-field atomic batches are refused before any write.
+transition, one single-assignee replacement, one sprint move, or one plain-text
+ADF comment per request. Multi-field atomic batches are refused before any write.
 
 ```sh
 bl set jira:10001 'status=In Progress' --if-version VERSION
 bl set jira:10001 assignees=ACCOUNT-ID --yes --if-version VERSION
 bl set jira:10001 assignees= --yes --if-version VERSION
+bl set jira:10001 sprint=current --if-version VERSION
 bl comment jira:10001 'Checked the reproduction' --author me --if-version VERSION
 ```
 
@@ -137,8 +138,17 @@ these discovered choices; assignment replacement is available through CLI
 `--yes` or MCP `update` with `confirm: true`, not the additive TUI assignee picker.
 The MCP `fields` form otherwise matches the CLI; one field is allowed per write.
 
+Sprint values are `current`, `next`, `none` (or empty), a sprint name, or a
+sprint key, resolved against the open-sprint catalog; closed sprints are
+refused. A sprint moves the issue with `POST /rest/agile/1.0/sprint/{id}/issue`;
+`none` uses `POST /rest/agile/1.0/backlog/issue`. Both are on the trusted host.
+An issue whose earlier sprints are all closed still shows the latest one after
+`none`, as on reads.
+
 Every write refreshes the principal, issue, directional links, full comments,
-and discovered transitions, then compares the composite version. Observed
+and discovered transitions, then compares the composite version. A sprint write
+also reads the sprint, which versions exclude, and refuses `conflict` if it
+differs from what the caller saw. Observed
 conflicts are rejected. Jira has no established server compare-and-swap here:
 a concurrent edit can still race between preflight and dispatch. A rate-limited
 or overloaded write was not applied and reports `rate-limited` or `overloaded`.

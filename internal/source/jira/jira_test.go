@@ -38,6 +38,7 @@ type fixture struct {
 	cloudID                                               string
 	wrongSite                                             bool
 	writes, searches                                      int
+	lastPath                                              string
 	now                                                   time.Time
 	last                                                  map[string]any
 	sprints, boardSprints                                 []any
@@ -110,6 +111,19 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"values": f.boardSprints, "isLast": true})
+		return
+	}
+	if agile, ok := strings.CutPrefix(r.URL.Path, prefix+"/rest/agile/1.0/"); ok && r.Method == http.MethodPost {
+		f.writes, f.lastPath = f.writes+1, agile
+		if json.NewDecoder(r.Body).Decode(&f.last) != nil {
+			f.t.Error("invalid write body")
+		}
+		f.sprints = nil
+		if id, ok := strings.CutPrefix(strings.TrimSuffix(agile, "/issue"), "sprint/"); ok {
+			n, _ := strconv.Atoi(id)
+			f.sprints = []any{sprintRow(n, "future", "", "")}
+		}
+		w.WriteHeader(204)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, prefix+"/rest/api/3/") {
@@ -366,6 +380,38 @@ func TestDiscoveredTransitionsAndVersionedWrites(t *testing.T) {
 	var diagnostic remote.ScheduleDiagnostic
 	if _, err = s.Apply(ctx, mutation); !errors.As(err, &diagnostic) || diagnostic.Code != "rate-limited" {
 		t.Fatalf("rate-limited write: %v", err)
+	}
+}
+
+// Versions exclude the sprint, so a stale observed sprint must be caught before
+// dispatch, and a foreign or missing key must be refused without a request.
+func TestSprintWrites(t *testing.T) {
+	s, f, _ := setup(t)
+	ctx := context.Background()
+	f.sprints = []any{sprintRow(42, "future", "", "")}
+	item := read(t, s)
+	key := func(id string) string { return "example.atlassian.net/sprint/" + id }
+	mutation := model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "sprint", Value: key("43"), ExpectedSprint: new(key("42"))}
+	for _, bad := range []model.Mutation{
+		{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "sprint", Value: "other.atlassian.net/sprint/43", ExpectedSprint: new(key("42"))},
+		{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "sprint", Value: key("43")},
+	} {
+		if _, err := s.Apply(ctx, bad); reason(err) != "rejected" || f.writes != 0 {
+			t.Fatalf("refusal: %v writes=%d", err, f.writes)
+		}
+	}
+	mutation.ExpectedSprint = new("")
+	if _, err := s.Apply(ctx, mutation); reason(err) != "conflict" || f.writes != 0 {
+		t.Fatalf("stale sprint dispatched: %v writes=%d", err, f.writes)
+	}
+	mutation.ExpectedSprint = new(key("42"))
+	updated, err := s.Apply(ctx, mutation)
+	if err != nil || updated.Sprint != key("43") || f.lastPath != "sprint/43/issue" || !slices.Equal(f.last["issues"].([]any), []any{"10001"}) {
+		t.Fatalf("move: %q %s %v %v", updated.Sprint, f.lastPath, f.last, err)
+	}
+	updated, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: updated.Version, Op: model.Set, Field: "sprint", Value: "", ExpectedSprint: new(key("43"))})
+	if err != nil || updated.Sprint != "" || f.lastPath != "backlog/issue" || f.writes != 2 {
+		t.Fatalf("remove: %q %s %v", updated.Sprint, f.lastPath, err)
 	}
 }
 

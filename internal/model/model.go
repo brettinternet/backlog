@@ -128,15 +128,18 @@ const (
 type Mutation struct {
 	Ref             Ref
 	ExpectedVersion string
-	Confirmed       bool // Explicit acknowledgement for destructive provider replacements.
-	Op              Operation
-	Field           string
-	Value           any
-	Section, Text   string
-	Index           int
-	Evidence        *string    // nil preserves evidence on check; uncheck always removes it
-	Changes         []Mutation // atomic same-item Batch
-	Comment         Comment
-	Original        []byte // only for a version-bound Restore returned by the codec
-	Item            *Item  // template for Create; the source allocates its ID
+	// ExpectedSprint is the sprint key the caller observed ("" for none).
+	// Versions exclude the sprint (D31), so sprint writes check it instead.
+	ExpectedSprint *string
+	Confirmed      bool // Explicit acknowledgement for destructive provider replacements.
+	Op             Operation
+	Field          string
+	Value          any
+	Section, Text  string
+	Index          int
+	Evidence       *string    // nil preserves evidence on check; uncheck always removes it
+	Changes        []Mutation // atomic same-item Batch
+	Comment        Comment
+	Original       []byte // only for a version-bound Restore returned by the codec
+	Item           *Item  // template for Create; the source allocates its ID
 }

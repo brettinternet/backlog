@@ -198,10 +198,13 @@ IDs come first. All assignments to one item succeed or fail together. Jira
 accepts one field per request; `status` must be a discovered destination name.
 Jira single-assignee replacement (including clearing) requires `--yes` (MCP
 `update.confirm: true`), and accepts zero or one accountId. See [Jira setup](jira.md).
+`sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
+against the source's catalog; only Linear and Jira sources accept it, and a
+sprint changed since the read fails with `conflict`.
 
 | | |
 | --- | --- |
-| Fields | `title status type priority assignees labels milestone parent blocked_by related duplicate_of rank due refs files` (`label`, `assignee` are aliases) |
+| Fields | `title status type priority assignees labels milestone sprint parent blocked_by related duplicate_of rank due refs files` (`label`, `assignee` are aliases) |
 | `=` | Set. Lists take comma-separated values. An empty value clears. |
 | `+=`, `-=` | Add or remove comma-separated list entries; idempotent |
 | References | `parent`, `blocked_by`, `related`, `duplicate_of` expand ID shorthand like `new` |

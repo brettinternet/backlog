@@ -16,7 +16,7 @@ import (
 	"github.com/brettinternet/backlog/internal/source"
 )
 
-const WriteFields = "title status type priority assignees labels milestone parent blocked_by related duplicate_of rank due refs files"
+const WriteFields = "title status type priority assignees labels milestone sprint parent blocked_by related duplicate_of rank due refs files"
 
 // ResolveRef expands an item reference using the same shorthand rules as CLI
 // writes, and reports whether it names exactly one existing item. An
@@ -170,10 +170,13 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 			return model.Item{}, err
 		}
 	}
-	if err := validateWrite(cfg, backend.Info().Capabilities, m); err != nil {
+	m, err := resolveSprintWrite(ctx, cfg, backend, m)
+	if err != nil {
 		return model.Item{}, err
 	}
-	var err error
+	if err := validateWrite(cfg, m.Ref.Source, backend.Info().Capabilities, m); err != nil {
+		return model.Item{}, err
+	}
 	ctx, err = runBeforeMutation(ctx, cfg, m, backend)
 	if err != nil {
 		return model.Item{}, err
@@ -181,7 +184,9 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	return coordinatedWrite(ctx, cfg, m, func() (model.Item, error) { return backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return backend.Apply(ctx, m) })
 }
 
-func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation) error {
+// validateWrite checks m against the configuration of its source, whose ID in
+// cfg is sourceID (a workspace qualifies m.Ref.Source).
+func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities, m model.Mutation) error {
 	reject := func(message string) error { return source.Refuse("rejected", message) }
 	if !caps.Allows(m.Op) {
 		return source.Refuse("unavailable", "unsupported operation "+string(m.Op))
@@ -196,7 +201,7 @@ func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation
 				return reject("invalid batch operation")
 			}
 			change.Ref = m.Ref
-			if err := validateWrite(cfg, caps, change); err != nil {
+			if err := validateWrite(cfg, sourceID, caps, change); err != nil {
 				return err
 			}
 		}
@@ -215,12 +220,20 @@ func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation
 		if (m.Op == model.Add || m.Op == model.Remove) && !ListField(m.Field) {
 			return reject(m.Field + " accepts = only; allowed list fields: assignees labels blocked_by related refs files")
 		}
+		if m.Field == "sprint" {
+			if !sprintSource(cfg, sourceID) {
+				return reject("source " + m.Ref.Source + " has no sprints; only Linear and Jira sources do")
+			}
+			if _, ok := m.Value.(string); !ok || m.Op != model.Set || m.ExpectedSprint == nil {
+				return reject("sprint requires sprint=VALUE and the observed sprint")
+			}
+		}
 		if m.Field == "status" || m.Field == "priority" {
 			value, _ := m.Value.(string)
 			allowed := []string{"urgent", "high", "medium", "low", ""}
 			if m.Field == "status" {
 				for _, configured := range cfg.Sources {
-					if configured.ID == m.Ref.Source && configured.Type == "jira" {
+					if configured.ID == sourceID && configured.Type == "jira" {
 						return nil
 					} // Per-issue transitions validate at the source.
 				}
@@ -238,7 +251,7 @@ func validateWrite(cfg project.Config, caps model.Capabilities, m model.Mutation
 		}
 	case model.Restore:
 		for _, configured := range cfg.Sources {
-			if configured.ID == m.Ref.Source && configured.Type == "backlog-md" {
+			if configured.ID == sourceID && configured.Type == "backlog-md" {
 				// A provider-issued inverse contains its own file format. The
 				// adapter validates it under the same version-checked write lock.
 				return nil

@@ -55,6 +55,7 @@ type detailRequest struct {
 	tab        detailTab
 	expanded   bool
 	milestones []project.Milestone
+	sprints    []model.Sprint
 	statuses   []project.StatusConfig
 	theme      theme
 	now        time.Time
@@ -510,7 +511,7 @@ func overviewLines(item model.Item, request detailRequest) []string {
 	if item.Milestone != "" {
 		add("Milestone", textutil.Line(milestoneName(item.Milestone, request.milestones)))
 	}
-	add("Sprint", textutil.Line(cmp.Or(item.Names[item.Sprint], item.Sprint)))
+	add("Sprint", textutil.Line(cmp.Or(item.Names[item.Sprint], sprintName(item.Sprint, request.sprints), item.Sprint)))
 	add("Due", textutil.Line(item.Due))
 	add("Type", textutil.Line(item.Type))
 	if item.Parent != nil {
@@ -713,6 +714,16 @@ func relationLines(row engine.Row, names map[string]string, t theme, width int) 
 		lines = []string{t.muted.render("No relations.")}
 	}
 	return lines, entries, targets
+}
+
+// sprintName names a sprint the item does not yet carry, as after an edit.
+func sprintName(key string, sprints []model.Sprint) string {
+	for _, sprint := range sprints {
+		if key != "" && sprint.Key == key {
+			return sprint.Name
+		}
+	}
+	return ""
 }
 
 func milestoneName(key string, milestones []project.Milestone) string {

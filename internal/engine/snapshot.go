@@ -149,6 +149,9 @@ func cloneMutation(m model.Mutation) model.Mutation {
 		e := *m.Evidence
 		m.Evidence = &e
 	}
+	if m.ExpectedSprint != nil {
+		m.ExpectedSprint = new(*m.ExpectedSprint)
+	}
 	m.Changes = slices.Clone(m.Changes)
 	for n := range m.Changes {
 		m.Changes[n] = cloneMutation(m.Changes[n])

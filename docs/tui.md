@@ -234,7 +234,9 @@ item.
 
 **Pickers** preselect current values and fuzzy-filter. Assignees and labels are
 multi-select, configured labels first. Milestones show names, hide archived
-entries, then list undeclared keys in use; typing a new key sets it. Status
+entries, then list undeclared keys in use; typing a new key sets it. Sprints
+(Linear and Jira only) list the source's open sprints, current and next first;
+opening the picker loads the catalog if no view needed it yet. Status
 order follows config. Assignee and status pickers and filter completion show
 provider names for opaque IDs and write the ID. Pickers never edit config. Unsupported operations show the
 missing capability in the status bar instead of opening.
@@ -450,6 +452,7 @@ keys:
 | `assign-me` | `A` | Assign me |
 | `labels` | `#` | Labels… |
 | `milestone` | `m` | Milestone… / more |
+| `sprint` | `w` | Sprint… |
 | `blocker` | `b` | Blockers… |
 | `parent` | `P` | Parent… |
 | `title` | `t` | Edit title |

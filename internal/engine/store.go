@@ -223,6 +223,12 @@ func (s *Store) history(direction int) <-chan error {
 	return result
 }
 
+// SprintSource reports whether a source can carry sprints (Linear or Jira).
+func (s *Store) SprintSource(sourceID string) bool {
+	cfg, local := s.cfg.SourceProject(sourceID)
+	return sprintSource(cfg, local)
+}
+
 // UseSprints enables provider sprint data, refreshing sources the first time.
 // Capable sources report SprintsPending until a sprint-enabled load publishes
 // their catalog. Like Refresh it performs no I/O on the caller.
@@ -302,8 +308,8 @@ func (st *storeState) begin(job *editJob) {
 		reject(source.Refuse("busy", "item or history mutation pending"))
 		return
 	}
-	cfg, _ := st.store.cfg.SourceProject(m.Ref.Source)
-	if err := validateWrite(cfg, w.backend.Info().Capabilities, m); err != nil {
+	cfg, local := st.store.cfg.SourceProject(m.Ref.Source)
+	if err := validateWrite(cfg, local, w.backend.Info().Capabilities, m); err != nil {
 		reject(err)
 		return
 	}

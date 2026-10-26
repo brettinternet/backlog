@@ -70,6 +70,7 @@ func defaultKeymap() []action {
 		{id: "assign-me", label: "Assign me", canonical: "A", bindings: []string{"A"}},
 		{id: "labels", label: "Labels…", canonical: "#", bindings: []string{"#"}},
 		{id: "milestone", label: "Milestone… / more", canonical: "m", bindings: []string{"m"}},
+		{id: "sprint", label: "Sprint…", canonical: "w", bindings: []string{"w"}},
 		{id: "blocker", label: "Blockers…", canonical: "b", bindings: []string{"b"}},
 		{id: "parent", label: "Parent…", canonical: "P", bindings: []string{"P"}},
 		{id: "title", label: "Edit title", canonical: "t", bindings: []string{"t"}},
@@ -388,11 +389,11 @@ func (m Model) disabledReason(a action) string {
 		}
 		// Item actions work on the item in detail; view and selection actions
 		// belong to the list.
-		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url"}, a.id) {
+		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url"}, a.id) {
 			return focusList
 		}
 	}
-	kind := map[string]pickerKind{"status": pickerStatus, "priority": pickerPriority, "assignees": pickerAssignees, "assign-me": pickerAssignees, "labels": pickerLabels, "milestone": pickerMilestone, "blocker": pickerBlocker, "parent": pickerParent, "title": pickerTitle}
+	kind := map[string]pickerKind{"status": pickerStatus, "priority": pickerPriority, "assignees": pickerAssignees, "assign-me": pickerAssignees, "labels": pickerLabels, "milestone": pickerMilestone, "sprint": pickerSprint, "blocker": pickerBlocker, "parent": pickerParent, "title": pickerTitle}
 	if picker, ok := kind[a.id]; ok {
 		row, found := m.selectedRow()
 		if !found {

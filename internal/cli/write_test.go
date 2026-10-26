@@ -299,13 +299,13 @@ func TestWriteValidationAndBatch(t *testing.T) {
 	before := get(t, path)
 	for _, args := range [][]string{
 		{"set", "12", "unknown=value"}, {"set", "12", "status=missing"}, {"set", "12", "priority=missing"},
-		{"set", "12", "title=Must not persist", "due=not-a-date"},
+		{"set", "12", "title=Must not persist", "due=not-a-date"}, {"set", "12", "sprint=current"},
 	} {
 		code, out, _ := writeRun(root, "", args...)
 		if code != 5 || !strings.Contains(out, `"reason":"rejected"`) {
 			t.Fatalf("%v: %d %s", args, code, out)
 		}
-		if args[2] != "title=Must not persist" && !strings.Contains(out, "allowed") {
+		if args[2] != "title=Must not persist" && args[2] != "sprint=current" && !strings.Contains(out, "allowed") {
 			t.Fatalf("missing allowed values: %s", out)
 		}
 		if get(t, path) != before {

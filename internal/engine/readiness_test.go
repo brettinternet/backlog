@@ -249,3 +249,25 @@ func TestExplanationText(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// Catches a sprint write landing in the wrong sprint: roles must follow the
+// catalog, names must not shadow keys, and closed or ambiguous targets refuse.
+func TestResolveSprint(t *testing.T) {
+	catalog := []model.Sprint{
+		{Key: "s1", Name: "Sprint 1", State: model.SprintClosed},
+		{Key: "s2", Name: "Sprint 2", State: model.SprintActive},
+		{Key: "s3", Name: "s2", State: model.SprintFuture},
+		{Key: "s4", Name: "Later", State: model.SprintFuture},
+		{Key: "s5", Name: "later", State: model.SprintFuture},
+	}
+	for value, want := range map[string]string{"current": "s2", "Next": "s3", "none": "", "": "", "s2": "s2", "sprint 2": "s2", "s3": "s3"} {
+		if got, err := engine.ResolveSprint(catalog, value); err != nil || got != want {
+			t.Errorf("%q: got %q %v, want %q", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"Sprint 1", "later", "missing"} {
+		if got, err := engine.ResolveSprint(catalog, value); err == nil {
+			t.Errorf("%q resolved to %q", value, got)
+		}
+	}
+}

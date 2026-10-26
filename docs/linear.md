@@ -175,6 +175,7 @@ bl set eng:ENG-431 status=ACTIVE_STATE_UUID --if-version VERSION
 bl set eng:ENG-431 assignees=VIEWER_UUID --if-version VERSION
 bl set eng:ENG-431 priority=high --if-version VERSION
 bl set eng:ENG-431 labels=bug --if-version VERSION
+bl set eng:ENG-431 sprint=next --if-version VERSION
 bl comment eng:ENG-431 'Progress update' --if-version VERSION
 ```
 
@@ -189,12 +190,15 @@ aren't offered.
 | `assignees` | Zero or one user UUID; empty clears |
 | `priority` | `urgent`, `high`, `medium`, `low` → 1–4; empty → 0 (none) |
 | `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
+| `sprint` | `current`, `next`, `none` (or empty), a cycle name, or a cycle UUID from the catalog → `cycleId`. Closed cycles are refused. |
 | Comment | Appends once; can't be undone |
 
 Each write changes one field in one mutation. A fresh fingerprint of the issue
 and its relations is checked first; missing or stale versions fail with
 `conflict`. Linear has no compare-and-swap, so another writer can still race
-between check and write. Mutations are never retried; after a network or reread
+between check and write. Versions exclude the cycle, so a sprint write also
+re-reads it and fails with `conflict` if it differs from what the caller saw.
+Mutations are never retried; after a network or reread
 failure, refresh and look before editing again.
 
 Claims use Worklease's `linear` key from the organization UUID and issue UUID,

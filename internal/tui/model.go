@@ -362,10 +362,14 @@ func (m *Model) submitDetail() {
 }
 
 func (m Model) detailRequest(row engine.Row) detailRequest {
+	var sprints []model.Sprint
+	if m.snapshot != nil {
+		sprints = m.snapshot.Source(row.Ref.Source).Sprints
+	}
 	return detailRequest{
 		generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, milestones: m.opts.Milestones,
-		statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
+		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
 	}
 }
 

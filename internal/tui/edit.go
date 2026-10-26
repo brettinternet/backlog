@@ -17,6 +17,7 @@ import (
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -74,6 +75,7 @@ const (
 	pickerAssignees pickerKind = "assignee"
 	pickerLabels    pickerKind = "label"
 	pickerMilestone pickerKind = "milestone"
+	pickerSprint    pickerKind = "sprint"
 	pickerBlocker   pickerKind = "blocker"
 	pickerParent    pickerKind = "parent"
 	pickerTitle     pickerKind = "title"
@@ -81,7 +83,7 @@ const (
 
 var pickerTitles = map[pickerKind]string{
 	pickerStatus: "Status", pickerPriority: "Priority", pickerAssignees: "Assignees", pickerLabels: "Labels",
-	pickerMilestone: "Milestone", pickerBlocker: "Add blocker", pickerParent: "Parent", pickerTitle: "Title",
+	pickerMilestone: "Milestone", pickerSprint: "Sprint", pickerBlocker: "Add blocker", pickerParent: "Parent", pickerTitle: "Title",
 }
 
 type pickerChoice struct {
@@ -251,6 +253,9 @@ func (m *Model) beginPicker(kind pickerKind) tea.Cmd {
 	p.generation = m.pickerSerial
 	m.picker = p
 	m.notice = ""
+	if kind == pickerSprint {
+		m.opts.Store.UseSprints()
+	}
 	generation := p.generation
 	store := m.opts.Store
 	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me, backlogMD: m.isBacklogMD(row.Ref.Source)}
@@ -277,6 +282,11 @@ func (m Model) pickerCapability(ref model.Ref, kind pickerKind) string {
 	var options []model.Operation
 	switch kind {
 	case pickerStatus, pickerPriority:
+		options = []model.Operation{model.Set}
+	case pickerSprint:
+		if !m.opts.Store.SprintSource(ref.Source) {
+			return fmt.Sprintf("source %s has no sprints", ref.Source)
+		}
 		options = []model.Operation{model.Set}
 	case pickerMilestone, pickerParent:
 		options = []model.Operation{model.Set, model.Unset}
@@ -433,6 +443,34 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 			add(value, value, current.Milestone)
 		}
 		add("", "None", current.Milestone)
+	case pickerSprint:
+		// Open sprints of the item's source: current, next, then later ones.
+		var catalog query.Snapshot
+		if snapshot != nil {
+			catalog.Sprints = snapshot.Sprints()
+		}
+		roles := map[string]int{"current": 0, "next": 1, "future": 2}
+		undated := func(s model.Sprint) int {
+			if s.Start.IsZero() {
+				return 1
+			}
+			return 0
+		}
+		open := []model.Sprint{}
+		for _, sprint := range catalog.Sprints {
+			if _, role, _ := catalog.Sprint(sprint.Key); sprint.Source == current.Ref.Source && role != "closed" {
+				open = append(open, sprint)
+			}
+		}
+		slices.SortStableFunc(open, func(a, b model.Sprint) int {
+			_, ra, _ := catalog.Sprint(a.Key)
+			_, rb, _ := catalog.Sprint(b.Key)
+			return cmp.Or(cmp.Compare(roles[ra], roles[rb]), cmp.Compare(undated(a), undated(b)), a.Start.Compare(b.Start), strings.Compare(a.Name, b.Name))
+		})
+		for _, sprint := range open {
+			add(sprint.Key, sprint.Name, current.Sprint)
+		}
+		add("", "None", current.Sprint)
 	case pickerBlocker:
 		if remove {
 			for _, ref := range current.BlockedBy {
@@ -711,6 +749,8 @@ func pickerAction(kind pickerKind, value string, remove bool) (editAction, error
 		return editAction{kind: editSimple, op: model.Set, field: "status", value: value}, nil
 	case pickerPriority:
 		return editAction{kind: editSimple, op: model.Set, field: "priority", value: value}, nil
+	case pickerSprint:
+		return editAction{kind: editSimple, op: model.Set, field: "sprint", value: value}, nil
 	case pickerMilestone:
 		if value == "" {
 			return editAction{kind: editSimple, op: model.Unset, field: "milestone"}, nil
@@ -871,6 +911,10 @@ func (action editAction) mutation(item model.Item) (model.Mutation, bool) {
 	switch action.kind {
 	case editSimple:
 		mutation.Op, mutation.Field, mutation.Value = action.op, action.field, action.value
+		if action.field == "sprint" {
+			// The displayed sprint guards the write, as the version guards the rest.
+			mutation.ExpectedSprint = new(item.Sprint)
+		}
 	case editParts:
 		changes := make([]model.Mutation, 0, len(action.parts))
 		for _, part := range action.parts {
