@@ -486,10 +486,12 @@ warn  control-root  Default branch is unknown (control checkout: master)
 skip  local-config  No backlog.local.yaml
 pass  cache         Configured native caches are healthy or not yet created
 pass  worklease     Worklease 1.10.1 (schema v2)
+warn  claims        Active without a live claim: BL-7
+                    Fix: Resume each with bl claim ID, or move it to todo, done, or canceled
 pass  sources       Sources are configured; no network checks requested
 ```
 
-Eight checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `sources`.
+Nine checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`.
 Each has a `status` (`pass`, `warn`, `fail`, `skip`), `message`, and `fix`. JSON
 `data.checks` lists all of them. Any failure exits 5 (`rejected`); warnings
 alone exit 0. Invalid config fails `config` and skips the checks that need it.
@@ -510,6 +512,10 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
 - `cache` reads existing caches without repairing them.
 - `worklease` needs `version --json` to report schema v2 and version 1.10.1 or
   later. A missing binary warns, or fails when coordination is configured.
+- `claims` warns about native and Backlog.md items in an active status whose
+  claim is missing or expired, such as work an agent abandoned. `bl` never
+  reclaims them: a person resumes, resets, or closes each one. It skips
+  without coordination or when the claim list is unavailable.
 - `sources` checks native and Backlog.md directories and prefixes. Remote
   sources are checked on read, not here; credential helpers never run.
 - `--online` allows network probes after trust. None are defined yet.

@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/worklease"
 	urfave "github.com/urfave/cli/v3"
@@ -90,11 +92,11 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
 			if configErr != nil {
 				checks[0] = doctorCheck{"config", "fail", configErr.Error(), "Correct the reported configuration key or YAML syntax"}
-				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "sources"} {
+				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources"} {
 					checks = append(checks, doctorCheck{name, "skip", "Configuration could not be loaded", "Fix configuration and rerun bl doctor"})
 				}
 			} else {
-				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
+				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), claimsCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
 			}
 			data := doctorData{Checks: checks}
 			failed := false
@@ -306,6 +308,57 @@ func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
 				c.Status, c.Message, c.Fix = "fail", conflict, "Set project.id in backlog.yaml, or select a local Worklease profile"
 			}
 		}
+	}
+	return c
+}
+
+// Lapsed claims are reported, never reclaimed: an item that keeps killing its
+// agent would otherwise loop and starve the queue.
+func claimsCheck(ctx context.Context, cfg project.Config) doctorCheck {
+	c := doctorCheck{"claims", "pass", "Every active item has a live claim", "No action needed"}
+	if !cfg.Coordination.Enabled() {
+		c.Status, c.Message, c.Fix = "skip", "Coordination is not configured", "No action needed"
+		return c
+	}
+	// Doctor stays offline: only file sources, and claims are read once below.
+	local := cfg
+	local.Sources, local.Coordination = nil, project.CoordinationConfig{}
+	for _, s := range cfg.Sources {
+		if s.Type == "native" || s.Type == "backlog-md" {
+			local.Sources = append(local.Sources, s)
+		}
+	}
+	if len(local.Sources) == 0 {
+		c.Status, c.Message = "skip", "No local sources"
+		return c
+	}
+	reads, err := engine.LoadReads(ctx, local, false)
+	if err != nil {
+		c.Status, c.Message, c.Fix = "skip", "Items could not be read: "+err.Error(), "Run bl check, then rerun bl doctor"
+		return c
+	}
+	var active []model.Item
+	for _, item := range reads.Query.Items {
+		if item.Category == model.Active {
+			active = append(active, item)
+		}
+	}
+	// Items load before claims: an active transition acquires before it writes.
+	states, _, err := engine.ClaimStates(ctx, active, time.Now())
+	if err != nil {
+		c.Status, c.Message, c.Fix = "skip", "Claim list unavailable: "+err.Error(), "Rerun bl doctor once Worklease is reachable"
+		return c
+	}
+	var unclaimed []string
+	for _, item := range active {
+		if states[item.Ref] == engine.ClaimNone {
+			unclaimed = append(unclaimed, item.Ref.ID)
+		}
+	}
+	if len(unclaimed) > 0 {
+		c.Status = "warn"
+		c.Message = "Active without a live claim: " + strings.Join(unclaimed, ", ")
+		c.Fix = "Resume each with bl claim ID, or move it to todo, done, or canceled"
 	}
 	return c
 }
