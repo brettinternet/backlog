@@ -45,9 +45,10 @@ type Input struct {
 	Claims          map[model.Ref]Claim
 }
 type Reason struct {
-	Code   string      `json:"code"`
-	Refs   []model.Ref `json:"refs,omitempty"`
-	Values []string    `json:"values,omitempty"`
+	Code   string            `json:"code"`
+	Refs   []model.Ref       `json:"refs,omitempty"`
+	Values []string          `json:"values,omitempty"`
+	names  map[string]string // display names of opaque Values, for text only
 }
 type Explanation struct {
 	Ref           model.Ref      `json:"ref"`
@@ -131,7 +132,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			refs = slices.Compact(refs)
 			slices.Sort(values)
 			values = slices.Compact(values)
-			e.Reasons = append(e.Reasons, Reason{code, refs, values})
+			e.Reasons = append(e.Reasons, Reason{Code: code, Refs: refs, Values: values})
 		}
 		if in.Stale[item.Ref] {
 			add("stale", nil, nil)
@@ -182,6 +183,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 			}
 			if !mine {
 				add("assignee", nil, slices.Clone(item.Assignees))
+				e.Reasons[len(e.Reasons)-1].names = item.Names
 			}
 		}
 		if coordination {
@@ -355,7 +357,11 @@ func (r Reason) text() string {
 		return r.Code + ": " + strings.Join(ids, ", ")
 	}
 	if len(r.Values) > 0 {
-		return r.Code + ": " + strings.Join(r.Values, ", ")
+		values := make([]string, len(r.Values))
+		for i, v := range r.Values {
+			values[i] = cmp.Or(r.names[v], v)
+		}
+		return r.Code + ": " + strings.Join(values, ", ")
 	}
 	return r.Code
 }

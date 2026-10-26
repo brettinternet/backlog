@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ type readItem = itemjson.Summary
 type readGroup struct {
 	Value string     `json:"value"`
 	Items []readItem `json:"items"`
+	name  string     // provider display name of an opaque Value, for text only
 }
 type listData struct {
 	Groups []readGroup `json:"groups"`
@@ -138,7 +140,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				groups = s.Query.Group(items, q.Group)
 			}
 			for _, g := range groups {
-				group := readGroup{Value: g.Value, Items: []readItem{}}
+				group := readGroup{Value: g.Value, Items: []readItem{}, name: groupName(q.Group, g)}
 				for _, i := range g.Items {
 					group.Items = append(group.Items, itemjson.NewSummary(i))
 				}
@@ -157,10 +159,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			table := newItemTable(out, cfg, all...)
 			for n, g := range data.Groups {
 				if q.Group != "" && q.Group != "none" {
-					value := g.Value
-					if value == "" {
-						value = "none"
-					}
+					value := cmp.Or(g.name, g.Value, "none")
 					header := table.p.paint("1", textutil.Line(value)) + fmt.Sprintf(" (%d)", len(g.Items))
 					if n > 0 {
 						header = "\n" + header
@@ -330,4 +329,17 @@ func outputWidth(out io.Writer) int {
 		}
 	}
 	return 80
+}
+
+// groupName is the provider display name of an opaque status or assignee group value.
+func groupName(field string, g query.Group) string {
+	if field != "status" && field != "assignee" {
+		return ""
+	}
+	for _, i := range g.Items {
+		if name := i.Names[g.Value]; name != "" {
+			return name
+		}
+	}
+	return ""
 }
