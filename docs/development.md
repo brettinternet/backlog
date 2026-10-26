@@ -48,6 +48,7 @@ the claim protocol in AGENTS.md:
 task backlog:cli -- instructions workflow
 task backlog:cli -- next --claim --start --session SESSION --json
 task backlog:cli -- heartbeat --session SESSION   # every ≤ 7 min
+task backlog:cli -- heartbeat --session SESSION -- task -d "$PWD" ci   # renews while ci runs
 task backlog:cli -- ac BL-12 check 1 --evidence 'COMMAND: RESULT' --if-version VERSION
 task backlog:cli -- done BL-12 --session SESSION
 ```

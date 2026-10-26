@@ -295,7 +295,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		}},
 		instructionsCommand(out), adapterCommand(&directory, out), hooksCommand(&directory),
 	)
-	root.Commands = append(root.Commands, claimCommands(&directory, out)...)
+	root.Commands = append(root.Commands, claimCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
 	root.Commands = append(root.Commands, importCommands(&directory, out)...)
 	root.Commands = append(root.Commands, &urfave.Command{
@@ -354,6 +354,10 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		return nil
 	})
 	if err := root.Run(ctx, args); err != nil {
+		var status exitStatus
+		if errors.As(err, &status) {
+			return int(status)
+		}
 		var failure *Error
 		if !errors.As(err, &failure) {
 			failure = oauthCLIError(err)
@@ -414,7 +418,7 @@ func terminal(stream any) bool {
 // acceptsArguments takes the full command path, since names like check repeat.
 func acceptsArguments(command string) bool {
 	switch command {
-	case "help", "claim", "release", "events", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
+	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
 		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth login", "auth logout":
 		return true
 	}

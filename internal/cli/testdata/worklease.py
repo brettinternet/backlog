@@ -34,7 +34,10 @@ elif operation in ("status", "verify"):
     response["claim"] = claim
 elif operation == "heartbeat":
     assert claim["active"]
-    response["receipt"] = dict(result=dict(expiresAt=claim["expiresAt"]))
+    if "BL_FAKE_HEARTBEATS" in os.environ:
+        with open(os.environ["BL_FAKE_HEARTBEATS"], "a") as log:
+            log.write("renewed\n")
+    response["receipt"] = dict(result=dict(expiresAt=os.environ.get("BL_FAKE_EXPIRES", claim["expiresAt"])))
 elif operation == "release":
     assert claim["active"]
     expected = argv[argv.index("--if-claim-id") + 1]

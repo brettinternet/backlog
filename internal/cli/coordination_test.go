@@ -217,6 +217,36 @@ func TestClaimHeartbeatDoneUseControlRoot(t *testing.T) {
 	}
 }
 
+// A blocking command longer than the TTL (BL-91's `task ci`) must keep the
+// claim renewed until it exits, and its exit status must reach the caller.
+func TestHeartbeatRenewsWhileCommandRuns(t *testing.T) {
+	root := writeFixture(t)
+	enableCoordination(t, root)
+	bin := t.TempDir()
+	path := filepath.Join(bin, "worklease")
+	put(t, path, get(t, "testdata/worklease.py"))
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	renewals := filepath.Join(t.TempDir(), "renewals")
+	t.Setenv("BL_FAKE_ROOT", root)
+	t.Setenv("BL_FAKE_STATE", filepath.Join(t.TempDir(), "claim.json"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if code, out, stderr := writeRun(root, "", "claim", "12"); code != 0 {
+		t.Fatalf("claim: %d %s %s", code, out, stderr)
+	}
+	// Every lease is already near expiry, so renewal falls to its one-second floor.
+	t.Setenv("BL_FAKE_EXPIRES", "2000-01-01T00:00:00Z")
+	t.Setenv("BL_FAKE_HEARTBEATS", renewals)
+	code, out, stderr := writeRun(root, "", "heartbeat", "--", "sh", "-c", "sleep 2.5; echo finished; exit 3")
+	if code != 3 || out != "finished\n" {
+		t.Fatalf("command status: %d %q %s", code, out, stderr)
+	}
+	if n := strings.Count(get(t, renewals), "renewed"); n < 3 {
+		t.Fatalf("renewed %d times while the command ran", n)
+	}
+}
+
 // A handle can switch items after verification but before release locks it.
 // The original claim ID must reach the provider, retaining the replacement
 // without hiding the committed status or emitting a false release event.

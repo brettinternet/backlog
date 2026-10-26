@@ -14,7 +14,15 @@ bl heartbeat --session loop-a --json
 ```
 
 Read the selected item's full intent, criteria, history, and file scope before
-editing. Renew at least once per half TTL, including during long work. Use the
+editing. Renew at least once per half TTL, including during long work. Wrap any
+command that may block longer than that, such as a full test gate, so the claim
+renews while it runs; bl exits with the command's status:
+
+```sh
+bl heartbeat --session loop-a -- task ci
+```
+
+Use the
 same session on subsequent calls, via BL_SESSION or the global --session flag.
 Never invent resource keys; use the resource returned by show.
 

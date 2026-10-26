@@ -336,6 +336,7 @@ the claim. JSON lists every attempt with separate claim and status outcomes.
 ```sh
 bl claim 12 --session loop-a --json
 bl heartbeat --session loop-a --json
+bl heartbeat --session loop-a -- task ci
 bl release 12 --session loop-a --json
 ```
 
@@ -348,7 +349,12 @@ bl release 12 --session loop-a --json
 | Verified run owns the claim | 0 | outcome `run-managed`; nothing changes |
 | Release of a claim you don't hold | | outcome `not-held` |
 
-`claim` never waits. `heartbeat` reports `expiresAt`. Text output looks like
+`claim` never waits. `heartbeat` reports `expiresAt`. With `-- COMMAND`, it
+renews, runs the command with bl's streams, renews again at half the remaining
+lease until the command exits, and exits with the command's status. A failed
+renewal warns on stderr and retries sooner, never stopping the command; after the
+lease lapses it stops renewing. If the first renewal fails, the command doesn't
+run. Text output looks like
 `BL-12 acquired until 2030-01-01 00:00:00`.
 
 ```json
