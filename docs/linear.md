@@ -121,10 +121,12 @@ change on the target within a minute. Queries and relation rows derive the
 source side from it: `blocks:` and "blocking" follow a loaded target's
 blockers, and "related" includes inbound links but drops a pair linked by
 blocks (BL-93). Until the next reconciliation, the source issue's raw `blocks`
-and `related` fields in item output can be stale, and so can a blocker
-reference to an issue that has been trashed (BL-90). Deletions and moves out
-of scope never appear in a change window. Single-issue reads don't wait for
-reconciliation:
+and `related` fields in item output can be stale. Trashing a blocker bumps
+only the trashed issue and archives its relations (BL-90), so the change window
+reads those relations with `includeArchived` and re-reads the in-source issues
+it blocked: one more request per trashed issue, plus their detail reads.
+Deletions and moves out of scope never appear in a change window.
+Single-issue reads don't wait for reconciliation:
 
 - `bl next --claim` reads each candidate fresh before acquiring it, and skips
   it (`changed` in `--explain`) if that read shows it closed, archived, gone,

@@ -197,6 +197,7 @@ const detailQuery = `query($id:String!){issue(id:$id){` + issueFields + `}}`
 const entityFields = `id identifier team{id} project{id}`
 const relationsQuery = `query($id:String!,$after:String,$count:Int!){issue(id:$id){id relations(first:$count,after:$after){nodes{type relatedIssue{` + entityFields + `}} pageInfo{hasNextPage endCursor}}}}`
 const inverseQuery = `query($id:String!,$after:String,$count:Int!){issue(id:$id){id inverseRelations(first:$count,after:$after){nodes{type issue{` + entityFields + `}} pageInfo{hasNextPage endCursor}}}}`
+const trashedRelationsQuery = `query($id:String!,$after:String,$count:Int!){issue(id:$id){id relations(first:$count,after:$after,includeArchived:true){nodes{type relatedIssue{` + entityFields + `}} pageInfo{hasNextPage endCursor}}}}`
 
 func (s *Source) within(r issue) bool {
 	return uuid(r.ID) && r.Identifier != "" && !r.UpdatedAt.IsZero() && r.Team != nil && r.Team.ID == s.o.Team && (s.o.Project == "" || r.Project != nil && r.Project.ID == s.o.Project)
@@ -293,12 +294,16 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	}
 	delta := source.Delta{Coverage: source.Partial, Incremental: !reconcile, RetainUnseen: !reconcile, Archived: map[model.Ref]bool{}}
 	ids := make([]string, 0, len(rows))
+	queued := map[string]bool{}
 	for id := range rows {
 		ids = append(ids, id)
+		queued[id] = true
 	}
 	sort.Strings(ids)
-	for offset := 0; offset < len(ids); offset += detailBatchSize {
-		batch, err := s.details(ctx, c, ids[offset:min(offset+detailBatchSize, len(ids))])
+	// ids grows when a trashed blocker queues the issues it blocked.
+	for offset, n := 0, 0; offset < len(ids); offset += n {
+		n = min(detailBatchSize, len(ids)-offset)
+		batch, err := s.details(ctx, c, ids[offset:offset+n])
 		if err != nil {
 			return source.Delta{}, err
 		}
@@ -306,6 +311,18 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 			item, err := s.item(ctx, c, row)
 			if err != nil {
 				return source.Delta{}, err
+			}
+			if row.Trashed && !reconcile {
+				blocked, err := s.trashedBlocks(ctx, c, row.ID)
+				if err != nil {
+					return source.Delta{}, err
+				}
+				for _, id := range blocked {
+					if !queued[id] {
+						queued[id] = true
+						ids = append(ids, id)
+					}
+				}
 			}
 			if row.ArchivedAt != nil || row.Trashed {
 				delta.Archived[item.Ref] = true
@@ -355,6 +372,52 @@ func (s *Source) details(ctx context.Context, c remote.Credential, ids []string)
 		rows = append(rows, *row)
 	}
 	return rows, nil
+}
+
+// trashedBlocks returns the in-source issues a trashed issue blocked. Trashing
+// archives its relations and drops them from the survivors without bumping
+// their updatedAt (BL-90), so only the trashed side still names them.
+func (s *Source) trashedBlocks(ctx context.Context, c remote.Credential, id string) ([]string, error) {
+	var ids []string
+	seen := map[string]bool{}
+	vars := map[string]any{"id": id, "count": 250}
+	for page := 0; ; page++ {
+		if page >= 1000 {
+			return nil, source.Refuse("unavailable", "Linear relation page budget exceeded")
+		}
+		var r struct {
+			Issue *struct {
+				ID        string
+				Relations *connection[relation]
+			}
+		}
+		if err := s.query(ctx, c, trashedRelationsQuery, vars, &r); err != nil {
+			return nil, err
+		}
+		if r.Issue == nil || r.Issue.ID != id || r.Issue.Relations == nil || r.Issue.Relations.Nodes == nil {
+			return nil, source.Refuse("unavailable", "Linear relations unavailable")
+		}
+		for _, edge := range r.Issue.Relations.Nodes {
+			if edge.Type != "blocks" {
+				continue
+			}
+			ref, err := s.ref(edge.RelatedIssue)
+			if err != nil {
+				return nil, err
+			}
+			if ref.Source == s.o.ID {
+				ids = append(ids, edge.RelatedIssue.ID)
+			}
+		}
+		next, err := advance(r.Issue.Relations.PageInfo, seen)
+		if err != nil {
+			return nil, err
+		}
+		if next == "" {
+			return ids, nil
+		}
+		vars["after"] = next
+	}
 }
 
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {

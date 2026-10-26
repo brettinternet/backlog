@@ -45,6 +45,7 @@ type fixture struct {
 	comments                                                                       []any
 	size, requests, batches                                                        int
 	changed, relationOverflow                                                      bool
+	blocker, trashed                                                               bool // TEST-1 blocks TEST-2; TEST-1 trashed
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -173,7 +174,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				if offset+250 < f.size {
 					next = strconv.Itoa(offset + 250)
 				}
-			} else if f.changed {
+			} else if f.changed || f.trashed {
 				row := f.row(1)
 				row["updatedAt"] = "2026-10-23T00:01:00Z"
 				rows = append(rows, row)
@@ -210,6 +211,12 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			delete(connection, "nodes")
 		}
 		emit(map[string]any{"issue": map[string]any{"id": v["id"], key: connection}})
+	case trashedRelationsQuery:
+		nodes := []any{}
+		if f.blocker && v["id"] == issueID(1) {
+			nodes = append(nodes, map[string]any{"type": "blocks", "relatedIssue": entityRow(2)})
+		}
+		emit(map[string]any{"issue": map[string]any{"id": v["id"], "relations": conn(nodes, "")}})
 	case commentsQuery:
 		emit(map[string]any{"issue": map[string]any{"id": v["id"], "comments": conn(f.comments, "")}})
 	case statesQuery:
@@ -260,10 +267,17 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				id := v[fmt.Sprintf("id%d", i)].(string)
 				n, _ := strconv.Atoi(id[24:])
 				row := f.row(n)
-				if f.changed && n == 1 {
+				if (f.changed || f.trashed) && n == 1 {
 					row["updatedAt"] = "2026-10-23T00:01:00Z"
 				}
 				out, in := []any{}, []any{}
+				if f.trashed && n == 1 {
+					row["trashed"] = true
+				} else if f.blocker && !f.trashed && n == 1 {
+					out = append(out, map[string]any{"type": "blocks", "relatedIssue": entityRow(2)})
+				} else if f.blocker && !f.trashed && n == 2 {
+					in = append(in, map[string]any{"type": "blocks", "issue": entityRow(1)})
+				}
 				if f.block && n == 1 {
 					out = append(out, map[string]any{"type": "blocks", "relatedIssue": entityRow(2)})
 					in = append(in, map[string]any{"type": "blocks", "issue": entityRow(2)})
@@ -364,6 +378,41 @@ func TestRefreshBudgetAndRetainedRows(t *testing.T) {
 		t.Fatalf("requested reconciliation: requests=%d err=%v", f.requests-requests, err)
 	}
 	t.Log("1000 issues: unchanged refresh=2 requests; one change=3; hourly or requested reconciliation=106; no stale retained rows")
+}
+
+// BL-90: trashing a blocker bumps only the trashed issue and silently drops the
+// survivor's inverse relation, so the blocked issue would stay Unknown (blocker
+// missing from the default view) until the hourly reconciliation.
+func TestTrashedBlockerRereadsBlockedIssue(t *testing.T) {
+	s, f := fixtureSource(t)
+	f.size, f.blocker = 3, true
+	ctx := context.Background()
+	now := s.o.Now()
+	s.o.Now = func() time.Time { return now }
+	wrapped := remote.New(s, cache.New(t.TempDir(), "trash", "lin", "scope"), s.o.Secrets)
+	blocked := func(d source.Delta) *model.Item {
+		for i := range d.Items {
+			if d.Items[i].Ref.ID == "TEST-2" {
+				return &d.Items[i]
+			}
+		}
+		t.Fatal("blocked issue missing")
+		return nil
+	}
+	d, err := wrapped.Load(ctx, source.Cursor{})
+	if err != nil || len(blocked(d).BlockedBy) != 1 {
+		t.Fatalf("initial blocker: %v", err)
+	}
+	f.trashed = true
+	now = now.Add(time.Minute)
+	d, err = wrapped.Load(ctx, source.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The cached blocker row must be flagged too, or the default view keeps it as open work.
+	if item := blocked(d); len(item.BlockedBy) != 0 || len(item.Edges) != 0 || !d.Archived[model.Ref{Source: "lin", ID: "TEST-1"}] {
+		t.Fatalf("trashed blocker left blocked issue stale: %+v archived=%v", item.BlockedBy, d.Archived)
+	}
 }
 
 func TestPageCap(t *testing.T) {

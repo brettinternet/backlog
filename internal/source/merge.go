@@ -50,6 +50,10 @@ func Merge(previous, next Delta) Delta {
 	for ref, value := range previous.Archived {
 		out.Archived[ref] = value
 	}
+	// A default view omits newly archived rows; flag their cached copies.
+	for ref, value := range next.Archived {
+		out.Archived[ref] = value
+	}
 	for _, item := range next.Items {
 		out.Archived[item.Ref] = next.Archived[item.Ref]
 	}
