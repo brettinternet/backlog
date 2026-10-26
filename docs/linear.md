@@ -115,8 +115,12 @@ requests an hour**, instead of 3,000+ a minute. Large or relation-heavy teams ca
 still hit quotas; the scheduler honors both request and complexity limits and
 refuses requests until the reset.
 
-Relation edits don't reliably bump `updatedAt`, so they appear at the next
-reconciliation. The 30-day overlap recovers issues missed by a moving cursor
+Creating or retyping a relation bumps only the target issue's `updatedAt`.
+Deleting one bumps both issues. The change window therefore picks up new and
+removed blockers, and the derived "blocking" list, within a minute. Until the
+next reconciliation, the source issue's own `blocks` and `related` fields can
+be stale, and so can a blocker reference to an issue that has been trashed
+(BL-90). The 30-day overlap recovers issues missed by a moving cursor
 (as in Worklease v1.9.3); it isn't a retention limit. The schedule survives
 restarts with the cursor. Changing archive visibility or loading an old cursor
 forces reconciliation.
