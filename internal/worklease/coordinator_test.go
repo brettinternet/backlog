@@ -93,7 +93,7 @@ func command(args ...string) []string {
 // Pinned handle inspection is offline only. Only status + credential verify can
 // promote a ready handle to held. Corrupt/foreign/stale/ambiguous state is not empty.
 func TestPinnedSessionInspection(t *testing.T) {
-	for _, mode := range []string{"absent", "corrupt", "foreign", "stale", "uncertain", "pending", "held"} {
+	for _, mode := range []string{"absent", "corrupt", "foreign", "stale", "expired", "uncertain", "pending", "held"} {
 		t.Run(mode, func(t *testing.T) {
 			inspect := inspectFixture("ready")
 			steps := []step{}
@@ -111,16 +111,26 @@ func TestPinnedSessionInspection(t *testing.T) {
 				want = "pending"
 			case "held":
 				want = "held"
+			case "expired":
+				want = "absent"
 			}
 			steps = append(steps, step{command("handle", "inspect"), inspect})
-			if mode == "stale" || mode == "uncertain" || mode == "held" {
-				response := successFixture(map[string]any{"claim": map[string]any{"claimId": "claim", "authorityId": "authority", "resources": []string{"resource"}, "sessionId": "loop", "active": mode != "stale", "expiresAt": "2030-01-01T00:00:00Z"}})
+			if mode == "stale" || mode == "expired" || mode == "uncertain" || mode == "held" {
+				expires := "2030-01-01T00:00:00Z"
+				if mode == "expired" {
+					expires = "2020-01-01T00:00:00Z"
+				}
+				response := successFixture(map[string]any{"claim": map[string]any{"claimId": "claim", "authorityId": "authority", "resources": []string{"resource"}, "sessionId": "loop", "active": mode != "stale" && mode != "expired", "expiresAt": expires}})
 				if mode == "uncertain" {
 					response = errorFixture("authority-unavailable", "authority unavailable")
 				}
 				steps = append(steps, step{command("status"), response})
 				if mode == "held" {
 					steps = append(steps, step{command("verify"), response}, step{[]string{"--json", "runs", "--all"}, successFixture(map[string]any{"runs": []any{}})})
+				}
+				// Only an expired ready handle is archived; pending and stale state never reach archive.
+				if mode == "expired" {
+					steps = append(steps, step{[]string{"--json", "runs", "--all"}, successFixture(map[string]any{"runs": []any{}})}, step{command("handle", "archive"), successFixture(map[string]any{"claimId": "claim", "authorityMutation": "none"})})
 				}
 			}
 			c := cliFixture(t, steps)

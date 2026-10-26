@@ -240,24 +240,44 @@ func (c *Coordinator) InspectSession(ctx context.Context, caller model.CallerCon
 		return unresolved("cannot verify recorded claim at authority")
 	}
 	if !status.Claim.Active {
-		return unresolved("inactive retained handle; explicit Worklease recovery required")
+		if status.Claim.ExpiresAt.After(c.Now()) {
+			return unresolved("inactive retained handle; explicit Worklease recovery required")
+		}
+		// The authority ended this claim by expiry, so its ready handle holds
+		// nothing. Archiving is offline and refuses pending or recovery state.
+		if message := c.supervised(ctx, caller, status.Claim); message != "" {
+			return unresolved(message)
+		}
+		archived, archiveErr := c.call(ctx, caller, "handle", "archive")
+		if archiveErr != nil || !archived.OK || archived.ClaimID != v.ClaimID {
+			return unresolved("inactive retained handle; explicit Worklease recovery required")
+		}
+		return model.SessionState{State: "absent"}
 	}
 	verified, verifyErr := c.call(ctx, caller, "verify")
 	if verifyErr != nil || !verified.OK || verified.Claim == nil || verified.Claim.ClaimID != v.ClaimID || verified.Claim.AuthorityID != v.AuthorityID || verified.Claim.SessionID != caller.Session || !slices.Equal(verified.Claim.Resources, status.Claim.Resources) {
 		return unresolved("claim ownership verification failed")
 	}
-	// A session by itself cannot downgrade a supervisor-owned claim to a
-	// caller-managed one. Correlate public run identity, never naming prefixes.
-	runs, runsErr := c.call(ctx, caller, "runs", "--all")
-	if runsErr != nil || !runs.OK {
-		return unresolved("cannot determine whether a supervisor owns this claim")
-	}
-	for _, run := range runs.Runs {
-		if run.Claim != nil && (run.Claim.State == "held" || run.Claim.State == "kept") && run.Claim.ClaimID == status.Claim.ClaimID && run.Claim.AuthorityID == status.Claim.AuthorityID && run.Claim.SessionID == status.Claim.SessionID && slices.Equal(run.Claim.Resources, status.Claim.Resources) {
-			return unresolved("supervisor owns this claim; provide the explicit run context before changing it")
-		}
+	if message := c.supervised(ctx, caller, status.Claim); message != "" {
+		return unresolved(message)
 	}
 	return model.SessionState{State: "held", Claim: status.Claim.info()}
+}
+
+// supervised explains why a supervisor may own claim, or returns "". A session
+// by itself cannot downgrade a supervisor-owned claim to a caller-managed one.
+// Correlate public run identity, never naming prefixes.
+func (c *Coordinator) supervised(ctx context.Context, caller model.CallerContext, claim *wireClaim) string {
+	runs, runsErr := c.call(ctx, caller, "runs", "--all")
+	if runsErr != nil || !runs.OK {
+		return "cannot determine whether a supervisor owns this claim"
+	}
+	for _, run := range runs.Runs {
+		if run.Claim != nil && (run.Claim.State == "held" || run.Claim.State == "kept") && run.Claim.ClaimID == claim.ClaimID && run.Claim.AuthorityID == claim.AuthorityID && run.Claim.SessionID == claim.SessionID && slices.Equal(run.Claim.Resources, claim.Resources) {
+			return "supervisor owns this claim; provide the explicit run context before changing it"
+		}
+	}
+	return ""
 }
 func (c *Coordinator) ResumeAcquire(ctx context.Context, caller model.CallerContext, opaque model.RecoveryRef) model.ClaimResult {
 	ref, ok := opaque.(*recoveryRef)

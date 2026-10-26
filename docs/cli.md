@@ -321,6 +321,11 @@ release still work. Set `project.id` in `backlog.yaml` or add `origin`.
 4. Otherwise it walks one ranked snapshot without waiting. Contention skips to
    the next item; an uncertain acquire stops with `unknown-outcome`.
 
+If the session's last claim expired, `bl` archives its handle with
+`worklease handle archive` and continues as if the session held nothing, so the
+same session can claim again. A pending or recovery handle, or an inactive claim
+that hasn't expired, still refuses as unresolved.
+
 A held closed item (`claim-held`), a missing item, or unresolved state stops
 selection. Don't switch sessions to get past it. `--claim` without a session
 exits 2 (`session-required`). `--start` needs `--claim`; a failed start keeps
