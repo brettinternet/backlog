@@ -121,10 +121,28 @@ change on the target within a minute. Queries and relation rows derive the
 source side from it: `blocks:` and "blocking" follow a loaded target's
 blockers, and "related" includes inbound links but drops a pair linked by
 blocks (BL-93). Until the next reconciliation, the source issue's raw `blocks`
-and `related` fields in item output can be stale. Trashing a blocker bumps
-only the trashed issue and archives its relations (BL-90), so the change window
-reads those relations with `includeArchived` and re-reads the in-source issues
-it blocked: one more request per trashed issue, plus their detail reads.
+and `related` fields in item output can be stale.
+
+Archiving or trashing an issue bumps neither its own `updatedAt` nor any
+related issue's, and restoring it (`issueUnarchive`) doesn't either: measured
+live for BL-99 against plain archive, trash, and restore, polling every 10s
+for 90s after each mutation with a watermark independent of any field the
+mutation itself could move. Only `archivedAt`/`trashed` change. So the change
+window's `filter:{updatedAt:{gte:$since}}` never matches an archive, trash, or
+restore by itself: linear.go's `Load` only re-reads a trashed row's blocked
+issues (`row.Trashed && !reconcile`, BL-92) when that row is already in the
+window for an unrelated reason, such as an edit in the same minute, not
+because the window "sees" the trash. Widening the filter to
+`{or:[{updatedAt:{gte}},{archivedAt:{gte}}]}` makes a fresh archive or trash
+appear live within a minute at no extra request cost (complexity is charged by
+page size, not result count), but not a restore: `issueUnarchive` clears
+`archivedAt` back to null, leaving no timestamp to filter on. BL-102 tracks
+reaching the trash direction this way; there is no equivalent fix for restore.
+Both directions wait for the next hourly reconciliation to correct the blocked
+issue's `BlockedBy`/`Edges` meanwhile. `bl next --claim`'s fresh per-candidate
+read (BL-89) bounds the damage either way: a candidate blocked by a blocker
+still cached as archived reads unknown and is skipped as `changed`, and one a
+stale cache still shows blocked is skipped too once the fresh read clears it.
 Deletions and moves out of scope never appear in a change window.
 Single-issue reads don't wait for reconciliation:
 
