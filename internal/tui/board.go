@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"strconv"
 	"strings"
 
@@ -294,7 +295,7 @@ func (m Model) card(index, width int) (string, string) {
 		if m.opts.Me != "" && row.Assignees[0] == m.opts.Me {
 			style = t.accent
 		}
-		right = append(right, style.render(ansi.Truncate(textutil.Line(row.Assignees[0]), 12, "\u2026")))
+		right = append(right, style.render(ansi.Truncate(textutil.Line(cmp.Or(row.Names[row.Assignees[0]], row.Assignees[0])), 12, "\u2026")))
 	}
 	inner := max(1, width-gutter-1)
 	if signals := strings.Join(right, " "); signals != "" {

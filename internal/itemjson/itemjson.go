@@ -16,10 +16,12 @@ type Summary struct {
 	Category model.StatusCategory `json:"category"`
 	Priority model.Priority       `json:"priority"`
 	Version  string               `json:"version"`
+	// StatusName is the provider display name of an opaque Status, for text output.
+	StatusName string `json:"-"`
 }
 
 func NewSummary(i model.Item) Summary {
-	return Summary{i.Project, i.Ref.Source, i.Ref.ID, i.Title, i.Status, i.Category, i.Priority, i.Version}
+	return Summary{i.Project, i.Ref.Source, i.Ref.ID, i.Title, i.Status, i.Category, i.Priority, i.Version, i.Names[i.Status]}
 }
 
 func Summaries(items []model.Item) []Summary {

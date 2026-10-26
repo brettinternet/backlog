@@ -180,7 +180,7 @@ func (m Model) detailMeta(row engine.Row) string {
 	t := m.theme
 	parts := []string{t.muted.render(textutil.Line(row.Ref.ID))}
 	if row.Status != "" {
-		parts = append(parts, t.categoryIcon(row.Category)+" "+t.category(row.Category).render(m.statusName(row.Status)))
+		parts = append(parts, t.categoryIcon(row.Category)+" "+t.category(row.Category).render(m.statusName(row.Status, row.Names)))
 	}
 	if row.Priority != "" {
 		parts = append(parts, t.priority(row.Priority).render(priorityGlyph(row.Priority)+" "+textutil.Line(string(row.Priority))))
@@ -466,9 +466,10 @@ func (m Model) completionSheet() []string {
 	var body []string
 	for i := start; i < end; i++ {
 		c := e.candidates[i]
+		// Lead with the name, as pickers do; the muted value is what inserts.
 		text := "  " + textutil.Line(c.Value)
 		if c.Name != "" && c.Name != c.Value {
-			text += "  " + t.muted.render(textutil.Line(c.Name))
+			text = "  " + textutil.Line(c.Name) + "  " + t.muted.render(textutil.Line(c.Value))
 		}
 		if i == e.candidate && e.highlighted() {
 			text = t.accent.render("▌") + text[1:]

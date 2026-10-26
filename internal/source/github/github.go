@@ -426,6 +426,8 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p pro
 			if category == "" {
 				item.Status = "unknown"
 				item.Category = model.Backlog
+			} else if p.Value.Name != "" {
+				item.Names = map[string]string{p.Value.OptionID: p.Value.Name}
 			}
 		}
 	}

@@ -112,6 +112,7 @@ func cloneItem(i model.Item) model.Item {
 	if i.Fields != nil {
 		i.Fields = cloneValue(i.Fields).(map[string]any)
 	}
+	i.Names = maps.Clone(i.Names)
 	return i
 }
 func cloneMutation(m model.Mutation) model.Mutation {

@@ -56,7 +56,10 @@ untrusted adapters aren't opened, but native sources stay browsable.
 progress, assignee, and time since update. As the pane narrows, columns drop in
 this order so the title keeps at least two-fifths of the width: updated,
 assignee, children, blockers, claim, then the status name (the icon stays).
-Grouping by status shows only the icon.
+Grouping by status shows only the icon. Opaque provider IDs (Linear states and
+users, Jira accountIds, GitHub Projects options) show the provider's name
+everywhere, including group headers and detail; a configured status name wins
+([D11](design.md#3-decision-register)).
 
 **Status bar:** the query, or the active input, prompt, or error. A notice shows
 until the next key. On the right: a pending prefix or count, marks, pending `●`
@@ -227,7 +230,8 @@ item.
 **Pickers** preselect current values and fuzzy-filter. Assignees and labels are
 multi-select, configured labels first. Milestones show names, hide archived
 entries, then list undeclared keys in use; typing a new key sets it. Status
-order follows config. Pickers never edit config. Unsupported operations show the
+order follows config. Assignee and status pickers and filter completion show
+provider names for opaque IDs and write the ID. Pickers never edit config. Unsupported operations show the
 missing capability in the status bar instead of opening.
 
 **Marks:** `space` marks an item (outside the Criteria tab), `V` starts a visual

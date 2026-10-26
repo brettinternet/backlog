@@ -82,7 +82,7 @@ func (m Model) launcherLine(r launcherRow, selected bool, width int) string {
 	var left, right string
 	if r.item != nil {
 		item := r.item
-		right = t.muted.render(m.statusName(item.Status))
+		right = t.muted.render(m.statusName(item.Status, item.Names))
 		left = t.categoryIcon(item.Category) + " " + t.muted.render(textutil.Line(item.Ref.ID)) + " " + textutil.Line(item.Title)
 	} else {
 		left = textutil.Line(r.label)

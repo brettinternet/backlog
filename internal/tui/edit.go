@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -346,7 +347,7 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 				choices[index].hint = status.Key
 			}
 		}
-		add(current.Status, current.Status, current.Status)
+		add(current.Status, cmp.Or(current.Names[current.Status], current.Status), current.Status)
 	case pickerPriority:
 		for _, priority := range []model.Priority{model.Urgent, model.High, model.Medium, model.Low} {
 			if settings.backlogMD && priority == model.Urgent {
@@ -356,21 +357,28 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 		}
 		add("", "None", string(current.Priority))
 	case pickerAssignees:
-		values := map[string]bool{}
-		for _, item := range items {
+		values, names := map[string]bool{}, map[string]string{}
+		collect := func(item model.Item) {
 			for _, value := range item.Assignees {
 				values[value] = true
+				if name := item.Names[value]; name != "" {
+					names[value] = name
+				}
 			}
 		}
-		for _, value := range current.Assignees {
-			values[value] = true
+		for _, item := range items {
+			collect(item)
 		}
+		collect(current)
 		if settings.me != "" {
 			values[settings.me] = true
 		}
-		addSorted := sortedKeys(values)
-		for _, value := range addSorted {
-			add(value, value, "")
+		sorted := sortedKeys(values)
+		slices.SortStableFunc(sorted, func(a, b string) int {
+			return strings.Compare(strings.ToLower(cmp.Or(names[a], a)), strings.ToLower(cmp.Or(names[b], b)))
+		})
+		for _, value := range sorted {
+			add(value, cmp.Or(names[value], value), "")
 		}
 		for _, value := range current.Assignees {
 			if choiceIndex(choices, value) >= 0 {

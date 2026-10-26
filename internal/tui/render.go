@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -68,15 +69,15 @@ func textWidth(s string) int {
 	return len(s)
 }
 
-// statusName is a status's sanitized display name: its configured name, or
-// the provider's raw value.
-func (m Model) statusName(key string) string {
+// statusName is a status's sanitized display name: its configured name, the
+// provider's display name, or the raw value.
+func (m Model) statusName(key string, names map[string]string) string {
 	for _, s := range m.opts.Statuses {
 		if s.Key == key && s.Name != "" {
 			return textutil.Line(s.Name)
 		}
 	}
-	return textutil.Line(key)
+	return textutil.Line(cmp.Or(names[key], key))
 }
 
 // statusCategory is a configured status's category, for icons.
@@ -144,17 +145,14 @@ func measure(rows []screenRow, names map[string]string) widths {
 			continue
 		}
 		w.id = max(w.id, textWidth(r.Ref.ID))
-		name := r.Status
-		if n, ok := names[name]; ok {
-			name = n
-		}
+		name := cmp.Or(names[r.Status], r.Names[r.Status], r.Status)
 		w.status = max(w.status, textWidth(name))
 		if len(r.Assignees) > 0 {
 			extra := 0
 			if len(r.Assignees) > 1 {
 				extra = 3
 			}
-			w.assignee = max(w.assignee, textWidth(r.Assignees[0])+extra)
+			w.assignee = max(w.assignee, textWidth(cmp.Or(r.Names[r.Assignees[0]], r.Assignees[0]))+extra)
 		}
 		w.blockers = w.blockers || r.OpenBlockers > 0
 		w.children = w.children || r.ChildrenTotal > 0
@@ -456,7 +454,7 @@ func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool)
 		if !c.name {
 			return icon
 		}
-		return icon + " " + t.category(row.Category).render(cell(m.statusName(row.Status), c.width-2))
+		return icon + " " + t.category(row.Category).render(cell(m.statusName(row.Status, row.Names), c.width-2))
 	case colTitle:
 		return m.titleCell(r, row, c.width, selected)
 	case colBlockers:
@@ -488,16 +486,16 @@ func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool)
 		if len(row.Assignees) == 0 {
 			return strings.Repeat(" ", c.width)
 		}
-		name := row.Assignees[0]
+		id := row.Assignees[0]
 		extra := ""
 		if len(row.Assignees) > 1 {
 			extra = " +" + strconv.Itoa(min(9, len(row.Assignees)-1))
 		}
 		style := t.muted
-		if m.opts.Me != "" && name == m.opts.Me {
+		if m.opts.Me != "" && id == m.opts.Me {
 			style = t.accent
 		}
-		return style.render(cell(name, c.width-ansi.StringWidth(extra))) + t.muted.render(extra)
+		return style.render(cell(cmp.Or(row.Names[id], id), c.width-ansi.StringWidth(extra))) + t.muted.render(extra)
 	case colUpdated:
 		return t.muted.render(cellRight(age(row.Updated, m.now()), c.width))
 	case colProject:
@@ -561,11 +559,11 @@ func (m Model) groupHeader(r screenRow, width int, selected bool) string {
 // groupLabel is a group's icon and name; unfocused board columns dim it.
 func (m Model) groupLabel(r screenRow, strong bool) string {
 	t := m.theme
-	label := textutil.Line(r.value)
+	label := textutil.Line(cmp.Or(r.row.Names[r.value], r.value))
 	icon := ""
 	switch r.groupKey {
 	case "status":
-		label = m.statusName(r.value)
+		label = m.statusName(r.value, r.row.Names)
 		icon = t.categoryIcon(r.category) + " "
 	case "category":
 		icon = t.categoryIcon(model.StatusCategory(r.value)) + " "

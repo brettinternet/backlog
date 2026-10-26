@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"container/list"
 	"context"
 	"strconv"
@@ -500,7 +501,7 @@ func overviewLines(item model.Item, request detailRequest) []string {
 	join := func(values []string, prefix string) string {
 		parts := make([]string, len(values))
 		for i, v := range values {
-			parts[i] = prefix + textutil.Line(v)
+			parts[i] = prefix + textutil.Line(cmp.Or(item.Names[v], v))
 		}
 		return strings.Join(parts, "  ")
 	}
@@ -629,10 +630,7 @@ func relationLines(row engine.Row, names map[string]string, t theme, width int) 
 	var targets []engine.Relation
 	entry := func(r engine.Relation, connector string) string {
 		icon := t.categoryIcon(r.Category)
-		status := r.Status
-		if name, ok := names[status]; ok {
-			status = name
-		}
+		status := textutil.Line(cmp.Or(names[r.Status], r.StatusName, r.Status))
 		if r.Status == "missing" {
 			icon = t.red.render("?")
 		}

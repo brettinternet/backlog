@@ -69,7 +69,7 @@ Non-goals:
 | D8 | **Writes** are atomic: temp file, fsync, rename, all under the repository write lock. They are minimal-diff: untouched lines stay byte-identical, and unknown frontmatter keys, comments, and Markdown are preserved. |
 | D9 | **Git.** `bl` never fetches, pulls, or pushes. With `git.autoCommit` on, `bl` commits only the paths it wrote, leaves other staged changes alone, and skips with a warning during a merge, a rebase, a cherry-pick, or on a detached HEAD. Default off. Native writes commit once per CLI command; TUI edits batch after two seconds idle and flush on quit, outside the update loop. Project-enabled Git execution requires trust (D16). Dirty or externally changed target paths skip the batch rather than absorb another writer's edits; Git failures warn without reverting file writes. |
 | D10 | **Model.** The shared item model (§4.2) also carries raw provider fields. Per-source capabilities gate every operation. An unknown capability counts as unavailable, and the UI offers only available actions. |
-| D11 | **Status categories** are `backlog`, `todo`, `active`, `done`, and `canceled`. The provider status itself is always displayed, never only its category: its configured status name, or the raw value when none is declared. The category drives readiness, done-hiding, board column order, and the status icon. |
+| D11 | **Status categories** are `backlog`, `todo`, `active`, `done`, and `canceled`. The provider status itself is always displayed, never only its category: its configured status name, else the provider's display name for an opaque key (Linear state, GitHub Projects option), else the raw value. Opaque assignee IDs (Linear user UUID, Jira accountId) likewise display the provider's user name. Display names are display only: stored values, queries, `@me`, claims, and writes keep the stable ID, and pickers and completion show the name but insert the ID. The category drives readiness, done-hiding, board column order, and the status icon. |
 | D12 | **Readiness and next** follow §6: deterministic ranking with a machine-readable explanation for every included and excluded candidate. |
 | D13 | **One query language** ([query.md](query.md)) serves the TUI filter bar, CLI arguments, saved views, and MCP. Sources may push down predicates they support. The result never depends on pushdown. |
 | D14 | **UI loop discipline.** No I/O and no work proportional to backlog size happen on the Bubble Tea update loop. Filter, sort, and group projections run on a worker over immutable snapshots, with latest-wins cancellation. Detail and Markdown rendering are async and cached by item version, width, and theme. |
@@ -141,6 +141,7 @@ Dependencies point downward. `tui`, `cli`, and `mcp` depend on `engine`. Only `e
 | `description`, `criteria`, `dod`, `plan`, `notes`, `summary`, `comments` | Body sections. Remote sources usually supply only `description` and `comments`. |
 | `created`, `updated`, `url`, `version` | `version` is opaque: a content hash for files, the provider version otherwise. |
 | `fields` | Raw provider fields kept for display and round-trip |
+| `names` | Provider display names of opaque `status` and `assignees` values, for display only (D11) |
 
 ### 4.3 Source contract
 

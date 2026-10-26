@@ -45,6 +45,12 @@ Linear state types map to categories: `backlog` → backlog, `unstarted` → tod
 Raw names, types, priority, and UUIDs stay in item fields. Display IDs like
 `ENG-431` are separate from the issue UUID.
 
+Status and assignee values are UUIDs, but `bl` displays the state and user
+names: in the TUI list, board, detail, pickers, and filter completion, and in
+CLI text. A configured status name wins. Stored values, `--json`, queries,
+`assignee:me`, claims, and writes keep the UUID; pickers and completion insert
+it, so you rarely need to look one up.
+
 ### API key
 
 Create a personal API key in Linear Settings → Security & access → Personal API

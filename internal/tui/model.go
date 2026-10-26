@@ -459,6 +459,15 @@ func prepareGroupedRows(groups []engine.RowGroup, folded map[string]bool, groupe
 				label = "None"
 			}
 			header := screenRow{group: g, value: group.Value, header: label, groupKey: groupKey, count: len(group.Rows), collapsed: folded[group.Value], ordinal: p.items + min(1, len(group.Rows))}
+			// A header names its value like its rows: the first provider name wins.
+			if groupKey == "status" || groupKey == "assignee" {
+				for _, row := range group.Rows {
+					if name := row.Names[group.Value]; name != "" {
+						header.row.Names = map[string]string{group.Value: name}
+						break
+					}
+				}
+			}
 			if groupKey == "status" {
 				header.category = categories[group.Value]
 				if len(group.Rows) > 0 {

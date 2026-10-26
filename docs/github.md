@@ -142,6 +142,8 @@ workflow: {start: option-active-id, done: closed}
 ```
 
 Option values are categories: `backlog`, `todo`, `active`, `done`, `canceled`.
+An option without a configured status name displays its project option name;
+the stored status stays the option ID.
 
 | Write | Effect |
 | --- | --- |

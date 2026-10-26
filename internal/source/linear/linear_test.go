@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func (f *fixture) row(n int) map[string]any {
 		r["state"] = map[string]string{"id": activeID, "name": "Started", "type": "started"}
 	}
 	if f.assignee != "" {
-		r["assignee"] = map[string]string{"id": f.assignee}
+		r["assignee"] = map[string]string{"id": f.assignee, "name": "Ada Lovelace"}
 	}
 	labels := []any{}
 	for _, name := range f.labels {
@@ -447,6 +448,10 @@ func TestVersionCapabilityAndWrites(t *testing.T) {
 		item, err = s.Apply(ctx, mutation(change.field, change.value))
 		if err != nil {
 			t.Fatalf("%s: %v", change.field, err)
+		}
+		// Display names ride alongside the stable IDs that writes, queries and @me use.
+		if change.field == "assignees" && len(change.value.([]string)) == 1 && (!slices.Equal(item.Assignees, []string{userID}) || item.Names[userID] != "Ada Lovelace" || item.Status != activeID || item.Names[activeID] != "Started") {
+			t.Fatalf("assignee identity: %v %v %v", item.Assignees, item.Status, item.Names)
 		}
 	}
 	item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, Op: model.AppendComment, Text: "progress", ExpectedVersion: item.Version})

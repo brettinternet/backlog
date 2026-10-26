@@ -180,13 +180,13 @@ type issue struct {
 	Team                                    *struct{ ID string }
 	Project                                 *struct{ ID string }
 	State                                   *struct{ ID, Name, Type string }
-	Assignee                                *struct{ ID string }
+	Assignee                                *struct{ ID, Name string }
 	Labels                                  connection[struct{ ID, Name string }]
 	Parent                                  *entity
 	Relations, InverseRelations             *connection[relation]
 }
 
-const issueFields = `id identifier title description url createdAt updatedAt archivedAt trashed priority team{id} project{id} state{id name type} assignee{id} labels(first:250){nodes{id name} pageInfo{hasNextPage endCursor}} parent{id identifier team{id} project{id}}`
+const issueFields = `id identifier title description url createdAt updatedAt archivedAt trashed priority team{id} project{id} state{id name type} assignee{id name} labels(first:250){nodes{id name} pageInfo{hasNextPage endCursor}} parent{id identifier team{id} project{id}}`
 
 // Keep list pages lightweight: nesting a 250-label connection under 250
 // issues multiplies GraphQL complexity. Read detail only after deduplication.
@@ -428,6 +428,7 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 	if row.ArchivedAt != nil || row.Trashed {
 		item.Category = model.Backlog
 	}
+	item.Names = map[string]string{row.State.ID: row.State.Name}
 	item.Priority = []model.Priority{"", model.Urgent, model.High, model.Medium, model.Low}[row.Priority]
 	if row.Project != nil {
 		item.Fields["projectID"] = row.Project.ID
@@ -437,6 +438,9 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 			return model.Item{}, source.Refuse("unavailable", "invalid Linear assignee")
 		}
 		item.Assignees = []string{row.Assignee.ID}
+		if row.Assignee.Name != "" {
+			item.Names[row.Assignee.ID] = row.Assignee.Name
+		}
 	}
 	if row.Labels.Nodes == nil || row.Labels.PageInfo == nil || row.Labels.PageInfo.HasNextPage {
 		return model.Item{}, source.Refuse("unavailable", "Linear labels exceed complete read limit")

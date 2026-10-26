@@ -22,7 +22,7 @@ func GoToItems(ctx context.Context, cfg project.Config) ([]Row, error) {
 			return nil, err
 		}
 		for _, item := range delta.Items {
-			row := Row{Ref: item.Ref, Title: item.Title, Version: item.Version, Status: item.Status, Category: item.Category, Priority: item.Priority}
+			row := Row{Ref: item.Ref, Title: item.Title, Version: item.Version, Status: item.Status, Category: item.Category, Priority: item.Priority, Names: item.Names}
 			row.SetCounts(item)
 			rows = append(rows, row)
 		}

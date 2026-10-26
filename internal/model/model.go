@@ -69,6 +69,9 @@ type Item struct {
 	Created, Updated                     time.Time
 	URL, Version                         string
 	Fields                               map[string]any
+	// Names maps opaque Status and Assignees values to provider display
+	// names. Display only: queries, @me, claims and writes use the values.
+	Names map[string]string
 }
 
 // Capabilities is deny-by-default: absent operations are unavailable.

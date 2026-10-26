@@ -143,7 +143,7 @@ type issue struct {
 		Description               json.RawMessage
 		Status                    *status
 		Resolution                *named
-		Assignee                  *struct{ AccountID string }
+		Assignee                  *struct{ AccountID, DisplayName string }
 		Labels                    []string
 		IssueLinks                []struct {
 			ID                        string
@@ -329,6 +329,9 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 			return model.Item{}, source.Refuse("unavailable", "invalid Jira assignee")
 		}
 		item.Assignees = []string{f.Assignee.AccountID}
+		if f.Assignee.DisplayName != "" {
+			item.Names = map[string]string{f.Assignee.AccountID: f.Assignee.DisplayName}
+		}
 	}
 	if err := timestamp(&item.Updated, f.Updated); err != nil {
 		return model.Item{}, source.Refuse("unavailable", "invalid Jira timestamp")

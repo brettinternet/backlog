@@ -91,7 +91,8 @@ An estimated count never upgrades coverage. Unseen cached issues become stale;
 a 404 cannot distinguish deletion from permission loss. Errors retain cached
 rows but cannot make them ready or satisfy dependencies.
 
-The raw status name is displayed. `fields.status` includes its ID and
+The raw status name is displayed. Assignees store the accountId and display
+the user's `displayName`. `fields.status` includes its ID and
 `statusCategory`; `fields.resolution` preserves the nullable resolution. Jira
 `new`, `indeterminate` and `done` map to todo, active and done. A done issue with
 Won't Do, Won't Fix, Duplicate, Cannot Reproduce, Declined, Canceled or Cancelled

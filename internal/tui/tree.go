@@ -51,7 +51,7 @@ func prepareTreeItems(groups []engine.RowGroup, items []model.Item, snapshot *en
 	}
 	for _, item := range items {
 		if _, ok := rows[item.Ref]; !ok {
-			row := engine.Row{Ref: item.Ref, Version: item.Version, Title: item.Title, Status: item.Status, Category: item.Category, Priority: item.Priority, Type: item.Type, Milestone: item.Milestone, Due: item.Due, URL: item.URL, Assignees: item.Assignees, Labels: item.Labels}
+			row := engine.Row{Ref: item.Ref, Version: item.Version, Title: item.Title, Status: item.Status, Category: item.Category, Priority: item.Priority, Type: item.Type, Milestone: item.Milestone, Due: item.Due, URL: item.URL, Assignees: item.Assignees, Labels: item.Labels, Names: item.Names}
 			row.SetCounts(item)
 			if snapshot != nil {
 				_, edit, _ := snapshot.Get(item.Ref)

@@ -27,6 +27,7 @@ type Row struct {
 	Category                                  model.StatusCategory
 	Priority                                  model.Priority
 	Assignees, Labels                         []string
+	Names                                     map[string]string
 	Readiness                                 Readiness
 	ReadinessReason                           string
 	ReadinessVersion                          string
@@ -58,6 +59,7 @@ type Relation struct {
 	Kind          string
 	Ref           model.Ref
 	Title, Status string
+	StatusName    string // provider display name of an opaque Status
 	Category      model.StatusCategory
 	Version       string
 }
@@ -191,6 +193,7 @@ func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy ma
 			if target != nil {
 				relation.Title = target.item.Title
 				relation.Status = target.item.Status
+				relation.StatusName = target.item.Names[target.item.Status]
 				relation.Category = target.item.Category
 				relation.Version = target.item.Version
 			}
@@ -241,7 +244,7 @@ func newRow(i model.Item, r *record, explanation Explanation, relations []Relati
 		Ref: i.Ref, Version: i.Version, Title: i.Title, Status: i.Status,
 		Type: i.Type, Milestone: i.Milestone, Due: i.Due, URL: i.URL,
 		Updated: i.Updated, Category: i.Category, Priority: i.Priority,
-		Assignees: i.Assignees, Labels: i.Labels, Pending: r.edit.Pending,
+		Assignees: i.Assignees, Labels: i.Labels, Names: i.Names, Pending: r.edit.Pending,
 		Error: r.edit.Error, ErrorLocalVersion: localVersion,
 		ErrorRemoteVersion: remoteVersion, Readiness: explanation.Readiness,
 		ReadinessReason:  reason,
@@ -259,7 +262,7 @@ func RelationVersion(relations []Relation) string {
 	}
 	hash := fnv.New64a()
 	for _, relation := range relations {
-		for _, value := range []string{relation.Kind, relation.Ref.Source, relation.Ref.ID, relation.Title, relation.Status, string(relation.Category), relation.Version} {
+		for _, value := range []string{relation.Kind, relation.Ref.Source, relation.Ref.ID, relation.Title, relation.Status, relation.StatusName, string(relation.Category), relation.Version} {
 			_, _ = hash.Write([]byte(value))
 			_, _ = hash.Write([]byte{0})
 		}

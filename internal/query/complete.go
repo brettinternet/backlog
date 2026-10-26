@@ -120,10 +120,20 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 		}
 	}
 	var used []string
+	names := map[string]string{}
 	prefix = strings.ToLower(prefix)
 	use := func(value string) {
 		if strings.HasPrefix(strings.ToLower(value), prefix) {
 			used = append(used, value)
+		}
+	}
+	// Opaque provider values complete by display name and insert the value.
+	useNamed := func(value, name string) {
+		if name == "" {
+			use(value)
+		} else if strings.HasPrefix(strings.ToLower(value), prefix) || strings.HasPrefix(strings.ToLower(name), prefix) {
+			used = append(used, value)
+			names[value] = name
 		}
 	}
 	for n, i := range s.Items {
@@ -136,7 +146,7 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 		case "title", "text":
 			use(i.Title)
 		case "status":
-			use(i.Status)
+			useNamed(i.Status, i.Names[i.Status])
 		case "label":
 			for _, value := range i.Labels {
 				use(value)
@@ -145,7 +155,7 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 			use(i.Milestone)
 		case "assignee":
 			for _, value := range i.Assignees {
-				use(value)
+				useNamed(value, i.Names[value])
 			}
 		case "type":
 			use(i.Type)
@@ -155,7 +165,7 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 	}
 	slices.Sort(used)
 	for _, v := range used {
-		add(v, "")
+		add(v, names[v])
 	}
 	return out
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -99,7 +100,7 @@ func newItemTable(out io.Writer, cfg project.Config, groups ...[]readItem) itemT
 	for _, items := range groups {
 		for _, i := range items {
 			t.id = max(t.id, ansi.StringWidth(t.refs.item(i)))
-			t.status = max(t.status, ansi.StringWidth(textutil.Line(i.Status)))
+			t.status = max(t.status, ansi.StringWidth(textutil.Line(cmp.Or(i.StatusName, i.Status))))
 			t.priority = max(t.priority, ansi.StringWidth(textutil.Line(string(i.Priority))))
 		}
 	}
@@ -107,7 +108,7 @@ func newItemTable(out io.Writer, cfg project.Config, groups ...[]readItem) itemT
 }
 
 func (t itemTable) write(i readItem) error {
-	id, status := t.refs.item(i), textutil.Line(i.Status)
+	id, status := t.refs.item(i), textutil.Line(cmp.Or(i.StatusName, i.Status))
 	line := pad(id, id, t.id) + "  " + pad(t.p.category(i.Category, status), status, t.status)
 	if t.priority > 0 {
 		priority := textutil.Line(string(i.Priority))
@@ -219,9 +220,13 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 		}
 		return t.Format(time.RFC3339)
 	}
+	assignees := make([]string, len(i.Assignees))
+	for n, v := range i.Assignees {
+		assignees[n] = cmp.Or(i.Names[v], v)
+	}
 	fields := [][2]string{
-		{"status", i.Status}, {"priority", string(i.Priority)}, {"type", i.Type},
-		{"assignees", strings.Join(i.Assignees, ", ")}, {"labels", strings.Join(i.Labels, ", ")},
+		{"status", cmp.Or(i.Names[i.Status], i.Status)}, {"priority", string(i.Priority)}, {"type", i.Type},
+		{"assignees", strings.Join(assignees, ", ")}, {"labels", strings.Join(i.Labels, ", ")},
 		{"milestone", i.Milestone}, {"due", i.Due}, {"parent", ref(i.Parent)},
 		{"children", list(i.Children)}, {"blocked by", list(i.BlockedBy)}, {"blocks", list(i.Blocks)},
 		{"related", list(i.Related)}, {"duplicate of", ref(i.DuplicateOf)},
