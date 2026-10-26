@@ -45,6 +45,8 @@ type Input struct {
 	Coordination    bool
 	Claims          map[model.Ref]Claim
 	Sprints         []model.Sprint // catalog for ready.sprint
+	// Sources are keyed like item refs; ready.sprint gates only sprint sources.
+	Sources []project.SourceConfig
 }
 type Reason struct {
 	Code   string            `json:"code"`
@@ -124,6 +126,10 @@ func assess(in Input) (Result, [][]int, [][]int) {
 	}
 	out := Result{Items: make([]Explanation, n), Candidates: []model.Ref{}}
 	sprints := query.Snapshot{Sprints: in.Sprints}
+	sprintSources := map[string]bool{}
+	for _, source := range in.Sources {
+		sprintSources[source.ID] = source.Sprints()
+	}
 	for i, item := range in.Items {
 		config, me, coordination := in.Config, in.Me, in.Coordination
 		if p, ok := in.Projects[item.Project]; ok {
@@ -179,7 +185,7 @@ func assess(in Input) (Result, [][]int, [][]int) {
 		if len(labels) > 0 {
 			add("excluded-label", nil, labels)
 		}
-		if config.Sprint != "" {
+		if config.Sprint != "" && sprintSources[item.Ref.Source] {
 			if _, role, _ := sprints.Sprint(item.Sprint); role != config.Sprint {
 				var values []string
 				if item.Sprint != "" {

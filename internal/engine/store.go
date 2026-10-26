@@ -11,7 +11,6 @@ import (
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
-	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
@@ -100,7 +99,7 @@ func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry
 		for op, allowed := range caps {
 			s.capabilities[id][op] = allowed
 		}
-		w := &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1), sprints: query.SprintKind(configured[id])}
+		w := &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1), sprints: configured[id].Sprints()}
 		initial.sources[id] = SourceState{Coverage: source.Unknown, SprintsPending: w.sprints && s.sprints.Load()}
 		st.workers[id] = w
 	}

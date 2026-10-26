@@ -200,6 +200,11 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	if err := cfg.resolveBacklogMD(); err != nil {
 		return Config{}, err
 	}
+	// A project-level ready.sprint with no capable source gates nothing, which
+	// is a mistake. A user-wide default may apply only where sources allow.
+	if origin := cfg.Provenance["ready.sprint"]; cfg.Discovery.CheckoutRoot != "" && cfg.Ready.Sprint != "" && origin.Layer != "user" && !cfg.SprintCapable() {
+		return Config{}, fmt.Errorf("%s: line %d: key ready.sprint: no source provides sprints", origin.File, origin.Line)
+	}
 	// Milestone archived is serialized even when omitted in YAML. Attribute its
 	// implicit false value to built-ins, without replacing an explicit origin.
 	for i := range cfg.Milestones {

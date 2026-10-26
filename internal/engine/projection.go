@@ -444,7 +444,7 @@ func (p *Projector) run() {
 					}
 					base.States[ref] = state
 				}
-				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates, Sprints: base.Sprints})
+				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates, Sprints: base.Sprints, Sources: p.cfg.Sources})
 				if p.cfg.Workspace != nil {
 					var warnings []string
 					ranking, claimStates, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs, base.Sprints)

@@ -140,17 +140,23 @@ func TestErrors(t *testing.T) {
 	if errs := parse(t, "sprint:current", false).Validate(s); len(errs) != 1 || errs[0].Error() != "no source provides sprints at 0" {
 		t.Fatalf("sprint without a capable source: %v", errs)
 	}
+	if errs := parse(t, "label:perf group:sprint", false).Validate(s); len(errs) != 1 || errs[0].Error() != "no source provides sprints at 11" {
+		t.Fatalf("group:sprint without a capable source: %v", errs)
+	}
 	s.Settings.Sources = []project.SourceConfig{{ID: "lin", Type: "linear"}}
+	if errs := parse(t, "group:sprint", false).Validate(s); len(errs) != 0 {
+		t.Fatal(errs)
+	}
 	s.Sprints = []model.Sprint{{Key: "c1", Name: "Cycle 1", State: model.SprintActive, Source: "lin"}}
 	if errs := parse(t, `sprint:current sprint:next sprint:none sprint:c1 sprint:"cycle 1"`, false).Validate(s); len(errs) != 0 {
 		t.Fatal(errs)
 	}
 	// A GitHub source is only sprint-capable with a Projects v2 binding: plain
 	// Issues have no iteration concept.
-	if query.SprintKind(project.SourceConfig{Type: "github"}) {
+	if (project.SourceConfig{Type: "github"}).Sprints() {
 		t.Fatal("github source without a Projects v2 binding is sprint-capable")
 	}
-	if !query.SprintKind(project.SourceConfig{Type: "github", GitHubProject: &project.GitHubProjectConfig{}}) {
+	if !(project.SourceConfig{Type: "github", GitHubProject: &project.GitHubProjectConfig{}}).Sprints() {
 		t.Fatal("github source with a Projects v2 binding is not sprint-capable")
 	}
 	s.Coordination = false

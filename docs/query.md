@@ -157,8 +157,8 @@ unknown field "lable" at 7; did you mean "label"?
 
 The TUI keeps the last valid result while you type. Ordered operators work only
 on priority and dates. Unknown statuses, labels, types, milestones, sources, and
-assignees are errors in the CLI and warnings in the TUI, as is `sprint:` when no
-sprint-capable source is configured ("no source provides sprints"). The first
+assignees are errors in the CLI and warnings in the TUI, as are `sprint:` and
+`group:sprint` when no sprint-capable source is configured ("no source provides sprints"). The first
 sprint term in a TUI session loads the sprint catalog; until it arrives, unknown
 sprint names aren't warned about, and the results update when it lands. Unknown
 IDs, raw fields, and text are fine; they just may not match.

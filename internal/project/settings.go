@@ -1,5 +1,7 @@
 package project
 
+import "slices"
+
 // Settings is the shared, non-secret project configuration vocabulary. Loading
 // these declarations never executes a program or contacts a source.
 type Settings struct {
@@ -20,6 +22,19 @@ type Settings struct {
 	Hooks        []HookConfig       `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	Actions      []ActionConfig     `yaml:"actions,omitempty" json:"actions,omitempty"`
 }
+
+// SprintCapable reports whether any configured source can supply sprints.
+func (s Settings) SprintCapable() bool {
+	return slices.ContainsFunc(s.Sources, SourceConfig.Sprints)
+}
+
+// Sprints reports whether the source can supply sprints: Linear and Jira
+// always can; a GitHub source needs a Projects v2 binding, since plain Issues
+// have no iteration concept.
+func (c SourceConfig) Sprints() bool {
+	return c.Type == "linear" || c.Type == "jira" || c.Type == "github" && c.GitHubProject != nil
+}
+
 type GitConfig struct {
 	AutoCommit bool `yaml:"autoCommit,omitempty" json:"autoCommit"`
 }

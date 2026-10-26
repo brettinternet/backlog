@@ -36,6 +36,29 @@ func TestLocalConfigLayering(t *testing.T) {
 	}
 }
 
+// Without a sprint-capable source, ready.sprint would silently make every
+// item ineligible, so resolution must refuse it.
+func TestReadySprintRequiresCapableSource(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
+	file := project.ProjectFile(root)
+	put(t, file, "project: {id: p}\nsources: [{id: tasks, type: native, path: backlog}]\nready: {sprint: current}\n")
+	if _, err := project.Resolve(paths, root, nil); err == nil || err.Error() != file+": line 3: key ready.sprint: no source provides sprints" {
+		t.Fatalf("native-only ready.sprint: %v", err)
+	}
+	// A user-wide default must not break native-only projects.
+	put(t, file, "project: {id: p}\nsources: [{id: tasks, type: native, path: backlog}]\n")
+	put(t, paths.ConfigFile, "ready: {sprint: current}\n")
+	if _, err := project.Resolve(paths, root, nil); err != nil {
+		t.Fatalf("user-level ready.sprint: %v", err)
+	}
+	put(t, file, "project: {id: p}\nsources: [{id: tasks, type: native, path: backlog}, {id: eng, type: linear, team: ENG}]\nready: {sprint: current}\n")
+	if cfg, err := project.Resolve(paths, root, nil); err != nil || cfg.Ready.Sprint != "current" {
+		t.Fatalf("capable ready.sprint: %+v, %v", cfg.Ready, err)
+	}
+}
+
 func TestUserConfig(t *testing.T) {
 	home := testkit.Isolate(t)
 	paths, err := project.UserPaths()

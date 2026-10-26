@@ -55,7 +55,7 @@ func (q Query) Validate(s Snapshot) []error {
 		}
 		switch t.Field {
 		case "sprint":
-			if !s.SprintCapable() {
+			if !s.Settings.SprintCapable() {
 				errors = append(errors, fail(t.Pos, "no source provides sprints"))
 				continue
 			}
@@ -96,6 +96,9 @@ func (q Query) Validate(s Snapshot) []error {
 				}
 			}
 		}
+	}
+	if q.Group == "sprint" && !s.Settings.SprintCapable() {
+		errors = append(errors, fail(q.GroupPos, "no source provides sprints"))
 	}
 	return errors
 }

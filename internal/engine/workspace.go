@@ -247,7 +247,7 @@ func workspaceRanking(ctx context.Context, cfg project.Config, items []model.Ite
 			claims[aliases[ref]] = state
 		}
 	}
-	return Evaluate(Input{Items: items, Archived: archived, Stale: stale, Projects: configs, Claims: claims, Sprints: sprints}), claims, warnings
+	return Evaluate(Input{Items: items, Archived: archived, Stale: stale, Projects: configs, Claims: claims, Sprints: sprints, Sources: cfg.Sources}), claims, warnings
 }
 
 func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived, sprints bool) (ReadSnapshot, error) {

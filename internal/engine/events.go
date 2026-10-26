@@ -787,7 +787,9 @@ func loadEventGraph(ctx context.Context, tx *sql.Tx, affected map[string]bool) (
 	return graph, err
 }
 func graphReadiness(cfg project.Config, graph map[model.Ref]graphRecord) map[model.Ref]Explanation {
-	in := Input{Config: cfg.Ready, Me: []string{cfg.Me.Default}, Archived: map[model.Ref]bool{}}
+	// Events carry no sprint catalog, so sprint-source items stay ineligible
+	// under ready.sprint rather than reporting ready for out-of-sprint work.
+	in := Input{Config: cfg.Ready, Me: []string{cfg.Me.Default}, Archived: map[model.Ref]bool{}, Sources: cfg.Sources}
 	for ref, r := range graph {
 		in.Items = append(in.Items, model.Item{Ref: ref, Category: r.Category, Parent: r.Parent, Children: r.Children, BlockedBy: r.BlockedBy, Labels: r.Labels, Assignees: r.Assignees})
 		in.Archived[ref] = r.Archived

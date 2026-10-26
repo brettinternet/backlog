@@ -100,11 +100,19 @@ func TestReadiness(t *testing.T) {
 		}, engine.Ineligible, []string{"blocker", "excluded-label"}},
 		{"outside sprint", func(in *engine.Input) {
 			in.Config.Sprint = "current"
+			in.Sources = []project.SourceConfig{{ID: "tasks", Type: "linear"}}
 			in.Sprints = []model.Sprint{{Key: "s1", State: model.SprintActive}, {Key: "s2", State: model.SprintFuture}}
 			in.Items[0].Sprint = "s2"
 		}, engine.Ineligible, []string{"sprint"}},
+		// A native item in a mixed project must not be gated by ready.sprint.
+		{"sprint gate skips other sources", func(in *engine.Input) {
+			in.Config.Sprint = "current"
+			in.Sources = []project.SourceConfig{{ID: "tasks", Type: "native"}, {ID: "eng", Type: "linear"}}
+			in.Sprints = []model.Sprint{{Key: "s1", State: model.SprintActive, Source: "eng"}}
+		}, engine.Ready, []string{"candidate"}},
 		{"in sprint", func(in *engine.Input) {
 			in.Config.Sprint = "current"
+			in.Sources = []project.SourceConfig{{ID: "tasks", Type: "linear"}}
 			in.Sprints = []model.Sprint{{Key: "s1", State: model.SprintActive}}
 			in.Items[0].Sprint = "s1"
 		}, engine.Ready, []string{"candidate"}},

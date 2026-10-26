@@ -132,7 +132,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted,
 		}
 	}
 	s.Query.Coordination = coordination
-	s.input = Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims, Sprints: s.Query.Sprints}
+	s.input = Input{Items: s.Query.Items, Config: cfg.Ready, Me: s.Query.Me, Archived: archivedRefs, Stale: s.stale, Coordination: coordination, Claims: claims, Sprints: s.Query.Sprints, Sources: cfg.Sources}
 	s.Ranking = Evaluate(s.input)
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)

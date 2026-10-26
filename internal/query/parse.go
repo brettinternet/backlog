@@ -44,6 +44,8 @@ type Query struct {
 	Terms []Term
 	Sort  []SortKey
 	Group string
+	// GroupPos locates the group term for validation errors.
+	GroupPos int
 }
 type Options struct{ Hook bool }
 
@@ -141,7 +143,7 @@ func Parse(input string, options Options) (Query, error) {
 			if t.Negated || q.Group != "" || len(t.Values) != 1 {
 				return q, fail(t.Pos, "group requires one key and must appear once without negation")
 			}
-			q.Group = strings.ToLower(t.Values[0].Text)
+			q.Group, q.GroupPos = strings.ToLower(t.Values[0].Text), t.Pos
 		default:
 			q.Terms = append(q.Terms, t)
 		}
