@@ -82,6 +82,9 @@ func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta,
 // relation edit or deletion that a change window cannot see reaches later reads
 // now, not at the next reconciliation. The cache write is best effort.
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
+	if backend, ok := s.backend.(source.SprintReader); ok && s.cache.RemoteSprints(ctx) {
+		backend.ReadSprints()
+	}
 	item, err := s.backend.Read(ctx, id)
 	if err != nil {
 		err = s.safeError(err)

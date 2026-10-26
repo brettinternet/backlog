@@ -30,6 +30,20 @@ func (s Store) RemoteInitial(ctx context.Context) (source.Delta, error) {
 // RemoteRefresh serializes read/network/commit across processes. Rows and cursor
 // commit atomically. A failed load never advances the cursor. The refresh lock
 // is not a database transaction: warm readers never wait on network I/O.
+// RemoteSprints reports whether the cached cursor records sprint demand.
+func (s Store) RemoteSprints(ctx context.Context) bool {
+	if _, err := os.Stat(s.Path); err != nil {
+		return false
+	}
+	db, err := s.open(ctx)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	delta, err := readRemote(ctx, db, 0)
+	return err == nil && delta.Cursor.Sprints
+}
+
 func (s Store) RemoteRefresh(ctx context.Context, load func(source.Cursor) (source.Delta, error)) (source.Delta, error) {
 	lock, err := s.lock(ctx)
 	if err != nil {

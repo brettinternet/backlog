@@ -26,6 +26,11 @@ type Cursor struct {
 	// fresh sprint catalog. Without it, providers make no sprint requests.
 	Sprints bool
 }
+
+// SprintReader is a source whose single-item reads include sprints once
+// enabled. The remote wrapper enables it when its cache holds sprint demand.
+type SprintReader interface{ ReadSprints() }
+
 type Finding struct {
 	Code, Severity, Path, Message string
 	Line                          int

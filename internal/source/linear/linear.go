@@ -495,6 +495,7 @@ func (s *Source) trashedBlocks(ctx context.Context, c remote.Credential, id stri
 	}
 }
 
+func (s *Source) ReadSprints() { s.sprints.Store(true) }
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

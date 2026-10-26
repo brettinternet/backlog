@@ -59,6 +59,7 @@ func Merge(previous, next Delta) Delta {
 	}
 	if next.Cursor.Value == "" {
 		out.Cursor = previous.Cursor
+		out.Cursor.Sprints = previous.Cursor.Sprints || next.Cursor.Sprints
 	}
 	return out
 }

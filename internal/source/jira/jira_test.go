@@ -109,7 +109,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(403)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"values": f.boardSprints})
+		_ = json.NewEncoder(w).Encode(map[string]any{"values": f.boardSprints, "isLast": true})
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, prefix+"/rest/api/3/") {
@@ -384,7 +384,7 @@ func sprintRow(id int, state, start, complete string) map[string]any {
 // future one, a hardcoded sprint field, and sprint requests or version drift
 // when no caller asked for sprints.
 func TestSprintSelectionAndCatalog(t *testing.T) {
-	s, f, _ := setup(t)
+	s, f, secrets := setup(t)
 	ctx := context.Background()
 	f.sprints = []any{
 		sprintRow(40, "closed", "2026-09-01T00:00:00.000Z", "2026-09-14T00:00:00.000Z"),
@@ -426,5 +426,15 @@ func TestSprintSelectionAndCatalog(t *testing.T) {
 	d, err = s.Load(ctx, source.Cursor{Sprints: true})
 	if err != nil || len(d.Sprints) != 2 || f.fieldCalls != 1 || !slices.ContainsFunc(d.Findings, func(f source.Finding) bool { return f.Code == "jira-agile-unavailable" }) {
 		t.Fatalf("agile fallback: %+v %+v %v", d.Sprints, d.Findings, err)
+	}
+	// Jira has no cursor value; sprint demand must still persist in a shared
+	// cache, or a sprint-free process strips the catalog for everyone.
+	f.agileDown = false
+	wrapped := remote.New(s, cache.New(filepath.Join(t.TempDir(), "cache"), "project", "jira", "scope"), secrets)
+	if _, err = wrapped.Load(ctx, source.Cursor{Sprints: true}); err != nil {
+		t.Fatal(err)
+	}
+	if d, err = wrapped.Load(ctx, source.Cursor{}); err != nil || len(d.Sprints) == 0 {
+		t.Fatalf("sprint demand not sticky: %+v %v", d.Sprints, err)
 	}
 }

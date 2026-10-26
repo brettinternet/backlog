@@ -5,8 +5,8 @@ import (
 	"github.com/brettinternet/backlog/internal/query"
 )
 
-// WantsSprints reports whether ready.sprint, a saved view, or one of queries
-// uses sprints. Providers make no sprint requests otherwise.
+// WantsSprints reports whether ready.sprint, a saved view, an action's when, or
+// one of queries uses sprints. Providers make no sprint requests otherwise.
 func WantsSprints(cfg project.Config, queries ...string) bool {
 	ready := []project.ReadyConfig{cfg.Ready}
 	if cfg.Workspace != nil {
@@ -21,6 +21,9 @@ func WantsSprints(cfg project.Config, queries ...string) bool {
 	}
 	for _, view := range cfg.Views {
 		queries = append(queries, view.Query, "group:"+view.Group)
+	}
+	for _, action := range cfg.Actions {
+		queries = append(queries, action.When)
 	}
 	for _, text := range queries {
 		if MentionsSprint(text) {

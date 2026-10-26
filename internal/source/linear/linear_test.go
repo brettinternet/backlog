@@ -130,6 +130,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	f.requests++
 	q, v := req.Query, req.Variables
 	f.wantCycle = strings.Contains(q, "cycle{id name number}")
+	q = strings.ReplaceAll(q, " cycle{id name number}", "")
 	listCycles := strings.Contains(q, cycleFields)
 	if listCycles {
 		f.cycleQueries++
@@ -714,5 +715,9 @@ func TestCycleCatalogRefreshesWithoutIssueUpdate(t *testing.T) {
 	item = d.Items[slices.IndexFunc(d.Items, func(i model.Item) bool { return i.Ref.ID == "TEST-1" })]
 	if item.Sprint != cycleID || !current.Match(item, snapshot(d), nil) {
 		t.Fatalf("sprint:current missed the activated cycle: sprint=%q catalog=%+v", item.Sprint, d.Sprints)
+	}
+	s.sprints.Store(false) // a fresh process reading one item, as bl show does
+	if item, err = wrapped.Read(ctx, "TEST-1"); err != nil || item.Sprint != cycleID {
+		t.Fatalf("single read lost the cycle: %q %v", item.Sprint, err)
 	}
 }

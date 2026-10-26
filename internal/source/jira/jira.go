@@ -42,6 +42,7 @@ type Source struct {
 	// sprintField is discovered once per process on the first sprint load.
 	sprintField           string
 	sprintFieldDiscovered bool
+	readSprints           bool
 }
 
 // CanonicalSite is also the claim identity: neither JQL nor project keys enter it.
@@ -299,13 +300,17 @@ func (s *Source) catalog(ctx context.Context, c remote.Credential, rows map[stri
 	listed := map[int64]bool{}
 	open := map[int64]sprint{}
 	for _, board := range ids {
-		var r struct{ Values []sprint }
+		var r struct {
+			Values []sprint
+			IsLast bool
+		}
 		if err := s.request(ctx, c, http.MethodGet, fmt.Sprintf("/rest/agile/1.0/board/%d/sprint?state=active,future&maxResults=50", board), nil, &r); err != nil || r.Values == nil {
 			findings = append(findings, source.Finding{Code: "jira-agile-unavailable", Severity: "warning", Message: "Jira Agile sprint list unavailable; sprint states come from issue fields"})
 			listed, open = map[int64]bool{}, map[int64]sprint{}
 			break
 		}
-		listed[board] = true
+		// A truncated list cannot prove a seen sprint closed.
+		listed[board] = r.IsLast
 		for _, x := range r.Values {
 			if x.ID > 0 {
 				open[x.ID] = x
@@ -411,12 +416,22 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	}
 	return source.Delta{}, source.Refuse("unavailable", "Jira page budget exceeded")
 }
+func (s *Source) ReadSprints() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.readSprints = true
+}
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return model.Item{}, err
+	}
+	if s.readSprints {
+		if err = s.discoverSprintField(ctx, c); err != nil {
+			return model.Item{}, err
+		}
 	}
 	return s.read(ctx, c, id)
 }

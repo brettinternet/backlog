@@ -86,6 +86,10 @@ func Parse(input string, options Options) (Query, error) {
 			if hookField(t.Field) && !options.Hook {
 				return q, fail(start, t.Field+": is only allowed in hook if:")
 			}
+			if t.Field == "sprint" && options.Hook {
+				// Events carry no sprint catalog to resolve current or next.
+				return q, fail(start, "sprint: is not allowed in hook if:")
+			}
 		} else {
 			p.i = start
 		}

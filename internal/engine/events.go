@@ -818,7 +818,7 @@ func eventItemData(item model.Item) map[string]any {
 	typ := v.Type()
 	for n := 0; n < v.NumField(); n++ {
 		name := typ.Field(n).Name
-		if name == "Edges" {
+		if name == "Edges" || name == "Sprint" && item.Sprint == "" {
 			continue
 		}
 		name = eventFieldName(name)

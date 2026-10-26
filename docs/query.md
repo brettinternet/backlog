@@ -98,6 +98,7 @@ Notes:
 - Claim terms use the bulk claim list. An expired claim is free. A failed or
   redacted list is unknown, so `claimed:none` never matches then.
 - Hook-only terms need hook parsing mode and are false outside an event.
+  `sprint:` is refused in hook mode: events carry no sprint catalog.
 - `bl ls` and views add `is:open` when the query has no `is:` term.
   `is:archived` loads `archive/`. The parser itself adds nothing and does no I/O.
 
