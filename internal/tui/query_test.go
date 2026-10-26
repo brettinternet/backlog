@@ -237,6 +237,91 @@ func TestQueryEditor(t *testing.T) {
 	}
 }
 
+// sprintSource holds its sprint-enabled load until release, like a slow provider.
+type sprintSource struct{ release chan struct{} }
+
+func (sprintSource) Info() source.Info { return source.Info{ID: "linear", Kind: "linear"} }
+func (s sprintSource) Load(ctx context.Context, c source.Cursor) (source.Delta, error) {
+	items := []model.Item{{Ref: model.Ref{Source: "linear", ID: "LIN-1"}, Title: "in sprint", Status: "todo", Category: model.Todo, Version: "1"}, {Ref: model.Ref{Source: "linear", ID: "LIN-2"}, Title: "backlog", Status: "todo", Category: model.Todo, Version: "1"}}
+	if !c.Sprints {
+		return source.Delta{Items: items, Coverage: source.Complete}, nil
+	}
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return source.Delta{}, ctx.Err()
+	}
+	items[0].Sprint = "s7"
+	return source.Delta{Items: items, Coverage: source.Complete, Sprints: []model.Sprint{{Key: "s7", Name: "Seven", State: model.SprintActive}}}, nil
+}
+func (sprintSource) Read(context.Context, string) (model.Item, error) {
+	return model.Item{}, errors.New("unused")
+}
+func (sprintSource) Apply(context.Context, model.Mutation) (model.Item, error) {
+	return model.Item{}, errors.New("unused")
+}
+
+// Catches a session's first sprint term warning about a catalog that is still
+// loading, and sprint:current staying empty after the catalog arrives.
+func TestQuerySprintCatalogLoading(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cfg := project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "linear", Type: "linear"}}, Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}, Ready: project.ReadyConfig{Statuses: []string{"todo"}}}}
+	src := sprintSource{release: make(chan struct{})}
+	store := engine.OpenStore(ctx, cfg, source.Registry{"linear": src})
+	defer store.Close()
+	projector := engine.NewProjector(ctx, cfg)
+	defer projector.Close()
+	ch, unsub := store.Subscribe()
+	defer unsub()
+	m := New(Options{Context: ctx, Store: store, Projector: projector, Sources: []string{"linear"}, NoColor: true})
+	m.Bind(ch)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = next.(Model)
+	until := func(done func(*engine.Snapshot) bool) {
+		for m.snapshot == nil || !done(m.snapshot) {
+			msg := m.waitSnapshot()()
+			if msg == nil {
+				t.Fatal("snapshot deadline")
+			}
+			next, _ := m.Update(msg)
+			m = next.(Model)
+		}
+		m = settleQuery(t, m)
+	}
+	until(func(s *engine.Snapshot) bool { return s.Len() == 2 })
+	m = queryKey(m, "/")
+	m = queryKey(m, "ctrl+u")
+	m = queryType(m, "sprint:Seven")
+	m = queryKey(m, "enter")
+	until((*engine.Snapshot).SprintsPending)
+	if m.query != "sprint:Seven" || m.queryWarning != "" || m.sources[0].state != "syncing" || strings.Contains(m.View().Content, "✓ linear") {
+		t.Fatalf("loading: query=%q warning=%q badge=%+v", m.query, m.queryWarning, m.sources)
+	}
+	m = queryKey(m, "/")
+	m = queryKey(m, "ctrl+u")
+	m = queryType(m, "sprint:current")
+	m = queryKey(m, "enter")
+	m = settleQuery(t, m)
+	if m.query != "sprint:current" || len(m.data.rows) != 0 {
+		t.Fatalf("before catalog: query=%q rows=%d", m.query, len(m.data.rows))
+	}
+	close(src.release)
+	until(func(s *engine.Snapshot) bool { return !s.SprintsPending() })
+	if len(m.data.rows) != 1 || m.data.rows[0].row.Ref.ID != "LIN-1" || m.sources[0].state != "synced" {
+		t.Fatalf("after catalog: rows=%+v badge=%+v", m.data.rows, m.sources)
+	}
+	m = queryKey(m, "/")
+	m = queryKey(m, "ctrl+u")
+	m = queryType(m, "sprint:Eight")
+	m = queryKey(m, "enter")
+	m = settleQuery(t, m)
+	if !strings.Contains(m.queryWarning, `unknown sprint value "Eight"`) {
+		t.Fatalf("loaded catalog must warn: %q", m.queryWarning)
+	}
+}
+
 // Catches a documented second key silently falling through to navigation or an
 // edit command, including the former za/assignee collision.
 func TestQueryMenuKeys(t *testing.T) {

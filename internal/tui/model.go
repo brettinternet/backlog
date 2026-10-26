@@ -260,7 +260,7 @@ func (m Model) waitSnapshot() tea.Cmd {
 				switch {
 				case status.Error != "":
 					badge.state, badge.err = "error", status.Error
-				case status.Coverage == "unknown" || status.Initial:
+				case status.Coverage == "unknown" || status.Initial || status.SprintsPending:
 					badge.state = "syncing"
 					syncing = true
 				case status.Coverage != "complete":

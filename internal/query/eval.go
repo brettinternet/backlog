@@ -36,6 +36,9 @@ type Snapshot struct {
 	Coordination bool
 	// Sprints is the merged provider sprint catalog; roles derive from it.
 	Sprints []model.Sprint
+	// SprintsLoading means a capable source has not yet published its catalog,
+	// so sprint names can't be checked.
+	SprintsLoading bool
 	// TextMatches holds optional snapshot-bound FTS candidates. Missing entries
 	// use the in-memory evaluator; candidates are always post-filtered.
 	TextMatches map[string]map[model.Ref]bool
@@ -54,6 +57,9 @@ func (q Query) Validate(s Snapshot) []error {
 		case "sprint":
 			if !s.SprintCapable() {
 				errors = append(errors, fail(t.Pos, "no source provides sprints"))
+				continue
+			}
+			if s.SprintsLoading {
 				continue
 			}
 			for _, v := range t.Values {

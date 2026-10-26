@@ -11,6 +11,7 @@ import (
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
@@ -37,6 +38,7 @@ type sourceWorker struct {
 	refresh chan struct{}
 	// reconcile marks the next queued refresh as a manual full resync.
 	reconcile atomic.Bool
+	sprints   bool // the source can supply a sprint catalog
 }
 type editJob struct {
 	mutation model.Mutation
@@ -94,8 +96,9 @@ func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry
 		for op, allowed := range caps {
 			s.capabilities[id][op] = allowed
 		}
-		initial.sources[id] = SourceState{Coverage: source.Unknown}
-		st.workers[id] = &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1)}
+		w := &sourceWorker{backend: backend, jobs: make(chan *editJob, 64), refresh: make(chan struct{}, 1), sprints: query.SprintKind(backend.Info().Kind)}
+		initial.sources[id] = SourceState{Coverage: source.Unknown, SprintsPending: w.sprints && s.sprints.Load()}
+		st.workers[id] = w
 	}
 	s.current.Store(initial)
 	s.wg.Go(func() {
@@ -221,21 +224,32 @@ func (s *Store) history(direction int) <-chan error {
 }
 
 // UseSprints enables provider sprint data, refreshing sources the first time.
-// Like Refresh it performs no I/O on the caller.
+// Capable sources report SprintsPending until a sprint-enabled load publishes
+// their catalog. Like Refresh it performs no I/O on the caller.
 func (s *Store) UseSprints() {
 	if !s.sprints.Swap(true) {
-		s.Refresh()
+		s.refresh(true)
 	}
 }
 
 // Refresh is a manual resync: remote sources run a full reconciliation instead
 // of their change window. Periodic watcher refreshes keep their normal cost.
-func (s *Store) Refresh() {
+func (s *Store) Refresh() { s.refresh(false) }
+func (s *Store) refresh(sprints bool) {
 	result := make(chan error, 1)
 	s.request(func(st *storeState) {
-		for _, w := range st.workers {
+		n := st.snapshot
+		for id, w := range st.workers {
+			if sprints && w.sprints {
+				status := n.sources[id]
+				status.SprintsPending = true
+				n = n.withSource(id, status)
+			}
 			w.reconcile.Store(true)
 			latest(w.refresh, struct{}{})
+		}
+		if n != st.snapshot {
+			st.publish(n)
 		}
 		s.complete(result, nil)
 	}, result)
@@ -339,13 +353,14 @@ func (st *storeState) begin(job *editJob) {
 	w.jobs <- job
 }
 func (s *Store) runSource(id string, w *sourceWorker) {
-	publish := func(delta source.Delta, err error, replaceInitial, initial bool) {
+	// catalog marks a load that requested sprints, so its success publishes the catalog.
+	publish := func(delta source.Delta, err error, replaceInitial, initial, catalog bool) {
 		s.send(func(st *storeState) {
 			// The actor can retain its last callback while idle. Records own
 			// individual items, not the full transfer slice or search closure.
 			defer func() { delta = source.Delta{} }()
 			n := st.snapshot.fork()
-			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor, Initial: initial, Sprints: delta.Sprints}
+			status := SourceState{Coverage: delta.Coverage, Cursor: delta.Cursor, Initial: initial, Sprints: delta.Sprints, SprintsPending: n.sources[id].SprintsPending && (err != nil || !catalog)}
 			for k := range status.Sprints {
 				status.Sprints[k].Source = id
 			}
@@ -449,14 +464,14 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 			}
 			delta.Cursor = cursor
 		}
-		publish(delta, err, provisional, false)
+		publish(delta, err, provisional, false, request.Sprints)
 		provisional = provisional && err != nil
 	}
 	if initial, ok := w.backend.(source.InitialLoader); ok {
 		if delta, err := initial.LoadInitial(s.ctx); err == nil {
 			cursor = delta.Cursor
 			if len(delta.Items) > 0 {
-				publish(delta, nil, false, true)
+				publish(delta, nil, false, true, false)
 				provisional = len(delta.Stale) == 0
 			}
 		}

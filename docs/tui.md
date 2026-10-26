@@ -46,7 +46,7 @@ assignee picker ([Jira](jira.md#writes)).
 | `●` after the ID | Edit pending |
 | `!` after the ID | Edit failed or conflicted; open the item for detail |
 | `•` in the gutter | Marked |
-| `✓` `~` `!` in the header | Source synced, partial, error; no mark until the first sync finishes, then the last result while a refresh runs |
+| `✓` `~` `!` in the header | Source synced, partial, error; no mark until the first sync (or first sprint catalog) finishes, then the last result while a refresh runs |
 
 **Header:** view tabs and one badge per source. Untrusted hooks, actions, or
 adapters replace the badges with `⚠ Untrusted project config · bl trust --show`;

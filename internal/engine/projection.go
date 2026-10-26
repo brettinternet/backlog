@@ -398,7 +398,7 @@ func (p *Projector) run() {
 				if cap(items) < req.snapshot.Len() {
 					items = make([]model.Item, 0, req.snapshot.Len())
 				}
-				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, Items: items, States: make(map[model.Ref]query.State, req.snapshot.Len()), Sprints: req.snapshot.Sprints()}
+				base = query.Snapshot{Settings: p.cfg.Settings, Now: now, Items: items, States: make(map[model.Ref]query.State, req.snapshot.Len()), Sprints: req.snapshot.Sprints(), SprintsLoading: req.snapshot.SprintsPending()}
 				if p.cfg.Me.Default != "" {
 					base.Me = []string{p.cfg.Me.Default}
 				}

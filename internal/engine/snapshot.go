@@ -28,6 +28,9 @@ type SourceState struct {
 	Initial  bool           // the bounded startup snapshot; the first full load is running
 	Loading  bool           // a load is running
 	Sprints  []model.Sprint // last loaded catalog, retained across failed loads
+	// SprintsPending means sprint demand is on but no sprint-enabled load of
+	// this capable source has succeeded yet.
+	SprintsPending bool
 }
 
 // Snapshot is immutable. Successive snapshots share unchanged item records.
@@ -69,6 +72,16 @@ func (s *Snapshot) Get(ref model.Ref) (model.Item, EditState, bool) {
 	return cloneItem(*r.item), e, true
 }
 func (s *Snapshot) Source(id string) SourceState { return s.sources[id] }
+
+// SprintsPending reports whether any source's sprint catalog is still loading.
+func (s *Snapshot) SprintsPending() bool {
+	for _, status := range s.sources {
+		if status.SprintsPending {
+			return true
+		}
+	}
+	return false
+}
 
 // Sprints merges source catalogs in source order. The slice is shared.
 func (s *Snapshot) Sprints() []model.Sprint {
