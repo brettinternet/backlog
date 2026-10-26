@@ -41,10 +41,15 @@ type ReadSnapshot struct {
 // LoadReads loads active items. With archived set, it also loads archive/ on
 // demand (query.md is:archived); those items are marked archived and never ready.
 func LoadReads(ctx context.Context, cfg project.Config, archived bool) (ReadSnapshot, error) {
+	var s ReadSnapshot
+	var err error
 	if cfg.Workspace != nil {
-		return loadWorkspaceReads(ctx, cfg, archived)
+		s, err = loadWorkspaceReads(ctx, cfg, archived)
+	} else {
+		s, err = loadReads(ctx, cfg, archived, false)
 	}
-	return loadReads(ctx, cfg, archived, false)
+	deriveBlocks(s.Query.Items)
+	return s, err
 }
 
 func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted bool) (ReadSnapshot, error) {

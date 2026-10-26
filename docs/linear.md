@@ -116,12 +116,15 @@ still hit quotas; the scheduler honors both request and complexity limits and
 refuses requests until the reset.
 
 Creating or retyping a relation bumps only the target issue's `updatedAt`.
-Deleting one bumps both issues. The change window therefore picks up new and
-removed blockers, and the derived "blocking" list, within a minute. Until the
-next reconciliation, the source issue's own `blocks` and `related` fields can
-be stale, and so can a blocker reference to an issue that has been trashed
-(BL-90). Deletions and moves out of scope never appear in a change window.
-Single-issue reads don't wait for reconciliation:
+Deleting one bumps both issues. The change window therefore picks up the
+change on the target within a minute. Queries and relation rows derive the
+source side from it: `blocks:` and "blocking" follow a loaded target's
+blockers, and "related" includes inbound links but drops a pair linked by
+blocks (BL-93). Until the next reconciliation, the source issue's raw `blocks`
+and `related` fields in item output can be stale, and so can a blocker
+reference to an issue that has been trashed (BL-90). Deletions and moves out
+of scope never appear in a change window. Single-issue reads don't wait for
+reconciliation:
 
 - `bl next --claim` reads each candidate fresh before acquiring it, and skips
   it (`changed` in `--explain`) if that read shows it closed, archived, gone,

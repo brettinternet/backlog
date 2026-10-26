@@ -195,7 +195,7 @@ loading shows.
 | Criteria | Acceptance criteria and definition of done, with progress |
 | Notes | Plan, notes, summary |
 | Comments | Comments |
-| Relations | Blockers → item → what it blocks, then parent, children with progress, duplicate of, related, each with live status |
+| Relations | Blockers → item → what it blocks, then parent, children with progress, duplicate of, related, each with live status. Blocking, children, and related include inbound links; related omits items linked by blocks. |
 
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and

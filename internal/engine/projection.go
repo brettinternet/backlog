@@ -152,31 +152,71 @@ func normalizedRef(ref, owner model.Ref) model.Ref {
 	return ref
 }
 
+// Reverse indexes inbound relations for off-loop row preparation.
+type Reverse struct {
+	BlockingBy, ChildrenBy, RelatedBy map[model.Ref][]model.Ref
+}
+
 // ReverseRelations indexes inbound relations for off-loop row preparation.
-func ReverseRelations(ctx context.Context, snapshot *Snapshot) (map[model.Ref][]model.Ref, map[model.Ref][]model.Ref, bool) {
-	blockingBy, childrenBy := map[model.Ref][]model.Ref{}, map[model.Ref][]model.Ref{}
+func ReverseRelations(ctx context.Context, snapshot *Snapshot) (Reverse, bool) {
+	reverse := Reverse{BlockingBy: map[model.Ref][]model.Ref{}, ChildrenBy: map[model.Ref][]model.Ref{}, RelatedBy: map[model.Ref][]model.Ref{}}
 	index := 0
 	for _, record := range snapshot.records {
 		if index%256 == 0 && ctx.Err() != nil {
-			return nil, nil, false
+			return Reverse{}, false
 		}
 		index++
 		item := record.item
 		for _, ref := range item.BlockedBy {
 			ref = normalizedRef(ref, item.Ref)
-			blockingBy[ref] = append(blockingBy[ref], item.Ref)
+			reverse.BlockingBy[ref] = append(reverse.BlockingBy[ref], item.Ref)
+		}
+		for _, ref := range item.Related {
+			ref = normalizedRef(ref, item.Ref)
+			reverse.RelatedBy[ref] = append(reverse.RelatedBy[ref], item.Ref)
 		}
 		if item.Parent != nil {
 			ref := normalizedRef(*item.Parent, item.Ref)
-			childrenBy[ref] = append(childrenBy[ref], item.Ref)
+			reverse.ChildrenBy[ref] = append(reverse.ChildrenBy[ref], item.Ref)
 		}
 	}
-	return blockingBy, childrenBy, true
+	return reverse, true
+}
+
+// derivedBlocks returns what item blocks. Linear bumps only the target of a
+// created or retyped relation (BL-90), so a loaded target's BlockedBy is
+// authoritative; item.Blocks contributes only targets that aren't loaded.
+func derivedBlocks(item model.Item, blockingBy map[model.Ref][]model.Ref, loaded func(model.Ref) bool) []model.Ref {
+	refs := slices.Clone(blockingBy[item.Ref])
+	for _, ref := range item.Blocks {
+		if ref = normalizedRef(ref, item.Ref); !loaded(ref) {
+			refs = append(refs, ref)
+		}
+	}
+	slices.SortFunc(refs, compareRef)
+	return slices.Compact(refs)
+}
+
+// deriveBlocks replaces each item's Blocks with derivedBlocks, so queries see
+// the same view as relation rows.
+func deriveBlocks(items []model.Item) {
+	loaded := make(map[model.Ref]bool, len(items))
+	blockingBy := map[model.Ref][]model.Ref{}
+	for _, item := range items {
+		loaded[item.Ref] = true
+		for _, ref := range item.BlockedBy {
+			ref = normalizedRef(ref, item.Ref)
+			blockingBy[ref] = append(blockingBy[ref], item.Ref)
+		}
+	}
+	for index := range items {
+		items[index].Blocks = derivedBlocks(items[index], blockingBy, func(ref model.Ref) bool { return loaded[ref] })
+	}
 }
 
 // RelationRows prepares canonical detail relations using a shared reverse index.
-func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy map[model.Ref][]model.Ref) []Relation {
-	if len(item.BlockedBy) == 0 && len(item.Blocks) == 0 && len(item.Children) == 0 && len(item.Related) == 0 && item.Parent == nil && item.DuplicateOf == nil && len(blockingBy[item.Ref]) == 0 && len(childrenBy[item.Ref]) == 0 {
+func RelationRows(item model.Item, snapshot *Snapshot, reverse Reverse) []Relation {
+	if len(item.BlockedBy) == 0 && len(item.Blocks) == 0 && len(item.Children) == 0 && len(item.Related) == 0 && item.Parent == nil && item.DuplicateOf == nil && len(reverse.BlockingBy[item.Ref]) == 0 && len(reverse.ChildrenBy[item.Ref]) == 0 && len(reverse.RelatedBy[item.Ref]) == 0 {
 		return nil
 	}
 	rows := make([]Relation, 0, len(item.BlockedBy)+len(item.Blocks)+len(item.Children)+len(item.Related)+2)
@@ -200,25 +240,33 @@ func RelationRows(item model.Item, snapshot *Snapshot, blockingBy, childrenBy ma
 			rows = append(rows, relation)
 		}
 	}
+	blocking := derivedBlocks(item, reverse.BlockingBy, func(ref model.Ref) bool { return snapshot.records[ref] != nil })
 	appendRelations("blocked by", item.BlockedBy)
-	appendRelations("blocking", append(slices.Clone(item.Blocks), blockingBy[item.Ref]...))
+	appendRelations("blocking", blocking)
 	if item.Parent != nil {
 		appendRelations("parent", []model.Ref{*item.Parent})
 	}
-	appendRelations("children", append(slices.Clone(item.Children), childrenBy[item.Ref]...))
+	appendRelations("children", append(slices.Clone(item.Children), reverse.ChildrenBy[item.Ref]...))
 	if item.DuplicateOf != nil {
 		appendRelations("duplicate of", []model.Ref{*item.DuplicateOf})
 	}
-	appendRelations("related", item.Related)
+	// Related is symmetric. A blocks relation supersedes it, since after a
+	// related->blocks retype only the target is fresh (BL-90).
+	related := append(slices.Clone(item.Related), reverse.RelatedBy[item.Ref]...)
+	related = slices.DeleteFunc(related, func(ref model.Ref) bool {
+		ref = normalizedRef(ref, item.Ref)
+		return slices.Contains(blocking, ref) || slices.ContainsFunc(item.BlockedBy, func(blocker model.Ref) bool { return normalizedRef(blocker, item.Ref) == ref })
+	})
+	appendRelations("related", related)
 	return rows
 }
 
 // Catalog prepares the row of any item in one snapshot in time proportional to
 // the item, so the UI can open an item outside its list without a scan (D14).
 type Catalog struct {
-	snapshot               *Snapshot
-	blockingBy, childrenBy map[model.Ref][]model.Ref
-	explanations           map[model.Ref]Explanation
+	snapshot     *Snapshot
+	reverse      Reverse
+	explanations map[model.Ref]Explanation
 }
 
 func (c *Catalog) Row(ref model.Ref) (Row, bool) {
@@ -226,7 +274,7 @@ func (c *Catalog) Row(ref model.Ref) (Row, bool) {
 	if r == nil {
 		return Row{}, false
 	}
-	return newRow(*r.item, r, c.explanations[ref], RelationRows(*r.item, c.snapshot, c.blockingBy, c.childrenBy)), true
+	return newRow(*r.item, r, c.explanations[ref], RelationRows(*r.item, c.snapshot, c.reverse)), true
 }
 
 // newRow sets the fields every row has; projections add project, claim and
@@ -301,7 +349,7 @@ func (p *Projector) run() {
 	var claimErr error
 	var base query.Snapshot
 	var explanations map[model.Ref]Explanation
-	var blockingBy, childrenBy map[model.Ref][]model.Ref
+	var reverse Reverse
 	var catalog *Catalog
 	for {
 		select {
@@ -419,9 +467,12 @@ func (p *Projector) run() {
 					continue
 				}
 				var ok bool
-				blockingBy, childrenBy, ok = ReverseRelations(req.ctx, req.snapshot)
+				reverse, ok = ReverseRelations(req.ctx, req.snapshot)
 				if !ok {
 					continue
+				}
+				for index := range base.Items {
+					base.Items[index].Blocks = derivedBlocks(base.Items[index], reverse.BlockingBy, func(ref model.Ref) bool { return req.snapshot.records[ref] != nil })
 				}
 				explanations = make(map[model.Ref]Explanation, len(ranking.Items))
 				for _, e := range ranking.Items {
@@ -432,7 +483,7 @@ func (p *Projector) run() {
 					explanations[e.Ref] = e
 				}
 				cached = req.snapshot
-				catalog = &Catalog{snapshot: req.snapshot, blockingBy: blockingBy, childrenBy: childrenBy, explanations: explanations}
+				catalog = &Catalog{snapshot: req.snapshot, reverse: reverse, explanations: explanations}
 			}
 			result.Catalog = catalog
 			base.Now = now
@@ -485,7 +536,7 @@ func (p *Projector) run() {
 								break
 							}
 							r := req.snapshot.records[i.Ref]
-							relations := RelationRows(i, req.snapshot, blockingBy, childrenBy)
+							relations := RelationRows(i, req.snapshot, reverse)
 							projectConfig, localSource := p.cfg.SourceProject(i.Ref.Source)
 							projectName := i.Project
 							if projectName != "" {

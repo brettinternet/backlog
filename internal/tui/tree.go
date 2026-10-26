@@ -39,9 +39,9 @@ func prepareTreeItems(groups []engine.RowGroup, items []model.Item, snapshot *en
 	}
 	sort.Slice(items, func(i, j int) bool { return treeKey(items[i].Ref) < treeKey(items[j].Ref) })
 	parents := map[model.Ref]model.Ref{}
-	var blockingBy, childrenBy map[model.Ref][]model.Ref
+	var reverse engine.Reverse
 	if snapshot != nil {
-		blockingBy, childrenBy, _ = engine.ReverseRelations(context.Background(), snapshot)
+		reverse, _ = engine.ReverseRelations(context.Background(), snapshot)
 	}
 	normalize := func(ref, owner model.Ref) model.Ref {
 		if ref.Source == "" {
@@ -63,7 +63,7 @@ func prepareTreeItems(groups []engine.RowGroup, items []model.Item, snapshot *en
 					row.ErrorRemoteVersion = edit.Remote.Version
 				}
 				row.ReadinessReason = "not available for context ancestor"
-				row.Relations = engine.RelationRows(item, snapshot, blockingBy, childrenBy)
+				row.Relations = engine.RelationRows(item, snapshot, reverse)
 				row.RelationVersion = engine.RelationVersion(row.Relations)
 			}
 			rows[item.Ref] = row

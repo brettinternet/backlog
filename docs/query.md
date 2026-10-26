@@ -75,7 +75,7 @@ snapshot.
 | `assignee` | Handle, `me`, or `none` |
 | `label`, `type`, `milestone`, `source` | Exact value, or `none` |
 | `parent` | ID, or `none` |
-| `blocked-by`, `blocks` | ID |
+| `blocked-by`, `blocks` | ID. `blocks` is derived from the loaded target's blockers; the item's own list counts only for targets that aren't loaded. |
 | `created`, `updated`, `due` | Ordered. See [Dates](#dates). |
 | `text` | Word or phrase in the title or body |
 | `field.NAME` | Exact string form of a raw scalar, or membership in a raw list. `none` matches missing or null. Not ordered. |
