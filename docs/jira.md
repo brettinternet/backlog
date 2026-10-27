@@ -128,8 +128,11 @@ bl set jira:10001 'status=In Progress' --if-version VERSION
 bl set jira:10001 assignees=ACCOUNT-ID --yes --if-version VERSION
 bl set jira:10001 assignees= --yes --if-version VERSION
 bl set jira:10001 sprint=current --if-version VERSION
-bl comment jira:10001 'Checked the reproduction' --author me --if-version VERSION
+bl comment jira:10001 'Checked the reproduction' --if-version VERSION
 ```
+
+Jira attributes a comment to the account's `user`, so `bl` needs no
+`me.default` and refuses any other `--author` with `rejected`.
 
 Status values are destination names from that issue's discovered transitions,
 not global workflow IDs. Required-field transitions without defaults and

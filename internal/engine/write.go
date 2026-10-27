@@ -72,7 +72,31 @@ func ListField(field string) bool {
 	return slices.Contains(strings.Fields("assignees labels blocked_by related refs files"), field)
 }
 
-// ResolveChanges expands reference shorthand in mutations before applying them.
+// CommentAuthor is who a comment on sourceID is attributed to. GitHub, Linear,
+// and Jira attribute every comment to the account's user, so another explicit
+// author is refused; other sources take author, else me.default.
+func CommentAuthor(cfg project.Config, sourceID, author string) (string, error) {
+	for _, c := range cfg.Sources {
+		if c.ID != sourceID || c.Type != "github" && c.Type != "linear" && c.Type != "jira" {
+			continue
+		}
+		account, err := cfg.SourceAccount(c)
+		if err != nil {
+			return "", source.Refuse("unavailable", err.Error())
+		}
+		if author != "" && author != account.User {
+			return "", source.Refuse("rejected", "comments on "+c.ID+" are attributed to its account user "+account.User)
+		}
+		return account.User, nil
+	}
+	if author = cmp.Or(author, cfg.Me.Default); author == "" {
+		return "", source.Refuse("rejected", "comment requires an author or me.default")
+	}
+	return author, nil
+}
+
+// ResolveChanges expands reference shorthand and comment authors in mutations
+// before applying them.
 func ResolveChanges(ctx context.Context, cfg project.Config, sourceID string, changes []model.Mutation) ([]model.Mutation, error) {
 	resolve := func(value string) (string, error) {
 		if value == "" {
@@ -90,6 +114,13 @@ func ResolveChanges(ctx context.Context, cfg project.Config, sourceID string, ch
 	}
 	out := make([]model.Mutation, len(changes))
 	for n, m := range changes {
+		if m.Op == model.AppendComment {
+			author, err := CommentAuthor(cfg, sourceID, m.Comment.Author)
+			if err != nil {
+				return nil, err
+			}
+			m.Comment.Author = author
+		}
 		switch m.Field {
 		case "parent", "duplicate_of", "blocked_by", "related":
 			switch value := m.Value.(type) {

@@ -436,7 +436,7 @@ func (m Model) disabledReason(a action) string {
 		if reason := m.capability(row.Ref, op); reason != "" {
 			return reason
 		}
-		if a.id == "comment" && m.opts.CommentAuthor == "" {
+		if a.id == "comment" && m.opts.Me[row.Ref.Source] == "" {
 			return "comment author is not configured"
 		}
 	}
