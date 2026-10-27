@@ -14,23 +14,9 @@ sources:
       type: github
       repo: brettinternet/backlog
       account: personal
-      githubProject:
-        owner: brettinternet
-        number: 11
-        id: PVT_kwHOAT55tM4BpB9v
-        fieldId: PVTSSF_lAHOAT55tM4BpB9vzhnfXvc
-        allowWrites: true
-        options:
-          3b592250: backlog
-          b1018bb6: todo
-          e8fe458f: active
-          c1d155e1: done
 statuses:
     - key: draft
       name: Draft
-      category: backlog
-    - key: unknown
-      name: Triage
       category: backlog
     - key: todo
       name: To Do
@@ -41,18 +27,9 @@ statuses:
     - key: done
       name: Done
       category: done
-    - key: 3b592250
-      name: Backlog
-      category: backlog
-    - key: b1018bb6
-      name: Ready
+    - key: open
+      name: Open
       category: todo
-    - key: e8fe458f
-      name: In progress
-      category: active
-    - key: c1d155e1
-      name: Done
-      category: done
     - key: closed
       name: Closed
       category: done
@@ -113,11 +90,10 @@ labels:
 ready:
     statuses:
         - todo
-        - b1018bb6
+        - open
     satisfiedBy:
         - done
         - closed
-        - c1d155e1
     excludeLabels:
         - blocked
         - deferred
