@@ -381,8 +381,11 @@ BL-121. See `backlog.yaml`.
 
 The project wins on triage and sprints, and status moves don't add label events
 to the issue timeline. Its extra requests and non-atomic create are negligible
-at this repository's size. Start and done round trips wait on per-source
-workflow statuses (BL-125), as they did with labels.
+at this repository's size.
+
+`bl next --claim --start` moves an issue to In progress and `bl done` closes it.
+A project created through the API starts with its built-in workflows off, so
+enable "Item closed" under the board's Workflows to move closed cards to Done.
 
 ## Tests
 
