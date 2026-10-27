@@ -49,7 +49,7 @@ func settleDetail(t *testing.T, m Model) Model {
 		t.Fatal("no selected item")
 	}
 	if m.detailSubmitted != m.detailGeneration {
-		m.submitDetail()
+		m.submitDetail(false)
 	}
 	for {
 		select {
@@ -154,6 +154,13 @@ func TestDetailCacheAndStaleResults(t *testing.T) {
 	m = settleDetail(t, m)
 	if !strings.Contains(strings.Join(m.detailLines, "\n"), "Looks good") || reads != 3 {
 		t.Fatal("comments not loaded lazily with cached full detail")
+	}
+	// An edit that keeps the provider's version is only visible to a reread.
+	m.detailFocus = true
+	m, _ = detailKey(m, 'R', 0)
+	m = settleDetail(t, m)
+	if renders != 6 || reads != 4 {
+		t.Fatalf("R in detail served the cache: renders=%d reads=%d", renders, reads)
 	}
 }
 

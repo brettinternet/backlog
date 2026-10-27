@@ -347,11 +347,11 @@ func (m *Model) scheduleDetail() tea.Cmd {
 func (m *Model) showDetail() tea.Cmd {
 	cmd := m.scheduleDetail()
 	if m.detailOpen {
-		m.submitDetail()
+		m.submitDetail(false)
 	}
 	return cmd
 }
-func (m *Model) submitDetail() {
+func (m *Model) submitDetail(fresh bool) {
 	m.detailSubmitted = m.detailGeneration
 	row, ok := m.selectedRow()
 	if !ok {
@@ -365,7 +365,9 @@ func (m *Model) submitDetail() {
 		return
 	}
 	m.detailLoading = true
-	m.detailWorker.submit(m.detailRequest(row))
+	request := m.detailRequest(row)
+	request.fresh = fresh
+	m.detailWorker.submit(request)
 }
 
 func (m Model) detailRequest(row engine.Row) detailRequest {
@@ -760,7 +762,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return detailDue(generation) })
 		}
 		m.detailPending = false
-		m.submitDetail()
+		m.submitDetail(false)
 		return m, nil
 	case detailResultMsg:
 		result := detailResult(msg)
@@ -1096,6 +1098,11 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "backspace":
 			return m, m.followBack()
+		case "R":
+			// The focused item rereads from its source; the list resyncs from the list.
+			cmd := m.scheduleDetail()
+			m.submitDetail(true)
+			return m, cmd
 		case "n", "N":
 			if m.find.text != "" {
 				m.stepFind(s == "n")

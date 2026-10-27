@@ -59,7 +59,7 @@ func defaultKeymap() []action {
 		{id: "reset-view", label: "Reset view", canonical: "F", bindings: []string{"F"}},
 		{id: "save-view", label: "Save view", canonical: "ctrl+s", bindings: []string{"ctrl+s"}},
 		{id: "workspace", label: "Toggle workspace", bindings: []string{"W"}},
-		{id: "refresh", label: "Resync sources", canonical: "R", bindings: []string{"R"}},
+		{id: "refresh", label: "Refresh", canonical: "R", bindings: []string{"R"}},
 		{group: "Edit", id: "status", label: "Status…", canonical: "s", bindings: []string{"s"}},
 		{id: "previous-status", label: "Previous status", canonical: "<", bindings: []string{"<"}},
 		{id: "next-status", label: "Next status", canonical: ">", bindings: []string{">"}},
@@ -391,7 +391,7 @@ func (m Model) disabledReason(a action) string {
 		}
 		// Item actions work on the item in detail; view and selection actions
 		// belong to the list.
-		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url"}, a.id) {
+		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url", "refresh"}, a.id) {
 			return focusList
 		}
 	}

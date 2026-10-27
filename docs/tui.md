@@ -92,7 +92,8 @@ runs a full reconciliation, which catches relation edits and deletions that the
 minute poll misses ([linear.md](linear.md#sync)). Remote sources poll once a
 minute and show up to 256 cached rows before the network answers. Opening an
 item's detail reads it fresh and updates its row; an item the provider no
-longer has turns stale. Cached rows appear in Open, but a stale item is
+longer has turns stale. With detail focused, `R` rereads just that item,
+bypassing the detail cache. Cached rows appear in Open, but a stale item is
 never ready in Next, and a stale done blocker doesn't satisfy a dependency.
 Quota errors stay visible until the provider's retry time.
 
@@ -460,7 +461,7 @@ keys:
 | `reset-view` | `F` | Reset view |
 | `save-view` | `ctrl+s` | Save view |
 | `workspace` | `W` | Toggle workspace |
-| `refresh` | `R` | Resync sources |
+| `refresh` | `R` | Refresh |
 | `status` | `s` | Status… |
 | `previous-status` | `<` | Previous status |
 | `next-status` | `>` | Next status |

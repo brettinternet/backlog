@@ -59,6 +59,7 @@ type detailRequest struct {
 	statuses   []project.StatusConfig
 	theme      theme
 	now        time.Time
+	fresh      bool // R: reread from the source, bypassing both caches
 }
 type detailResult struct {
 	generation uint64
@@ -318,12 +319,12 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	version := request.row.Version
 	dependency := detailDependency(request.row, request.tab)
 	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: request.theme.key(), Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
-	if value, ok := worker.cache.render(key); ok {
+	if value, ok := worker.cache.render(key); ok && !request.fresh {
 		result.lines, result.entries, result.targets, result.truncated = value.lines, value.entries, value.targets, value.truncated
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
-	if !ok {
+	if !ok || request.fresh {
 		if worker.read == nil {
 			result.err = "detail reading is unavailable"
 			return result
@@ -349,7 +350,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		version = request.row.Version
 	}
 	key.Version = version
-	if value, ok := worker.cache.render(key); ok {
+	if value, ok := worker.cache.render(key); ok && !request.fresh {
 		result.identity.Version = version
 		result.lines, result.entries, result.targets, result.truncated = value.lines, value.entries, value.targets, value.truncated
 		return result
