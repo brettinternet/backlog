@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
-	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -21,15 +19,16 @@ type selection struct {
 	Group  string    `json:"group,omitempty"`
 	Header bool      `json:"header,omitempty"`
 }
+
+// viewState persists only the selection. Config is this session's edit of
+// Base, the declared view; every launch starts from the declaration.
 type viewState struct {
 	ID        string             `json:"id"`
-	Config    project.ViewConfig `json:"config"`
 	Selection selection          `json:"selection"`
-	// Base is the declared config Config started from. Restored edits apply
-	// only while the declaration is unchanged, so config edits are not shadowed.
-	Base    project.ViewConfig `json:"base"`
-	folded  *foldState
-	foldAll bool
+	Config    project.ViewConfig `json:"-"`
+	Base      project.ViewConfig `json:"-"`
+	folded    *foldState
+	foldAll   bool
 }
 
 // Session is disposable per-project state, not a source of backlog truth.
@@ -61,9 +60,6 @@ func LoadSession(cfg project.Config) (*Session, string) {
 				err = fmt.Errorf("invalid view identity")
 			}
 			seen[v.ID] = true
-			if _, e := query.Parse(v.Config.Query, query.Options{}); e != nil {
-				err = e
-			}
 		}
 	}
 	if err != nil {
@@ -109,9 +105,6 @@ func (m *Model) initViews() {
 		for i := range m.views {
 			for _, saved := range s.Views {
 				if saved.ID == m.views[i].ID {
-					if reflect.DeepEqual(saved.Base, m.views[i].Base) {
-						m.views[i].Config = saved.Config
-					}
 					m.views[i].Selection = saved.Selection
 					break
 				}

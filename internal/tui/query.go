@@ -167,6 +167,32 @@ func toggleTerm(text, term string) string {
 	}
 	return strings.Join(terms, " ")
 }
+
+// toggleDone swaps a lone is:open or is:closed for done, in place, and back.
+// Other is: terms such as is:mine stay. Turning done off drops it when another
+// term still selects a state, else restores is:open.
+func toggleDone(text, done string) string {
+	spans := tokenSpans(text)
+	terms := make([]string, len(spans))
+	for i, span := range spans {
+		terms[i] = text[span[0]:span[1]]
+	}
+	if i := slices.IndexFunc(terms, func(t string) bool { return strings.EqualFold(t, done) }); i >= 0 {
+		rest := strings.Join(slices.Delete(slices.Clone(terms), i, i+1), " ")
+		if q, err := query.Parse(rest, query.Options{}); err == nil {
+			if open, _ := q.Scope(); !open {
+				return rest
+			}
+		}
+		terms[i] = "is:open"
+		return strings.Join(terms, " ")
+	}
+	if i := slices.IndexFunc(terms, func(t string) bool { return strings.EqualFold(t, "is:open") || strings.EqualFold(t, "is:closed") }); i >= 0 {
+		terms[i] = done
+		return strings.Join(terms, " ")
+	}
+	return strings.Join(append(terms, done), " ")
+}
 func clearQuery(text string) string {
 	var terms []string
 	for _, span := range tokenSpans(text) {
@@ -324,15 +350,10 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 			switch key {
 			case "c":
 				m.query = clearQuery(m.query)
-			case "r", "d":
-				// Removing is: falls back to the implicit is:open.
-				value := strings.TrimPrefix(binding.value, "is:")
-				if slices.ContainsFunc(tokenSpans(m.query), func(span [2]int) bool {
-					return strings.EqualFold(m.query[span[0]:span[1]], binding.value)
-				}) {
-					value = ""
-				}
-				m.query = setQueryField(m.query, "is", value)
+			case "r":
+				m.query = toggleTerm(m.query, binding.value)
+			case "d":
+				m.query = toggleDone(m.query, binding.value)
 			case "b":
 				m.query = toggleTerm(m.query, hideDrafts)
 			default:

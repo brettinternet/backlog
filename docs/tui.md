@@ -122,7 +122,8 @@ Explicit `sort` and `group` override query directives. Columns are `id`,
 `gt`/`gT` cycle tabs; `1`–`9` jump to one (a digit waits 350 ms in case it starts
 a count). Each tab keeps its query, folds, and selected item across refreshes,
 following the item into another group; if it disappears, the row taking its
-place is selected.
+place is selected. A tab whose query, layout, or columns differ from its
+definition is marked `•` until restart; `ctrl-s` keeps the edit as a view.
 
 `ctrl-s` saves the current view. Edit the name (`ctrl-u` clears it), press `tab`
 to switch between user and project config, then `enter`. Saving replaces a
@@ -220,7 +221,8 @@ title matches are bold and underlined.
 
 `f`, `o`, and `z` open menus for filter, sort, and group/fold. Field filters open
 a value picker. `fr` toggles ready-only; `fd` toggles closed items (not archived);
-`fb` toggles drafts (`-category:backlog`).
+`fb` toggles drafts (`-category:backlog`). Each toggles only its own term, so
+`is:mine` and other `is:` terms stay.
 `F` or `fc` clears filters but keeps sort and group. `oo` reverses every sort
 key. `zA` groups by assignee, since `za` folds.
 
@@ -539,13 +541,13 @@ remain. See [CLI auto-commit](cli.md#git-auto-commit).
 ## State
 
 UI state lives in `~/.local/state/backlog/ui/<sha256>.json` (`$XDG_STATE_HOME`),
-per project: last view, each tab's query, layout, columns, and selection, the
-detail tab and whether it's open, and the split width (`ctrl-left`/`ctrl-right`
+per project: last view, each tab's selection, the detail tab and whether it's open, and the split width (`ctrl-left`/`ctrl-right`
 resize in five-cell steps). Folds survive tab switches but not restarts.
 
 Invalid, unsupported, or oversized state is ignored with a warning. A missing
-view falls back to Next; a missing item to the first row. Session overrides of a
-view's query or layout apply until that view's config changes.
+view falls back to Next; a missing item to the first row. Tab definitions are
+config, not state: every launch starts each tab from its declared query,
+layout, and columns.
 
 ## Rendering
 

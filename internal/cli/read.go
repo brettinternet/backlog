@@ -98,22 +98,12 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if cmd.IsSet("group") {
 				text += " group:" + cmd.String("group")
 			}
-			// query.md: with no is: term, ls adds is:open; is:archived loads archive/.
 			parsed, err := query.Parse(text, query.Options{})
 			if err != nil {
 				return &Error{Reason: "usage", Message: err.Error()}
 			}
-			hasIs, archived := false, false
-			for _, t := range parsed.Terms {
-				if t.Field != "is" {
-					continue
-				}
-				hasIs = true
-				for _, v := range t.Values {
-					archived = archived || !t.Negated && strings.EqualFold(v.Text, "archived")
-				}
-			}
-			if !hasIs {
+			open, archived := parsed.Scope()
+			if open {
 				text += " is:open"
 			}
 			s, err := load(ctx, cfg, archived, text)

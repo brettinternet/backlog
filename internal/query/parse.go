@@ -49,6 +49,29 @@ type Query struct {
 }
 type Options struct{ Hook bool }
 
+// Scope reports what a list adds to the query (query.md): is:open unless an
+// is: term selects a state (mine, claimed, and pending don't), and archive/
+// when is:archived asks for it.
+func (q Query) Scope() (open, archived bool) {
+	open = true
+	for _, t := range q.Terms {
+		if t.Field != "is" {
+			continue
+		}
+		for _, v := range t.Values {
+			switch strings.ToLower(v.Text) {
+			case "mine", "claimed", "pending":
+			case "archived":
+				open = false
+				archived = archived || !t.Negated
+			default:
+				open = false
+			}
+		}
+	}
+	return open, archived
+}
+
 var fields = strings.Fields("id status category priority assignee label type milestone sprint source parent blocked-by blocks created updated due text claimed is has changed hook action outcome sort group")
 var sortKeys = strings.Fields("next priority rank updated created due id title status")
 var groupKeys = strings.Fields("status category priority assignee label milestone sprint type parent source none")

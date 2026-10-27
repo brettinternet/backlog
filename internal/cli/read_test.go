@@ -263,14 +263,15 @@ func TestReadProjectionAndExplain(t *testing.T) {
 	if code != 0 || out != "" || !strings.Contains(stderr, "No ready items") {
 		t.Fatalf("empty next: %d %q %q", code, out, stderr)
 	}
-	// ls defaults to is:open and loads archive/ only for is:archived (query.md).
+	// ls defaults to is:open unless an is: term selects a state (pending, mine,
+	// and claimed do not), and loads archive/ only for is:archived (query.md).
 	if err := os.MkdirAll(filepath.Join(root, "items", "archive"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "items", "archive", "BL-15.md"), []byte("---\nid: BL-15\ntitle: Archived\nstatus: todo\ncreated: 2026-10-21T00:00:00Z\nupdated: 2026-10-21T00:00:00Z\n---\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for args, want := range map[string]string{"ls": "BL-012 BL-13", "ls is:archived": "BL-15", "ls is:closed": "BL-14"} {
+	for args, want := range map[string]string{"ls": "BL-012 BL-13", "ls -- -is:pending": "BL-012 BL-13", "ls is:archived": "BL-15", "ls is:closed": "BL-14"} {
 		code, out, stderr := run(append([]string{"-C", root, "--json"}, strings.Fields(args)...)...)
 		for _, id := range strings.Fields("BL-012 BL-13 BL-14 BL-15") {
 			if code != 0 || stderr != "" || strings.Contains(out, `"id":"`+id+`"`) != strings.Contains(want, id) {

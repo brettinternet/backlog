@@ -372,19 +372,32 @@ func TestQueryMenuKeys(t *testing.T) {
 	if m.query != "sort:next" {
 		t.Fatal("F must clear predicates")
 	}
-	m = shellFixture(3)
-	m.query = "is:ready sort:next"
-	m = queryKey(queryKey(m, "f"), "d")
-	m = queryKey(queryKey(m, "f"), "d")
-	if m.query != "sort:next" {
-		t.Fatalf("fd must toggle done off: %q", m.query)
+	// fd and fr toggle only their own term: other is: terms, such as is:mine,
+	// stay, and toggling twice restores the query.
+	for _, tc := range []struct{ query, on string }{
+		{"is:ready sort:next", "is:ready sort:next is:open,closed"},
+		{"assignee:me is:open group:status", "assignee:me is:open,closed group:status"},
+		{"is:mine", "is:mine is:open,closed"},
+	} {
+		m = shellFixture(3)
+		m.query = tc.query
+		m = queryKey(queryKey(m, "f"), "d")
+		if m.query != tc.on {
+			t.Fatalf("fd must toggle done on: %q", m.query)
+		}
+		m = queryKey(queryKey(m, "f"), "d")
+		if want := strings.Replace(tc.query, "is:mine", "is:mine is:open", 1); m.query != want {
+			t.Fatalf("fd must toggle done off: %q", m.query)
+		}
 	}
+	m = shellFixture(3)
+	m.query = "is:mine sort:next"
 	m = queryKey(queryKey(m, "f"), "r")
-	if m.query != "sort:next is:ready" {
+	if m.query != "is:mine sort:next is:ready" {
 		t.Fatalf("fr must toggle ready on: %q", m.query)
 	}
 	m = queryKey(queryKey(m, "f"), "r")
-	if m.query != "sort:next" {
+	if m.query != "is:mine sort:next" {
 		t.Fatalf("fr must toggle ready off: %q", m.query)
 	}
 	m = queryKey(shellFixture(3), "z")

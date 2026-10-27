@@ -241,21 +241,9 @@ func (s *Server) query(ctx context.Context, _ *mcp.CallToolRequest, args QueryAr
 	if err != nil {
 		return failed[any]("usage", err.Error())
 	}
-	archived, hasIs := false, false
-	for _, term := range initial.Terms {
-		if term.Field == "is" {
-			hasIs = true
-			if !term.Negated {
-				for _, value := range term.Values {
-					if strings.EqualFold(value.Text, "archived") {
-						archived = true
-					}
-				}
-			}
-		}
-	}
+	open, archived := initial.Scope()
 	text := args.Query
-	if !hasIs {
+	if open {
 		text += " is:open"
 	}
 	ctx = engine.WithCoordination(ctx, s.coordinator, model.CallerContext{})

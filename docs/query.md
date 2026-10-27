@@ -101,7 +101,8 @@ Notes:
   redacted list is unknown, so `claimed:none` never matches then.
 - Hook-only terms need hook parsing mode and are false outside an event.
   `sprint:` is refused in hook mode: events carry no sprint catalog.
-- `bl ls` and views add `is:open` when the query has no `is:` term.
+- `bl ls`, MCP `query`, and views add `is:open` unless an `is:` term selects a
+  state; `mine`, `claimed`, and `pending` don't, so `is:mine` lists open items.
   `is:archived` loads `archive/`. The parser itself adds nothing and does no I/O.
 
 ### Dates

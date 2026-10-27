@@ -498,17 +498,9 @@ func (p *Projector) run() {
 			}
 			q, err := query.Parse(req.text, query.Options{})
 			if err == nil {
-				hasIs, includeArchive := false, false
-				for _, term := range q.Terms {
-					if term.Field == "is" {
-						hasIs = true
-						for _, v := range term.Values {
-							includeArchive = includeArchive || !term.Negated && strings.EqualFold(v.Text, "archived")
-						}
-					}
-				}
+				open, includeArchive := q.Scope()
 				defaults := ""
-				if !hasIs {
+				if open {
 					defaults = "is:open"
 				}
 				if !includeArchive {
