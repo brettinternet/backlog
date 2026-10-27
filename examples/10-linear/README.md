@@ -8,7 +8,7 @@ One Linear team, with an API key from the environment.
 | [`config.yaml`](config.yaml) | `~/.config/backlog/config.yaml`; never commit it |
 
 Create a personal API key in Linear Settings → Security & access. Give it read
-access, plus issue update and comment creation for writes. Then find the UUIDs:
+access, plus issue creation, issue update, and comment creation for writes. Then find the UUIDs:
 
 ```sh
 export LINEAR_API_KEY=lin_api_...
@@ -40,13 +40,14 @@ bl next
 ```
 
 ```text
-ENG-431  1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d  Retry failed webhooks
+ENG-431  Todo  Retry failed webhooks
 ```
 
-Statuses are state UUIDs; `bl ls --json` has the names. Writes change one field
-per command and need `allowWrites: true`:
+Statuses and assignees show Linear's names; `status=`, queries, and `--json` use
+the UUIDs. Writes change one field per command and need `allowWrites: true`:
 
 ```sh
+bl new 'Retry failed webhooks !high #bug @me' --source eng --sprint current
 bl start eng:ENG-431
 bl set eng:ENG-431 priority=high
 bl set eng:ENG-431 labels=bug,webhooks

@@ -325,7 +325,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		flags := flag()
 		usage := "Append to an item's notes"
 		if name == "comment" {
-			flags = append([]urfave.Flag{&urfave.StringFlag{Name: "author", Usage: "Comment as `NAME` (default: me.default)"}}, flags...)
+			flags = append([]urfave.Flag{&urfave.StringFlag{Name: "author", Usage: "Comment as `NAME` (default: me.default; provider items use the account user)"}}, flags...)
 			usage = "Comment on an item"
 		}
 		commands = append(commands, &urfave.Command{Name: name, Usage: usage, ArgsUsage: "ID TEXT|-", Flags: flags, Action: func(ctx context.Context, cmd *urfave.Command) error {
@@ -346,14 +346,8 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			}
 			m := model.Mutation{Op: model.AppendNote, Text: text}
 			if cmd.Name == "comment" {
-				author := cmd.String("author")
-				if author == "" {
-					author = cfg.Me.Default
-				}
-				if author == "" {
-					return &Error{Reason: "rejected", Message: "comment requires --author or me.default"}
-				}
-				m = model.Mutation{Op: model.AppendComment, Comment: model.Comment{Author: author, Body: text, Time: time.Now()}}
+				// The target source decides the author; see engine.CommentAuthor.
+				m = model.Mutation{Op: model.AppendComment, Comment: model.Comment{Author: cmd.String("author"), Body: text, Time: time.Now()}}
 			}
 			return batch(ctx, cmd, cfg, args[:1], []model.Mutation{m})
 		}})

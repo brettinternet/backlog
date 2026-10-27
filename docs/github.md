@@ -313,7 +313,9 @@ One field and one value per command. `labels=` and `assignees=` replace the
 whole list. `+=` and `-=` use GitHub's add and remove endpoints, so a label or
 assignee someone else added in the meantime stays; adding a present entry or
 removing an absent one sends nothing. Description is the only editable section.
-Comments append and can't be undone. Batches and archiving aren't available.
+Comments append and can't be undone. GitHub attributes each to the account's
+`user`, so `bl` needs no `me.default` and refuses any other `--author` with
+`rejected`. Batches and archiving aren't available.
 
 Before each write, `bl` refreshes credentials, checks the user and permission,
 and compares a fresh composite version of the issue, its relationships, and its
@@ -357,6 +359,28 @@ Claims use Worklease's `github` key from `HOST/OWNER/REPO` and the issue number,
 so they don't depend on aliases, project, status, title, or credential. Node
 IDs are checked on every read; transfers or binding changes fail closed. Use the
 `resource` from `bl show --json`.
+
+## This repository
+
+The `issues` source uses Projects v2 board
+[#11](https://github.com/users/brettinternet/projects/11) (Backlog, Ready, In
+progress, Done), replacing the `ready` and `in-progress` labels tried in
+BL-121. See `backlog.yaml`.
+
+| | Labels | Project |
+| --- | --- | --- |
+| Triage | Edit labels on each issue | Drag on the board; off-board issues stay backlog |
+| Start or done | One label write, or close | One field write, or close |
+| Create with status | One POST, atomic | POST, add to project, set option; follow-ups can fail as `unknown-outcome` |
+| Empty change window | 3 requests | 5 requests |
+| Status keys | Label names | Option IDs, named in `statuses:` |
+| Sprints | No | Iteration field (D31) |
+| OAuth device login | Yes | No for personal projects; uses the `gh` helper |
+
+The project wins on triage and sprints, and status moves don't add label events
+to the issue timeline. Its extra requests and non-atomic create are negligible
+at this repository's size. Start and done round trips wait on per-source
+workflow statuses (BL-125), as they did with labels.
 
 ## Tests
 

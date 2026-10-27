@@ -208,8 +208,8 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				}
 				return false
 			},
-			EditorDir: directory, CommentAuthor: cfg.Me.Default,
-			Views: cfg.SavedViews, Filter: filter, View: cmd.String("view"), Session: restored, Warning: warning, Keys: cfg.Keys,
+			EditorDir: directory,
+			Views:     cfg.SavedViews, Filter: filter, View: cmd.String("view"), Session: restored, Warning: warning, Keys: cfg.Keys,
 			GoToItems: func(ctx context.Context) ([]tui.GoToItem, error) { return engine.GoToItems(ctx, cfg) },
 			SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
 				path, scope := cfg.Paths.ConfigFile, "user"

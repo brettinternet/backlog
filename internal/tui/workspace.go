@@ -50,7 +50,7 @@ func (m *Model) routeSourceProject(source string) {
 func (m *Model) applyProject(cfg project.Config) {
 	m.opts.Context = engine.ProjectContext(m.baseContext, cfg)
 	m.opts.Statuses, m.opts.Milestones, m.opts.Labels = cfg.Statuses, cfg.Milestones, cfg.Labels
-	m.opts.CommentAuthor, m.opts.EditorDir = cfg.Me.Default, cfg.Discovery.ControlRoot
+	m.opts.EditorDir = cfg.Discovery.ControlRoot
 	// Configured actions must run in their own project, not the anchor's context.
 	m.opts.Automation = &cfg
 }

@@ -232,8 +232,10 @@ refused naming the source ([details](format.md#frontmatter-keys)). One ID each.
 ### `bl note ID TEXT|-` and `bl comment ID TEXT|- [--author A]`
 
 Append a paragraph to Notes, or a timestamped comment. `-` reads stdin. The
-author defaults to `me.default`; without it, pass `--author`. Comments can't be
-edited through the CLI.
+author defaults to `me.default`; without it, pass `--author`. GitHub, Linear,
+and Jira attribute a comment to the source account's `user` instead, so neither
+is needed, and any other `--author` is `rejected`. Comments can't be edited
+through the CLI.
 
 ### `bl ac ID ...`
 

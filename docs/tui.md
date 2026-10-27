@@ -317,7 +317,9 @@ Invalid values stay in the form with an error. Backlog.md forms omit `rank` and
 | `c` | A new comment | Appending |
 | `i` | Notes | Replacing them |
 
-A source that can only append notes opens an empty note instead.
+A source that can only append notes opens an empty note instead. `c` comments
+as the account user on GitHub, Linear, and Jira, else as `me.default`; without
+one, it is disabled.
 
 If the item changed while you edited:
 

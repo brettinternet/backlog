@@ -57,8 +57,8 @@ the account's `user` UUID, not `me.default`.
 ### API key
 
 Create a personal API key in Linear Settings → Security & access → Personal API
-keys, limited to the teams you need. Give it read access, plus issue update and
-comment creation for writes. (The live test also needs issue and relation
+keys, limited to the teams you need. Give it read access, plus issue creation,
+issue update, and comment creation for writes. (The live test also needs issue and relation
 create/delete in the Test team.) Workspace and team restrictions still apply.
 
 Keep the key in a credential manager, never in config, arguments, screenshots,
@@ -224,7 +224,7 @@ edits aren't offered.
 | `priority` | `urgent`, `high`, `medium`, `low` → 1–4; empty → 0 (none) |
 | `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
 | `sprint` | `current`, `next`, `none` (or empty), a cycle name, or a cycle UUID from the catalog → `cycleId`. Closed cycles are refused. |
-| Comment | Appends once; can't be undone |
+| Comment | Appends once; can't be undone. Attributed to the account's `user`; no `me.default` is needed, and any other `--author` is `rejected`. |
 | Create | `issueCreate` with title, body, status (else the team's default state), one assignee, priority, labels, sprint, and parent (`parentId`), each checked like `set` before the mutation. Each blocker then gets one `issueRelationCreate` (`blocks`), and the result is read back. Parent and blockers must resolve to Linear issues in this source or under its out-of-team alias; other sources' refs are refused before dispatch. Other native fields (milestone, criteria, DoD, …) are refused; `defaults.type` and `defaults.dod` are not applied. Undo archives the new issue. |
 | Archive, unarchive | `issueArchive` / `issueUnarchive`; each undoes the other. A no-op when the issue is already in the target state. Trashed issues are refused. |
 

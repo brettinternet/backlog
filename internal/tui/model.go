@@ -35,7 +35,7 @@ type Options struct {
 	ResolveRef                 func(context.Context, string, model.Ref) (model.Ref, error)
 	NativeBytes                func(context.Context, model.Item) ([]byte, error)
 	NativeSource               func(string) bool
-	EditorDir, CommentAuthor   string
+	EditorDir                  string
 	OpenURL                    func(context.Context, string) error
 	Read                       func(context.Context, model.Ref) (model.Item, error)
 	Render                     func(string, int) (string, error)
