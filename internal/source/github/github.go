@@ -38,9 +38,13 @@ type Options struct {
 	// future and closed when the catalog is fetched. Query evaluation never
 	// consults it directly.
 	Now func() time.Time
+	// StatusLabels maps label names to categories for issues without a
+	// Projects v2 binding. Names match case-insensitively, as on GitHub.
+	StatusLabels map[string]string
 }
 type Source struct {
 	o               Options
+	statusLabels    map[string]string // lower-case label name to configured key
 	client          remote.Client
 	mu              sync.Mutex
 	repositoryID    string
@@ -75,7 +79,21 @@ func New(o Options) (*Source, error) {
 			}
 		}
 	}
-	return &Source{o: o, client: remote.Client{Host: apiHost(o.Host), Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets, OAuth: o.Account.OAuth}}, nil
+	var statusLabels map[string]string
+	if len(o.StatusLabels) > 0 {
+		if o.Project != nil {
+			return nil, source.Refuse("rejected", "invalid status label mapping")
+		}
+		statusLabels = map[string]string{}
+		for label, category := range o.StatusLabels {
+			folded := strings.ToLower(label)
+			if strings.TrimSpace(label) == "" || folded == "open" || folded == "closed" || folded == "unknown" || statusLabels[folded] != "" || !validCategory(category) {
+				return nil, source.Refuse("rejected", "invalid status label mapping")
+			}
+			statusLabels[folded] = label
+		}
+	}
+	return &Source{o: o, statusLabels: statusLabels, client: remote.Client{Host: apiHost(o.Host), Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets, OAuth: o.Account.OAuth}}, nil
 }
 func apiHost(host string) string {
 	if host == "github.com" {
@@ -338,6 +356,9 @@ func (s *Source) reconcile(ctx context.Context, c remote.Credential, sprints boo
 			if err != nil {
 				return source.Delta{}, err
 			}
+			if mapped := s.mappedLabels(item.Labels); row.State == "OPEN" && len(mapped) > 1 {
+				delta.Findings = append(delta.Findings, source.Finding{Code: "github-status-labels", Severity: "warning", Path: s.o.Repo + "#" + item.Ref.ID, Message: fmt.Sprintf("%s#%s has several status labels (%s), so its status is unknown until one remains", s.o.Repo, item.Ref.ID, strings.Join(mapped, ", "))})
+			}
 			delta.Items = append(delta.Items, item)
 		}
 		after, err := advance(result.Repository.Issues.PageInfo, seen)
@@ -562,6 +583,13 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p pro
 	for _, v := range row.Labels.Nodes {
 		item.Labels = append(item.Labels, v.Name)
 	}
+	if s.statusLabels != nil && row.State == "OPEN" {
+		// Several mapped labels fail closed rather than guess one.
+		item.Status, item.Category = "unknown", model.Backlog
+		if mapped := s.mappedLabels(item.Labels); len(mapped) == 1 {
+			item.Status, item.Category = mapped[0], model.StatusCategory(s.o.StatusLabels[mapped[0]])
+		}
+	}
 	for _, edge := range []struct {
 		name       string
 		connection relationConnection
@@ -649,6 +677,17 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p pro
 		}
 	}
 	return item, nil
+}
+
+// mappedLabels returns the configured keys of the status labels among labels.
+func (s *Source) mappedLabels(labels []string) []string {
+	var keys []string
+	for _, label := range labels {
+		if key := s.statusLabels[strings.ToLower(label)]; key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 func validCategory(v string) bool {
 	return v == "backlog" || v == "todo" || v == "active" || v == "done" || v == "canceled"

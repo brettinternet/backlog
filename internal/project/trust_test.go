@@ -74,6 +74,8 @@ func TestTrustDigestAndInvalidation(t *testing.T) {
 					field.Set(reflect.ValueOf([]string{"different-program", "arg"}))
 				case reflect.Pointer:
 					field.Set(reflect.ValueOf(&project.GitHubProjectConfig{ID: "PVT_changed", Owner: "changed", Number: 1, FieldID: "PVTSSF_changed", Options: map[string]string{"option": "active"}, AllowWrites: true}))
+				case reflect.Map:
+					field.Set(reflect.ValueOf(map[string]string{"changed": "active"}))
 				default:
 					t.Fatalf("unhandled field %s", field.Kind())
 				}

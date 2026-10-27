@@ -78,6 +78,13 @@ func TestGitHubStatusCategories(t *testing.T) {
 		{plain + "statuses: [{key: closed, name: Closed, category: todo}]\n", "line 3: key statuses[0].category: GitHub assigns closed the done or canceled category, not todo; set category: done or remove the entry"},
 		{"project: {id: p}\nsources: [" + bound("x", "active") + "]\nstatuses: [{key: opt, name: Doing, category: todo}]\n", "line 3: key statuses[0].category: source x assigns opt the active category, not todo; set category: active or remove the entry"},
 		{"project: {id: p}\nsources: [" + bound("x", "active") + ", " + bound("y", "todo") + "]\n", "line 2: key sources[1].githubProject.options.opt: source y maps opt to todo, but source x assigns it active; map it to one category"},
+		{"project: {id: p}\nsources:\n  - id: x\n    type: github\n    repo: a/x\n    statusLabels: {ready: todo}\n    githubProject: {owner: a, number: 1, id: P, fieldId: F, options: {opt: todo}}\n", "line 6: key sources[0].statusLabels: source x sets both statusLabels and githubProject; keep one"},
+		{plain[:len(plain)-3] + ", statusLabels: {ready: soon}}]\n", "line 2: key sources[0].statusLabels.ready: unknown category soon; use backlog, todo, active, done, or canceled"},
+		{plain[:len(plain)-3] + ", statusLabels: {Ready: todo, ready: active}}]\n", "line 2: key sources[0].statusLabels.ready: labels Ready and ready are the same GitHub label; keep one"},
+		{plain[:len(plain)-3] + ", statusLabels: {Closed: done}}]\n", "line 2: key sources[0].statusLabels.Closed: label Closed would shadow the closed status; use another label"},
+		{plain[:len(plain)-3] + ", statusLabels: {open: todo}}]\n", "line 2: key sources[0].statusLabels.open: label open would shadow the open status; use another label"},
+		{plain[:len(plain)-3] + ", statusLabels: {UNKNOWN: backlog}}]\n", "line 2: key sources[0].statusLabels.UNKNOWN: label UNKNOWN would shadow the unknown status; use another label"},
+		{plain[:len(plain)-3] + ", statusLabels: {ready: todo}}]\nstatuses: [{key: ready, name: Ready, category: active}]\n", "line 3: key statuses[0].category: source gh assigns ready the todo category, not active; set category: todo or remove the entry"},
 	} {
 		put(t, file, tc.config)
 		if _, err := project.Resolve(paths, root, nil); err == nil || err.Error() != file+": "+tc.want {
@@ -87,6 +94,10 @@ func TestGitHubStatusCategories(t *testing.T) {
 	put(t, file, "project: {id: p}\nsources: ["+bound("x", "active")+", "+bound("y", "active")+"]\nstatuses: [{key: open, name: Open, category: todo}, {key: closed, name: Not planned, category: canceled}, {key: unknown, name: Unknown, category: backlog}, {key: opt, name: Doing, category: active}, {key: open-ish, name: Other, category: backlog}]\n")
 	if _, err := project.Resolve(paths, root, nil); err != nil {
 		t.Fatalf("matching statuses: %v", err)
+	}
+	put(t, file, plain[:len(plain)-3]+", statusLabels: {ready: todo, in-progress: active}}]\nstatuses: [{key: unknown, name: Triage, category: backlog}, {key: closed, name: Closed, category: done}, {key: ready, name: Ready, category: todo}, {key: in-progress, name: In Progress, category: active}]\nworkflow: {start: in-progress, done: closed}\n")
+	if _, err := project.Resolve(paths, root, nil); err != nil {
+		t.Fatalf("label statuses: %v", err)
 	}
 	// Without a GitHub source, the same keys mean whatever the project says.
 	put(t, file, "project: {id: p}\nsources: [{id: tasks, type: native, path: backlog}]\nstatuses: [{key: open, name: Open, category: backlog}]\n")
