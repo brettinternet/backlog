@@ -228,10 +228,21 @@ func TestReconciliationPaginationETagAndBackoff(t *testing.T) {
 	if second.Items[0].Category != model.Active || second.Items[0].Version == first.Items[0].Version || !second.Items[0].Updated.Equal(first.Items[0].Updated) {
 		t.Fatal("project-only update missed")
 	}
+	// An open issue outside the project, or with an unmapped option, is never ready.
+	if second.Items[1].Status != "unknown" || second.Items[1].Category != model.Backlog {
+		t.Fatalf("issue outside project: %+v", second.Items[1])
+	}
 	f.mu.Lock()
 	if f.notModified != 1 || f.lists != 4 || f.projectPages != 4 {
 		t.Fatalf("pagination/304: %+v", f)
 	}
+	f.option = "unmapped"
+	f.mu.Unlock()
+	unmapped, err := s.Load(ctx, source.Cursor{})
+	if err != nil || unmapped.Items[0].Status != "unknown" || unmapped.Items[0].Category != model.Backlog {
+		t.Fatalf("unmapped option: %+v, %v", unmapped.Items, err)
+	}
+	f.mu.Lock()
 	f.limited = true
 	f.mu.Unlock()
 	_, err = s.Load(ctx, source.Cursor{})

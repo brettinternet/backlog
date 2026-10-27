@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -195,6 +197,9 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 		return Config{}, err
 	}
 	if err := validateSettings(effective); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.validateGitHubStatuses(); err != nil {
 		return Config{}, err
 	}
 	if err := cfg.resolveBacklogMD(); err != nil {
@@ -614,6 +619,47 @@ func validateSettings(node *yaml.Node) error {
 					return fail(category, "statuses.category", "unknown category")
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// validateGitHubStatuses refuses status entries that contradict the category
+// the GitHub adapter assigns a key, because the adapter would ignore them: an
+// open issue would stay ready under {key: open, category: backlog}.
+func (c Config) validateGitHubStatuses() error {
+	at := func(key, message string) error {
+		p := c.Provenance[key]
+		return fmt.Errorf("%s: line %d: key %s: %s", p.File, p.Line, key, message)
+	}
+	// closed is done, or canceled when closed as not planned.
+	matches := func(key, assigned, category string) bool {
+		return category == assigned || key == "closed" && category == "canceled"
+	}
+	assigned, by := map[string]string{}, map[string]string{}
+	if slices.ContainsFunc(c.Sources, func(s SourceConfig) bool { return s.Type == "github" }) {
+		for key, category := range map[string]string{"open": "todo", "closed": "done", "unknown": "backlog"} {
+			assigned[key], by[key] = category, "GitHub"
+		}
+	}
+	for i, s := range c.Sources {
+		if s.Type != "github" || s.GitHubProject == nil {
+			continue
+		}
+		for _, option := range slices.Sorted(maps.Keys(s.GitHubProject.Options)) {
+			category := s.GitHubProject.Options[option]
+			if previous, ok := assigned[option]; ok && !matches(option, previous, category) {
+				return at(fmt.Sprintf("sources[%d].githubProject.options.%s", i, option), fmt.Sprintf("source %s maps %s to %s, but %s assigns it %s; map it to one category", s.ID, option, category, by[option], previous))
+			}
+			assigned[option], by[option] = category, "source "+s.ID
+		}
+	}
+	for i, status := range c.Statuses {
+		if category, ok := assigned[status.Key]; ok && !matches(status.Key, category, status.Category) {
+			if status.Key == "closed" {
+				category = "done or canceled"
+			}
+			return at(fmt.Sprintf("statuses[%d].category", i), fmt.Sprintf("%s assigns %s the %s category, not %s; set category: %s or remove the entry", by[status.Key], status.Key, category, status.Category, strings.Fields(category)[0]))
 		}
 	}
 	return nil
