@@ -503,8 +503,15 @@ func remoteCreateUnsupported(item model.Item) []string {
 // githubCreate names the template fields and values an issue create can't
 // store, before the remote wrapper reduces source refusals to a generic message.
 func githubCreate(cfg project.Config, configured project.SourceConfig, item model.Item) error {
-	if configured.Repo == "" {
-		return source.Refuse("rejected", "source "+configured.ID+" reads a project without a repo to create in; set repo")
+	if item.Status == "draft" {
+		if p := configured.GitHubProject; p == nil || !p.AllowWrites {
+			return source.Refuse("rejected", "source "+configured.ID+" creates drafts only in a githubProject with allowWrites")
+		}
+		if len(item.Labels) > 0 || item.Parent != nil || len(item.BlockedBy) > 0 {
+			return source.Refuse("rejected", "GitHub drafts take only a title, body and assignees; labels, parent and blocked_by need an issue")
+		}
+	} else if configured.Repo == "" {
+		return source.Refuse("rejected", "source "+configured.ID+" reads a project without a repo to create issues in; set repo or create a draft with --status draft")
 	}
 	refs := item.BlockedBy
 	if item.Parent != nil {
@@ -524,7 +531,7 @@ func githubCreate(cfg project.Config, configured project.SourceConfig, item mode
 	for label := range configured.StatusLabels {
 		labeled = labeled || strings.EqualFold(label, item.Status)
 	}
-	if p := configured.GitHubProject; item.Status != "" && item.Status != "open" && !labeled && (p == nil || !p.AllowWrites || p.Options[item.Status] == "") {
+	if p := configured.GitHubProject; item.Status != "" && item.Status != "open" && item.Status != "draft" && !labeled && (p == nil || !p.AllowWrites || p.Options[item.Status] == "") {
 		return source.Refuse("rejected", "GitHub creates open issues; status must be open, a status label or a writable project option, not "+item.Status)
 	}
 	unsupported := remoteCreateUnsupported(item)

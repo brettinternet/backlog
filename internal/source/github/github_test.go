@@ -60,6 +60,27 @@ type fixture struct {
 	// a redacted item, a pull request and a draft; paths records REST writes.
 	projectOnly bool
 	paths       []string
+	// withDraft adds the draft PVTI_draft to the project; converted is the
+	// issue number it became, 0 while it's a draft.
+	withDraft             bool
+	draftTitle, draftBody string
+	draftAssignees        []string
+	converted             int
+}
+
+// draftItem is the project's draft item, holding its issue once converted.
+func (f *fixture) draftItem() map[string]any {
+	logins := []any{}
+	for _, v := range f.draftAssignees {
+		logins = append(logins, map[string]string{"login": v})
+	}
+	item := f.projectItem()
+	item["id"], item["type"], item["project"] = "PVTI_draft", "DRAFT_ISSUE", map[string]string{"id": "PVT_test"}
+	item["content"] = map[string]any{"__typename": "DraftIssue", "id": "DI_1", "title": f.draftTitle, "body": f.draftBody, "createdAt": f.itemUpdated, "updatedAt": f.itemUpdated, "assignees": map[string]any{"nodes": logins, "pageInfo": map[string]any{"hasNextPage": false}}}
+	if f.converted > 0 {
+		item["type"], item["content"] = "ISSUE", map[string]any{"__typename": "Issue", "id": fmt.Sprint("I_", f.converted), "number": f.converted, "repository": map[string]string{"nameWithOwner": "owner/repo"}}
+	}
+	return item
 }
 
 // projectIssues are the issues in a projectOnly fixture's project.
@@ -82,7 +103,7 @@ func newFixture(t *testing.T, configure ...func(*Options)) (*Source, *fixture) {
 	t.Helper()
 	testkit.Isolate(t)
 	t.Setenv("BL_GITHUB_TEST_TOKEN", "fake-secret")
-	f := &fixture{option: "todo", state: "OPEN", stateReason: "COMPLETED", title: "Issue", body: "Body", issueCount: 2, updated: map[int]time.Time{}, itemUpdated: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	f := &fixture{draftTitle: "Draft", draftBody: "Idea", option: "todo", state: "OPEN", stateReason: "COMPLETED", title: "Issue", body: "Body", issueCount: 2, updated: map[int]time.Time{}, itemUpdated: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	server := httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(server.Close)
 	u, _ := url.Parse(server.URL)
@@ -243,7 +264,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	q, v := request.Query, request.Variables
 	emit := func(data any) { _ = json.NewEncoder(w).Encode(map[string]any{"data": data}) }
-	for _, name := range []string{"addSubIssue", "addBlockedBy", "addProjectV2ItemById", "updateProjectV2ItemFieldValue", "deleteIssue"} {
+	for _, name := range []string{"addSubIssue", "addBlockedBy", "addProjectV2ItemById", "updateProjectV2ItemFieldValue", "deleteIssue", "updateProjectV2DraftIssue", "addProjectV2DraftIssue", "convertProjectV2DraftIssueItemToIssue", "deleteProjectV2Item"} {
 		if strings.Contains(q, name+"(") {
 			f.mutations = append(f.mutations, name)
 			f.mutationVars = append(f.mutationVars, v)
@@ -254,13 +275,49 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	repo := fmt.Sprint(v["owner"], "/", v["repo"])
+	draftInput := func() map[string]any {
+		input, _ := v["input"].(map[string]any)
+		if title, ok := input["title"].(string); ok {
+			f.draftTitle = title
+		}
+		if body, ok := input["body"].(string); ok {
+			f.draftBody = body
+		}
+		if ids, ok := input["assigneeIds"].([]any); ok {
+			f.draftAssignees = nil
+			for _, id := range ids {
+				f.draftAssignees = append(f.draftAssignees, strings.TrimPrefix(id.(string), "U_"))
+			}
+		}
+		return input
+	}
 	switch {
+	case strings.Contains(q, "updateProjectV2DraftIssue("):
+		emit(map[string]any{"updateProjectV2DraftIssue": map[string]any{"draftIssue": map[string]any{"id": draftInput()["draftIssueId"]}}})
+	case strings.Contains(q, "addProjectV2DraftIssue("):
+		f.withDraft = true
+		draftInput()
+		emit(map[string]any{"addProjectV2DraftIssue": map[string]any{"projectItem": map[string]any{"id": "PVTI_draft"}}})
+	case strings.Contains(q, "convertProjectV2DraftIssueItemToIssue("):
+		f.converted = 3
+		emit(map[string]any{"convertProjectV2DraftIssueItemToIssue": map[string]any{"item": f.draftItem()}})
+	case strings.Contains(q, "deleteProjectV2Item("):
+		f.withDraft = false
+		emit(map[string]any{"deleteProjectV2Item": map[string]any{"deletedItemId": v["itemID"]}})
+	case strings.Contains(q, "node(id:$itemID)"):
+		if v["itemID"] != "PVTI_draft" || !f.withDraft && !f.projectOnly {
+			fmt.Fprint(w, `{"data":{"node":null},"errors":[{"type":"NOT_FOUND","path":["node"],"message":"Could not resolve to a node"}]}`)
+			return
+		}
+		emit(map[string]any{"node": f.draftItem()})
+	case strings.Contains(q, "user(login:"):
+		emit(map[string]any{"user": map[string]any{"id": fmt.Sprint("U_", v["login"]), "login": v["login"]}})
 	case f.projectOnly && strings.Contains(q, "id type updatedAt"):
 		since := time.Time{}
 		if filter, ok := v["filter"].(string); ok {
 			since, _ = time.Parse("updated:>=2006-01-02", filter)
 		}
-		rows := []any{map[string]any{"type": "REDACTED", "content": nil}, map[string]any{"id": "PVTI_pr", "type": "PULL_REQUEST", "updatedAt": f.itemUpdated, "content": map[string]any{"__typename": "PullRequest"}}, map[string]any{"id": "PVTI_draft", "type": "DRAFT_ISSUE", "updatedAt": f.itemUpdated, "content": map[string]any{"__typename": "DraftIssue"}}}
+		rows := []any{map[string]any{"type": "REDACTED", "content": nil}, map[string]any{"id": "PVTI_pr", "type": "PULL_REQUEST", "updatedAt": f.itemUpdated, "content": map[string]any{"__typename": "PullRequest"}}, f.draftItem()}
 		for _, issue := range projectIssues {
 			if !f.itemUpdated.Before(since) {
 				row := f.projectRow(issue.repo, issue.n)
@@ -334,6 +391,9 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		rows := []any{}
 		if !f.itemUpdated.Before(since) {
 			rows = append(rows, f.projectItem())
+			if f.withDraft {
+				rows = append(rows, f.draftItem())
+			}
 		}
 		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": "alice"}, "items": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}}})
 	case strings.Contains(q, "items(first:"):
@@ -348,6 +408,9 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				delete(row, "sprint")
 			}
 			rows = append(rows, row)
+			if f.withDraft {
+				rows = append(rows, f.draftItem())
+			}
 		}
 		owner := "alice"
 		if f.oauthApp != "" {
@@ -392,23 +455,28 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // A project-only source reads issues across repositories under OWNER/REPO#N,
-// counts the items it can't read, and writes to each item's own repository
-// only after rechecking the viewer's permission there.
+// and its drafts, counts the items it can't read, and writes to each item's
+// own repository only after rechecking the viewer's permission there. It
+// creates only drafts and, without a repo, can't convert them.
 func TestProjectOnlySource(t *testing.T) {
 	s, f := newFixture(t, func(o *Options) { o.Repo = "" })
 	f.projectOnly = true
 	ctx := context.Background()
-	if caps := s.Info().Capabilities; caps.Allows(model.Create) || caps.Allows(model.Delete) {
-		t.Fatal("project-only source offers create or delete")
+	if _, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "New"}}); !reason(err, "rejected") {
+		t.Fatalf("issue create without repo: %v", err)
 	}
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	s.o.Now = func() time.Time { return now }
 	full, err := s.Load(ctx, source.Cursor{})
-	if err != nil || len(full.Items) != 2 || len(full.Findings) != 1 || full.Findings[0].Code != "github-project-redacted" || !strings.HasPrefix(full.Findings[0].Message, "1 project items") {
+	if err != nil || len(full.Items) != 3 || len(full.Findings) != 1 || full.Findings[0].Code != "github-project-redacted" || !strings.HasPrefix(full.Findings[0].Message, "1 project items") {
 		t.Fatalf("project-only load: %+v %v", full, err)
 	}
 	lib := itemByID(t, full.Items, "other/lib#5")
 	itemByID(t, full.Items, "owner/repo#1")
+	draft := itemByID(t, full.Items, "PVTI_draft")
+	if _, err = s.Apply(ctx, model.Mutation{Ref: draft.Ref, ExpectedVersion: draft.Version, Op: model.Set, Field: "status", Value: "active"}); !reason(err, "rejected") {
+		t.Fatalf("convert without repo: %v", err)
+	}
 	if lib.Parent == nil || *lib.Parent != (model.Ref{Source: "gh", ID: "owner/repo#2"}) || lib.Category != model.Todo {
 		t.Fatalf("cross-repository refs: %+v", lib)
 	}
@@ -428,7 +496,7 @@ func TestProjectOnlySource(t *testing.T) {
 	f.option, f.itemUpdated = "active", now.Add(-10*time.Second)
 	f.mu.Unlock()
 	now = now.Add(time.Minute)
-	if delta, err = s.Load(ctx, delta.Cursor); err != nil || !delta.Incremental || len(delta.Items) != 2 || delta.Items[0].Category != model.Active {
+	if delta, err = s.Load(ctx, delta.Cursor); err != nil || !delta.Incremental || len(delta.Items) != 3 || itemByID(t, delta.Items, "owner/repo#1").Category != model.Active {
 		t.Fatalf("project item window: %+v %v", delta, err)
 	}
 
@@ -767,6 +835,90 @@ func TestEntryEditsAndUnknownOutcome(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.writes != writes+1 {
 		t.Fatalf("lost write resent: writes=%d", f.writes-writes)
+	}
+}
+
+// A draft loads in the draft status, reads at the same version, and takes
+// only draft edits. A status write converts it in the configured repo, then
+// sets the option; a failure after the conversion names the new issue.
+func TestDrafts(t *testing.T) {
+	s, f := newFixture(t)
+	f.withDraft, f.draftAssignees = true, []string{"alice"}
+	ctx := context.Background()
+	full, err := s.Load(ctx, source.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := itemByID(t, full.Items, "PVTI_draft")
+	if draft.Status != "draft" || draft.Category != model.Backlog || draft.Title != "Draft" || draft.Description != "Idea" || !slices.Equal(draft.Assignees, []string{"alice"}) {
+		t.Fatalf("draft: %+v", draft)
+	}
+	current, err := s.Read(ctx, "PVTI_draft")
+	if err != nil || current.Version != draft.Version {
+		t.Fatalf("read disagrees with load: %+v %v", current, err)
+	}
+	if _, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Add, Field: "labels", Value: "bug"}); !reason(err, "rejected") {
+		t.Fatalf("draft label: %v", err)
+	}
+	if current, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Set, Field: "title", Value: "Sharper"}); err != nil || current.Title != "Sharper" {
+		t.Fatalf("draft title: %+v %v", current, err)
+	}
+	if current, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Add, Field: "assignees", Value: "bob"}); err != nil || !slices.Equal(current.Assignees, []string{"alice", "bob"}) {
+		t.Fatalf("draft assignee: %+v %v", current, err)
+	}
+	if _, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: draft.Version, Op: model.Set, Field: "title", Value: "Stale"}); !reason(err, "conflict") {
+		t.Fatalf("stale draft write: %v", err)
+	}
+	f.mu.Lock()
+	if !slices.Equal(f.mutations, []string{"updateProjectV2DraftIssue", "updateProjectV2DraftIssue"}) || fmt.Sprint(f.mutationVars[1]["input"]) != "map[assigneeIds:[U_alice U_bob] draftIssueId:DI_1]" {
+		t.Fatalf("draft mutations: %v %v", f.mutations, f.mutationVars)
+	}
+	f.mutations, f.mutationVars = nil, nil
+	f.mu.Unlock()
+	promoted, err := s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Set, Field: "status", Value: "active"})
+	if err != nil || promoted.Ref.ID != "3" || promoted.Category != model.Active {
+		t.Fatalf("promote: %+v %v", promoted, err)
+	}
+	f.mu.Lock()
+	if !slices.Equal(f.mutations, []string{"convertProjectV2DraftIssueItemToIssue", "updateProjectV2ItemFieldValue"}) || f.mutationVars[0]["repositoryID"] != "R_test" || f.mutationVars[1]["itemID"] != "PVTI_draft" {
+		t.Fatalf("promote mutations: %v %v", f.mutations, f.mutationVars)
+	}
+	f.mu.Unlock()
+	if _, err = s.Read(ctx, "PVTI_draft"); !reason(err, "not-found") {
+		t.Fatalf("converted draft still reads: %v", err)
+	}
+
+	s, f = newFixture(t)
+	f.withDraft, f.failMutation = true, "updateProjectV2ItemFieldValue"
+	if current, err = s.Read(ctx, "PVTI_draft"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Set, Field: "status", Value: "active"})
+	var refusal *source.Error
+	if !errors.As(err, &refusal) || refusal.Reason != "unknown-outcome" || !strings.Contains(refusal.Message, "PVTI_draft") || refusal.Created == nil || *refusal.Created != (model.Ref{Source: "gh", ID: "3"}) {
+		t.Fatalf("failed follow-up: %v", err)
+	}
+}
+
+// A draft create sends one addProjectV2DraftIssue with resolved assignees,
+// refuses issue-only fields, and undo deletes the unchanged draft.
+func TestDraftCreateAndUndo(t *testing.T) {
+	s, f := newFixture(t)
+	ctx := context.Background()
+	if _, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "Spike", Status: "draft", Labels: []string{"bug"}}}); !reason(err, "rejected") {
+		t.Fatalf("draft label: %v", err)
+	}
+	created, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "Spike", Description: "Maybe", Status: "draft", Assignees: []string{"bob"}}})
+	if err != nil || created.Ref.ID != "PVTI_draft" || created.Status != "draft" || created.Title != "Spike" || !slices.Equal(created.Assignees, []string{"bob"}) {
+		t.Fatalf("draft create: %+v %v", created, err)
+	}
+	if _, err = s.Apply(ctx, model.Mutation{Ref: created.Ref, ExpectedVersion: created.Version, Op: model.Delete}); err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.Equal(f.mutations, []string{"addProjectV2DraftIssue", "deleteProjectV2Item"}) || f.withDraft || f.writes != 0 {
+		t.Fatalf("draft create mutations: %v writes=%d", f.mutations, f.writes)
 	}
 }
 

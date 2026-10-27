@@ -137,3 +137,14 @@ conflict on the title write because reads after the comment had not settled
 read `OWNER/REPO#N`, reconciled, saw a comment-only edit in the change window,
 renamed the issue and set the project status. The test deleted issues #3–#5,
 and the script deleted the probe's label and each project.
+
+## BL-128 live verification
+
+Same target. A probe against disposable project 16 (`PVT_kwHOAT55tM4BpCfG`)
+added a draft with `addProjectV2DraftIssue`, retitled it with
+`updateProjectV2DraftIssue`, and converted it into issue #6 with
+`convertProjectV2DraftIssueItemToIssue`. The draft edit bumped the project
+item's `updatedAt` (23:05:21 to 23:05:25), so the change window sees draft
+edits. The converted item kept its ID, `PVTI_lAHOAT55tM4BpCfGzhECWqo`, so the
+status follow-up targets the same item. The probe deleted issue #6 and the
+project.

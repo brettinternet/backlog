@@ -694,6 +694,9 @@ func (c Config) validateGitHubStatuses() error {
 			assigned[key], by[key] = category, "GitHub"
 		}
 	}
+	if slices.ContainsFunc(c.Sources, func(s SourceConfig) bool { return s.Type == "github" && s.GitHubProject != nil }) {
+		assigned["draft"], by["draft"] = "backlog", "GitHub"
+	}
 	for i, s := range c.Sources {
 		if s.Type != "github" {
 			continue

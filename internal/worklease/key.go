@@ -100,11 +100,16 @@ func resource(cfg project.Config, item model.Item) (string, error) {
 			if s.Repo == "" {
 				repo, number, ok := strings.Cut(item.Ref.ID, "#")
 				if !ok || strings.Count(repo, "/") != 1 {
-					return "", fmt.Errorf("github issue ID %s is not OWNER/REPO#N", strconv.Quote(item.Ref.ID))
+					return "", fmt.Errorf("github issue ID %s is not OWNER/REPO#N; drafts can't be claimed", strconv.Quote(item.Ref.ID))
 				}
 				return Key("github", host+"/"+repo, number)
 			}
-			return Key("github", host+"/"+s.Repo, strings.TrimPrefix(item.Ref.ID, "#"))
+			// A Projects v2 draft has no issue number, so no key: promote it first.
+			number := strings.TrimPrefix(item.Ref.ID, "#")
+			if n, err := strconv.Atoi(number); err != nil || n < 1 || strconv.Itoa(n) != number {
+				return "", fmt.Errorf("github item %s is not an issue number; drafts can't be claimed", strconv.Quote(item.Ref.ID))
+			}
+			return Key("github", host+"/"+s.Repo, number)
 		case "linear":
 			stable, _ := item.Fields["uuid"].(string)
 			if stable == "" {

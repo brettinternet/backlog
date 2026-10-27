@@ -75,6 +75,12 @@ func (s *Source) create(ctx context.Context, item *model.Item) (model.Item, erro
 	if item.Milestone != "" || item.Type != "" && item.Type != "issue" || item.Priority != "" || len(item.Criteria) > 0 || len(item.DoD) > 0 || item.Sprint != "" {
 		return model.Item{}, source.Refuse("rejected", "GitHub create doesn't support milestone, type, priority, criteria or sprint")
 	}
+	if item.Status == "draft" {
+		return s.createDraft(ctx, item)
+	}
+	if s.projectOnly() {
+		return model.Item{}, source.Refuse("rejected", "source "+s.o.ID+" has no repo to create issues in; set repo or create a draft")
+	}
 	option, labels := "", item.Labels
 	if s.statusLabels != nil && item.Status != "" && item.Status != "open" {
 		// Like a status write, the status label replaces any other mapped label.
@@ -205,6 +211,9 @@ func (s *Source) create(ctx context.Context, item *model.Item) (model.Item, erro
 // allowed by the organization and the credential). Otherwise it closes the
 // issue as not planned. A deleted issue returns an item without a version.
 func (s *Source) delete(ctx context.Context, m model.Mutation) (model.Item, error) {
+	if s.projectOnly() {
+		return model.Item{}, source.Refuse("rejected", "source "+s.o.ID+" deletes only the drafts it created")
+	}
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return model.Item{}, err

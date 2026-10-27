@@ -26,6 +26,9 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.Op == model.Create {
 		return s.create(ctx, m.Item)
 	}
+	if draftID(m.Ref.ID) {
+		return s.applyDraft(ctx, m)
+	}
 	repo, n, err := s.parseID(m.Ref.ID)
 	if err != nil {
 		return model.Item{}, err

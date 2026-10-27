@@ -50,6 +50,14 @@ func TestGitHubResourceIdentity(t *testing.T) {
 	if third, err := resource(cfg, item); err != nil || third != first {
 		t.Fatalf("project-only claim identity: %s %v", third, err)
 	}
+	// A Projects v2 draft has no issue, so neither source may key one.
+	item.Ref.ID = "PVTI_lADOdraft"
+	for _, repo := range []string{"", "owner/repo"} {
+		cfg.Sources[0].Repo = repo
+		if key, err := resource(cfg, item); err == nil {
+			t.Fatalf("draft keyed in repo %q: %s", repo, key)
+		}
+	}
 }
 
 type keyVector struct{ Provider, Source, Item, Resource string }
