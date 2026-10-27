@@ -42,6 +42,7 @@ type Options struct {
 	Render                     func(string, int) (string, error)
 	Views                      []project.SavedView
 	Filter                     string // ANDed with every tab's declared query
+	View                       string // starting tab; overrides the restored one
 	Session                    *Session
 	Warning                    string
 	TrustWarning               string

@@ -302,7 +302,7 @@ Commands:
 
 ```text
 bl                                   open the TUI
-bl tui [QUERY]                       open the TUI with every tab narrowed by QUERY
+bl tui [QUERY] [-V NAME]             open the TUI narrowed by QUERY, on tab NAME
 bl ls [QUERY] [--view V]             list items
 bl show ID [--section S]             show one item
 bl next [QUERY] [-n N] [--explain] [--claim [--start] --session S]
