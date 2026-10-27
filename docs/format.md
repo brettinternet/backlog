@@ -118,7 +118,7 @@ sources:
   - {id: tasks, type: native, statuses: [draft, todo, in-progress, done]}
 ```
 
-GitHub, Linear, and Jira sources report their own statuses, so `statuses` on one fails config load.
+Any write that would give that source's item another status, including a create or an editor save, is refused naming the source. GitHub, Linear, and Jira sources report their own statuses, so `statuses` on one fails config load.
 
 A status entry can list other sources' keys under `includes` (design.md D36). Their items keep their own key, but share the entry's board column, `status:` term, and writes:
 

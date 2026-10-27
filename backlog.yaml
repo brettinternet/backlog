@@ -9,6 +9,7 @@ sources:
       type: native
       path: backlog
       prefix: BL
+      statuses: [draft, todo, in-progress, done]
     - id: issues
       type: github
       repo: brettinternet/backlog

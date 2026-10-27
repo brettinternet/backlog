@@ -211,6 +211,16 @@ func (s *Store) WorkflowStatus(item model.Item, category model.StatusCategory) (
 	}
 	return workflowStatus(s.ctx, s.cfg, backend, item, category)
 }
+
+// StatusChoices lists the statuses item's source accepts, which may need
+// provider I/O, so callers keep it off the UI loop.
+func (s *Store) StatusChoices(item model.Item) ([]model.StatusChoice, error) {
+	backend, ok := s.backends[item.Ref.Source]
+	if !ok {
+		return nil, source.Refuse("unavailable", "unknown source "+item.Ref.Source)
+	}
+	return statusChoices(s.ctx, s.cfg, backend, item)
+}
 func (s *Store) Mutate(m model.Mutation) <-chan error {
 	result := make(chan error, 1)
 	m = cloneMutation(m)

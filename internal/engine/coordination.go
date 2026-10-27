@@ -211,18 +211,17 @@ func StatusTarget(cfg project.Config, m model.Mutation) (string, model.StatusCat
 // statusChoices lists the statuses item's source accepts: the provider's own,
 // else the configured statuses, narrowed by sources[].statuses (D35).
 func statusChoices(ctx context.Context, cfg project.Config, backend source.Source, item model.Item) ([]model.StatusChoice, error) {
+	if ws, ok := backend.(*workspaceSource); ok {
+		item.Ref.Source = ws.local
+		return statusChoices(ctx, ws.cfg, ws.Source, item)
+	}
 	if chooser, ok := backend.(source.StatusChooser); ok {
 		choices, ok, err := chooser.StatusChoices(ctx, item)
 		if err != nil || ok {
 			return choices, err
 		}
 	}
-	var narrowed []string
-	for _, c := range cfg.Sources {
-		if c.ID == item.Ref.Source {
-			narrowed = c.Statuses
-		}
-	}
+	narrowed := sourceStatuses(cfg, item.Ref.Source)
 	choices := []model.StatusChoice{}
 	for _, status := range cfg.Statuses {
 		if len(narrowed) == 0 || slices.Contains(narrowed, status.Key) {
@@ -230,6 +229,16 @@ func statusChoices(ctx context.Context, cfg project.Config, backend source.Sourc
 		}
 	}
 	return choices, nil
+}
+
+// sourceStatuses is sources[].statuses for sourceID, empty when unset.
+func sourceStatuses(cfg project.Config, sourceID string) []string {
+	for _, c := range cfg.Sources {
+		if c.ID == sourceID {
+			return c.Statuses
+		}
+	}
+	return nil
 }
 
 // entryChoices returns the keys among status entry key and its includes that

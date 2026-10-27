@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -462,6 +463,30 @@ func TestWorkflowStatusSourceDefault(t *testing.T) {
 		if got, err := store.WorkflowStatus(item, category); err != nil || got != want {
 			t.Errorf("%s: got %q %v want %q", category, got, err, want)
 		}
+	}
+}
+
+// sources[].statuses must keep another source's status, such as GitHub's
+// closed, off a native item on every write path, not just in TUI choices.
+func TestSourceStatusesRefuseOtherStatuses(t *testing.T) {
+	t.Parallel()
+	cfg := storeConfig()
+	cfg.Statuses = append(cfg.Statuses, project.StatusConfig{Key: "closed", Category: "done"})
+	cfg.Sources = []project.SourceConfig{{ID: "tasks", Type: "native", Statuses: []string{"todo", "done"}}}
+	store := engine.OpenStore(context.Background(), cfg, source.Registry{"tasks": fakeSource(t, "tasks")})
+	defer store.Close()
+	snapshot := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	item, _, _ := snapshot.Get(model.Ref{Source: "tasks", ID: "BL-1"})
+	if choices, err := store.StatusChoices(item); err != nil || len(choices) != 2 {
+		t.Fatalf("choices %+v %v", choices, err)
+	}
+	set := model.Mutation{Ref: item.Ref, Op: model.Set, Field: "status", Value: "closed", ExpectedVersion: item.Version}
+	if err := <-store.Mutate(set); engine.ErrorReason(err) != "rejected" || !strings.Contains(err.Error(), "does not accept status closed") {
+		t.Fatalf("got %v", err)
+	}
+	set.Value = "done"
+	if err := <-store.Mutate(set); err != nil {
+		t.Fatalf("accepted status refused: %v", err)
 	}
 }
 
