@@ -9,7 +9,8 @@ import (
 
 // PrepareFields prepares common provider field edits and comment appends without
 // round-tripping a remote UUID, URL, raw fields or dependency graph through the
-// native format. Comments have no inverse. It never changes the input and leaves
+// native format. Comments have no inverse; archive state comes from the
+// provider's "archived" field. It never changes the input and leaves
 // version enforcement to Apply.
 func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 	result := Prepared{Item: before, Inverse: model.Mutation{Ref: m.Ref, Op: m.Op, Field: m.Field}}
@@ -39,6 +40,14 @@ func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 		}
 		result.Item.Comments = append(slices.Clone(before.Comments), comment)
 		result.Inverse = model.Mutation{}
+		return result, nil
+	}
+	if m.Op == model.Archive || m.Op == model.Unarchive {
+		// Like native files, the inverse restores the observed archive state.
+		result.Inverse.Op = model.Unarchive
+		if before.Fields["archived"] == true {
+			result.Inverse.Op = model.Archive
+		}
 		return result, nil
 	}
 	if m.Op != model.Set {

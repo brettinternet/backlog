@@ -283,5 +283,11 @@ func TestLiveRoundTrip(t *testing.T) {
 	if item.Category != model.Done {
 		t.Fatal("completion roundtrip failed")
 	}
-	t.Logf("roundtrip passed in Test team=%s org=%s; relation fingerprint conflict rejected", team, identity.Viewer.Organization.ID)
+	for _, op := range []model.Operation{model.Archive, model.Unarchive} {
+		item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: op})
+		if err != nil || item.Fields["archived"] != (op == model.Archive) {
+			t.Fatalf("%s roundtrip failed: %v", op, err)
+		}
+	}
+	t.Logf("roundtrip passed in Test team=%s org=%s; relation fingerprint conflict rejected; archive and unarchive round-tripped", team, identity.Viewer.Organization.ID)
 }

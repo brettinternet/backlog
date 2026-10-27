@@ -72,7 +72,7 @@ func uuid(s string) bool {
 }
 func (s *Source) Info() source.Info {
 	writes := s.o.AllowWrites && (!s.o.Account.OAuth || s.writeScope.Load())
-	return source.Info{ID: s.o.ID, Kind: "linear", Display: s.o.Team, Capabilities: model.Capabilities{model.Set: writes, model.AppendComment: writes}}
+	return source.Info{ID: s.o.ID, Kind: "linear", Display: s.o.Team, Capabilities: model.Capabilities{model.Set: writes, model.AppendComment: writes, model.Archive: writes, model.Unarchive: writes}}
 }
 func (s *Source) query(ctx context.Context, c remote.Credential, q string, v any, out any) error {
 	raw, err := json.Marshal(map[string]any{"query": q, "variables": v})
@@ -516,19 +516,25 @@ func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	return s.read(ctx, c, id)
 }
 func (s *Source) read(ctx context.Context, c remote.Credential, id string) (model.Item, error) {
+	_, item, err := s.readRow(ctx, c, id)
+	return item, err
+}
+
+// readRow also returns the raw row, which tells trash apart from archive.
+func (s *Source) readRow(ctx context.Context, c remote.Credential, id string) (issue, model.Item, error) {
 	if id == "" || len(id) > 128 || strings.ContainsAny(id, "\r\n\x00") {
-		return model.Item{}, source.Refuse("invalid-id", "Linear identifier required")
+		return issue{}, model.Item{}, source.Refuse("invalid-id", "Linear identifier required")
 	}
 	row, err := s.detail(ctx, c, id)
 	if err != nil {
-		return model.Item{}, err
+		return issue{}, model.Item{}, err
 	}
 	item, err := s.item(ctx, c, row)
 	if err != nil {
-		return model.Item{}, err
+		return issue{}, model.Item{}, err
 	}
 	item.Comments, err = s.comments(ctx, c, row.ID)
-	return item, err
+	return row, item, err
 }
 func (s *Source) detail(ctx context.Context, c remote.Credential, id string) (issue, error) {
 	var r struct{ Issue *issue }

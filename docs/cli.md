@@ -272,7 +272,8 @@ On failure, your buffer is kept; the message and `error.details.editedPath` name
 
 Move native items into or out of `archive/` without changing their bytes or
 version. An occupied target is a conflict. Archived items stay readable by ID
-but leave lists and `next`.
+but leave lists and `next`. Linear sources with `allowWrites` archive and
+unarchive the issue in Linear ([linear.md](linear.md#writes-and-claims)).
 
 ## Coordination
 

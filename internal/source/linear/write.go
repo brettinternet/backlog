@@ -66,6 +66,8 @@ const statesQuery = `query($team:String!,$after:String,$count:Int!){team(id:$tea
 const labelsQuery = `query($team:ID!,$after:String,$count:Int!){issueLabels(first:$count,after:$after,filter:{or:[{team:{id:{eq:$team}}},{team:{null:true}}]}){nodes{id name} pageInfo{hasNextPage endCursor}}}`
 const updateMutation = `mutation($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success issue{id}}}`
 const commentMutation = `mutation($issueId:String!,$body:String!){commentCreate(input:{issueId:$issueId,body:$body}){success comment{id}}}`
+const archiveMutation = `mutation($id:String!){issueArchive(id:$id){success entity{id}}}`
+const unarchiveMutation = `mutation($id:String!){issueUnarchive(id:$id){success entity{id}}}`
 
 func stringsValue(value any) ([]string, bool) {
 	switch v := value.(type) {
@@ -226,7 +228,7 @@ func (s *Source) resolveField(ctx context.Context, c remote.Credential, m model.
 func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m.Ref.Source != s.o.ID || !s.o.AllowWrites || (m.Op != model.Set && m.Op != model.AppendComment) {
+	if m.Ref.Source != s.o.ID || !s.o.AllowWrites || (m.Op != model.Set && m.Op != model.AppendComment && m.Op != model.Archive && m.Op != model.Unarchive) {
 		return model.Item{}, source.Refuse("rejected", "Linear write capability unavailable")
 	}
 	text := m.Comment.Body
@@ -260,7 +262,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			return model.Item{}, err
 		}
 	}
-	current, err := s.read(ctx, c, m.Ref.ID)
+	row, current, err := s.readRow(ctx, c, m.Ref.ID)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -270,11 +272,37 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.Field == "sprint" && current.Sprint != *m.ExpectedSprint {
 		return model.Item{}, source.Refuse("conflict", "Linear cycle changed")
 	}
-	if current.Fields["archived"] == true {
-		return model.Item{}, source.Refuse("rejected", "archived or trashed Linear issue cannot be written")
+	if row.Trashed {
+		return model.Item{}, source.Refuse("rejected", "trashed Linear issue cannot be written")
 	}
-	id, _ := current.Fields["uuid"].(string)
-	if m.Op == model.AppendComment {
+	archived := row.ArchivedAt != nil
+	if m.Op == model.Archive && archived || m.Op == model.Unarchive && !archived {
+		return current, nil
+	}
+	if archived && m.Op != model.Unarchive {
+		return model.Item{}, source.Refuse("rejected", "archived Linear issue cannot be written")
+	}
+	id := row.ID
+	if m.Op == model.Archive || m.Op == model.Unarchive {
+		var r struct {
+			IssueArchive, IssueUnarchive *struct {
+				Success bool
+				Entity  *struct{ ID string }
+			}
+		}
+		q := archiveMutation
+		if m.Op == model.Unarchive {
+			q = unarchiveMutation
+		}
+		err = s.query(ctx, c, q, map[string]any{"id": id}, &r)
+		payload := r.IssueArchive
+		if m.Op == model.Unarchive {
+			payload = r.IssueUnarchive
+		}
+		if err == nil && (payload == nil || !payload.Success || payload.Entity == nil || payload.Entity.ID != id) {
+			err = source.Refuse("unavailable", "Linear archive outcome unknown; refresh before further edits")
+		}
+	} else if m.Op == model.AppendComment {
 		var r struct {
 			CommentCreate *struct {
 				Success bool

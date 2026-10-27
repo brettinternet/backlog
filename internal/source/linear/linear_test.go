@@ -47,6 +47,7 @@ type fixture struct {
 	size, requests, batches                                                        int
 	changed, relationOverflow                                                      bool
 	blocker, trashed                                                               bool   // TEST-1 blocks TEST-2; TEST-1 trashed
+	archived                                                                       bool   // TEST-1 archived
 	archivedAt                                                                     string // TEST-1's archivedAt when trashed, without bumping updatedAt (BL-99/BL-102)
 	cycleActive, wantCycle, noCycle                                                bool
 	cycleQueries                                                                   int
@@ -99,6 +100,12 @@ func (f *fixture) row(n int) map[string]any {
 		labels = append(labels, map[string]string{"id": labelID, "name": name})
 	}
 	r["labels"] = conn(labels, "")
+	if f.archived && n == 1 {
+		r["archivedAt"] = "2026-10-22T00:00:00Z"
+	}
+	if f.trashed && n == 1 {
+		r["trashed"] = true
+	}
 	if f.wantCycle && n == 1 && !f.noCycle {
 		r["cycle"] = map[string]any{"id": cycleID, "name": nil, "number": 7}
 	}
@@ -291,6 +298,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		emit(map[string]any{"issueUpdate": map[string]any{"success": true, "issue": map[string]any{"id": v["id"]}}})
+	case archiveMutation, unarchiveMutation:
+		f.writes++
+		if f.failWrite {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		f.archived = q == archiveMutation
+		key := map[bool]string{true: "issueArchive", false: "issueUnarchive"}[f.archived]
+		emit(map[string]any{key: map[string]any{"success": true, "entity": map[string]any{"id": v["id"]}}})
 	case commentMutation:
 		f.writes++
 		id := "70000000-0000-0000-0000-000000000001"
@@ -596,6 +612,81 @@ func TestVersionCapabilityAndWrites(t *testing.T) {
 	if _, err = s.Apply(ctx, mutation("priority", "low")); err == nil || f.writes != 8 {
 		t.Fatalf("uncertain write retried: %v writes=%d", err, f.writes)
 	}
+}
+
+// Catches archive writes that skip the version preflight, retry an uncertain
+// mutation, touch trashed issues, or leave an unarchived issue hidden in the
+// cache until reconciliation (unarchive bumps no timestamp).
+func TestArchiveWrites(t *testing.T) {
+	s, f := fixtureSource(t)
+	f.size = 3
+	ctx := context.Background()
+	now := s.o.Now()
+	s.o.Now = func() time.Time { return now }
+	wrapped := remote.New(s, cache.New(t.TempDir(), "archive", "lin", "scope"), s.o.Secrets)
+	ref := model.Ref{Source: "lin", ID: "TEST-1"}
+	if _, err := wrapped.Load(ctx, source.Cursor{}); err != nil {
+		t.Fatal(err)
+	}
+	item, err := wrapped.Read(ctx, ref.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refuse := func(m model.Mutation, reason string) {
+		t.Helper()
+		before := f.writes
+		_, err := s.Apply(ctx, m)
+		var e *source.Error
+		if !errors.As(err, &e) || e.Reason != reason || f.writes != before {
+			t.Fatalf("expected %s without dispatch: %v writes=%d", reason, err, f.writes)
+		}
+	}
+	archive := func(op model.Operation) model.Mutation {
+		return model.Mutation{Ref: ref, Op: op, ExpectedVersion: item.Version}
+	}
+	s.o.AllowWrites = false
+	if s.Info().Capabilities.Allows(model.Archive) || s.Info().Capabilities.Allows(model.Unarchive) {
+		t.Fatal("archive offered without allowWrites")
+	}
+	refuse(archive(model.Archive), "rejected")
+	s.o.AllowWrites = true
+	f.block = true
+	refuse(archive(model.Archive), "conflict")
+	f.block = false
+	if prepared, err := wrapped.Prepare(ctx, archive(model.Archive)); err != nil || prepared.Inverse.Op != model.Unarchive {
+		t.Fatalf("archive inverse: %+v %v", prepared.Inverse, err)
+	}
+	if item, err = wrapped.Apply(ctx, archive(model.Archive)); err != nil || item.Fields["archived"] != true || f.writes != 1 {
+		t.Fatalf("archive: %v writes=%d", err, f.writes)
+	}
+	refuse(model.Mutation{Ref: ref, Op: model.Set, Field: "priority", Value: "high", ExpectedVersion: item.Version}, "rejected")
+	if again, err := s.Apply(ctx, archive(model.Archive)); err != nil || again.Version != item.Version || f.writes != 1 {
+		t.Fatalf("repeat archive dispatched: %v writes=%d", err, f.writes)
+	}
+	now = now.Add(reconcileInterval)
+	if d, err := wrapped.Load(ctx, source.Cursor{}); err != nil || !d.Archived[ref] {
+		t.Fatalf("reconciliation missed archive: %v", err)
+	}
+	if prepared, err := wrapped.Prepare(ctx, archive(model.Unarchive)); err != nil || prepared.Inverse.Op != model.Archive {
+		t.Fatalf("unarchive inverse: %+v %v", prepared.Inverse, err)
+	}
+	if item, err = wrapped.Apply(ctx, archive(model.Unarchive)); err != nil || item.Fields["archived"] != false || f.writes != 2 {
+		t.Fatalf("unarchive: %v writes=%d", err, f.writes)
+	}
+	now = now.Add(time.Minute)
+	if d, err := wrapped.Load(ctx, source.Cursor{}); err != nil || d.Archived[ref] {
+		t.Fatalf("unarchived issue still cached as archived: %v", err)
+	}
+	f.failWrite = true
+	if _, err = s.Apply(ctx, archive(model.Archive)); err == nil || f.writes != 3 {
+		t.Fatalf("uncertain archive retried: %v writes=%d", err, f.writes)
+	}
+	f.failWrite, f.archived, f.trashed = false, false, true
+	if item, err = s.Read(ctx, ref.ID); err != nil {
+		t.Fatal(err)
+	}
+	refuse(archive(model.Unarchive), "rejected")
+	refuse(archive(model.Archive), "rejected")
 }
 
 // Versions exclude the cycle, so a stale observed cycle must be caught before

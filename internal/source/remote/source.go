@@ -94,6 +94,11 @@ func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 		}
 		return model.Item{}, err
 	}
+	return s.observe(ctx, item)
+}
+
+// observe cleans a fresh provider item and replaces its cached row.
+func (s *Source) observe(ctx context.Context, item model.Item) (model.Item, error) {
 	clean, err := s.cleanItem(item)
 	if err != nil {
 		return model.Item{}, err
@@ -122,7 +127,8 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if err != nil {
 		return model.Item{}, s.safeError(err)
 	}
-	return s.cleanItem(item)
+	// An unarchive bumps no timestamp a change window could see.
+	return s.observe(ctx, item)
 }
 func (s *Source) Prepare(ctx context.Context, m model.Mutation) (source.Prepared, error) {
 	before, err := s.Read(ctx, m.Ref.ID)

@@ -205,12 +205,14 @@ bl set eng:ENG-431 priority=high --if-version VERSION
 bl set eng:ENG-431 labels=bug --if-version VERSION
 bl set eng:ENG-431 sprint=next --if-version VERSION
 bl comment eng:ENG-431 'Progress update' --if-version VERSION
+bl archive eng:ENG-431 --if-version VERSION
+bl unarchive eng:ENG-431 --if-version VERSION
 ```
 
 Writes need `allowWrites: true`, a freshly verified user, and Linear's
-permission; `allowWrites` doesn't prove the key can write. Without it, set and
-comment are unavailable. Create, archive, batches, and title or body edits
-aren't offered.
+permission; `allowWrites` doesn't prove the key can write. Without it, set,
+comment, archive, and unarchive are unavailable. Create, batches, and title or
+body edits aren't offered.
 
 | Field | Accepts |
 | --- | --- |
@@ -220,6 +222,11 @@ aren't offered.
 | `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
 | `sprint` | `current`, `next`, `none` (or empty), a cycle name, or a cycle UUID from the catalog → `cycleId`. Closed cycles are refused. |
 | Comment | Appends once; can't be undone |
+| Archive, unarchive | `issueArchive` / `issueUnarchive`; each undoes the other. A no-op when the issue is already in the target state. Trashed issues are refused. |
+
+Archived issues accept only unarchive. A write's result replaces the issue's
+cached row and archive flag, so an unarchive shows at once even though it
+bumps no timestamp a change window could see.
 
 Each write changes one field in one mutation. A fresh fingerprint of the issue
 and its relations is checked first; missing or stale versions fail with

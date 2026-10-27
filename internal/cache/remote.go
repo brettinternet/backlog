@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS remote_rows(batch INTEGER PRIMARY KEY, data BLOB NOT 
 }
 
 // RemoteObserve replaces one cached row with a fresh provider read, or marks it
-// stale when item is nil because the provider reports it gone. It rewrites only
+// stale when item is nil because the provider reports it gone. A boolean
+// "archived" field also sets the row's archive flag. It rewrites only
 // that row's batch and never moves the cursor, adds rows, or creates a cache.
 // It never waits: while a refresh holds the lock it reports false, and that
 // refresh's result stands.
@@ -171,6 +172,12 @@ func (s Store) RemoteObserve(ctx context.Context, ref model.Ref, item *model.Ite
 			} else {
 				batch.Items[n] = *item
 				delete(batch.Stale, ref)
+				if archived, ok := item.Fields["archived"].(bool); ok {
+					if batch.Archived == nil {
+						batch.Archived = map[model.Ref]bool{}
+					}
+					batch.Archived[ref] = archived
+				}
 			}
 		}
 	}
