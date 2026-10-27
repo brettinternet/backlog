@@ -62,6 +62,19 @@ func TestFields(t *testing.T) {
 			}
 		})
 	}
+	// A workspace source key matches in full or by its bare source ID, never by
+	// another suffix, and the bare ID validates as a known value.
+	ws, wsSnap := item, s
+	ws.Ref.Source = "github.com%2Facme%2Fapp/tasks"
+	wsSnap.Items = []model.Item{ws}
+	for q, want := range map[string]bool{`source:tasks`: true, `source:github.com%2Facme%2Fapp/tasks`: true, `source:app/tasks`: false, `source:github.com%2Facme%2Fapp`: false} {
+		if got := parse(t, q, false).Match(ws, wsSnap, nil); got != want {
+			t.Fatalf("workspace %s = %v, want %v", q, got, want)
+		}
+	}
+	if errs := parse(t, `source:tasks`, false).Validate(wsSnap); len(errs) != 0 {
+		t.Fatal(errs)
+	}
 	// Each overlay readiness is distinct; unknown claims are not known-free.
 	for _, state := range []string{"ready", "blocked", "waiting", "unknown"} {
 		s.States[item.Ref] = query.State{Readiness: state}
