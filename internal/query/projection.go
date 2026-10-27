@@ -152,7 +152,7 @@ func (s Snapshot) groupContext(ctx context.Context, items []model.Item, key stri
 		var values []string
 		switch key {
 		case "status":
-			values = []string{i.Status}
+			values = []string{s.Settings.StatusEntry(i.Status)}
 		case "category":
 			values = []string{string(i.Category)}
 		case "priority":
@@ -203,6 +203,7 @@ func (s Snapshot) groupCompare(key, a, b string) int {
 	var order []string
 	switch key {
 	case "status":
+		a, b = s.Settings.StatusEntry(a), s.Settings.StatusEntry(b)
 		for _, v := range s.Settings.Statuses {
 			order = append(order, v.Key)
 		}

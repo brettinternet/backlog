@@ -176,8 +176,12 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 		if strings.EqualFold(i.Status, text) {
 			return true
 		}
+		// An entry's key or name also matches the keys it includes (D36).
 		for _, status := range s.Settings.Statuses {
-			if strings.EqualFold(status.Key, i.Status) && strings.EqualFold(status.Name, text) {
+			if !strings.EqualFold(status.Key, text) && !strings.EqualFold(status.Name, text) {
+				continue
+			}
+			if strings.EqualFold(status.Key, i.Status) || slices.Contains(status.Includes, i.Status) {
 				return true
 			}
 		}

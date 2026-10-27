@@ -85,6 +85,10 @@ func TestGitHubStatusCategories(t *testing.T) {
 		{plain[:len(plain)-3] + ", statusLabels: {open: todo}}]\n", "line 2: key sources[0].statusLabels.open: label open would shadow the open status; use another label"},
 		{plain[:len(plain)-3] + ", statusLabels: {UNKNOWN: backlog}}]\n", "line 2: key sources[0].statusLabels.UNKNOWN: label UNKNOWN would shadow the unknown status; use another label"},
 		{plain[:len(plain)-3] + ", statusLabels: {ready: todo}}]\nstatuses: [{key: ready, name: Ready, category: active}]\n", "line 3: key statuses[0].category: source gh assigns ready the todo category, not active; set category: todo or remove the entry"},
+		// A key in one status entry has one column, category, and write meaning (D36).
+		{plain + "statuses: [{key: doing, name: Doing, category: active, includes: [open]}]\n", "line 3: key statuses[0].includes[0]: GitHub assigns open the todo category, but entry doing is active; include it in a todo entry"},
+		{plain + "statuses: [{key: todo, name: To Do, category: todo, includes: [open]}, {key: ready, name: Ready, category: todo, includes: [open]}]\n", "line 3: key statuses[1].includes[0]: open is already included by todo; keep it in one entry"},
+		{plain + "statuses: [{key: todo, name: To Do, category: todo, includes: [ready]}, {key: ready, name: Ready, category: todo}]\n", "line 3: key statuses[0].includes[0]: ready is a status entry; merge the entries or remove it here"},
 	} {
 		put(t, file, tc.config)
 		if _, err := project.Resolve(paths, root, nil); err == nil || err.Error() != file+": "+tc.want {

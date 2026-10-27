@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -288,7 +289,7 @@ func runBeforeMutation(ctx context.Context, cfg project.Config, m model.Mutation
 		after = *m.Item
 		after.Ref.Source = m.Ref.Source
 		for _, status := range cfg.Statuses {
-			if after.Status == status.Key {
+			if after.Status == status.Key || slices.Contains(status.Includes, after.Status) {
 				after.Category = model.StatusCategory(status.Category)
 			}
 		}

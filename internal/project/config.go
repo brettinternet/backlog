@@ -208,6 +208,9 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	if err := cfg.resolveBacklogMD(); err != nil {
 		return Config{}, err
 	}
+	if err := cfg.validateStatusIncludes(); err != nil {
+		return Config{}, err
+	}
 	// A project-level ready.sprint with no capable source gates nothing, which
 	// is a mistake. A user-wide default may apply only where sources allow.
 	if origin := cfg.Provenance["ready.sprint"]; cfg.Discovery.CheckoutRoot != "" && cfg.Ready.Sprint != "" && origin.Layer != "user" && !cfg.SprintCapable() {
@@ -645,6 +648,33 @@ func (c Config) validateSourceStatuses() error {
 	return nil
 }
 
+// validateStatusIncludes keeps every key in at most one status entry, so a
+// key always shows in one column and a write to an entry has a single meaning
+// per source (design.md D36).
+func (c Config) validateStatusIncludes() error {
+	at := func(key, message string) error {
+		p := c.Provenance[key]
+		return fmt.Errorf("%s: line %d: key %s: %s", p.File, p.Line, key, message)
+	}
+	owner := map[string]string{}
+	for _, status := range c.Statuses {
+		owner[status.Key] = status.Key
+	}
+	for i, status := range c.Statuses {
+		for j, member := range status.Includes {
+			path := fmt.Sprintf("statuses[%d].includes[%d]", i, j)
+			switch previous, ok := owner[member]; {
+			case ok && previous == member:
+				return at(path, fmt.Sprintf("%s is a status entry; merge the entries or remove it here", member))
+			case ok:
+				return at(path, fmt.Sprintf("%s is already included by %s; keep it in one entry", member, previous))
+			}
+			owner[member] = status.Key
+		}
+	}
+	return nil
+}
+
 // validateGitHubStatuses refuses status entries that contradict the category
 // the GitHub adapter assigns a key, because the adapter would ignore them: an
 // open issue would stay ready under {key: open, category: backlog}. Mapped
@@ -700,6 +730,11 @@ func (c Config) validateGitHubStatuses() error {
 		}
 	}
 	for i, status := range c.Statuses {
+		for j, member := range status.Includes {
+			if category, ok := assigned[member]; ok && !matches(member, category, status.Category) {
+				return at(fmt.Sprintf("statuses[%d].includes[%d]", i, j), fmt.Sprintf("%s assigns %s the %s category, but entry %s is %s; include it in a %s entry", by[member], member, category, status.Key, status.Category, category))
+			}
+		}
 		if category, ok := assigned[status.Key]; ok && !matches(status.Key, category, status.Category) {
 			if status.Key == "closed" {
 				category = "done or canceled"

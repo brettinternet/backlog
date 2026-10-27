@@ -1055,9 +1055,9 @@ func (m *Model) workflowStatus(direction int) tea.Cmd {
 		m.notice = "Disabled: " + reason
 		return nil
 	}
-	index := -1
+	index, current := -1, project.Settings{Statuses: m.opts.Statuses}.StatusEntry(row.Status)
 	for i, status := range m.opts.Statuses {
-		if status.Key == row.Status {
+		if status.Key == current {
 			index = i
 			break
 		}
