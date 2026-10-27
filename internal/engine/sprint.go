@@ -64,8 +64,8 @@ func sprintSource(cfg project.Config, id string) bool {
 	return false
 }
 
-// resolveSprintWrite turns sprint=VALUE into a catalog key from a fresh
-// sprint-enabled load, and binds the sprint the caller observes when it did
+// resolveSprintWrite turns sprint=VALUE, or a new item's sprint, into a
+// catalog key from a fresh sprint-enabled load, and binds the sprint the caller observes when it did
 // not supply one. Providers recheck that sprint immediately before dispatch.
 func resolveSprintWrite(ctx context.Context, cfg project.Config, backend source.Source, m model.Mutation) (model.Mutation, error) {
 	changes := []*model.Mutation{&m}
@@ -78,6 +78,18 @@ func resolveSprintWrite(ctx context.Context, cfg project.Config, backend source.
 	}
 	var catalog []model.Sprint
 	var observed *string
+	if m.Op == model.Create && m.Item != nil && m.Item.Sprint != "" && sprintSource(cfg, m.Ref.Source) && backend.Info().Capabilities.Allows(model.Create) {
+		delta, err := loadObservation(ctx, backend, source.Cursor{Sprints: true})
+		if err != nil {
+			return m, err
+		}
+		item := *m.Item
+		if item.Sprint, err = ResolveSprint(delta.Sprints, item.Sprint); err != nil {
+			return m, err
+		}
+		m.Item = &item
+		return m, nil
+	}
 	for _, change := range changes {
 		value, ok := change.Value.(string)
 		if change.Field != "sprint" || change.Op != model.Set || !ok || !sprintSource(cfg, m.Ref.Source) {

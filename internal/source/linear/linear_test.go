@@ -51,6 +51,7 @@ type fixture struct {
 	archivedAt                                                                     string // TEST-1's archivedAt when trashed, without bumping updatedAt (BL-99/BL-102)
 	cycleActive, wantCycle, noCycle                                                bool
 	cycleQueries                                                                   int
+	created                                                                        map[string]any
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -307,6 +308,16 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		f.archived = q == archiveMutation
 		key := map[bool]string{true: "issueArchive", false: "issueUnarchive"}[f.archived]
 		emit(map[string]any{key: map[string]any{"success": true, "entity": map[string]any{"id": v["id"]}}})
+	case createMutation:
+		f.writes++
+		if f.failWrite {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		f.created = v["input"].(map[string]any)
+		f.state, f.assignee, f.priority = f.created["stateId"].(string), f.created["assigneeId"].(string), int(f.created["priority"].(float64))
+		f.labels = []string{"bug"}
+		emit(map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]any{"id": issueID(1), "identifier": "TEST-1"}}})
 	case commentMutation:
 		f.writes++
 		id := "70000000-0000-0000-0000-000000000001"
@@ -687,6 +698,44 @@ func TestArchiveWrites(t *testing.T) {
 	}
 	refuse(archive(model.Unarchive), "rejected")
 	refuse(archive(model.Archive), "rejected")
+}
+
+// Catches a create that drops a field, dispatches before catalog validation,
+// retries an uncertain mutation, or can't be undone by archiving.
+func TestCreateWrites(t *testing.T) {
+	s, f := fixtureSource(t)
+	ctx := context.Background()
+	wrapped := remote.New(s, cache.New(t.TempDir(), "create", "lin", "scope"), s.o.Secrets)
+	create := func(item model.Item) (model.Item, error) {
+		return wrapped.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "lin"}, Op: model.Create, Item: &item})
+	}
+	full := model.Item{Title: "New", Description: "Body", Status: activeID, Assignees: []string{userID}, Priority: model.High, Labels: []string{"bug"}, Sprint: cycleID}
+	s.o.AllowWrites = false
+	if s.Info().Capabilities.Allows(model.Create) {
+		t.Fatal("create offered without allowWrites")
+	}
+	s.o.AllowWrites = true
+	for _, bad := range []model.Item{{Title: "New", Labels: []string{"missing"}}, {Title: "New", Status: issueID(9)}, {Title: "New", Parent: &model.Ref{Source: "lin", ID: "TEST-2"}}} {
+		var e *source.Error
+		if _, err := create(bad); !errors.As(err, &e) || e.Reason != "rejected" || f.writes != 0 {
+			t.Fatalf("expected rejection without dispatch: %v writes=%d", err, f.writes)
+		}
+	}
+	item, err := create(full)
+	if err != nil || item.Ref.ID != "TEST-1" || item.Status != activeID || item.Assignees[0] != userID || item.Priority != model.High || item.Labels[0] != "bug" || item.Sprint != cycleID || f.writes != 1 {
+		t.Fatalf("create: %+v %v writes=%d", item, err, f.writes)
+	}
+	if f.created["teamId"] != teamID || f.created["title"] != "New" || f.created["description"] != "Body" || f.created["cycleId"] != cycleID || len(f.created["labelIds"].([]any)) != 1 {
+		t.Fatalf("issueCreate input: %+v", f.created)
+	}
+	if item, err = wrapped.Apply(ctx, model.Mutation{Ref: item.Ref, Op: model.Archive, ExpectedVersion: item.Version}); err != nil || item.Fields["archived"] != true {
+		t.Fatalf("undo create: %v", err)
+	}
+	f.failWrite = true
+	var e *source.Error
+	if _, err = create(full); !errors.As(err, &e) || e.Reason != "unknown-outcome" || f.writes != 3 {
+		t.Fatalf("uncertain create: %v writes=%d", err, f.writes)
+	}
 }
 
 // Versions exclude the cycle, so a stale observed cycle must be caught before

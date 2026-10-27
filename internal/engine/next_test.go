@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/testkit"
 )
 
@@ -496,5 +498,88 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 	c.state.Claim.Resources = []string{"tasks:TEST-5"}
 	if _, err = engine.NextClaim(ctx, cfg, engine.NextClaimOptions{}); engine.ErrorReason(err) != "unavailable" {
 		t.Fatalf("stale identity resumed: %v", err)
+	}
+}
+
+// Catches bl new handing Linear an unresolved sprint role, or Linear create
+// refusals reaching the user only as the remote wrapper's generic message.
+func TestLinearCreate(t *testing.T) {
+	testkit.Isolate(t)
+	const org, team, user = "10000000-0000-0000-0000-000000000001", "20000000-0000-0000-0000-000000000001", "30000000-0000-0000-0000-000000000001"
+	const state, cycle, issue = "40000000-0000-0000-0000-000000000001", "70000000-0000-0000-0000-000000000007", "60000000-0000-0000-0000-000000000001"
+	var created map[string]any
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query     string
+			Variables map[string]any
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		q := req.Query
+		empty := map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false}}
+		var data map[string]any
+		switch {
+		case strings.Contains(q, "viewer{"):
+			data = map[string]any{"viewer": map[string]any{"id": user, "active": true, "organization": map[string]string{"id": org}}, "team": map[string]string{"id": team}}
+		case strings.Contains(q, "issues("):
+			cycles := map[string]any{"nodes": []any{map[string]any{"id": cycle, "number": 7, "startsAt": "2026-10-26T00:00:00Z", "endsAt": "2026-11-09T00:00:00Z", "isActive": true}}}
+			data = map[string]any{"team": map[string]any{"id": team, "issues": empty, "cycles": cycles}}
+		case strings.Contains(q, "states("):
+			data = map[string]any{"team": map[string]any{"id": team, "states": map[string]any{"nodes": []any{map[string]string{"id": state, "name": "Todo", "type": "unstarted"}}, "pageInfo": map[string]any{"hasNextPage": false}}}}
+		case strings.Contains(q, "issueCreate"):
+			created = req.Variables["input"].(map[string]any)
+			data = map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]any{"id": issue, "identifier": "TEST-1"}}}
+		case strings.Contains(q, "comments("), strings.Contains(q, "relations("):
+			key := "comments"
+			if strings.Contains(q, "inverseRelations(") {
+				key = "inverseRelations"
+			} else if strings.Contains(q, "relations(") {
+				key = "relations"
+			}
+			data = map[string]any{"issue": map[string]any{"id": issue, key: empty}}
+		default:
+			data = map[string]any{"issue": map[string]any{"id": issue, "identifier": "TEST-1", "title": created["title"], "updatedAt": "2026-10-27T00:00:00Z", "team": map[string]string{"id": team}, "state": map[string]string{"id": state, "name": "Todo", "type": "unstarted"}, "labels": empty, "relations": empty, "inverseRelations": empty, "cycle": map[string]any{"id": created["cycleId"], "number": 7}}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	original := http.DefaultTransport
+	http.DefaultTransport = readRoundTrip(func(r *http.Request) (*http.Response, error) {
+		copy := r.Clone(r.Context())
+		copy.URL.Host = u.Host
+		return server.Client().Transport.RoundTrip(copy)
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+	t.Setenv("BL_CREATE_LINEAR_TOKEN", "create-linear-test-credential")
+	cfg := project.Config{Settings: project.Settings{
+		Sources:  []project.SourceConfig{{ID: "lin", Type: "linear", Site: org, Team: team, Account: "test", AllowWrites: true}, {ID: "tasks", Type: "native"}},
+		Statuses: []project.StatusConfig{{Key: state, Category: "todo"}},
+	}}
+	cfg.Accounts = map[string][]project.AccountConfig{"linear": {{Name: "test", User: user, Env: "BL_CREATE_LINEAR_TOKEN"}}}
+	cfg.Paths.CacheDir = t.TempDir()
+	create := func(item model.Item) (model.Item, error) {
+		item.Status = state
+		return engine.ApplyWrite(context.Background(), cfg, model.Mutation{Op: model.Create, Ref: model.Ref{Source: "lin"}, Item: &item})
+	}
+	got, err := create(model.Item{Title: "New", Sprint: "current"})
+	if err != nil || created["cycleId"] != cycle || got.Ref.ID != "TEST-1" || got.Sprint != cycle {
+		t.Fatalf("create: %+v %v input=%v", got, err, created)
+	}
+	for _, c := range []struct {
+		want string
+		item model.Item
+	}{
+		{"parent or blocked_by", model.Item{Parent: &model.Ref{Source: "lin", ID: "TEST-1"}}},
+		{"parent or blocked_by", model.Item{BlockedBy: []model.Ref{{Source: "lin", ID: "TEST-1"}}}},
+		{"milestone, criteria", model.Item{Milestone: "m-1", Criteria: []model.Criterion{{Text: "c"}}}},
+		{"at most one assignee", model.Item{Assignees: []string{user, user}}},
+	} {
+		created = nil
+		c.item.Title = "x"
+		_, err := create(c.item)
+		var e *source.Error
+		if !errors.As(err, &e) || e.Reason != "rejected" || !strings.Contains(e.Error(), c.want) || created != nil {
+			t.Errorf("%s: %v", c.want, err)
+		}
 	}
 }

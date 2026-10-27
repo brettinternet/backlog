@@ -53,7 +53,7 @@ func TestWriteCommandOptionParity(t *testing.T) {
 	// Each CLI flag has a named schema destination. These are deliberate aliases
 	// for the corresponding CLI operation, not excluded commands.
 	mapping := map[string]map[string]string{
-		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "source": "create.source", "status": "create.status"},
+		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "source": "create.source", "status": "create.status", "sprint": "create.sprint"},
 		"set":   {"if-version": "update.version", "yes": "update.confirm"},
 		"start": {"if-version": "update.version"}, "done": {"if-version": "update.version"},
 		"archive": {"if-version": "update.version"}, "unarchive": {"if-version": "update.version"},

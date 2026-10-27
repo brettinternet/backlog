@@ -136,6 +136,7 @@ type CreateArgs struct {
 	Parent      string   `json:"parent,omitempty"`
 	BlockedBy   []string `json:"blocked_by,omitempty"`
 	Source      string   `json:"source,omitempty"`
+	Sprint      string   `json:"sprint,omitempty" jsonschema:"current, next, or a sprint name or key (Linear)."`
 }
 type UpdateArgs struct {
 	WriteArgs
@@ -335,7 +336,7 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 		}
 		sourceID = s.cfg.Sources[0].ID
 	}
-	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due}
+	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Sprint: args.Sprint}
 	if args.Parent != "" {
 		parent, _, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: args.Parent})
 		if err != nil {

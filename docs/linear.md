@@ -199,6 +199,7 @@ its `updatedAt`; reconciliation corrects it within the hour otherwise.
 ## Writes and claims
 
 ```sh
+bl new 'Fix login !high #bug @me' --source eng --body 'Steps' --sprint current
 bl set eng:ENG-431 status=ACTIVE_STATE_UUID --if-version VERSION
 bl set eng:ENG-431 assignees=VIEWER_UUID --if-version VERSION
 bl set eng:ENG-431 priority=high --if-version VERSION
@@ -210,9 +211,9 @@ bl unarchive eng:ENG-431 --if-version VERSION
 ```
 
 Writes need `allowWrites: true`, a freshly verified user, and Linear's
-permission; `allowWrites` doesn't prove the key can write. Without it, set,
-comment, archive, and unarchive are unavailable. Create, batches, and title or
-body edits aren't offered.
+permission; `allowWrites` doesn't prove the key can write. Without it, create,
+set, comment, archive, and unarchive are unavailable. Batches and title or body
+edits aren't offered.
 
 | Field | Accepts |
 | --- | --- |
@@ -222,6 +223,7 @@ body edits aren't offered.
 | `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
 | `sprint` | `current`, `next`, `none` (or empty), a cycle name, or a cycle UUID from the catalog → `cycleId`. Closed cycles are refused. |
 | Comment | Appends once; can't be undone |
+| Create | `issueCreate` with title, body, status (else the team's default state), one assignee, priority, labels, and sprint, each checked like `set` before the mutation; the result is read back. Parent, blockers, and other native fields (milestone, criteria, DoD, …) are refused, including `defaults.type` and `defaults.dod`. Undo archives the new issue. |
 | Archive, unarchive | `issueArchive` / `issueUnarchive`; each undoes the other. A no-op when the issue is already in the target state. Trashed issues are refused. |
 
 Archived issues accept only unarchive. A write's result replaces the issue's
@@ -230,7 +232,8 @@ bumps no timestamp a change window could see.
 
 Each write changes one field in one mutation. A fresh fingerprint of the issue
 and its relations is checked first; missing or stale versions fail with
-`conflict`. Linear has no compare-and-swap, so another writer can still race
+`conflict`. Create has no version to check. A create that fails after dispatch
+reports `unknown-outcome`: look for the issue before creating it again. Linear has no compare-and-swap, so another writer can still race
 between check and write. Versions exclude the cycle, so a sprint write also
 re-reads it and fails with `conflict` if it differs from what the caller saw.
 Mutations are never retried; after a network or reread
@@ -251,7 +254,8 @@ moving cursor, relation-only changes, blocker direction, conflicts, capability
 and identity checks, and every write. Provider JSON is fuzzed. Scheduler tests
 cover Linear's request and complexity quotas.
 
-The live test runs only against a team named **Test**. It creates two issues, a
+The live test runs only against a team named **Test**. It creates two issues
+(one through `bl`'s own create, in an open cycle if the team has one), a
 blocking relation, and a comment, edits only those, and deletes them all,
 logging artifact IDs. It needs existing todo, active, and done states and at
 least one label, and changes no team settings or existing data:

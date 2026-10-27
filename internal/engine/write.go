@@ -212,6 +212,16 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 		if m.Item == nil {
 			return reject("item template required")
 		}
+		if m.Item.Sprint != "" && !sprintSource(cfg, sourceID) {
+			return reject("source " + m.Ref.Source + " has no sprints; only Linear and Jira sources do")
+		}
+		for _, configured := range cfg.Sources {
+			if configured.ID == sourceID && configured.Type == "linear" {
+				if err := linearCreate(*m.Item); err != nil {
+					return err
+				}
+			}
+		}
 		return ValidateItem(cfg, *m.Item)
 	case model.Set, model.Add, model.Remove, model.Unset:
 		if !slices.Contains(strings.Fields(WriteFields), m.Field) {
@@ -262,6 +272,34 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 			return reject(err.Error())
 		}
 		return ValidateItem(cfg, doc.Item())
+	}
+	return nil
+}
+
+// linearCreate names the template fields issueCreate can't set, before
+// the remote wrapper reduces source refusals to a generic message.
+func linearCreate(item model.Item) error {
+	if item.Parent != nil || len(item.BlockedBy) > 0 {
+		return source.Refuse("rejected", "Linear create doesn't support parent or blocked_by; link the issue after creating it")
+	}
+	if len(item.Assignees) > 1 {
+		return source.Refuse("rejected", "Linear issues take at most one assignee")
+	}
+	var unsupported []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"type", item.Type != "" && item.Type != "issue"}, {"rank", item.Rank != ""}, {"milestone", item.Milestone != ""}, {"due", item.Due != ""},
+		{"blocks", len(item.Blocks) > 0}, {"related", len(item.Related) > 0}, {"duplicate_of", item.DuplicateOf != nil}, {"refs", len(item.Refs) > 0}, {"files", len(item.Files) > 0},
+		{"criteria", len(item.Criteria) > 0}, {"dod", len(item.DoD) > 0}, {"plan", item.Plan != ""}, {"notes", item.Notes != ""}, {"summary", item.Summary != ""},
+	} {
+		if f.set {
+			unsupported = append(unsupported, f.name)
+		}
+	}
+	if len(unsupported) > 0 {
+		return source.Refuse("rejected", "Linear create doesn't support "+strings.Join(unsupported, ", ")+"; it sets title, body, status, assignee, priority, labels and sprint")
 	}
 	return nil
 }

@@ -160,6 +160,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		&urfave.StringFlag{Name: "body", Aliases: []string{"b"}, Usage: "Set the description to `TEXT`; - reads stdin"},
 		&urfave.StringSliceFlag{Name: "ac", Usage: "Add the acceptance criterion `TEXT`"},
 		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (required with several sources)"},
+		&urfave.StringFlag{Name: "sprint", Usage: "Add to sprint `VALUE`: current, next, or a name or key (Linear)"},
 	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if !cmd.Args().Present() {
 			return writeUsage("new requires a title")
@@ -196,6 +197,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return err
 		}
 		item.Status = cmd.String("status")
+		item.Sprint = cmd.String("sprint")
 		for _, s := range cfg.Statuses {
 			if item.Status == "" && s.Category == "todo" {
 				item.Status = s.Key
