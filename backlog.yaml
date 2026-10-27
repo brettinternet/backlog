@@ -9,6 +9,13 @@ sources:
       type: native
       path: backlog
       prefix: BL
+    - id: issues
+      type: github
+      repo: brettinternet/backlog
+      account: personal
+      statusLabels:
+        ready: todo
+        in-progress: active
 statuses:
     - key: draft
       name: Draft
@@ -21,6 +28,15 @@ statuses:
       category: active
     - key: done
       name: Done
+      category: done
+    - key: unknown
+      name: Triage
+      category: backlog
+    - key: ready
+      name: Ready
+      category: todo
+    - key: closed
+      name: Closed
       category: done
 workflow:
     start: in-progress
@@ -79,8 +95,10 @@ labels:
 ready:
     statuses:
         - todo
+        - ready
     satisfiedBy:
         - done
+        - closed
     excludeLabels:
         - blocked
         - deferred
@@ -88,6 +106,7 @@ ready:
         - human
     skipContainers: true
 defaults:
+    source: tasks
     dod:
         - task ci passes on the final commit
         - Every checked acceptance criterion has --evidence naming the verification command and its result

@@ -329,8 +329,12 @@ IDs are checked on every read; transfers or binding changes fail closed. Use the
 task cli:test PKG='./internal/source/github ./internal/source/remote'
 ```
 
-`FuzzProviderJSON` fuzzes provider JSON. The live test needs an authorized test
-repository and a new disposable project titled `bl-provider-test-…`. It creates
+`FuzzProviderJSON` fuzzes provider JSON. Live tests must target a dedicated
+disposable repository, such as `brettinternet/bl-provider-test`, never
+`brettinternet/backlog`: this repository's issues are a `bl` source, so test
+issues and status labels would enter the real backlog.
+
+The live round-trip test needs that repository and a new disposable project titled `bl-provider-test-…`. It creates
 one issue, comment, and project entry, exercises every write above and two
 change windows, and deletes them during cleanup:
 
