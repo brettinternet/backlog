@@ -33,7 +33,8 @@ Or in `.mcp.json`:
 }
 ```
 
-The `bl://instructions` resource serves the `bl instructions` overview.
+The `bl://instructions` resource serves the `bl instructions` overview, followed
+by the configured source IDs and types for `source:` filters.
 
 ## Tools
 

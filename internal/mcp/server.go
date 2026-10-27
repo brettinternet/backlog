@@ -72,6 +72,13 @@ func (s *Server) instructions(_ context.Context, req *mcp.ReadResourceRequest) (
 		return nil, mcp.ResourceNotFoundError(InstructionsURI)
 	}
 	text, _ := instructions.Read("overview")
+	if len(s.cfg.Sources) > 0 {
+		sources := make([]string, len(s.cfg.Sources))
+		for i, source := range s.cfg.Sources {
+			sources[i] = source.ID + " (" + source.Type + ")"
+		}
+		text += "\nConfigured sources, for `source:` filters: " + strings.Join(sources, ", ") + ".\n"
+	}
 	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: InstructionsURI, MIMEType: "text/markdown", Text: text}}}, nil
 }
 
