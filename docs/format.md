@@ -111,6 +111,17 @@ Keep the header fields synchronous; only the body waits.
 | `created` | timestamp | yes | RFC 3339 UTC to the second. Set on create. |
 | `updated` | timestamp | yes | RFC 3339 UTC to the second. Set on every write. |
 
+A native source accepts every configured status. `sources[].statuses` narrows the keys one native, Backlog.md, or external source accepts, so a mixed project can keep provider-only statuses off native items:
+
+```yaml
+sources:
+  - {id: tasks, type: native, statuses: [draft, todo, in-progress, done]}
+```
+
+GitHub, Linear, and Jira sources report their own statuses, so `statuses` on one fails config load.
+
+`bl start` and `bl done` resolve per item source (design.md D35): `workflow.start` or `workflow.done` when the source accepts it in the active or done category, else the source's only status in that category. No match, or several without the workflow key, is refused naming the source, before any claim is acquired.
+
 Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md).
 Native items have no sprint: `sprint:` filters and `group:sprint` read Linear and Jira sources (design.md D31), and a `sprint` key here is an ordinary raw field.
 

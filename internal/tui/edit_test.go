@@ -265,7 +265,7 @@ func editFixture(t *testing.T, items []model.Item, caps model.Capabilities, opts
 	t.Cleanup(store.Close)
 	waitEdit(t, func() bool { return store.Current().Len() == len(items) })
 	opts.Context, opts.Store = ctx, store
-	opts.Statuses, opts.Workflow = statuses, cfg.Workflow
+	opts.Statuses = statuses
 	if opts.Project == "" {
 		opts.Project = "fixture"
 	}

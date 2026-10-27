@@ -516,6 +516,23 @@ func validNumber(id string) (int, error) {
 	return n, nil
 }
 
+// StatusChoices derives the writable statuses from config, as Apply checks
+// them: open and closed, plus unknown and the mapped labels, or the project
+// option IDs when the project allows writes.
+func (s *Source) StatusChoices(context.Context, model.Item) ([]model.StatusChoice, bool, error) {
+	choices := []model.StatusChoice{{Key: "open", Category: model.Todo}, {Key: "closed", Category: model.Done}}
+	mapping := s.o.StatusLabels
+	if s.statusLabels != nil {
+		choices = append(choices, model.StatusChoice{Key: "unknown", Category: model.Backlog})
+	} else if s.o.Project != nil && s.o.Project.AllowWrites {
+		mapping = s.o.Project.Options
+	}
+	for _, key := range slices.Sorted(maps.Keys(mapping)) {
+		choices = append(choices, model.StatusChoice{Key: key, Category: model.StatusCategory(mapping[key])})
+	}
+	return choices, true, nil
+}
+
 // ReadSprints enables the iteration value and catalog on single-item reads.
 // The remote wrapper calls it when its cache holds sprint demand.
 func (s *Source) ReadSprints() {

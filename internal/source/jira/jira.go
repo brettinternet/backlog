@@ -421,6 +421,26 @@ func (s *Source) ReadSprints() {
 	defer s.mu.Unlock()
 	s.readSprints = true
 }
+
+// StatusChoices reports the issue's discovered transitions, which detail reads
+// carry; an item without them is read fresh.
+func (s *Source) StatusChoices(ctx context.Context, item model.Item) ([]model.StatusChoice, bool, error) {
+	transitions, ok := item.Fields["jiraTransitions"].(map[string]any)
+	if !ok {
+		fresh, err := s.Read(ctx, item.Ref.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		transitions, _ = fresh.Fields["jiraTransitions"].(map[string]any)
+	}
+	choices := []model.StatusChoice{}
+	for _, name := range slices.Sorted(maps.Keys(transitions)) {
+		details, _ := transitions[name].(map[string]any)
+		category, _ := details["category"].(string)
+		choices = append(choices, model.StatusChoice{Key: name, Category: model.StatusCategory(category)})
+	}
+	return choices, true, nil
+}
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

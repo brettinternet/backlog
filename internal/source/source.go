@@ -90,6 +90,14 @@ type Preparer interface {
 	Prepare(context.Context, model.Mutation) (Prepared, error)
 }
 
+// StatusChooser reports the statuses a provider accepts for an item, which may
+// need provider I/O. ok is false, as for sources without it, when the source
+// accepts every configured status, narrowed by sources[].statuses (design.md
+// D35). Wrappers forward it.
+type StatusChooser interface {
+	StatusChoices(context.Context, model.Item) (choices []model.StatusChoice, ok bool, err error)
+}
+
 // Watch is optional and implemented by backends that support signals.
 type Watcher interface {
 	Watch(context.Context, func()) error

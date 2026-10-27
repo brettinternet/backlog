@@ -149,7 +149,7 @@ type UpdateArgs struct {
 	WriteArgs
 	Confirm   bool           `json:"confirm,omitempty" jsonschema:"Acknowledge replacement of a Jira single assignee."`
 	ID        string         `json:"id"`
-	Operation string         `json:"operation,omitempty" jsonschema:"archive, unarchive, or replace_section; start and done are status field updates."`
+	Operation string         `json:"operation,omitempty" jsonschema:"start, done, archive, unarchive, or replace_section. start and done set the workflow status the item's source accepts."`
 	Fields    map[string]any `json:"fields,omitempty" jsonschema:"Field values matching bl set fields; suffix list fields with + or - for add/remove."`
 	Section   string         `json:"section,omitempty" jsonschema:"Editable section for replace_section: description, criteria, dod, plan, notes, or summary."`
 	Text      string         `json:"text,omitempty" jsonschema:"Replacement text for replace_section; empty clears the section."`
@@ -392,10 +392,19 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if err != nil {
 		return failed[any]("conflict", err.Error())
 	}
-	if args.Operation != "" {
-		if len(args.Fields) != 0 {
-			return failed[any]("usage", "fields and operation cannot be combined")
+	if args.Operation != "" && len(args.Fields) != 0 {
+		return failed[any]("usage", "fields and operation cannot be combined")
+	}
+	if args.Operation == "start" || args.Operation == "done" {
+		// Resolved per item source, then written like a status field update.
+		category := map[string]model.StatusCategory{"start": model.Active, "done": model.Done}[args.Operation]
+		status, err := engine.WorkflowStatus(ctx, s.cfg, item, category)
+		if err != nil {
+			return failed[any](reason(err), err.Error())
 		}
+		args.Operation, args.Fields = "", map[string]any{"status": status}
+	}
+	if args.Operation != "" {
 		var op model.Operation
 		section := ""
 		switch args.Operation {
@@ -412,7 +421,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 				return failed[any]("rejected", "section must be description, criteria, dod, plan, notes, or summary")
 			}
 		default:
-			return failed[any]("rejected", "operation must be archive, unarchive, or replace_section")
+			return failed[any]("rejected", "operation must be start, done, archive, unarchive, or replace_section")
 		}
 		updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: op, Ref: item.Ref, ExpectedVersion: version, Section: section, Text: args.Text})
 		if err != nil {

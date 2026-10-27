@@ -602,3 +602,39 @@ func TestLinearCreate(t *testing.T) {
 		t.Errorf("native defaults: %+v", native)
 	}
 }
+
+// Regression: a project-wide workflow key the item's source doesn't accept
+// must fall back to the source's only status in the category, and anything
+// else must be refused, naming the source, before a claim is acquired (D35).
+func TestWorkflowStatusPerSource(t *testing.T) {
+	t.Parallel()
+	cfg, c, ctx := nextFixture(t)
+	cfg.Statuses = append(cfg.Statuses, project.StatusConfig{Key: "closed", Category: "done"}, project.StatusConfig{Key: "wontfix", Category: "done"})
+	item, err := engine.ReadItem(ctx, cfg, model.Ref{Source: "tasks", ID: "BL-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		statuses []string
+		want     string
+	}{
+		{nil, "done"},
+		{[]string{"todo", "doing", "closed"}, "closed"},
+		{[]string{"todo", "doing", "closed", "wontfix"}, "source tasks accepts several done statuses (closed, wontfix) but not workflow.done; set workflow.done to one of them"},
+		{[]string{"todo", "doing"}, "source tasks accepts no done status for workflow.done"},
+	} {
+		cfg.Sources[0].Statuses = tc.statuses
+		got, err := engine.WorkflowStatus(ctx, cfg, item, model.Done)
+		if err != nil {
+			got = engine.ErrorMessage(err)
+		}
+		if got != tc.want {
+			t.Errorf("%v: got %q want %q", tc.statuses, got, tc.want)
+		}
+	}
+	cfg.Sources[0].Statuses = []string{"todo", "done"}
+	result, err := engine.NextClaim(ctx, cfg, engine.NextClaimOptions{Start: true})
+	if engine.ErrorReason(err) != "rejected" || engine.ErrorMessage(err) != "source tasks accepts no active status for workflow.start" || c.acquired != 0 || result.Claim != nil {
+		t.Fatalf("start without an active status: %+v %v acquired:%d", result, err, c.acquired)
+	}
+}

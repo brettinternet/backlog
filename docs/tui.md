@@ -253,8 +253,8 @@ range, `ctrl-a` marks the view. Edits from the list apply to the marks, or to
 the selection when nothing is marked. `esc` clears marks or closes detail. `.`
 repeats the last edit on the current targets.
 
-**Status keys:** `S` and `D` use `workflow.start` and `workflow.done`, falling
-back to the first active or done status.
+**Status keys:** `S` and `D` resolve `workflow.start` and `workflow.done` per
+item source, as `bl start` and `bl done` do. A refused item names its source.
 
 **Copy** with OSC 52: `yy` ID, `yt` title, `yb` branch name, `yu` URL, `ym`
 Markdown link. The branch name is the lowercase ID plus an ASCII title slug, at

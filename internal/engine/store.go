@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +23,7 @@ type Store struct {
 	cancel         context.CancelFunc
 	cfg            project.Config
 	capabilities   map[string]model.Capabilities
+	backends       source.Registry // immutable after OpenStore
 	capabilitiesMu sync.RWMutex
 	current        atomic.Pointer[Snapshot]
 	events         chan func(*storeState)
@@ -86,7 +88,7 @@ func OpenProjectStore(ctx context.Context, cfg project.Config) (*Store, error) {
 
 func OpenStore(ctx context.Context, cfg project.Config, registry source.Registry) *Store {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, capabilities: make(map[string]model.Capabilities, len(registry)), events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}
+	s := &Store{ctx: ctx, cancel: cancel, cfg: cfg, backends: maps.Clone(registry), capabilities: make(map[string]model.Capabilities, len(registry)), events: make(chan func(*storeState), 64), subscribers: map[chan *Snapshot]struct{}{}}
 	s.sprints.Store(WantsSprints(cfg))
 	initial := &Snapshot{records: map[model.Ref]*record{}, sources: map[string]SourceState{}}
 	st := &storeState{store: s, snapshot: initial, workers: map[string]*sourceWorker{}, pending: map[model.Ref]bool{}, superseded: map[model.Ref]string{}}
@@ -198,6 +200,16 @@ func (s *Store) request(f func(*storeState), result chan error) {
 	default:
 		s.complete(result, source.Refuse("busy", "engine request queue is full"))
 	}
+}
+
+// WorkflowStatus resolves workflow.start or workflow.done for item, which may
+// need provider I/O, so callers keep it off the UI loop.
+func (s *Store) WorkflowStatus(item model.Item, category model.StatusCategory) (string, error) {
+	backend, ok := s.backends[item.Ref.Source]
+	if !ok {
+		return "", source.Refuse("unavailable", "unknown source "+item.Ref.Source)
+	}
+	return workflowStatus(s.ctx, s.cfg, backend, item, category)
 }
 func (s *Store) Mutate(m model.Mutation) <-chan error {
 	result := make(chan error, 1)
@@ -569,7 +581,7 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 	if s.cfg.Workspace != nil {
 		item, err = w.backend.Apply(ctx, m)
 	} else {
-		item, err = coordinatedWrite(ctx, s.cfg, m, func() (model.Item, error) { return w.backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return w.backend.Apply(ctx, m) })
+		item, err = coordinatedWrite(ctx, s.cfg, w.backend, m)
 	}
 	if err != nil && transition.Claim != nil {
 		err = source.Refuse(ErrorReason(err), fmt.Sprintf("status %s; claim %s: %s", transition.Status, transition.Claim.Outcome, ErrorMessage(err)))

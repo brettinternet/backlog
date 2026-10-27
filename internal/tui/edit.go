@@ -138,6 +138,8 @@ type editAction struct {
 	section string
 	index   int
 	me      string
+	// workflow resolves the status per item source off the UI loop (D35).
+	workflow model.StatusCategory
 }
 type editResultMsg struct {
 	message string
@@ -805,7 +807,7 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 				}
 				cfg := project.Config{Settings: project.Settings{Statuses: m.opts.Statuses}}
 				_, category, changes := engine.StatusTarget(cfg, mutation)
-				if changes && category == model.Active {
+				if changes && category == model.Active || action.workflow == model.Active {
 					return editResultMsg{message: "Coordination refuses multi-item activation."}
 				}
 			}
@@ -828,6 +830,14 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 				continue
 			}
 			mutation.Ref = ref
+			if action.workflow != "" {
+				status, err := store.WorkflowStatus(item, action.workflow)
+				if err != nil {
+					disabled = append(disabled, ref.ID+": "+engine.ErrorMessage(err))
+					continue
+				}
+				mutation.Value = status
+			}
 			mutation.ExpectedVersion = targets.displayedVersion(ref)
 			if mutation.ExpectedVersion == "" {
 				mutation.ExpectedVersion = marks[ref]
@@ -1062,19 +1072,7 @@ func (m *Model) workflowStatus(direction int) tea.Cmd {
 	return m.editCommand(action, false)
 }
 
-func (m *Model) workflowTransition(status, category string) tea.Cmd {
-	if status == "" {
-		for _, configured := range m.opts.Statuses {
-			if configured.Category == category {
-				status = configured.Key
-				break
-			}
-		}
-	}
-	if status == "" {
-		m.notice = "Disabled: no configured " + category + " status."
-		return nil
-	}
+func (m *Model) workflowTransition(category model.StatusCategory) tea.Cmd {
 	row, ok := m.selectedRow()
 	if !ok {
 		m.notice = "Select an item before changing status."
@@ -1084,7 +1082,7 @@ func (m *Model) workflowTransition(status, category string) tea.Cmd {
 		m.notice = "Disabled: " + reason
 		return nil
 	}
-	action := editAction{kind: editSimple, op: model.Set, field: "status", value: status}
+	action := editAction{kind: editSimple, op: model.Set, field: "status", workflow: category}
 	m.startEdit(action)
 	return m.editCommand(action, false)
 }
