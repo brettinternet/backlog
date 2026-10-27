@@ -101,6 +101,13 @@ func (m *Model) initViews() {
 		v.Group = ""
 		m.views = append(m.views, viewState{ID: v.ID, Config: v.ViewConfig, Base: v.ViewConfig})
 	}
+	if m.opts.Filter != "" {
+		for i := range m.views {
+			v := &m.views[i]
+			v.Base.Query = strings.TrimSpace(v.Base.Query + " " + m.opts.Filter)
+			v.Config = v.Base
+		}
+	}
 	if s := m.opts.Session; s != nil {
 		for i := range m.views {
 			for _, saved := range s.Views {

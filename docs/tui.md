@@ -1,6 +1,8 @@
 # TUI
 
-Run `bl` or `bl tui` in a terminal. Every key is remappable, and the
+Run `bl` or `bl tui [QUERY]` in a terminal. QUERY is ANDed with every tab's
+query for the session (`bl tui source:eng`); it filters only, so `sort:` and
+`group:` are usage errors. Every key is remappable, and the
 [keymap table](#default-keymap) below is the tested source of the defaults.
 
 ## Principles

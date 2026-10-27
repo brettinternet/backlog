@@ -41,6 +41,7 @@ type Options struct {
 	Read                       func(context.Context, model.Ref) (model.Item, error)
 	Render                     func(string, int) (string, error)
 	Views                      []project.SavedView
+	Filter                     string // ANDed with every tab's declared query
 	Session                    *Session
 	Warning                    string
 	TrustWarning               string

@@ -121,6 +121,12 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if cmd.Bool("json") {
 			return &Error{Reason: "usage", Message: "the TUI does not support --json; use bl --json version or bl --json config show"}
 		}
+		filter := strings.Join(cmd.Args().Slice(), " ")
+		if q, err := query.Parse(filter, query.Options{}); err != nil {
+			return &Error{Reason: "usage", Message: err.Error()}
+		} else if len(q.Sort) > 0 || q.Group != "" {
+			return &Error{Reason: "usage", Message: "the TUI query filters only; tabs set sort and group"}
+		}
 		if !terminal(in) || !terminal(out) {
 			return &Error{Reason: "unavailable", Message: "the TUI requires terminal stdin and stdout; use bl --help"}
 		}
@@ -200,7 +206,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				return false
 			},
 			EditorDir: directory, CommentAuthor: cfg.Me.Default,
-			Views: cfg.SavedViews, Session: restored, Warning: warning, Keys: cfg.Keys,
+			Views: cfg.SavedViews, Filter: filter, Session: restored, Warning: warning, Keys: cfg.Keys,
 			GoToItems: func(ctx context.Context) ([]tui.GoToItem, error) { return engine.GoToItems(ctx, cfg) },
 			SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
 				path, scope := cfg.Paths.ConfigFile, "user"
@@ -282,7 +288,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 	// Help lists item commands in this order, then each category by name.
 	root.Commands = append(readCommands(&directory, out, errOut), writeCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands,
-		&urfave.Command{Name: "tui", Usage: "Open the TUI (the default on a terminal)", Action: openTUI},
+		&urfave.Command{Name: "tui", Usage: "Open the TUI (the default on a terminal)", ArgsUsage: "[QUERY]", Action: openTUI},
 		&urfave.Command{Name: "version", Usage: "Print the version", Hidden: true, Action: version},
 		helpCommand(),
 		eventsCommand(&directory, out), actionCommand(&directory, in, out, errOut),
@@ -418,7 +424,7 @@ func terminal(stream any) bool {
 // acceptsArguments takes the full command path, since names like check repeat.
 func acceptsArguments(command string) bool {
 	switch command {
-	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
+	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
 		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth login", "auth logout":
 		return true
 	}
