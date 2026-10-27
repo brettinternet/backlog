@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -638,6 +639,14 @@ func (m Model) tabs() (string, []span, int) {
 	labels := make([]string, len(m.views))
 	for i, v := range m.views {
 		name := textutil.Line(v.Config.Name)
+		// The mark flags a tab edited away from its definition, until restart.
+		query := v.Config.Query
+		if i == m.view {
+			query = m.query
+		}
+		if query != v.Base.Query || v.Config.Layout != v.Base.Layout || !slices.Equal(v.Config.Columns, v.Base.Columns) {
+			name += "•"
+		}
 		labels[i] = " " + name + " "
 		if i == m.view && !t.color {
 			labels[i] = "[" + name + "]"

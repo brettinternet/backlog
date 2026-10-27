@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -108,19 +109,16 @@ func TestViewsRestoreSession(t *testing.T) {
 	// It must not consume the restart selection anchor.
 	again := viewRows(New(opts))
 	again = viewRows(again, "BL-3", "BL-2", "BL-1")
-	if again.view != 5 || again.query != m.query || !strings.Contains(again.query, "sort:updated") || !strings.Contains(again.query, "group:priority") || again.detailTab != tabNotes || again.splitWidth != 65 || !again.detailOpen || again.views[5].Config.Layout != "tree" || strings.Join(again.views[5].Config.Columns, ",") != "id,title" {
+	if again.view != 5 || again.detailTab != tabNotes || again.splitWidth != 65 || !again.detailOpen {
 		t.Fatalf("incomplete restore: %+v", restored)
+	}
+	// Tab definitions are config, not session: the sort and group edits above
+	// reset, so a tab always means what its declaration says on launch.
+	if v := again.views[5]; again.query != v.Base.Query || !reflect.DeepEqual(v.Config, v.Base) || strings.Contains(again.query, "sort:updated") {
+		t.Fatalf("session edit survived restart: %q", again.query)
 	}
 	if row, ok := again.selectedRow(); !ok || row.Ref.ID != "BL-3" {
 		t.Fatalf("restart selection: %+v", row)
-	}
-	// A changed declaration (e.g. a teammate edits the project view) must win
-	// over a session query captured from the old one.
-	edited := viewOptions(cfg)
-	edited.Session = restored
-	edited.Views[0].Query = "is:open label:new"
-	if got := New(edited).views[5].Config.Query; got != "is:open label:new" {
-		t.Fatalf("stale session shadowed config: %q", got)
 	}
 	again.switchView(1)
 	again = viewRows(again, "BL-3", "BL-2", "BL-1")
@@ -133,7 +131,7 @@ func TestViewsRestoreSession(t *testing.T) {
 	if again.selected < 0 || again.selected >= len(again.data.rows) {
 		t.Fatal("missing item has no fallback")
 	}
-	for _, raw := range []string{"{broken", `{"version":99}`, `{"version":1,"detailTab":999}`, `{"version":1,"views":[{"id":"x","config":{"query":"unknown:field"}}]}`} {
+	for _, raw := range []string{"{broken", `{"version":99}`, `{"version":1,"detailTab":999}`, `{"version":1,"views":[{"id":"x"},{"id":"x"}]}`} {
 		if err := os.WriteFile(project.UIStatePath(cfg), []byte(raw), 0600); err != nil {
 			t.Fatal(err)
 		}
