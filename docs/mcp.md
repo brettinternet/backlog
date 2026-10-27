@@ -42,7 +42,7 @@ The `bl://instructions` resource serves the `bl instructions` overview.
 | `next` | `limit` (0 or omitted: all), `claim`, `start`, `session`, `run` | `bl next`, `bl next --claim --start` |
 | `query` | `query` | `bl ls` |
 | `show` | `id` | `bl show` (adds `resource` with coordination) |
-| `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `source` | `bl new` |
+| `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `source`, `sprint` | `bl new` |
 | `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run` | `bl set`, `bl archive`, `bl edit --section` |
 | `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`set`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
