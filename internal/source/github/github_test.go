@@ -54,6 +54,8 @@ type fixture struct {
 	mutationVars          []map[string]any
 	failMutation, created string
 	canDelete             bool
+	// missing is an issue number the detail query reports as NOT_FOUND.
+	missing int
 }
 
 func newFixture(t *testing.T, configure ...func(*Options)) (*Source, *fixture) {
@@ -326,6 +328,10 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		emit(data)
 	case strings.Contains(q, "issue(number:"):
 		n := int(v["number"].(float64))
+		if n == f.missing {
+			fmt.Fprint(w, `{"data":{"repository":{"id":"R_test","nameWithOwner":"owner/repo","issue":null}},"errors":[{"type":"NOT_FOUND","path":["repository","issue"],"message":"Could not resolve to an Issue"}]}`)
+			return
+		}
 		emit(map[string]any{"repository": map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issue": f.row(n)}})
 	default:
 		w.WriteHeader(400)
@@ -575,6 +581,20 @@ func TestLabelStatuses(t *testing.T) {
 	}
 	if _, err = s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "New", Status: "active"}}); !reason(err, "rejected") {
 		t.Fatalf("create with unmapped status: %v", err)
+	}
+}
+
+// Unqualified shorthand asks every source; a native ID or a missing issue
+// number must read as absent, or one GitHub source breaks every bl show BL-1.
+func TestReadAbsentIssue(t *testing.T) {
+	s, f := newFixture(t)
+	f.missing = 404
+	ctx := context.Background()
+	if _, err := s.Read(ctx, "BL-1"); !reason(err, "invalid-id") {
+		t.Fatalf("native ID: %v", err)
+	}
+	if _, err := s.Read(ctx, "404"); !reason(err, "not-found") {
+		t.Fatalf("missing issue: %v", err)
 	}
 }
 

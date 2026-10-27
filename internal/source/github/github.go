@@ -168,20 +168,31 @@ func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 		return data.Viewer.Login, nil
 	})
 }
-func (s *Source) query(ctx context.Context, c remote.Credential, query string, variables any, out any) error {
+func (s *Source) query(ctx context.Context, c remote.Credential, query string, variables any, out any, missing ...string) error {
 	response, err := s.request(ctx, c, http.MethodPost, s.endpoint(), map[string]any{"query": query, "variables": variables})
 	if err != nil {
 		return err
 	}
-	return decode(response.Body, out)
+	return decode(response.Body, out, missing...)
 }
-func decode(raw []byte, out any) error {
+
+// decode refuses any GraphQL error except NOT_FOUND at the missing path, whose
+// null field the caller reports as not-found.
+func decode(raw []byte, out any, missing ...string) error {
 	var result struct {
 		Data   json.RawMessage
-		Errors []json.RawMessage
+		Errors []struct {
+			Type string
+			Path []any
+		}
 	}
-	if json.Unmarshal(raw, &result) != nil || len(result.Errors) > 0 || len(result.Data) == 0 || string(result.Data) == "null" || json.Unmarshal(result.Data, out) != nil {
+	if json.Unmarshal(raw, &result) != nil || len(result.Data) == 0 || string(result.Data) == "null" || json.Unmarshal(result.Data, out) != nil {
 		return source.Refuse("unavailable", "GitHub returned incomplete or invalid data")
+	}
+	for _, e := range result.Errors {
+		if e.Type != "NOT_FOUND" || len(missing) == 0 || fmt.Sprint(e.Path) != fmt.Sprint(missing) {
+			return source.Refuse("unavailable", "GitHub returned incomplete or invalid data")
+		}
 	}
 	return nil
 }
@@ -537,7 +548,7 @@ func (s *Source) read(ctx context.Context, c remote.Credential, id string) (mode
 			Issue             *issue
 		}
 	}
-	if err = s.query(ctx, c, detailQuery, vars, &result); err != nil {
+	if err = s.query(ctx, c, detailQuery, vars, &result, "repository", "issue"); err != nil {
 		return model.Item{}, err
 	}
 	if result.Repository == nil || result.Repository.ID != s.repositoryID || !strings.EqualFold(result.Repository.NameWithOwner, s.o.Repo) {

@@ -185,7 +185,7 @@ func (s *Source) safeError(err error) error {
 			return &source.Error{Reason: "unknown-outcome", Message: "created " + created.ID + ", but the rest of the write is unconfirmed; check it before retrying", Created: &created}
 		}
 		switch refusal.Reason {
-		case "conflict", "not-found", "unavailable", "rejected", "unknown-outcome":
+		case "conflict", "not-found", "invalid-id", "unavailable", "rejected", "unknown-outcome":
 			return source.Refuse(refusal.Reason, "remote source refused operation")
 		}
 	}
