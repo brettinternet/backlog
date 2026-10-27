@@ -464,3 +464,32 @@ func TestWorkflowStatusSourceDefault(t *testing.T) {
 		}
 	}
 }
+
+// A status entry stands for the one included key the item's source accepts,
+// for writes from every client and for workflow resolution (D36). A wrong
+// resolution would write another source's key or refuse a valid start.
+func TestStatusEntryResolvesPerSource(t *testing.T) {
+	t.Parallel()
+	cfg := storeConfig()
+	cfg.Sources = []project.SourceConfig{{ID: "tasks", Type: "jira"}}
+	cfg.Statuses = append(cfg.Statuses,
+		project.StatusConfig{Key: "doing", Category: "active", Includes: []string{"option-active", "other-active"}},
+		project.StatusConfig{Key: "review", Category: "active", Includes: []string{"missing"}})
+	cfg.Workflow = project.WorkflowConfig{Start: "doing"}
+	backend := fakeSource(t, "tasks")
+	choices := []model.StatusChoice{{Key: "option-active", Category: model.Active}, {Key: "option-review", Category: model.Active}}
+	store := engine.OpenStore(context.Background(), cfg, source.Registry{"tasks": choosingSource{backend, choices}})
+	defer store.Close()
+	snapshot := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	item, _, _ := snapshot.Get(model.Ref{Source: "tasks", ID: "BL-1"})
+	if got, err := store.WorkflowStatus(item, model.Active); err != nil || got != "option-active" {
+		t.Fatalf("workflow.start: got %q %v", got, err)
+	}
+	err := awaitResult(t, store.Mutate(model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "status", Value: "review"}))
+	if engine.ErrorMessage(err) != "source tasks accepts none of status review (review, missing)" || backend.calls.Load() != 0 {
+		t.Fatalf("unaccepted entry: %v writes=%d", err, backend.calls.Load())
+	}
+	if err := awaitResult(t, store.Mutate(model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "status", Value: "doing"})); err != nil || backend.current().Status != "option-active" {
+		t.Fatalf("entry write: %v status=%q", err, backend.current().Status)
+	}
+}

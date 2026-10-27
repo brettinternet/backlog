@@ -120,7 +120,18 @@ sources:
 
 GitHub, Linear, and Jira sources report their own statuses, so `statuses` on one fails config load.
 
-`bl start` and `bl done` resolve per item source (design.md D35): `workflow.start` or `workflow.done` when the source accepts it in the active or done category, else the source's only status in that category, else the source's default (GitHub: `closed`). Anything else is refused naming the source, before any claim is acquired.
+A status entry can list other sources' keys under `includes` (design.md D36). Their items keep their own key, but share the entry's board column, `status:` term, and writes:
+
+```yaml
+statuses:
+  - {key: todo, name: To Do, category: todo, includes: [open]}
+  - {key: in-progress, name: In Progress, category: active, includes: [LINEAR_STATE_UUID, PROJECT_OPTION_ID]}
+  - {key: done, name: Done, category: done, includes: [closed]}
+```
+
+Writing an entry (`status=in-progress`, a board move, quick-add, or `workflow`) picks the one key among the entry and its includes that the item's source accepts, and is refused naming the source when none or several are. Config load fails when a key is in two entries, a member is itself an entry, or GitHub assigns a member another category (D32). Linear and Jira report categories at run time, so they aren't checked at load.
+
+`bl start` and `bl done` resolve per item source (design.md D35): `workflow.start` or `workflow.done` (or the one key it includes) when the source accepts it in the active or done category, else the source's only status in that category, else the source's default (GitHub: `closed`). Anything else is refused naming the source, before any claim is acquired.
 
 Other keys are kept byte-for-byte, shown raw in detail, and queryable as `field.NAME:VALUE` (query.md).
 Native items have no sprint: `sprint:` filters and `group:sprint` read Linear and Jira sources (design.md D31), and a `sprint` key here is an ordinary raw field.

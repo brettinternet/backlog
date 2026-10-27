@@ -75,6 +75,23 @@ func TestFields(t *testing.T) {
 	if errs := parse(t, `source:tasks`, false).Validate(wsSnap); len(errs) != 0 {
 		t.Fatal(errs)
 	}
+	// An included provider key matches its entry by key or name and groups
+	// under it, but the member term doesn't widen to the entry (D36).
+	included, inSnap := item, s
+	included.Status = "linear-state"
+	inSnap.Settings.Statuses = slices.Clone(s.Settings.Statuses)
+	inSnap.Settings.Statuses[1].Includes = []string{"linear-state"}
+	for q, want := range map[string]bool{`status:doing`: true, `status:"in progress"`: true, `status:linear-state`: true, `status:todo`: false} {
+		if got := parse(t, q, false).Match(included, inSnap, nil); got != want {
+			t.Fatalf("included %s = %v, want %v", q, got, want)
+		}
+	}
+	if parse(t, `status:linear-state`, false).Match(item, inSnap, nil) {
+		t.Fatal("member term matched the entry key")
+	}
+	if groups := inSnap.Group([]model.Item{item, included}, "status"); len(groups) != 1 || groups[0].Value != "doing" || len(groups[0].Items) != 2 {
+		t.Fatalf("included groups: %+v", groups)
+	}
 	// Each overlay readiness is distinct; unknown claims are not known-free.
 	for _, state := range []string{"ready", "blocked", "waiting", "unknown"} {
 		s.States[item.Ref] = query.State{Readiness: state}

@@ -84,7 +84,38 @@ type StatusConfig struct {
 	Key      string `yaml:"key" json:"key"`
 	Name     string `yaml:"name" json:"name"`
 	Category string `yaml:"category" json:"category"`
+	// Includes lists other sources' status keys shown, queried, and written
+	// through this entry. Items keep their own key (design.md D36).
+	Includes []string `yaml:"includes,omitempty" json:"includes,omitempty"`
 }
+
+// StatusEntry returns the configured status entry key covers: the entry with
+// that key, else the entry that includes it, else key itself.
+func (s Settings) StatusEntry(key string) string {
+	for _, status := range s.Statuses {
+		if status.Key == key {
+			return key
+		}
+	}
+	for _, status := range s.Statuses {
+		if slices.Contains(status.Includes, key) {
+			return status.Key
+		}
+	}
+	return key
+}
+
+// StatusMembers returns the entry key followed by the keys it includes, or
+// nil when key isn't a configured entry.
+func (s Settings) StatusMembers(key string) []string {
+	for _, status := range s.Statuses {
+		if status.Key == key {
+			return append([]string{key}, status.Includes...)
+		}
+	}
+	return nil
+}
+
 type WorkflowConfig struct {
 	Start string `yaml:"start,omitempty" json:"start,omitempty"`
 	Done  string `yaml:"done,omitempty" json:"done,omitempty"`
