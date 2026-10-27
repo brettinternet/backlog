@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -41,13 +42,19 @@ type fixture struct {
 	iterations, completedIterations          []map[string]any
 	itemIterationID                          string
 	lastFieldsQuery, lastSprintFieldName     string
+	// issueCount sets the repository size (default 2); updated and itemUpdated
+	// override the fixed timestamps of issues and of issue 1's project item.
+	issueCount  int
+	updated     map[int]time.Time
+	itemUpdated time.Time
+	requests    int
 }
 
 func newFixture(t *testing.T) (*Source, *fixture) {
 	t.Helper()
 	testkit.Isolate(t)
 	t.Setenv("BL_GITHUB_TEST_TOKEN", "fake-secret")
-	f := &fixture{option: "todo", state: "OPEN", title: "Issue", body: "Body"}
+	f := &fixture{option: "todo", state: "OPEN", title: "Issue", body: "Body", issueCount: 2, updated: map[int]time.Time{}, itemUpdated: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	server := httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(server.Close)
 	u, _ := url.Parse(server.URL)
@@ -80,11 +87,29 @@ func (f *fixture) row(n int) map[string]any {
 	for _, v := range f.assignees {
 		assignees = append(assignees, map[string]string{"login": v})
 	}
-	return map[string]any{"id": fmt.Sprint("I_", n), "number": n, "title": f.title, "body": f.body, "state": f.state, "stateReason": "COMPLETED", "updatedAt": "2026-01-01T00:00:00Z", "repository": map[string]string{"nameWithOwner": "owner/repo"}, "labels": nodes(labels), "assignees": nodes(assignees), "blockedBy": nodes([]any{map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}), "subIssues": nodes([]any{}), "parent": map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}
+	projectItems := []any{}
+	if n == 1 {
+		item := f.projectItem()
+		item["project"] = map[string]string{"id": "PVT_test"}
+		projectItems = append(projectItems, item)
+	}
+	return map[string]any{"id": fmt.Sprint("I_", n), "number": n, "title": f.title, "body": f.body, "state": f.state, "stateReason": "COMPLETED", "updatedAt": f.issueUpdated(n), "projectItems": nodes(projectItems), "repository": map[string]string{"nameWithOwner": "owner/repo"}, "labels": nodes(labels), "assignees": nodes(assignees), "blockedBy": nodes([]any{map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}), "subIssues": nodes([]any{}), "parent": map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}
+}
+func (f *fixture) issueUpdated(n int) time.Time {
+	if t, ok := f.updated[n]; ok {
+		return t
+	}
+	return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// projectItem is issue 1's entry in the bound project.
+func (f *fixture) projectItem() map[string]any {
+	return map[string]any{"id": "PVTI_1", "updatedAt": f.itemUpdated, "content": map[string]any{"__typename": "Issue", "id": "I_1", "number": 1, "repository": map[string]string{"nameWithOwner": "owner/repo"}}, "fieldValueByName": map[string]any{"optionId": f.option, "name": map[string]string{"todo": "Todo", "active": "In Progress"}[f.option], "field": map[string]string{"id": "PVTSSF_status"}}, "sprint": map[string]any{"iterationId": f.itemIterationID}}
 }
 func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.requests++
 	if r.Header.Get("Authorization") != "Bearer fake-secret" {
 		w.WriteHeader(401)
 		return
@@ -206,15 +231,24 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		nodes = append(nodes, map[string]any{"id": "PVTSSF_status", "name": "Status", "options": []any{map[string]string{"id": "todo", "name": "Todo"}, map[string]string{"id": "active", "name": "Active"}}})
 		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "viewerCanUpdate": !f.readOnly, "owner": map[string]string{"login": owner, "__typename": kind}, "fields": map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": false}}}})
+	case strings.Contains(q, "query:$filter"):
+		// Change-window project items: the filter is date-granular.
+		since, _ := time.Parse("updated:>=2006-01-02", v["filter"].(string))
+		rows := []any{}
+		if !f.itemUpdated.Before(since) {
+			rows = append(rows, f.projectItem())
+		}
+		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": "alice"}, "items": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}}})
 	case strings.Contains(q, "items(first:"):
 		f.projectPages++
 		rows := []any{}
 		next := v["after"] == nil
 		if next {
-			row := map[string]any{"id": "PVTI_1", "updatedAt": "2026-01-01T00:00:00Z", "content": map[string]any{"__typename": "Issue", "id": "I_1", "number": 1, "repository": map[string]string{"nameWithOwner": "owner/repo"}}, "fieldValueByName": map[string]any{"optionId": f.option, "name": map[string]string{"todo": "Todo", "active": "In Progress"}[f.option], "field": map[string]string{"id": "PVTSSF_status"}}}
+			row := f.projectItem()
 			if strings.Contains(q, "ProjectV2ItemFieldIterationValue") {
-				row["sprint"] = map[string]any{"iterationId": f.itemIterationID}
 				f.lastSprintFieldName, _ = v["sprintFieldName"].(string)
+			} else {
+				delete(row, "sprint")
 			}
 			rows = append(rows, row)
 		}
@@ -223,14 +257,31 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			owner = "owner"
 		}
 		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": owner}, "items": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": "project-next"}}}})
+	case strings.Contains(q, "filterBy:{since:$since}"):
+		f.lists++
+		since, _ := time.Parse(time.RFC3339, v["since"].(string))
+		rows := []any{}
+		for n := 1; n <= f.issueCount; n++ {
+			if !f.issueUpdated(n).Before(since) {
+				rows = append(rows, f.row(n))
+			}
+		}
+		emit(map[string]any{"repository": map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issues": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}}})
 	case strings.Contains(q, "issues(first:"):
+		// One issue per page, so reconciliation cost grows with the repository.
 		f.lists++
 		n := 1
-		next := v["after"] == nil
-		if !next {
-			n = 2
+		if after, ok := v["after"].(string); ok {
+			n, _ = strconv.Atoi(strings.TrimPrefix(after, "issue-"))
+			n++
 		}
-		emit(map[string]any{"repository": map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issues": map[string]any{"nodes": []any{f.row(n)}, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": "issue-next"}}}})
+		emit(map[string]any{"repository": map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issues": map[string]any{"nodes": []any{f.row(n)}, "pageInfo": map[string]any{"hasNextPage": n < f.issueCount, "endCursor": fmt.Sprint("issue-", n)}}}})
+	case strings.Contains(q, "i0:repository("):
+		data := map[string]any{}
+		for i := 0; v[fmt.Sprint("n", i)] != nil; i++ {
+			data[fmt.Sprint("i", i)] = map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issue": f.row(int(v[fmt.Sprint("n", i)].(float64)))}
+		}
+		emit(data)
 	case strings.Contains(q, "issue(number:"):
 		n := int(v["number"].(float64))
 		emit(map[string]any{"repository": map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issue": f.row(n)}})
@@ -295,6 +346,78 @@ func TestReconciliationPaginationETagAndBackoff(t *testing.T) {
 	if f.hints != calls {
 		t.Fatal("request escaped shared account backoff")
 	}
+}
+
+// A warm change window costs the same requests whatever the repository size,
+// yet sees issue edits, new issues and project-only option changes. It never
+// drops unseen rows, and reconciliation still runs hourly and on request.
+func TestChangeWindowSync(t *testing.T) {
+	ctx := context.Background()
+	load := func(s *Source, cursor source.Cursor, incremental bool, count int) source.Delta {
+		t.Helper()
+		delta, err := s.Load(ctx, cursor)
+		if err != nil || delta.Incremental != incremental || delta.RetainUnseen != incremental || delta.Coverage != source.Complete || len(delta.Items) != count {
+			t.Fatalf("load (incremental %v): %+v, %v", incremental, delta, err)
+		}
+		return delta
+	}
+	warm := map[int]int{}
+	for _, count := range []int{2, 40} {
+		s, f := newFixture(t)
+		now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+		s.o.Now = func() time.Time { return now }
+		f.issueCount = count
+		full := load(s, source.Cursor{}, false, count)
+		now = now.Add(time.Minute)
+		f.mu.Lock()
+		f.requests = 0
+		f.mu.Unlock()
+		empty := load(s, full.Cursor, true, 0)
+		if merged := source.Merge(full, empty); len(merged.Items) != count || len(merged.Stale) != 0 {
+			t.Fatalf("change window dropped or staled rows: %+v", merged)
+		}
+		f.mu.Lock()
+		warm[count] = f.requests
+		f.mu.Unlock()
+	}
+	if warm[2] != warm[40] {
+		t.Fatalf("warm requests grew with issue count: %v", warm)
+	}
+
+	s, f := newFixture(t)
+	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	s.o.Now = func() time.Time { return now }
+	cursor := load(s, source.Cursor{}, false, 2).Cursor
+	// A project option edit bumps only the project item.
+	now = now.Add(time.Minute)
+	f.mu.Lock()
+	f.option, f.itemUpdated = "active", now.Add(-10*time.Second)
+	f.mu.Unlock()
+	now = now.Add(time.Minute)
+	delta := load(s, cursor, true, 1)
+	if item := delta.Items[0]; item.Ref.ID != "1" || item.Category != model.Active || item.Fields["projectOptionID"] != "active" {
+		t.Fatalf("project option change missed: %+v", item)
+	}
+	// The overlap rereads it once more; the window after that starts past it.
+	now = now.Add(5 * time.Minute)
+	delta = load(s, delta.Cursor, true, 1)
+	// Edited, closed, relabelled and new issues appear by their own updatedAt.
+	now = now.Add(5 * time.Minute)
+	f.mu.Lock()
+	f.title, f.state, f.labels, f.issueCount = "Edited", "CLOSED", []string{"bug"}, 3
+	f.updated[2], f.updated[3] = now.Add(-10*time.Second), now.Add(-5*time.Second)
+	f.mu.Unlock()
+	now = now.Add(time.Minute)
+	delta = load(s, delta.Cursor, true, 2)
+	for i, item := range delta.Items {
+		if item.Ref.ID != strconv.Itoa(i+2) || item.Title != "Edited" || item.Category != model.Done || !slices.Equal(item.Labels, []string{"bug"}) {
+			t.Fatalf("issue change missed: %+v", item)
+		}
+	}
+	now = now.Add(time.Hour)
+	delta = load(s, delta.Cursor, false, 3)
+	delta.Cursor.Reconcile = true
+	load(s, delta.Cursor, false, 3)
 }
 
 // Stale project-only versions, missing versions, denied capabilities and unknown

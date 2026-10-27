@@ -9,8 +9,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -209,6 +212,11 @@ type issue struct {
 	}
 	BlockedBy, SubIssues relationConnection
 	Parent               *related
+	// ProjectItems is read only in a change window; see boundItem.
+	ProjectItems *struct {
+		Nodes    []projectItem
+		PageInfo *pageInfo
+	}
 }
 
 const issueFields = `id number title body state stateReason url createdAt updatedAt repository{nameWithOwner} assignees(first:100){nodes{login} pageInfo{hasNextPage endCursor}} labels(first:100){nodes{name} pageInfo{hasNextPage endCursor}} blockedBy(first:100){nodes{id number repository{nameWithOwner}} pageInfo{hasNextPage endCursor}} subIssues(first:100){nodes{id number repository{nameWithOwner}} pageInfo{hasNextPage endCursor}} parent{id number repository{nameWithOwner}}`
@@ -228,9 +236,41 @@ func advance(p *pageInfo, seen map[string]bool) (string, error) {
 	seen[p.EndCursor] = true
 	return p.EndCursor, nil
 }
+
+type syncCursor struct {
+	Watermark, Reconciled time.Time
+	Scope                 string
+	// Sprints is sticky, as in Linear: enabling it reconciles so cached rows
+	// gain their iteration keys.
+	Sprints bool
+}
+
+const reconcileInterval = time.Hour
+const changeOverlap = 2 * time.Minute
+const detailBatchSize = 10
+
+func (s *Source) scope() string {
+	scope := s.o.Host + "/" + s.o.Repo + ":" + s.o.Account.User
+	if s.o.Project != nil {
+		scope += ":" + s.o.Project.ID
+	}
+	return scope
+}
+
+// Load reads a change window between full reconciliations at startup, hourly
+// and on request. The watermark advances from wall-clock scan start, never
+// from a row's updatedAt. A change window can't prove absence; Merge keeps
+// unseen rows.
 func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	start := s.o.Now().UTC()
+	var state syncCursor
+	if cursor.Value != "" {
+		if len(cursor.Value) > 2048 || json.Unmarshal([]byte(cursor.Value), &state) != nil || state.Scope != s.scope() || state.Watermark.IsZero() || state.Watermark.After(start) || state.Reconciled.After(start) {
+			return source.Delta{}, source.Refuse("rejected", "invalid GitHub sync cursor")
+		}
+	}
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return source.Delta{}, err
@@ -238,11 +278,30 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if err = s.identity(ctx, c); err != nil {
 		return source.Delta{}, err
 	}
-	// A 304 validates this hint only, never the complete issue or project snapshot.
-	if _, err = s.request(ctx, c, http.MethodGet, s.base()+"/repos/"+s.o.Repo+"/issues?state=all&sort=updated&direction=desc&per_page=1", nil); err != nil {
+	reconcile := cursor.Reconcile || state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || cursor.Sprints != state.Sprints
+	var delta source.Delta
+	if reconcile {
+		delta, err = s.reconcile(ctx, c, cursor.Sprints)
+		state.Reconciled = start
+	} else {
+		delta, err = s.window(ctx, c, state.Watermark.Add(-changeOverlap), cursor.Sprints)
+	}
+	if err != nil {
 		return source.Delta{}, err
 	}
-	projects, catalog, err := s.projects(ctx, c, cursor.Sprints)
+	raw, _ := json.Marshal(syncCursor{Watermark: start, Reconciled: state.Reconciled, Scope: s.scope(), Sprints: cursor.Sprints})
+	delta.Cursor = source.Cursor{Value: string(raw), Sprints: cursor.Sprints}
+	return delta, nil
+}
+
+// reconcile lists every project item and every issue, with relations, so
+// project-only edits and removed edges show up whatever their timestamps.
+func (s *Source) reconcile(ctx context.Context, c remote.Credential, sprints bool) (source.Delta, error) {
+	// A 304 validates this hint only, never the complete issue or project snapshot.
+	if _, err := s.request(ctx, c, http.MethodGet, s.base()+"/repos/"+s.o.Repo+"/issues?state=all&sort=updated&direction=desc&per_page=1", nil); err != nil {
+		return source.Delta{}, err
+	}
+	projects, catalog, err := s.projects(ctx, c, sprints)
 	if err != nil {
 		return source.Delta{}, err
 	}
@@ -250,7 +309,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	for _, sprint := range catalog {
 		sprintNames[sprint.Key] = sprint.Name
 	}
-	delta := source.Delta{Coverage: source.Complete, Sprints: catalog, Cursor: source.Cursor{Sprints: cursor.Sprints}}
+	delta := source.Delta{Coverage: source.Complete, Sprints: catalog}
 	vars := s.variables()
 	seen := map[string]bool{}
 	ids := map[string]bool{}
@@ -290,6 +349,124 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		}
 		vars["after"] = after
 	}
+}
+
+// window reads issues updated since, and issues whose project item changed
+// since, each with its item in the bound project. Edges that bump neither
+// timestamp wait for reconciliation (docs/github.md).
+func (s *Source) window(ctx context.Context, c remote.Credential, since time.Time, sprints bool) (source.Delta, error) {
+	vars := s.variables()
+	header := "$owner:String!,$repo:String!"
+	fields := issueFields
+	delta := source.Delta{Coverage: source.Complete, Incremental: true, RetainUnseen: true}
+	var changed []int
+	if s.o.Project != nil {
+		statusName, iteration, err := s.discover(ctx, c, sprints)
+		if err != nil {
+			return source.Delta{}, err
+		}
+		vars["fieldName"] = statusName
+		header += ",$fieldName:String!"
+		values := `fieldValueByName(name:$fieldName){... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id}}}}`
+		if iteration != nil {
+			vars["sprintFieldName"] = iteration.name
+			header += ",$sprintFieldName:String!"
+			values += ` sprint:fieldValueByName(name:$sprintFieldName){... on ProjectV2ItemFieldIterationValue{iterationId}}`
+			delta.Sprints = iteration.sprints
+		}
+		fields += ` projectItems(first:100,includeArchived:false){nodes{id updatedAt project{id} ` + values + `} pageInfo{hasNextPage endCursor}}`
+		if changed, err = s.changedProjectIssues(ctx, c, since); err != nil {
+			return source.Delta{}, err
+		}
+	}
+	rows := map[int]issue{}
+	q := `query(` + header + `,$since:DateTime!,$after:String){repository(owner:$owner,name:$repo){id nameWithOwner issues(first:100,after:$after,states:[OPEN,CLOSED],filterBy:{since:$since},orderBy:{field:UPDATED_AT,direction:ASC}){nodes{` + fields + `} pageInfo{hasNextPage endCursor}}}}`
+	vars["since"] = since.Format(time.RFC3339)
+	seen := map[string]bool{}
+	for {
+		var result struct {
+			Repository *struct {
+				ID, NameWithOwner string
+				Issues            struct {
+					Nodes    []issue
+					PageInfo *pageInfo
+				}
+			}
+		}
+		if err := s.query(ctx, c, q, vars, &result); err != nil {
+			return source.Delta{}, err
+		}
+		if result.Repository == nil || result.Repository.ID != s.repositoryID || !strings.EqualFold(result.Repository.NameWithOwner, s.o.Repo) {
+			return source.Delta{}, source.Refuse("unavailable", "repository identity changed")
+		}
+		// An issue edited mid-scan moves to the end and can be read twice.
+		for _, row := range result.Repository.Issues.Nodes {
+			rows[row.Number] = row
+		}
+		after, err := advance(result.Repository.Issues.PageInfo, seen)
+		if err != nil {
+			return source.Delta{}, err
+		}
+		if after == "" {
+			break
+		}
+		vars["after"] = after
+	}
+	delete(vars, "since")
+	delete(vars, "after")
+	var missing []int
+	for _, n := range changed {
+		if _, ok := rows[n]; !ok {
+			rows[n] = issue{}
+			missing = append(missing, n)
+		}
+	}
+	for offset := 0; offset < len(missing); offset += detailBatchSize {
+		batch := missing[offset:min(offset+detailBatchSize, len(missing))]
+		var b strings.Builder
+		b.WriteString("query(" + header)
+		batchVars := maps.Clone(vars)
+		for i, n := range batch {
+			fmt.Fprintf(&b, ",$n%d:Int!", i)
+			batchVars[fmt.Sprint("n", i)] = n
+		}
+		b.WriteString("){")
+		for i := range batch {
+			fmt.Fprintf(&b, "i%d:repository(owner:$owner,name:$repo){id nameWithOwner issue(number:$n%d){%s}}", i, i, fields)
+		}
+		b.WriteString("}")
+		var result map[string]*struct {
+			ID, NameWithOwner string
+			Issue             *issue
+		}
+		if err := s.query(ctx, c, b.String(), batchVars, &result); err != nil {
+			return source.Delta{}, err
+		}
+		for i, n := range batch {
+			r := result[fmt.Sprint("i", i)]
+			if r == nil || r.ID != s.repositoryID || !strings.EqualFold(r.NameWithOwner, s.o.Repo) || r.Issue == nil || r.Issue.Number != n {
+				return source.Delta{}, source.Refuse("unavailable", "incomplete GitHub batch")
+			}
+			rows[n] = *r.Issue
+		}
+	}
+	sprintNames := map[string]string{}
+	for _, sprint := range delta.Sprints {
+		sprintNames[sprint.Key] = sprint.Name
+	}
+	numbers := slices.Sorted(maps.Keys(rows))
+	for _, n := range numbers {
+		p, err := s.boundItem(rows[n])
+		if err != nil {
+			return source.Delta{}, err
+		}
+		item, err := s.item(ctx, c, rows[n], p, sprintNames)
+		if err != nil {
+			return source.Delta{}, err
+		}
+		delta.Items = append(delta.Items, item)
+	}
+	return delta, nil
 }
 func validNumber(id string) (int, error) {
 	n, err := strconv.Atoi(id)

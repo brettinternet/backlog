@@ -13,6 +13,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
@@ -122,6 +123,28 @@ func TestLiveRoundTrip(t *testing.T) {
 		}
 	}
 	await(func(i model.Item) bool { return i.Category == model.Todo })
+	full, err := s.Load(ctx, source.Cursor{})
+	if err != nil || full.Incremental {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	// A change window from the reconciled cursor must see each edit.
+	awaitWindow := func(ready func(model.Item) bool) {
+		t.Helper()
+		deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		for deadline.Err() == nil {
+			delta, err := s.Load(deadline, full.Cursor)
+			if err != nil || !delta.Incremental {
+				t.Fatalf("change window: %v", err)
+			}
+			for _, i := range delta.Items {
+				if i.Ref == item.Ref && ready(i) {
+					return
+				}
+			}
+		}
+		t.Fatal("change window missed the edit")
+	}
 	change := func(m model.Mutation) {
 		t.Helper()
 		var err error
@@ -137,6 +160,7 @@ func TestLiveRoundTrip(t *testing.T) {
 	}
 	apply("status", active)
 	await(func(i model.Item) bool { return i.Category == model.Active })
+	awaitWindow(func(i model.Item) bool { return i.Category == model.Active })
 	apply("labels", []string{label})
 	await(func(i model.Item) bool { return len(i.Labels) == 1 && i.Labels[0] == label })
 	apply("assignees", []string{user})
@@ -168,6 +192,9 @@ func TestLiveRoundTrip(t *testing.T) {
 	t.Logf("created comment %d", comments[0].ID)
 	apply("status", "closed")
 	await(func(i model.Item) bool { return i.Category == model.Done })
+	awaitWindow(func(i model.Item) bool {
+		return i.Category == model.Done && i.Title == "bl-provider-test BL-119 renamed" && len(i.Labels) == 1 && i.Labels[0] == label
+	})
 	gh(nil, "api", "--method", "DELETE", fmt.Sprintf("repos/%s/issues/comments/%d", repo, comments[0].ID))
 	t.Logf("deleted comment %d", comments[0].ID)
 }

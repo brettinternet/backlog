@@ -70,3 +70,24 @@ with `conflict`: the composite version kept moving after a write's value
 appeared. The test now waits for two equal consecutive reads before the next
 write. Afterward the project was empty and deleted, and GraphQL lookups of both
 issues and the project returned `NOT_FOUND`.
+
+## BL-120 live verification
+
+Same target and helper. Disposable project `bl-provider-test-BL120-20261027`:
+number **9**, ID `PVT_kwHOAT55tM4BpBZ0`, status field
+`PVTSSF_lAHOAT55tM4BpBZ0zhne2Ng`, options as above, label `bug`.
+
+A probe script created issues #8 `I_kwDOVS6Ow88AAAABaZyu7w` and #9
+`I_kwDOVS6Ow88AAAABaZyvmQ`, added both to the project, and after each mutation
+polled both issues' and project items' `updatedAt` every 5 seconds for up to
+70 seconds. Results are in [github.md](github.md#sync): a status option change
+bumped only the item, a title edit bumped both, and `addBlockedBy`,
+`removeBlockedBy`, `addSubIssue` and `removeSubIssue` bumped neither.
+`items(query:"updated:>=TIMESTAMP")` matched nothing; `updated:>=DATE` matched.
+
+`TestLiveRoundTrip` then passed in 84.65 seconds, including two change-window
+loads from a reconciled cursor: one saw the project-only status change, the
+other the renamed, relabelled, closed issue. Issue #10
+`I_kwDOVS6Ow88AAAABaZ5U3w`, project entry `PVTI_lAHOAT55tM4BpBZ0zhEANpY` and
+comment `6452554788` were deleted by the test. The probe issues and the project
+were then deleted, and GraphQL lookups of all three returned `NOT_FOUND`.
