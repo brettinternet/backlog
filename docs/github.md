@@ -110,6 +110,52 @@ Authorized GitHub Apps, and uninstall them to withdraw repository access.
 Fake-server tests cover the protocol and permission checks; a live login hasn't
 been recorded.
 
+## Label statuses
+
+Without Projects v2, every open issue is `open` and ready. To give issues
+statuses, map labels to categories:
+
+```yaml
+sources:
+  - id: issues
+    type: github
+    repo: acme/app
+    account: personal
+    statusLabels:
+      ready: todo
+      in-progress: active
+statuses:
+  - {key: unknown, name: Triage, category: backlog}
+  - {key: closed, name: Closed, category: done}
+  - {key: ready, name: Ready, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+workflow: {start: in-progress, done: closed}
+```
+
+| Issue | Status | Category |
+| --- | --- | --- |
+| Closed | `closed` | done, or canceled for not planned |
+| Open, one mapped label | the label | as mapped |
+| Open, no mapped label | `unknown` | backlog |
+| Open, several mapped labels | `unknown` | backlog, with a warning naming them |
+
+Label names match case-insensitively, as on GitHub, and mapped labels stay in
+`labels`. A closed issue is closed whatever its labels.
+
+| Write | Effect |
+| --- | --- |
+| `status=LABEL` | Replaces the mapped labels with this one, keeping the rest |
+| `status=unknown` | Removes the mapped labels |
+| `status=closed` | Closes the issue as completed |
+| `status=open` | Reopens it |
+
+Each is one write. A label status on a closed issue is refused; reopen it first.
+`workflow.start` can be a label, so `bl next --claim --start` works.
+
+`statusLabels` with `githubProject`, a category other than `backlog`, `todo`,
+`active`, `done`, or `canceled`, two labels differing only in case, or a label
+named `open`, `closed`, or `unknown` fails config load.
+
 ## Project status
 
 Bind one single-select field by ID. Find the IDs with:
@@ -160,20 +206,20 @@ them:
 
 | Key | Category | When |
 | --- | --- | --- |
-| `open` | todo | Open issue without a project binding |
+| `open` | todo | Open issue without a project binding or status labels |
 | `closed` | done, or canceled for not planned | Closed issue |
-| `unknown` | backlog | Open issue not in the project or with an unmapped option |
+| `unknown` | backlog | Open issue not in the project, with an unmapped option, or without exactly one status label |
 | option ID | as mapped in `options` | Open issue with a mapped option |
+| label | as mapped in `statusLabels` | Open issue with that one status label |
 
 With any GitHub source configured, a `statuses:` entry for one of these keys
 with another category fails config load (`closed` accepts done or canceled), and
-so does an option ID mapped to different categories by two GitHub sources.
+so does an option ID or label mapped to different categories by two GitHub
+sources.
 `bl doctor` reports the same error.
 
-Each refresh lists every project item and every issue, with `blockedBy` and
-sub-issue edges, so project-only edits and removed dependencies show up even
-when the issue's `updatedAt` doesn't change. A REST ETag `304` is only a hint.
-Inaccessible or incomplete reads fail rather than claim completeness.
+Inaccessible or incomplete reads fail rather than claim completeness. See
+[Sync](#sync) for which edits a refresh sees when.
 
 ### Sprints
 
@@ -200,6 +246,48 @@ the one with `startDate <= today < startDate + duration` is active and every
 other one is future, even if its own dates have already elapsed. A break with
 none in range leaves the whole list future, with no active sprint. Sprint keys
 are the iteration's node ID.
+
+## Sync
+
+Two scans, as in [Linear](linear.md#sync):
+
+| Scan | When | Reads |
+| --- | --- | --- |
+| Change window | Every refresh between reconciliations | Issues updated since the last scan's start minus two minutes, plus issues whose project item was updated since then |
+| Reconciliation | Startup (no cached cursor), hourly, and on `R` in the TUI | Every issue with its relations, and every project item |
+
+Requests per scan, excluding relation overflow pages and writes:
+
+| Scan | Requests |
+| --- | --- |
+| Empty change window | 3 (identity check, repository, one issue page), plus 2 with a project (fields, one item page), regardless of issue count |
+| Window with C changed issues | The above, plus ⌈C/100⌉ − 1 issue pages and ⌈P/10⌉ batched reads for P issues changed only in the project |
+| Reconciliation of N issues and M project items | 3 + ⌈N/100⌉ (identity, repository, REST hint, issue pages), plus 1 + ⌈M/100⌉ with a project |
+
+The project item filter accepts only dates (`updated:>=YYYY-MM-DD`; a timestamp
+matches nothing), so the window reads items updated since the day before and
+compares `updatedAt` itself. Its page count follows items edited in the last day
+or two, not project size. Each changed issue's project status and iteration come
+from its own `projectItems`.
+
+Measured live for BL-120, polling 70 seconds after each mutation:
+
+| Edit | Issue `updatedAt` | Project item `updatedAt` |
+| --- | --- | --- |
+| Title or other issue edit | Bumped | Bumped |
+| Project status option | Unchanged | Bumped |
+| Add or remove `blockedBy`, either side | Unchanged | Unchanged |
+| Add or remove a sub-issue, either side | Unchanged | Unchanged |
+
+So a change window sees issue and project edits, including new, closed and
+relabelled issues, but no dependency or hierarchy change. Those, removal from
+the project, deletions and transfers appear at the next reconciliation.
+Unchanged rows keep their freshness; a change window never removes rows.
+Single-issue reads don't wait: `bl next --claim` reads each candidate fresh,
+and `bl show`, the TUI detail pane and write preflights replace the cached row.
+
+Reconciliation is a complete enumeration and removes unseen rows. A REST ETag
+`304` is only a hint. The cursor and its schedule survive restarts in the cache.
 
 ## Writes and claims
 
@@ -269,10 +357,10 @@ task cli:test PKG='./internal/source/github ./internal/source/remote'
 
 `FuzzProviderJSON` fuzzes provider JSON. The live test needs an authorized test
 repository and a new disposable project titled `bl-provider-test-…`. It creates
-one issue, comment, and project entry and exercises every write above. It then
-creates a child issue in the project with a parent and blocker and undoes it
-(closing it, since the project status moved its version), and creates a plain
-issue that undo deletes. Cleanup deletes everything:
+one issue, comment, and project entry and exercises every write above and two
+change windows. It then creates a child issue in the project with a parent and
+blocker and undoes it (closing it, since the project status moved its version),
+and creates a plain issue that undo deletes. Cleanup deletes everything:
 
 ```sh
 gh project create --owner OWNER --title bl-provider-test-roundtrip --format json
@@ -290,3 +378,12 @@ gh project delete NUMBER --owner OWNER
 
 The label must already exist. Logs include artifact IDs, never credentials. See
 the [recorded run](github-verification.md).
+
+`TestLiveLabelStatus` needs only the repository and user. It creates three
+uniquely named `bl-test-*` labels and one issue, moves the issue through label
+statuses, and deletes exactly those labels and the issue:
+
+```sh
+BL_PROVIDER_TESTS=1 BL_GITHUB_TEST_REPO=OWNER/REPO BL_GITHUB_TEST_USER=OWNER \
+task cli:test PKG=./internal/source/github -- -run TestLiveLabelStatus -count=1 -v
+```

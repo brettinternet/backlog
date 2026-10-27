@@ -34,7 +34,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	var payload any
 	method, endpoint := http.MethodPatch, s.issuePath(m.Ref.ID)
-	projectWrite := false
+	projectWrite, labelStatus := false, ""
 	entry := ""
 	switch m.Op {
 	case model.AppendComment:
@@ -80,6 +80,15 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			if !ok {
 				return model.Item{}, source.Refuse("rejected", "status must be a string")
 			}
+			if s.statusLabels != nil && v != "open" && v != "closed" {
+				if labelStatus = s.statusLabels[strings.ToLower(v)]; v == "unknown" {
+					labelStatus = v
+				}
+				if labelStatus == "" {
+					return model.Item{}, source.Refuse("rejected", "open, closed, unknown or a configured status label required")
+				}
+				break
+			}
 			if v != "open" && v != "closed" {
 				if s.o.Project == nil || !s.o.Project.AllowWrites || s.o.Project.Options[v] == "" {
 					return model.Item{}, source.Refuse("rejected", "open, closed or a writable configured project option ID required")
@@ -117,6 +126,23 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !projectWrite && !s.issueWrite) {
 		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
+	}
+	if labelStatus != "" {
+		// Replace the mapped labels in the same write that keeps the rest, so
+		// a status change is still one mutation.
+		if current.Category == model.Done || current.Category == model.Canceled {
+			return model.Item{}, source.Refuse("rejected", "issue is closed; set status=open first")
+		}
+		labels := []string{}
+		for _, label := range current.Labels {
+			if s.statusLabels[strings.ToLower(label)] == "" {
+				labels = append(labels, label)
+			}
+		}
+		if labelStatus != "unknown" {
+			labels = append(labels, labelStatus)
+		}
+		payload = map[string]any{"labels": labels}
 	}
 	if entry != "" {
 		list := current.Labels

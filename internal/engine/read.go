@@ -266,7 +266,7 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 				aliases[key] = configured.ID
 			}
 		}
-		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: account, Project: c.GitHubProject, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg), SourceIDs: aliases})
+		backend, err := github.New(github.Options{ID: c.ID, Host: host, Repo: c.Repo, Account: account, Project: c.GitHubProject, StatusLabels: c.StatusLabels, Secrets: providerSecrets, Credentials: providerCredentialsFor(cfg), SourceIDs: aliases})
 		if err != nil {
 			return nil, err
 		}

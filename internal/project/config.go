@@ -626,7 +626,8 @@ func validateSettings(node *yaml.Node) error {
 
 // validateGitHubStatuses refuses status entries that contradict the category
 // the GitHub adapter assigns a key, because the adapter would ignore them: an
-// open issue would stay ready under {key: open, category: backlog}.
+// open issue would stay ready under {key: open, category: backlog}. Mapped
+// labels and project options share that key space, so they're checked here.
 func (c Config) validateGitHubStatuses() error {
 	at := func(key, message string) error {
 		p := c.Provenance[key]
@@ -643,15 +644,38 @@ func (c Config) validateGitHubStatuses() error {
 		}
 	}
 	for i, s := range c.Sources {
-		if s.Type != "github" || s.GitHubProject == nil {
+		if s.Type != "github" {
 			continue
 		}
-		for _, option := range slices.Sorted(maps.Keys(s.GitHubProject.Options)) {
-			category := s.GitHubProject.Options[option]
-			if previous, ok := assigned[option]; ok && !matches(option, previous, category) {
-				return at(fmt.Sprintf("sources[%d].githubProject.options.%s", i, option), fmt.Sprintf("source %s maps %s to %s, but %s assigns it %s; map it to one category", s.ID, option, category, by[option], previous))
+		path, mapping := fmt.Sprintf("sources[%d].statusLabels", i), s.StatusLabels
+		if s.GitHubProject != nil {
+			if len(s.StatusLabels) > 0 {
+				return at(path, fmt.Sprintf("source %s sets both statusLabels and githubProject; keep one", s.ID))
 			}
-			assigned[option], by[option] = category, "source "+s.ID
+			path, mapping = fmt.Sprintf("sources[%d].githubProject.options", i), s.GitHubProject.Options
+		}
+		// GitHub label names are case-insensitive.
+		labels := map[string]string{}
+		for _, key := range slices.Sorted(maps.Keys(mapping)) {
+			category := mapping[key]
+			if s.GitHubProject == nil {
+				folded := strings.ToLower(key)
+				switch {
+				case strings.TrimSpace(key) == "":
+					return at(path, "label names can't be empty")
+				case folded == "open" || folded == "closed" || folded == "unknown":
+					return at(path+"."+key, fmt.Sprintf("label %s would shadow the %s status; use another label", key, folded))
+				case labels[folded] != "":
+					return at(path+"."+key, fmt.Sprintf("labels %s and %s are the same GitHub label; keep one", labels[folded], key))
+				case !slices.Contains([]string{"backlog", "todo", "active", "done", "canceled"}, category):
+					return at(path+"."+key, fmt.Sprintf("unknown category %s; use backlog, todo, active, done, or canceled", category))
+				}
+				labels[folded] = key
+			}
+			if previous, ok := assigned[key]; ok && !matches(key, previous, category) {
+				return at(path+"."+key, fmt.Sprintf("source %s maps %s to %s, but %s assigns it %s; map it to one category", s.ID, key, category, by[key], previous))
+			}
+			assigned[key], by[key] = category, "source "+s.ID
 		}
 	}
 	for i, status := range c.Statuses {
