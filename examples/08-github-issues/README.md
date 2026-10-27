@@ -23,17 +23,20 @@ bl ls
 135  open  Upgrade the payment SDK
 ```
 
-Writes change one field per command:
+Edits change one field per command:
 
 ```sh
-bl set issues:128 labels=bug,checkout
+bl new 'Retry failed uploads' +issues '#bug' @alice --body 'Steps…'
+bl set issues:128 title='Checkout fails on an empty cart'
+bl set issues:128 labels+=checkout
 bl set issues:128 assignees=alice
 bl comment issues:128 'Fixed in #140'
 bl done issues:128
 ```
 
 `bl done` closes the issue as completed. `bl set issues:128 status=open`
-reopens it.
+reopens it. Every open issue is `open` and ready; to give issues statuses, map
+labels with [`statusLabels`](../../docs/github.md#label-statuses).
 
 ## Other credentials
 

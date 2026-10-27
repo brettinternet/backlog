@@ -39,7 +39,9 @@ BL-2  done  high  Add sign-in page
 BL-3  in-progress  medium  Add password reset
 ```
 
-`done` writes, then releases the claim. Heartbeat before half the claim TTL.
+`done` writes, then releases the claim. Heartbeat before half the claim TTL, or
+wrap a long command so it renews until the command exits:
+`bl heartbeat --session agent-a -- task ci`.
 Run `bl instructions workflow` for the full rules an agent should follow.
 Agents on several hosts share claims through a
 [remote authority](../../docs/cli.md#remote-authority); `bl` commands don't

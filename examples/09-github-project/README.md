@@ -25,13 +25,15 @@ bl ls --group status
 ```
 
 ```text
-f75ad846 (2)
-131  f75ad846  Add dark mode
-135  f75ad846  Upgrade the payment SDK
+Todo (2)
+131  Todo  Add dark mode
+135  Todo  Upgrade the payment SDK
 
-47fc9ee4 (1)
-128  47fc9ee4  Checkout fails with an empty cart
+In Progress (1)
+128  In Progress  Checkout fails with an empty cart
 ```
+
+Statuses show the board's option names; `status=` and `--json` use the IDs.
 
 `bl start` moves the card to In Progress. `bl done` closes the issue:
 

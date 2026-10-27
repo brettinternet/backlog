@@ -57,8 +57,8 @@ the account's `user` UUID, not `me.default`.
 ### API key
 
 Create a personal API key in Linear Settings → Security & access → Personal API
-keys, limited to the teams you need. Give it read access, plus issue update and
-comment creation for writes. (The live test also needs issue and relation
+keys, limited to the teams you need. Give it read access, plus issue creation,
+issue update, and comment creation for writes. (The live test also needs issue and relation
 create/delete in the Test team.) Workspace and team restrictions still apply.
 
 Keep the key in a credential manager, never in config, arguments, screenshots,
