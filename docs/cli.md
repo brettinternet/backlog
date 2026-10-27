@@ -186,7 +186,10 @@ echo 'Long description' | bl new 'Write docs' --body -
   first todo-category status, else the first status.
 - `defaults.type` and `defaults.dod` from config apply to native and Backlog.md
   sources; Linear has no type or DoD, so its creates omit them.
-- `--source` is required when there are several sources.
+- The source is the first of: `--source` or a `+ID` token (both given and
+  different exits 2), `defaults.source`, or the only source that can create.
+  Otherwise, or for an unknown source or one that can't create, `bl new` exits
+  2 and lists the sources that can.
 - `--sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
   like `bl set sprint=`. Only Linear sources create with a sprint.
 - `--if-version` on create always conflicts.

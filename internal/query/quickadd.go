@@ -8,12 +8,15 @@ import (
 )
 
 // QuickAdd parses an item template; allocation, defaults and source validation
-// belong to the caller. me is the resolved @handle for @me (empty refuses @me).
-// List fields accumulate without duplicates; the last scalar token wins.
-func QuickAdd(input, me string) (model.Item, error) {
+// belong to the caller. A +ID token sets item.Ref.Source. me returns the
+// @handle for @me in the given +ID source ("" when none was given); an empty
+// handle refuses @me. List fields accumulate without duplicates; the last
+// scalar token wins.
+func QuickAdd(input string, me func(source string) (string, error)) (model.Item, error) {
 	p := scanner{s: input}
 	item := model.Item{}
-	var title []string
+	var title, assignees []string
+	meAt := -1
 	for p.space(); p.i < len(input); p.space() {
 		at := p.i
 		first := input[at]
@@ -21,7 +24,7 @@ func QuickAdd(input, me string) (model.Item, error) {
 		if err != nil {
 			return item, err
 		}
-		if first == '"' || first == '\\' || !strings.ContainsRune("!@#^<~:", rune(first)) {
+		if first == '"' || first == '\\' || !strings.ContainsRune("!@#^<~:+", rune(first)) {
 			title = append(title, text)
 			continue
 		}
@@ -50,14 +53,12 @@ func QuickAdd(input, me string) (model.Item, error) {
 			item.Priority = model.Priority(matches[0])
 		case '@':
 			if strings.EqualFold(value, "me") {
-				if me == "" {
-					return item, fail(at, "@me requires a configured identity")
+				text = ""
+				if meAt < 0 {
+					meAt = at
 				}
-				text = me
 			}
-			if !slices.Contains(item.Assignees, text) {
-				item.Assignees = append(item.Assignees, text)
-			}
+			assignees = append(assignees, text)
 		case '#':
 			if !slices.Contains(item.Labels, value) {
 				item.Labels = append(item.Labels, value)
@@ -72,6 +73,24 @@ func QuickAdd(input, me string) (model.Item, error) {
 			item.Milestone = value
 		case ':':
 			item.Type = value
+		case '+':
+			item.Ref.Source = value
+		}
+	}
+	// @me resolves after the loop, since a later +ID can change its source.
+	for _, a := range assignees {
+		if a == "" {
+			handle, err := me(item.Ref.Source)
+			if err != nil {
+				return item, err
+			}
+			if handle == "" {
+				return item, fail(meAt, "@me requires a configured identity")
+			}
+			a = handle
+		}
+		if !slices.Contains(item.Assignees, a) {
+			item.Assignees = append(item.Assignees, a)
 		}
 	}
 	item.Title = strings.Join(title, " ")

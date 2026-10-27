@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 )
 
@@ -46,25 +48,19 @@ func (m *Model) beginCapture(child bool) {
 		source = row.Ref.Source
 	}
 	if !child && source == "" {
-		capable := []string{}
-		for _, id := range m.opts.Sources {
-			if m.hasWorkspace() && !m.opts.WorkspaceScope {
-				p, _ := m.opts.Workspace.SourceProject(id)
-				if p.Project.ID != m.scopeProject() {
-					continue
+		if resolved, err := m.createSource(""); err == nil {
+			source = resolved
+		} else {
+			capable := []string{}
+			for _, id := range m.opts.Sources {
+				if m.createCapabilities(id).Allows(model.Create) {
+					capable = append(capable, id)
 				}
 			}
-			if m.opts.Store.Capabilities(id).Allows(model.Create) {
-				capable = append(capable, id)
+			if len(capable) == 0 {
+				m.notice = "Disabled: no source supports creation."
+				return
 			}
-		}
-		if len(capable) == 0 {
-			m.notice = "Disabled: no source supports creation."
-			return
-		}
-		if len(capable) == 1 {
-			source = capable[0]
-		} else {
 			m.capture = captureState{open: true, choosing: true, sources: capable}
 			m.notice = ""
 			return
@@ -77,6 +73,50 @@ func (m *Model) beginCapture(child bool) {
 	m.routeSourceProject(source)
 	m.capture = captureState{open: true, child: child, source: source}
 	m.notice = ""
+}
+
+// createSource resolves a new item's source as bl new and MCP create do, from
+// the store's capabilities. A token comes from +ID in quick-add.
+func (m Model) createSource(token string) (string, error) {
+	cfg := project.Config{}
+	if m.opts.Workspace != nil {
+		cfg = *m.opts.Workspace
+	}
+	cfg.Sources = nil
+	for _, id := range m.opts.Sources {
+		cfg.Sources = append(cfg.Sources, project.SourceConfig{ID: id})
+	}
+	return engine.CreateSource(m.opts.Context, cfg, "", token, m.createCapabilities)
+}
+
+// createCapabilities hides sources outside the scoped workspace project.
+func (m Model) createCapabilities(id string) model.Capabilities {
+	if scope := m.scopeProject(); scope != "" {
+		if p, _ := m.opts.Workspace.SourceProject(id); p.Project.ID != scope {
+			return model.Capabilities{}
+		}
+	}
+	return m.opts.Store.Capabilities(id)
+}
+
+// captureSource applies a quick-add +ID token. A child stays in its parent's
+// source.
+func (m Model) captureSource(token string) (string, error) {
+	if token == "" {
+		return m.capture.source, nil
+	}
+	id, err := m.createSource(token)
+	if err != nil {
+		return "", errors.New(engine.ErrorMessage(err))
+	}
+	if m.capture.child && id != m.capture.source {
+		return "", errors.New("a child is created in its parent's source " + m.capture.source)
+	}
+	return id, nil
+}
+func (m Model) captureMe(token string) (string, error) {
+	id, err := m.captureSource(token)
+	return m.opts.Me[id], err
 }
 func (m *Model) beginFullEdit() {
 	row, ok := m.selectedRow()
@@ -292,13 +332,21 @@ func captureItem(fields []captureField, source string) (model.Item, error) {
 // expandCapture moves quick-add into the full form. Tab may open the form
 // before a title is typed (untitled); its title field takes the title there.
 func (m *Model) expandCapture(untitled bool) {
-	item, err := query.QuickAdd(m.capture.line.text, m.opts.Me[m.capture.source])
+	item, err := query.QuickAdd(m.capture.line.text, m.captureMe)
 	if err != nil && untitled {
 		// Only a missing title fails if a placeholder title alone parses.
-		if parsed, retry := query.QuickAdd("x "+m.capture.line.text, m.opts.Me[m.capture.source]); retry == nil && parsed.Title == "x" {
+		if parsed, retry := query.QuickAdd("x "+m.capture.line.text, m.captureMe); retry == nil && parsed.Title == "x" {
 			item, err = parsed, nil
 			item.Title = ""
 		}
+	}
+	if err == nil {
+		var source string
+		if source, err = m.captureSource(item.Ref.Source); err == nil && source != m.capture.source {
+			m.capture.source = source
+			m.routeSourceProject(source)
+		}
+		item.Ref.Source = ""
 	}
 	if err != nil {
 		m.capture.errorText = err.Error()

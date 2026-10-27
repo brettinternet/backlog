@@ -189,5 +189,7 @@ defaults, ID allocation, or I/O. It's shared by the TUI, `bl new`, and MCP.
   handles keep their `@`.
 - List tokens collect without duplicates; a repeated scalar token keeps the
   last value. `^` and `<` accept `source:ID`.
+- `+ID` names the source to create in; the caller validates it. `\+` keeps it
+  as title text. `@me` uses the identity of the final `+ID` source.
 - Empty values, invalid priorities, and unfinished quotes or escapes fail with
   a position. The caller validates field values and references.
