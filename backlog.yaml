@@ -20,6 +20,9 @@ statuses:
     - key: draft
       name: Draft
       category: backlog
+    - key: unknown
+      name: Triage
+      category: backlog
     - key: todo
       name: To Do
       category: todo
@@ -29,9 +32,6 @@ statuses:
     - key: done
       name: Done
       category: done
-    - key: unknown
-      name: Triage
-      category: backlog
     - key: ready
       name: Ready
       category: todo
