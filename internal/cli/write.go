@@ -93,6 +93,12 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			if err == nil {
 				changes, err = resolveChanges(ctx, cfg, item.Ref.Source, changes)
 			}
+			if err == nil && (cmd.Name == "start" || cmd.Name == "done") {
+				category := map[string]model.StatusCategory{"start": model.Active, "done": model.Done}[cmd.Name]
+				var status string
+				status, err = engine.WorkflowStatus(ctx, cfg, item, category)
+				changes = []model.Mutation{{Op: model.Set, Field: "status", Value: status}}
+			}
 			if err == nil {
 				version := item.Version
 				if cmd.IsSet("if-version") {
@@ -310,18 +316,8 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			if err != nil {
 				return err
 			}
-			m := model.Mutation{Op: model.Operation(cmd.Name)}
-			if cmd.Name == "start" || cmd.Name == "done" {
-				status := cfg.Workflow.Start
-				if cmd.Name == "done" {
-					status = cfg.Workflow.Done
-				}
-				if status == "" {
-					return &Error{Reason: "rejected", Message: "workflow." + cmd.Name + " is not configured"}
-				}
-				m = model.Mutation{Op: model.Set, Field: "status", Value: status}
-			}
-			return batch(ctx, cmd, cfg, ids, []model.Mutation{m})
+			// batch resolves start and done per item source.
+			return batch(ctx, cmd, cfg, ids, []model.Mutation{{Op: model.Operation(cmd.Name)}})
 		}}
 	}
 	commands = append(commands, transitions["start"], transitions["done"])

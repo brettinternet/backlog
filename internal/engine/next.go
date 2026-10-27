@@ -56,6 +56,8 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 	}
 	var item model.Item
 	var claim model.ClaimResult
+	// The start status resolves per source before any acquire (D35).
+	start := ""
 	if caller.Run != "" {
 		claim = c.VerifyRun(ctx, caller, "")
 		out.Claim = &claim
@@ -170,6 +172,11 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 					}
 					candidate = fresh
 				}
+				if options.Start {
+					if start, e = WorkflowStatus(ctx, cfg, candidate, model.Active); e != nil {
+						return out, e
+					}
+				}
 				// Reinspect for each attempt so a same-session inspection race
 				// cannot authorize walking past newly held/pending ownership.
 				var resumed bool
@@ -201,13 +208,13 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 	if !options.Start {
 		return out, nil
 	}
-	status := cfg.Workflow.Start
-	_, category, _ := StatusTarget(cfg, model.Mutation{Op: model.Set, Field: "status", Value: status})
-	if status == "" || category != model.Active {
-		return out, source.Refuse("rejected", "workflow.start must name an active status")
+	if start == "" {
+		if start, err = WorkflowStatus(ctx, cfg, item, model.Active); err != nil {
+			return out, err
+		}
 	}
 	transition := TransitionResult{}
-	updated, err := ApplyWrite(WithTransitionResult(ctx, &transition), cfg, model.Mutation{Ref: item.Ref, Op: model.Set, Field: "status", Value: status, ExpectedVersion: item.Version})
+	updated, err := ApplyWrite(WithTransitionResult(ctx, &transition), cfg, model.Mutation{Ref: item.Ref, Op: model.Set, Field: "status", Value: start, ExpectedVersion: item.Version})
 	if transition.Status != "" {
 		out.Status = transition.Status
 	}

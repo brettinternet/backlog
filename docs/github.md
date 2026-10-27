@@ -150,7 +150,13 @@ Label names match case-insensitively, as on GitHub, and mapped labels stay in
 | `status=open` | Reopens it |
 
 Each is one write. A label status on a closed issue is refused; reopen it first.
-`workflow.start` can be a label, so `bl next --claim --start` works.
+
+`bl start` and `bl done` resolve per source ([format](format.md#frontmatter-keys)).
+A label source accepts `open`, `closed`, `unknown`, and its mapped labels, so
+`done` closes the issue whatever `workflow.done` says, and `start` takes
+`workflow.start` when it is a mapped active label, or the only one. A project
+mixing native tasks with `workflow: {start: in-progress, done: done}` works for
+both.
 
 `statusLabels` with `githubProject`, a category other than `backlog`, `todo`,
 `active`, `done`, or `canceled`, two labels differing only in case, or a label
@@ -188,6 +194,8 @@ workflow: {start: option-active-id, done: closed}
 ```
 
 Option values are categories: `backlog`, `todo`, `active`, `done`, `canceled`.
+With `allowWrites`, `bl start` and `bl done` resolve among `open`, `closed`, and
+the option IDs; without it, start is refused and done closes the issue.
 An option without a configured status name displays its project option name;
 the stored status stays the option ID.
 

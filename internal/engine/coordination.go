@@ -207,7 +207,86 @@ func StatusTarget(cfg project.Config, m model.Mutation) (string, model.StatusCat
 	}
 	return status, "", found
 }
-func coordinatedWrite(ctx context.Context, cfg project.Config, m model.Mutation, read func() (model.Item, error), write func() (model.Item, error)) (model.Item, error) {
+
+// statusChoices lists the statuses item's source accepts: the provider's own,
+// else the configured statuses, narrowed by sources[].statuses (D35).
+func statusChoices(ctx context.Context, cfg project.Config, backend source.Source, item model.Item) ([]model.StatusChoice, error) {
+	if chooser, ok := backend.(source.StatusChooser); ok {
+		choices, ok, err := chooser.StatusChoices(ctx, item)
+		if err != nil || ok {
+			return choices, err
+		}
+	}
+	var narrowed []string
+	for _, c := range cfg.Sources {
+		if c.ID == item.Ref.Source {
+			narrowed = c.Statuses
+		}
+	}
+	choices := []model.StatusChoice{}
+	for _, status := range cfg.Statuses {
+		if len(narrowed) == 0 || slices.Contains(narrowed, status.Key) {
+			choices = append(choices, model.StatusChoice{Key: status.Key, Category: model.StatusCategory(status.Category)})
+		}
+	}
+	return choices, nil
+}
+
+// WorkflowStatus resolves workflow.start (category active) or workflow.done
+// (category done) for item's source, for every client (D35): the workflow key
+// when the source accepts it in that category, else the source's only status
+// in the category. Anything else is refused, naming the source.
+func WorkflowStatus(ctx context.Context, cfg project.Config, item model.Item, category model.StatusCategory) (string, error) {
+	if cfg.Workspace != nil {
+		p, local := cfg.SourceProject(item.Ref.Source)
+		if p.Workspace != nil {
+			return "", source.Refuse("unavailable", "unknown workspace source "+item.Ref.Source)
+		}
+		item.Ref.Source = local
+		return WorkflowStatus(ctx, p, item, category)
+	}
+	backend, err := writeBackend(ctx, cfg, item.Ref.Source)
+	if err != nil {
+		return "", err
+	}
+	return workflowStatus(ctx, cfg, backend, item, category)
+}
+
+func workflowStatus(ctx context.Context, cfg project.Config, backend source.Source, item model.Item, category model.StatusCategory) (string, error) {
+	if ws, ok := backend.(*workspaceSource); ok {
+		item.Ref.Source = ws.local
+		return workflowStatus(ctx, ws.cfg, ws.Source, item, category)
+	}
+	choices, err := statusChoices(ctx, cfg, backend, item)
+	if err != nil {
+		return "", err
+	}
+	key, name := cfg.Workflow.Start, "start"
+	if category == model.Done {
+		key, name = cfg.Workflow.Done, "done"
+	}
+	candidates := []string{}
+	for _, choice := range choices {
+		if choice.Category != category {
+			continue
+		}
+		if choice.Key == key {
+			return key, nil
+		}
+		candidates = append(candidates, choice.Key)
+	}
+	switch len(candidates) {
+	case 1:
+		return candidates[0], nil
+	case 0:
+		return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts no %s status for workflow.%s", item.Ref.Source, category, name))
+	}
+	return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts several %s statuses (%s) but not workflow.%s; set workflow.%s to one of them", item.Ref.Source, category, strings.Join(candidates, ", "), name, name))
+}
+
+func coordinatedWrite(ctx context.Context, cfg project.Config, backend source.Source, m model.Mutation) (model.Item, error) {
+	read := func() (model.Item, error) { return backend.Read(ctx, m.Ref.ID) }
+	write := func() (model.Item, error) { return backend.Apply(ctx, m) }
 	target, category, changes := StatusTarget(cfg, m)
 	if !cfg.Coordination.Enabled() || !changes {
 		return write()
@@ -225,12 +304,19 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, m model.Mutation,
 	if err != nil {
 		return model.Item{}, err
 	}
-	if transitions, ok := item.Fields["jiraTransitions"].(map[string]any); ok {
-		choice, _ := transitions[target].(map[string]any)
-		raw, _ := choice["category"].(string)
-		category = model.StatusCategory(raw)
-		if category != model.Todo && category != model.Active && category != model.Done {
-			return model.Item{}, source.Refuse("rejected", "Jira transition unavailable")
+	// A provider's own categories gate claims, even when project statuses omit
+	// or misclassify the key, and a key it doesn't accept refuses before any claim.
+	if chooser, ok := backend.(source.StatusChooser); ok {
+		choices, ok, err := chooser.StatusChoices(ctx, item)
+		if err != nil {
+			return model.Item{}, err
+		}
+		if ok {
+			index := slices.IndexFunc(choices, func(choice model.StatusChoice) bool { return choice.Key == target })
+			if index < 0 {
+				return model.Item{}, source.Refuse("rejected", fmt.Sprintf("source %s does not accept status %s", item.Ref.Source, target))
+			}
+			category = choices[index].Category
 		}
 	}
 	if caller.Run == "" && category != model.Active {

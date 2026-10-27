@@ -202,6 +202,9 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	if err := cfg.validateGitHubStatuses(); err != nil {
 		return Config{}, err
 	}
+	if err := cfg.validateSourceStatuses(); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.resolveBacklogMD(); err != nil {
 		return Config{}, err
 	}
@@ -618,6 +621,24 @@ func validateSettings(node *yaml.Node) error {
 				default:
 					return fail(category, "statuses.category", "unknown category")
 				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateSourceStatuses checks that sources[].statuses names configured
+// statuses, on sources that don't report their own (design.md D35).
+func (c Config) validateSourceStatuses() error {
+	for i, s := range c.Sources {
+		key := fmt.Sprintf("sources[%d].statuses", i)
+		p := c.Provenance[key]
+		if len(s.Statuses) > 0 && (s.Type == "github" || s.Type == "linear" || s.Type == "jira") {
+			return fmt.Errorf("%s: line %d: key %s: source %s reports its own statuses; remove statuses", p.File, p.Line, key, s.ID)
+		}
+		for _, status := range s.Statuses {
+			if !slices.ContainsFunc(c.Statuses, func(configured StatusConfig) bool { return configured.Key == status }) {
+				return fmt.Errorf("%s: line %d: key %s: unknown status %s; add it to statuses or remove it here", p.File, p.Line, key, status)
 			}
 		}
 	}

@@ -61,6 +61,9 @@ type SourceConfig struct {
 	HardLinkTypes           []string             `yaml:"hardLinkTypes,omitempty" json:"hardLinkTypes,omitempty"`
 	UnsuccessfulResolutions []string             `yaml:"unsuccessfulResolutions,omitempty" json:"unsuccessfulResolutions,omitempty"`
 	AllowWrites             bool                 `yaml:"allowWrites,omitempty" json:"allowWrites,omitempty"`
+	// Statuses optionally narrows the configured statuses a source without
+	// provider status choices accepts (design.md D35).
+	Statuses []string `yaml:"statuses,omitempty" json:"statuses,omitempty"`
 }
 
 // GitHubProjectConfig binds immutable provider IDs, not mutable display names.

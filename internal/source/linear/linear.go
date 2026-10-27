@@ -549,6 +549,10 @@ func (s *Source) detail(ctx context.Context, c remote.Credential, id string) (is
 	}
 	return *r.Issue, nil
 }
+func stateCategory(kind string) (model.StatusCategory, bool) {
+	category, ok := map[string]model.StatusCategory{"backlog": model.Backlog, "unstarted": model.Todo, "started": model.Active, "completed": model.Done, "canceled": model.Canceled, "duplicate": model.Canceled}[kind]
+	return category, ok
+}
 func (s *Source) ref(e *entity) (model.Ref, error) {
 	if e == nil || !uuid(e.ID) || e.Identifier == "" || e.Team == nil || !uuid(e.Team.ID) {
 		return model.Ref{}, source.Refuse("unavailable", "incomplete Linear relation identity")
@@ -567,20 +571,11 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 		return model.Item{}, source.Refuse("unavailable", "invalid Linear issue")
 	}
 	item := model.Item{Ref: model.Ref{Source: s.o.ID, ID: row.Identifier}, Title: row.Title, Type: "issue", Description: row.Description, Status: row.State.ID, URL: row.URL, Created: row.CreatedAt, Updated: row.UpdatedAt, Fields: map[string]any{"uuid": row.ID, "organizationID": s.o.Organization, "teamID": s.o.Team, "stateName": row.State.Name, "stateType": row.State.Type, "priority": row.Priority, "archived": row.ArchivedAt != nil || row.Trashed}}
-	switch row.State.Type {
-	case "backlog":
-		item.Category = model.Backlog
-	case "unstarted":
-		item.Category = model.Todo
-	case "started":
-		item.Category = model.Active
-	case "completed":
-		item.Category = model.Done
-	case "canceled", "duplicate":
-		item.Category = model.Canceled
-	default:
+	category, ok := stateCategory(row.State.Type)
+	if !ok {
 		return model.Item{}, source.Refuse("unavailable", "unknown Linear state type")
 	}
+	item.Category = category
 	if row.ArchivedAt != nil || row.Trashed {
 		item.Category = model.Backlog
 	}

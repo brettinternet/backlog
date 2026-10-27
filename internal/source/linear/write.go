@@ -97,6 +97,53 @@ func stringsValue(value any) ([]string, bool) {
 	return nil, false
 }
 
+// StatusChoices reports the bound team's states.
+func (s *Source) StatusChoices(ctx context.Context, _ model.Item) ([]model.StatusChoice, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.authenticate(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	states, err := s.teamStates(ctx, c)
+	return states, err == nil, err
+}
+
+// teamStates lists the bound team's states with their categories.
+func (s *Source) teamStates(ctx context.Context, c remote.Credential) ([]model.StatusChoice, error) {
+	states := []model.StatusChoice{}
+	seen := map[string]bool{}
+	vars := map[string]any{"team": s.o.Team, "count": 250}
+	for page := 0; page < 1000; page++ {
+		var r struct {
+			Team *struct {
+				ID     string
+				States *connection[struct{ ID, Name, Type string }]
+			}
+		}
+		if err := s.query(ctx, c, statesQuery, vars, &r); err != nil {
+			return nil, err
+		}
+		if r.Team == nil || r.Team.ID != s.o.Team || r.Team.States == nil || r.Team.States.Nodes == nil {
+			return nil, source.Refuse("rejected", "Linear field or value unavailable")
+		}
+		for _, state := range r.Team.States.Nodes {
+			if category, ok := stateCategory(state.Type); ok && uuid(state.ID) {
+				states = append(states, model.StatusChoice{Key: state.ID, Category: category})
+			}
+		}
+		next, err := advance(r.Team.States.PageInfo, seen)
+		if err != nil {
+			return nil, err
+		}
+		if next == "" {
+			return states, nil
+		}
+		vars["after"] = next
+	}
+	return nil, source.Refuse("rejected", "Linear field or value unavailable")
+}
+
 // resolveField validates provider catalogs before the fresh version preflight,
 // leaving only one non-retried mutation after that read (Linear has no CAS).
 func (s *Source) resolveField(ctx context.Context, c remote.Credential, m model.Mutation) (map[string]any, error) {
@@ -109,36 +156,14 @@ func (s *Source) resolveField(ctx context.Context, c remote.Credential, m model.
 		if !ok || !uuid(id) {
 			return reject()
 		}
-		seen := map[string]bool{}
-		vars := map[string]any{"team": s.o.Team, "count": 250}
-		for page := 0; page < 1000; page++ {
-			var r struct {
-				Team *struct {
-					ID     string
-					States *connection[struct{ ID, Name, Type string }]
-				}
-			}
-			if err := s.query(ctx, c, statesQuery, vars, &r); err != nil {
-				return nil, err
-			}
-			if r.Team == nil || r.Team.ID != s.o.Team || r.Team.States == nil || r.Team.States.Nodes == nil {
-				return reject()
-			}
-			for _, state := range r.Team.States.Nodes {
-				if state.ID == id {
-					return map[string]any{"stateId": id}, nil
-				}
-			}
-			next, err := advance(r.Team.States.PageInfo, seen)
-			if err != nil {
-				return nil, err
-			}
-			if next == "" {
-				break
-			}
-			vars["after"] = next
+		states, err := s.teamStates(ctx, c)
+		if err != nil {
+			return nil, err
 		}
-		return reject()
+		if !slices.ContainsFunc(states, func(state model.StatusChoice) bool { return state.Key == id }) {
+			return reject()
+		}
+		return map[string]any{"stateId": id}, nil
 	case "assignees":
 		v, ok := stringsValue(m.Value)
 		if !ok || len(v) > 1 {

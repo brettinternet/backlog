@@ -89,9 +89,9 @@ func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 	case "C":
 		return m.claimCommand(), true
 	case "S":
-		return m.workflowTransition(m.opts.Workflow.Start, "active"), true
+		return m.workflowTransition(model.Active), true
 	case "D":
-		return m.workflowTransition(m.opts.Workflow.Done, "done"), true
+		return m.workflowTransition(model.Done), true
 	case ".":
 		if m.lastEdit == nil {
 			m.notice = "No edit to repeat."

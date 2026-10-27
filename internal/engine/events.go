@@ -100,6 +100,12 @@ func (s *eventSource) Prepare(ctx context.Context, m model.Mutation) (source.Pre
 	}
 	return source.Prepared{}, source.Refuse("unavailable", "provider preparation unavailable")
 }
+func (s *eventSource) StatusChoices(ctx context.Context, item model.Item) ([]model.StatusChoice, bool, error) {
+	if chooser, ok := s.Source.(source.StatusChooser); ok {
+		return chooser.StatusChoices(ctx, item)
+	}
+	return nil, false, nil
+}
 func (s *eventSource) Watch(ctx context.Context, changed func()) error {
 	if watcher, ok := s.Source.(source.Watcher); ok {
 		return watcher.Watch(ctx, changed)

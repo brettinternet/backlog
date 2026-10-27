@@ -144,6 +144,14 @@ func (s *Source) Prepare(ctx context.Context, m model.Mutation) (source.Prepared
 	}
 	return source.PrepareFields(before, m)
 }
+func (s *Source) StatusChoices(ctx context.Context, item model.Item) ([]model.StatusChoice, bool, error) {
+	chooser, ok := s.backend.(source.StatusChooser)
+	if !ok {
+		return nil, false, nil
+	}
+	choices, ok, err := chooser.StatusChoices(ctx, item)
+	return choices, ok, s.safeError(err)
+}
 func (s *Source) Watch(ctx context.Context, notify func()) error {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()

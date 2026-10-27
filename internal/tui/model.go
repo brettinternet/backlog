@@ -27,7 +27,6 @@ type Options struct {
 	Context                    context.Context
 	Sources                    []string
 	Statuses                   []project.StatusConfig
-	Workflow                   project.WorkflowConfig
 	Labels                     []string
 	Milestones                 []project.Milestone
 	Me                         map[string]string // source ID to the caller's assignee value there

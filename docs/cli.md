@@ -225,8 +225,9 @@ labels, and milestones are free text.
 
 ### `bl start ID` and `bl done ID`
 
-Set the status to `workflow.start` or `workflow.done`. Without that config, the
-command fails. One ID each.
+Set the status to `workflow.start` or `workflow.done` if the item's source
+accepts it, else to the source's only active or done status. Anything else is
+refused naming the source ([details](format.md#frontmatter-keys)). One ID each.
 
 ### `bl note ID TEXT|-` and `bl comment ID TEXT|- [--author A]`
 

@@ -17,6 +17,12 @@ const (
 	Canceled StatusCategory = "canceled"
 )
 
+// StatusChoice is one status key a source accepts, with its category.
+type StatusChoice struct {
+	Key      string
+	Category StatusCategory
+}
+
 type Priority string
 
 const (

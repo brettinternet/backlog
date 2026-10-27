@@ -163,26 +163,11 @@ func ErrorCreated(err error) string {
 // before the source applies the entire mutation under its lock. Callers bind
 // ExpectedVersion to the version they read, even without an explicit CLI guard.
 func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (model.Item, error) {
-	var backend source.Source
-	for _, c := range cfg.Sources {
-		if c.ID == m.Ref.Source {
-			s, err := readSource(cfg, c)
-			if err != nil {
-				return model.Item{}, source.Refuse("unavailable", err.Error())
-			}
-			backend = s
-			break
-		}
+	backend, err := writeBackend(ctx, cfg, m.Ref.Source)
+	if err != nil {
+		return model.Item{}, err
 	}
-	if backend == nil {
-		return model.Item{}, source.Refuse("unavailable", "unknown source "+m.Ref.Source)
-	}
-	if initializer, ok := backend.(interface{ Initialize(context.Context) error }); ok {
-		if err := initializer.Initialize(ctx); err != nil {
-			return model.Item{}, err
-		}
-	}
-	m, err := resolveSprintWrite(ctx, cfg, backend, m)
+	m, err = resolveSprintWrite(ctx, cfg, backend, m)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -193,7 +178,27 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	if err != nil {
 		return model.Item{}, err
 	}
-	return coordinatedWrite(ctx, cfg, m, func() (model.Item, error) { return backend.Read(ctx, m.Ref.ID) }, func() (model.Item, error) { return backend.Apply(ctx, m) })
+	return coordinatedWrite(ctx, cfg, backend, m)
+}
+
+// writeBackend opens and initializes the configured source sourceID.
+func writeBackend(ctx context.Context, cfg project.Config, sourceID string) (source.Source, error) {
+	for _, c := range cfg.Sources {
+		if c.ID != sourceID {
+			continue
+		}
+		backend, err := readSource(cfg, c)
+		if err != nil {
+			return nil, source.Refuse("unavailable", err.Error())
+		}
+		if initializer, ok := backend.(interface{ Initialize(context.Context) error }); ok {
+			if err := initializer.Initialize(ctx); err != nil {
+				return nil, err
+			}
+		}
+		return backend, nil
+	}
+	return nil, source.Refuse("unavailable", "unknown source "+sourceID)
 }
 
 // validateWrite checks m against the configuration of its source, whose ID in

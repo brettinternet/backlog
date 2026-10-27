@@ -72,6 +72,19 @@ func TestTrustDigestAndInvalidation(t *testing.T) {
 					field.SetBool(!field.Bool())
 				case reflect.Slice:
 					field.Set(reflect.ValueOf([]string{"different-program", "arg"}))
+					if group == "Sources" && value.Type().Field(i).Name == "Statuses" {
+						// Provider sources report their own statuses, so the
+						// field can't change on this one without being refused.
+						data, err := yaml.Marshal(settings)
+						if err != nil {
+							t.Fatal(err)
+						}
+						put(t, file, string(data))
+						if _, err := project.Resolve(paths, root, nil); err == nil || !strings.Contains(err.Error(), "reports its own statuses") {
+							t.Fatalf("statuses on a provider source: %v", err)
+						}
+						return
+					}
 				case reflect.Pointer:
 					field.Set(reflect.ValueOf(&project.GitHubProjectConfig{ID: "PVT_changed", Owner: "changed", Number: 1, FieldID: "PVTSSF_changed", Options: map[string]string{"option": "active"}, AllowWrites: true}))
 				case reflect.Map:

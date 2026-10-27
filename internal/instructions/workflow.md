@@ -35,14 +35,13 @@ to bypass uncertainty. Inside a verified run, selection returns only the run's
 item; bl never acquires, renews, or releases a run-managed claim.
 
 MCP callers pass ownership explicitly on every call; server environment is not
-caller ownership. The equivalent loop uses these tool arguments (substitute the
-configured active/done status keys):
+caller ownership. The equivalent loop uses these tool arguments:
 
 ```json
 {"tool":"next","arguments":{"claim":true,"start":true,"session":"loop-a"}}
 {"tool":"show","arguments":{"id":"ID"}}
 {"tool":"heartbeat","arguments":{"session":"loop-a"}}
-{"tool":"update","arguments":{"id":"ID","version":"VERSION","fields":{"status":"done"},"session":"loop-a"}}
+{"tool":"update","arguments":{"id":"ID","version":"VERSION","operation":"done","session":"loop-a"}}
 ```
 
 For supervised MCP calls, also pass run explicitly. Inspect the claim result and
@@ -90,7 +89,8 @@ bl done ID --session loop-a --if-version VERSION --json
 bl show ID --json
 ```
 
-A successful done response has data.outcomes, status set to workflow.done,
-category done for the default configuration, and a new version. Claimed start
-requires workflow.start and done requires workflow.done. Continue the loop with
+A successful done response has data.outcomes, a done-category status, and a new
+version. Start and done resolve per item source: the workflow key if the source
+accepts it, else its only active or done status; otherwise they are refused,
+naming the source, before any claim. Continue the loop with
 `bl next --claim --start --session loop-a --json` only after completion.
