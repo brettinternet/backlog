@@ -85,6 +85,7 @@ func TestGitHubStatusCategories(t *testing.T) {
 		{plain[:len(plain)-3] + ", statusLabels: {open: todo}}]\n", "line 2: key sources[0].statusLabels.open: label open would shadow the open status; use another label"},
 		{plain[:len(plain)-3] + ", statusLabels: {UNKNOWN: backlog}}]\n", "line 2: key sources[0].statusLabels.UNKNOWN: label UNKNOWN would shadow the unknown status; use another label"},
 		{plain[:len(plain)-3] + ", statusLabels: {ready: todo}}]\nstatuses: [{key: ready, name: Ready, category: active}]\n", "line 3: key statuses[0].category: source gh assigns ready the todo category, not active; set category: todo or remove the entry"},
+		{"project: {id: p}\nsources: [{id: gh, type: github, statusLabels: {ready: todo}, githubProject: {owner: a, number: 1, id: P, fieldId: F, options: {opt: todo}}}]\n", "line 2: key sources[0].statusLabels: source gh has statusLabels but no repo; status labels need one repository"},
 		// A key in one status entry has one column, category, and write meaning (D36).
 		{plain + "statuses: [{key: doing, name: Doing, category: active, includes: [open]}]\n", "line 3: key statuses[0].includes[0]: GitHub assigns open the todo category, but entry doing is active; include it in a todo entry"},
 		{plain + "statuses: [{key: todo, name: To Do, category: todo, includes: [open]}, {key: ready, name: Ready, category: todo, includes: [open]}]\n", "line 3: key statuses[1].includes[0]: open is already included by todo; keep it in one entry"},
@@ -98,6 +99,10 @@ func TestGitHubStatusCategories(t *testing.T) {
 	put(t, file, "project: {id: p}\nsources: ["+bound("x", "active")+", "+bound("y", "active")+"]\nstatuses: [{key: open, name: Open, category: todo}, {key: closed, name: Not planned, category: canceled}, {key: unknown, name: Unknown, category: backlog}, {key: opt, name: Doing, category: active}, {key: open-ish, name: Other, category: backlog}]\n")
 	if _, err := project.Resolve(paths, root, nil); err != nil {
 		t.Fatalf("matching statuses: %v", err)
+	}
+	put(t, file, "project: {id: p}\nsources: [{id: gh, type: github, githubProject: {owner: a, number: 1, id: P, fieldId: F, options: {opt: todo}}}]\n")
+	if _, err := project.Resolve(paths, root, nil); err != nil {
+		t.Fatalf("project-only source: %v", err)
 	}
 	put(t, file, plain[:len(plain)-3]+", statusLabels: {ready: todo, in-progress: active}}]\nstatuses: [{key: unknown, name: Triage, category: backlog}, {key: closed, name: Closed, category: done}, {key: ready, name: Ready, category: todo}, {key: in-progress, name: In Progress, category: active}]\nworkflow: {start: in-progress, done: closed}\n")
 	if _, err := project.Resolve(paths, root, nil); err != nil {

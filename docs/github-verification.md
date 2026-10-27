@@ -110,3 +110,30 @@ read-back lagged the project status (the test now polls), and #16 hit the
 BL-119 version drift in `assignees+=`. #17 and #18 passed before the plain
 delete step was added. Afterward the project was empty and deleted, and GraphQL
 lookups of all eight issues and the project returned `NOT_FOUND`.
+
+## BL-129 live verification
+
+Same target and helper. A probe against disposable project 12
+(`PVT_kwHOAT55tM4BpCUY`) and issue #2 polled both timestamps for up to 90
+seconds after each edit:
+
+| Edit | Issue `updatedAt` | Project item `updatedAt` |
+| --- | --- | --- |
+| Title | Bumped | Bumped |
+| Body | Bumped | Bumped |
+| Add or remove a label | Bumped | Bumped |
+| Add or remove an assignee | Bumped | Bumped |
+| Comment | Bumped | Unchanged |
+| Close or reopen | Bumped | Bumped |
+
+A project item window alone would miss comments. So a project-only change
+window also reads `issues(filterBy:{since})` in each repository the last scan
+saw, kept in the cursor; an issue added to the project bumps its item, and a
+new repository joins the list then. Reconciliation enumerates the project.
+
+`TestLiveProjectOnly` against disposable projects 13–15: run 1 hit a version
+conflict on the title write because reads after the comment had not settled
+(the test now spaces its settle reads), runs 2 and 3 passed (33 s, 44 s). Each
+read `OWNER/REPO#N`, reconciled, saw a comment-only edit in the change window,
+renamed the issue and set the project status. The test deleted issues #3–#5,
+and the script deleted the probe's label and each project.

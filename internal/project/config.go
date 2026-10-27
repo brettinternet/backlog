@@ -699,6 +699,9 @@ func (c Config) validateGitHubStatuses() error {
 			continue
 		}
 		path, mapping := fmt.Sprintf("sources[%d].statusLabels", i), s.StatusLabels
+		if s.Repo == "" && len(s.StatusLabels) > 0 {
+			return at(path, fmt.Sprintf("source %s has statusLabels but no repo; status labels need one repository", s.ID))
+		}
 		if s.GitHubProject != nil {
 			if len(s.StatusLabels) > 0 {
 				return at(path, fmt.Sprintf("source %s sets both statusLabels and githubProject; keep one", s.ID))

@@ -27,6 +27,8 @@ import (
 )
 
 type Options struct {
+	// Repo is optional with a Projects v2 binding: a project-only source reads
+	// every issue in the project, under OWNER/REPO#N IDs.
 	ID, Host, Repo string
 	Account        project.AccountConfig
 	Project        *project.GitHubProjectConfig
@@ -72,9 +74,8 @@ func New(o Options) (*Source, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	parts := strings.Split(o.Repo, "/")
-	if o.ID == "" || len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(o.Repo, " :@?#\\\t\r\n") || strings.ContainsAny(o.Host, "/\\ :@?#\t\r\n") || o.Account.Host != o.Host || o.Account.User == "" || o.Secrets == nil || o.Credentials == nil {
-		return nil, source.Refuse("unavailable", "GitHub requires host, owner/repo and a matching user account")
+	if o.ID == "" || o.Repo == "" && o.Project == nil || o.Repo != "" && !validRepo(o.Repo) || strings.ContainsAny(o.Host, "/\\ :@?#\t\r\n") || o.Account.Host != o.Host || o.Account.User == "" || o.Secrets == nil || o.Credentials == nil {
+		return nil, source.Refuse("unavailable", "GitHub requires host, owner/repo or a project, and a matching user account")
 	}
 	if p := o.Project; p != nil {
 		if p.ID == "" || p.FieldID == "" || p.Owner == "" || p.Number < 1 || len(p.Options) == 0 {
@@ -88,7 +89,7 @@ func New(o Options) (*Source, error) {
 	}
 	var statusLabels map[string]string
 	if len(o.StatusLabels) > 0 {
-		if o.Project != nil {
+		if o.Project != nil || o.Repo == "" {
 			return nil, source.Refuse("rejected", "invalid status label mapping")
 		}
 		statusLabels = map[string]string{}
@@ -101,6 +102,36 @@ func New(o Options) (*Source, error) {
 		}
 	}
 	return &Source{o: o, statusLabels: statusLabels, client: remote.Client{Host: apiHost(o.Host), Account: o.Account.User, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets, OAuth: o.Account.OAuth}}, nil
+}
+func validRepo(repo string) bool {
+	owner, name, ok := strings.Cut(repo, "/")
+	return ok && owner != "" && name != "" && !strings.ContainsAny(repo, " :@?#\\\t\r\n") && !strings.Contains(name, "/")
+}
+
+// projectOnly reports a source scoped to its Projects v2 board, not one repo.
+func (s *Source) projectOnly() bool { return s.o.Repo == "" }
+
+// itemID is an issue's ID in this source: its number in a repository source,
+// OWNER/REPO#N in a project-only one.
+func (s *Source) itemID(repo string, n int) string {
+	if s.projectOnly() {
+		return repo + "#" + strconv.Itoa(n)
+	}
+	return strconv.Itoa(n)
+}
+
+// parseID inverts itemID.
+func (s *Source) parseID(id string) (string, int, error) {
+	if !s.projectOnly() {
+		n, err := validNumber(id)
+		return s.o.Repo, n, err
+	}
+	repo, number, ok := strings.Cut(id, "#")
+	if !ok || !validRepo(repo) {
+		return "", 0, source.Refuse("invalid-id", "OWNER/REPO#N issue ID required")
+	}
+	n, err := validNumber(number)
+	return repo, n, err
 }
 func apiHost(host string) string {
 	if host == "github.com" {
@@ -121,7 +152,13 @@ func (s *Source) endpoint() string {
 	return "https://" + s.o.Host + "/api/graphql"
 }
 func (s *Source) Info() source.Info {
-	return source.Info{ID: s.o.ID, Kind: "github", Display: s.o.Repo, Capabilities: model.Capabilities{model.Create: !s.readOnly.Load(), model.Delete: true, model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
+	display := s.o.Repo
+	if s.projectOnly() {
+		display = s.o.Project.Owner + " project " + strconv.Itoa(s.o.Project.Number)
+	}
+	// A project-only source has no repository to create in, so nothing to undo.
+	creatable := !s.projectOnly() && !s.readOnly.Load()
+	return source.Info{ID: s.o.ID, Kind: "github", Display: display, Capabilities: model.Capabilities{model.Create: creatable, model.Delete: !s.projectOnly(), model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
 	var body *bytes.Reader
@@ -152,7 +189,7 @@ func (s *Source) request(ctx context.Context, c remote.Credential, method, endpo
 func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 	return s.o.Credentials.Resolve(ctx, s.o.Account, func(ctx context.Context, c remote.Credential) (string, error) {
 		if s.o.Account.OAuth {
-			if err := s.appPermissions(ctx, c); err != nil {
+			if err := s.appPermissions(ctx, c, s.o.Repo); err != nil {
 				return "", err
 			}
 		}
@@ -196,9 +233,10 @@ func decode(raw []byte, out any, missing ...string) error {
 	}
 	return nil
 }
-func (s *Source) variables() map[string]any {
-	parts := strings.Split(s.o.Repo, "/")
-	return map[string]any{"owner": parts[0], "repo": parts[1]}
+func (s *Source) variables() map[string]any { return repoVars(s.o.Repo) }
+func repoVars(repo string) map[string]any {
+	owner, name, _ := strings.Cut(repo, "/")
+	return map[string]any{"owner": owner, "repo": name}
 }
 func (s *Source) identity(ctx context.Context, c remote.Credential) error {
 	var result struct {
@@ -215,9 +253,13 @@ func (s *Source) identity(ctx context.Context, c remote.Credential) error {
 		return source.Refuse("unavailable", "repository identity changed or inaccessible")
 	}
 	s.repositoryID = r.ID
-	s.writable = r.ViewerPermission == "ADMIN" || r.ViewerPermission == "MAINTAIN" || r.ViewerPermission == "WRITE" || r.ViewerPermission == "TRIAGE"
+	s.writable = writePermission(r.ViewerPermission)
 	s.readOnly.Store(!s.writable || s.o.Account.OAuth && !c.HasScope("write"))
 	return nil
+}
+
+func writePermission(p string) bool {
+	return p == "ADMIN" || p == "MAINTAIN" || p == "WRITE" || p == "TRIAGE"
 }
 
 type pageInfo struct {
@@ -238,7 +280,7 @@ type issue struct {
 	Number                               int
 	Title, Body, State, StateReason, URL string
 	CreatedAt, UpdatedAt                 time.Time
-	Repository                           struct{ NameWithOwner string }
+	Repository                           struct{ ID, NameWithOwner string }
 	Assignees                            struct {
 		Nodes    []struct{ Login string }
 		PageInfo *pageInfo
@@ -256,7 +298,7 @@ type issue struct {
 	}
 }
 
-const issueFields = `id number title body state stateReason url createdAt updatedAt repository{nameWithOwner} assignees(first:100){nodes{login} pageInfo{hasNextPage endCursor}} labels(first:100){nodes{name} pageInfo{hasNextPage endCursor}} blockedBy(first:100){nodes{id number repository{nameWithOwner}} pageInfo{hasNextPage endCursor}} subIssues(first:100){nodes{id number repository{nameWithOwner}} pageInfo{hasNextPage endCursor}} parent{id number repository{nameWithOwner}}`
+const issueFields = `id number title body state stateReason url createdAt updatedAt repository{id nameWithOwner} assignees(first:100){nodes{login} pageInfo{hasNextPage endCursor}} labels(first:100){nodes{name} pageInfo{hasNextPage endCursor}} blockedBy(first:100){nodes{id number repository{nameWithOwner}} pageInfo{hasNextPage endCursor}} subIssues(first:100){nodes{id number repository{nameWithOwner}} pageInfo{hasNextPage endCursor}} parent{id number repository{nameWithOwner}}`
 const listQuery = `query($owner:String!,$repo:String!,$after:String){repository(owner:$owner,name:$repo){id nameWithOwner issues(first:100,after:$after,states:[OPEN,CLOSED],orderBy:{field:CREATED_AT,direction:ASC}){nodes{` + issueFields + `} pageInfo{hasNextPage endCursor}}}}`
 const detailQuery = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){id nameWithOwner issue(number:$number){` + issueFields + `}}}`
 
@@ -280,6 +322,8 @@ type syncCursor struct {
 	// Sprints is sticky, as in Linear: enabling it reconciles so cached rows
 	// gain their iteration keys.
 	Sprints bool
+	// Repos lists the repositories a project-only source's last scan saw.
+	Repos []string `json:",omitempty"`
 }
 
 const reconcileInterval = time.Hour
@@ -304,7 +348,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	start := s.o.Now().UTC()
 	var state syncCursor
 	if cursor.Value != "" {
-		if len(cursor.Value) > 2048 || json.Unmarshal([]byte(cursor.Value), &state) != nil || state.Scope != s.scope() || state.Watermark.IsZero() || state.Watermark.After(start) || state.Reconciled.After(start) {
+		if len(cursor.Value) > 1<<20 || json.Unmarshal([]byte(cursor.Value), &state) != nil || state.Scope != s.scope() || state.Watermark.IsZero() || state.Watermark.After(start) || state.Reconciled.After(start) {
 			return source.Delta{}, source.Refuse("rejected", "invalid GitHub sync cursor")
 		}
 	}
@@ -312,12 +356,19 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if err != nil {
 		return source.Delta{}, err
 	}
-	if err = s.identity(ctx, c); err != nil {
-		return source.Delta{}, err
+	if !s.projectOnly() {
+		if err = s.identity(ctx, c); err != nil {
+			return source.Delta{}, err
+		}
 	}
 	reconcile := cursor.Reconcile || state.Reconciled.IsZero() || start.Sub(state.Reconciled) >= reconcileInterval || cursor.Sprints != state.Sprints
 	var delta source.Delta
-	if reconcile {
+	if s.projectOnly() {
+		delta, state.Repos, err = s.projectLoad(ctx, c, reconcile, state.Watermark.Add(-changeOverlap), cursor.Sprints, state.Repos)
+		if reconcile {
+			state.Reconciled = start
+		}
+	} else if reconcile {
 		delta, err = s.reconcile(ctx, c, cursor.Sprints)
 		state.Reconciled = start
 	} else {
@@ -326,7 +377,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 	if err != nil {
 		return source.Delta{}, err
 	}
-	raw, _ := json.Marshal(syncCursor{Watermark: start, Reconciled: state.Reconciled, Scope: s.scope(), Sprints: cursor.Sprints})
+	raw, _ := json.Marshal(syncCursor{Watermark: start, Reconciled: state.Reconciled, Scope: s.scope(), Sprints: cursor.Sprints, Repos: state.Repos})
 	delta.Cursor = source.Cursor{Value: string(raw), Sprints: cursor.Sprints}
 	return delta, nil
 }
@@ -551,9 +602,12 @@ func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	return s.read(ctx, c, id)
 }
 func (s *Source) read(ctx context.Context, c remote.Credential, id string) (model.Item, error) {
-	n, err := validNumber(id)
+	repo, n, err := s.parseID(id)
 	if err != nil {
 		return model.Item{}, err
+	}
+	if s.projectOnly() {
+		return s.projectRead(ctx, c, repo, n)
 	}
 	if err = s.identity(ctx, c); err != nil {
 		return model.Item{}, err
@@ -588,21 +642,33 @@ func (s *Source) read(ctx context.Context, c remote.Credential, id string) (mode
 	}
 	return s.item(ctx, c, *result.Repository.Issue, projects[result.Repository.Issue.ID], sprintNames)
 }
+
+// ref names a related issue: in this source when its repository is this
+// one's, else under the GitHub source configured for that repository, else in
+// a project-only source as OWNER/REPO#N, else as HOST/OWNER/REPO.
 func (s *Source) ref(row related) model.Ref {
 	id := s.o.Host + "/" + row.Repository.NameWithOwner
 	if alias := s.o.SourceIDs[strings.ToLower(id)]; alias != "" {
-		id = alias
+		return model.Ref{Source: alias, ID: strconv.Itoa(row.Number)}
 	}
-	if strings.EqualFold(row.Repository.NameWithOwner, s.o.Repo) {
-		id = s.o.ID
+	if s.projectOnly() || strings.EqualFold(row.Repository.NameWithOwner, s.o.Repo) {
+		return model.Ref{Source: s.o.ID, ID: s.itemID(row.Repository.NameWithOwner, row.Number)}
 	}
 	return model.Ref{Source: id, ID: strconv.Itoa(row.Number)}
 }
 func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p projectItem, sprintNames map[string]string) (model.Item, error) {
-	if row.ID == "" || row.Number < 1 || row.UpdatedAt.IsZero() || !strings.EqualFold(row.Repository.NameWithOwner, s.o.Repo) {
+	repo := row.Repository.NameWithOwner
+	if row.ID == "" || row.Number < 1 || row.UpdatedAt.IsZero() || !validRepo(repo) || !s.projectOnly() && !strings.EqualFold(repo, s.o.Repo) {
 		return model.Item{}, source.Refuse("unavailable", "invalid issue identity")
 	}
-	item := model.Item{Ref: model.Ref{Source: s.o.ID, ID: strconv.Itoa(row.Number)}, Title: row.Title, Type: "issue", Description: row.Body, Status: strings.ToLower(row.State), Category: model.Todo, URL: row.URL, Created: row.CreatedAt, Updated: row.UpdatedAt, Fields: map[string]any{"id": row.ID, "repositoryID": s.repositoryID, "stateReason": row.StateReason}}
+	repositoryID := s.repositoryID
+	if s.projectOnly() {
+		// The repository's node ID is in the version, so a transfer conflicts.
+		if repositoryID = row.Repository.ID; repositoryID == "" {
+			return model.Item{}, source.Refuse("unavailable", "invalid issue identity")
+		}
+	}
+	item := model.Item{Ref: model.Ref{Source: s.o.ID, ID: s.itemID(repo, row.Number)}, Title: row.Title, Type: "issue", Description: row.Body, Status: strings.ToLower(row.State), Category: model.Todo, URL: row.URL, Created: row.CreatedAt, Updated: row.UpdatedAt, Fields: map[string]any{"id": row.ID, "repositoryID": repositoryID, "stateReason": row.StateReason}}
 	if row.State == "CLOSED" {
 		item.Category = model.Done
 		if row.StateReason == "NOT_PLANNED" {
@@ -639,7 +705,7 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p pro
 		}
 		seen := map[string]bool{}
 		for next != "" {
-			vars := s.variables()
+			vars := repoVars(repo)
 			vars["number"] = row.Number
 			vars["after"] = next
 			var result struct {
@@ -731,6 +797,6 @@ func validCategory(v string) bool {
 }
 
 // PathEscape is used only for issue numbers after validation, not arbitrary URLs.
-func (s *Source) issuePath(id string) string {
-	return s.base() + "/repos/" + s.o.Repo + "/issues/" + url.PathEscape(id)
+func (s *Source) issuePath(repo string, n int) string {
+	return s.base() + "/repos/" + repo + "/issues/" + url.PathEscape(strconv.Itoa(n))
 }

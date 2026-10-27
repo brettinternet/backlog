@@ -257,7 +257,8 @@ func (s *Source) delete(ctx context.Context, m model.Mutation) (model.Item, erro
 			return model.Item{Ref: m.Ref}, nil
 		}
 	}
-	if _, err = s.request(ctx, c, http.MethodPatch, s.issuePath(m.Ref.ID), map[string]any{"state": "closed", "state_reason": "not_planned"}); err != nil {
+	n, _ := validNumber(m.Ref.ID)
+	if _, err = s.request(ctx, c, http.MethodPatch, s.issuePath(s.o.Repo, n), map[string]any{"state": "closed", "state_reason": "not_planned"}); err != nil {
 		if unsent(err) {
 			return model.Item{}, err
 		}
