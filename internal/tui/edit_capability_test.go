@@ -8,15 +8,62 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 )
 
-// A global project status must not leak into a per-issue workflow picker.
-func TestJiraStatusPickerUsesDiscoveredTransitions(t *testing.T) {
-	item := editItem("BL-1", "Jira issue")
-	item.Fields = map[string]any{"jiraTransitions": map[string]any{"In Progress": map[string]any{"id": "21", "category": "active"}}}
-	m, _ := editFixture(t, []model.Item{item}, model.Capabilities{model.Set: true}, Options{Statuses: []project.StatusConfig{{Key: "unavailable", Name: "Unavailable"}}})
+// A configured status the item's source doesn't accept must not leak into the
+// picker or a step, as GitHub rejects todo for an issue in Triage (D35).
+func TestStatusEditsOfferOnlySourceStatuses(t *testing.T) {
+	item := editItem("BL-1", "Issue")
+	item.Status = "triage"
+	m, backend := editFixture(t, []model.Item{item}, model.Capabilities{model.Set: true}, Options{})
+	m.opts.Statuses = append([]project.StatusConfig{{Key: "triage", Name: "Triage", Category: "backlog"}}, m.opts.Statuses...)
+	backend.choices = []model.StatusChoice{{Key: "active", Category: model.Active}, {Key: "done", Category: model.Done}}
 	m = editPress(m, "s")
-	if len(m.picker.choices) != 1 || m.picker.choices[0].value != "In Progress" {
-		t.Fatalf("undiscovered transition offered: %+v", m.picker.choices)
+	if values := pickerValues(m.picker.choices); strings.Join(values, ",") != "active,done" {
+		t.Fatalf("picker offered %v", values)
 	}
+	m = editPress(m, "esc")
+	m = editPress(m, ">")
+	if got := lastStatus(backend); got != "active" {
+		t.Fatalf("> wrote %q, want the next accepted status", got)
+	}
+	waitEdit(t, func() bool { current, _, _ := m.opts.Store.Current().Get(item.Ref); return current.Status == "active" })
+	m = editPress(m, "<")
+	if !strings.Contains(m.notice, "source tasks accepts no previous status") {
+		t.Fatalf("step into an unaccepted status: %q", m.notice)
+	}
+}
+
+// Regression: undeclared source keys, such as Jira transitions or GitHub's
+// open, rank after config, and < from one must move back, not stay put.
+func TestStepStatusUndeclaredKeys(t *testing.T) {
+	statuses := []project.StatusConfig{{Key: "a"}, {Key: "b"}}
+	accepted := []model.StatusChoice{{Key: "a"}, {Key: "x"}, {Key: "y"}}
+	for _, c := range []struct {
+		current   string
+		direction int
+		want      string
+	}{{"y", -1, "x"}, {"x", -1, "a"}, {"x", 1, "y"}, {"b", -1, "a"}, {"b", 1, "x"}, {"y", 1, ""}} {
+		if got := stepStatus(statuses, accepted, c.current, c.direction); got != c.want {
+			t.Errorf("%s %+d: got %q want %q", c.current, c.direction, got, c.want)
+		}
+	}
+}
+
+func pickerValues(choices []pickerChoice) []string {
+	values := []string{}
+	for _, choice := range choices {
+		values = append(values, choice.value)
+	}
+	return values
+}
+
+func lastStatus(backend *editFakeSource) string {
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if len(backend.mutations) == 0 {
+		return ""
+	}
+	value, _ := backend.mutations[len(backend.mutations)-1].Value.(string)
+	return value
 }
 
 func TestUnsupportedEditKeysOnlyShowReason(t *testing.T) {

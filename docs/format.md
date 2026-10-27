@@ -118,7 +118,7 @@ sources:
   - {id: tasks, type: native, statuses: [draft, todo, in-progress, done]}
 ```
 
-GitHub, Linear, and Jira sources report their own statuses, so `statuses` on one fails config load.
+Any write that would give that source's item another status, including a create or an editor save, is refused naming the source. GitHub, Linear, and Jira sources report their own statuses, so `statuses` on one fails config load.
 
 `bl start` and `bl done` resolve per item source (design.md D35): `workflow.start` or `workflow.done` when the source accepts it in the active or done category, else the source's only status in that category, else the source's default (GitHub: `closed`). Anything else is refused naming the source, before any claim is acquired.
 

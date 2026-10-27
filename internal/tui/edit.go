@@ -103,6 +103,7 @@ type pickerState struct {
 }
 type pickerChoicesMsg struct {
 	generation int
+	notice     string // closes the picker when choices can't load
 	choices    []pickerChoice
 	selected   map[string]bool
 	byValue    map[string]pickerChoice
@@ -140,6 +141,8 @@ type editAction struct {
 	me      string
 	// workflow resolves the status per item source off the UI loop (D35).
 	workflow model.StatusCategory
+	// step moves each item to its source's previous (-1) or next (1) status.
+	step int
 }
 type editResultMsg struct {
 	message string
@@ -258,18 +261,29 @@ func (m *Model) beginPicker(kind pickerKind) tea.Cmd {
 	if kind == pickerSprint {
 		m.opts.Store.UseSprints()
 	}
-	generation := p.generation
+	return m.loadPickerChoices(p.generation, kind, item, false)
+}
+
+// loadPickerChoices builds choices in a command, since the statuses a source
+// accepts may need provider I/O (D35).
+func (m Model) loadPickerChoices(generation int, kind pickerKind, item model.Item, remove bool) tea.Cmd {
 	store := m.opts.Store
-	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me[row.Ref.Source], backlogMD: m.isBacklogMD(row.Ref.Source)}
-	selectedItem := item
+	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me[item.Ref.Source], backlogMD: m.isBacklogMD(item.Ref.Source)}
 	return func() tea.Msg {
-		choices := buildPickerChoices(store.Current(), kind, selectedItem, settings, false)
-		return preparePickerChoices(generation, choices)
+		if kind == pickerStatus {
+			accepted, err := store.StatusChoices(item)
+			if err != nil {
+				return pickerChoicesMsg{generation: generation, notice: "Status choices unavailable: " + boundedLine(engine.ErrorMessage(err))}
+			}
+			settings.accepted = accepted
+		}
+		return preparePickerChoices(generation, buildPickerChoices(store.Current(), kind, item, settings, remove))
 	}
 }
 
 type pickerSettings struct {
 	statuses   []project.StatusConfig
+	accepted   []model.StatusChoice // statuses the item's source accepts
 	labels     []string
 	milestones []project.Milestone
 	me         string
@@ -339,27 +353,17 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 	}
 	switch kind {
 	case pickerStatus:
-		if transitions, ok := current.Fields["jiraTransitions"].(map[string]any); ok {
-			names := map[string]bool{}
-			for name := range transitions {
-				names[name] = true
-			}
-			for _, name := range sortedKeys(names) {
-				add(name, name, current.Status)
-			}
-			break
-		}
+		names := map[string]string{}
 		for _, status := range settings.statuses {
-			label := status.Name
-			if label == "" {
-				label = status.Key
-			}
-			add(status.Key, label, current.Status)
-			if index := choiceIndex(choices, status.Key); index >= 0 && label != status.Key {
-				choices[index].hint = status.Key
+			names[status.Key] = status.Name
+		}
+		for _, key := range statusOrder(settings.statuses, settings.accepted) {
+			label := cmp.Or(names[key], current.Names[key], key)
+			add(key, label, current.Status)
+			if index := choiceIndex(choices, key); index >= 0 && label != key {
+				choices[index].hint = key
 			}
 		}
-		add(current.Status, cmp.Or(current.Names[current.Status], current.Status), current.Status)
 	case pickerPriority:
 		for _, priority := range []model.Priority{model.Urgent, model.High, model.Medium, model.Low} {
 			if settings.backlogMD && priority == model.Urgent {
@@ -733,16 +737,9 @@ func (m *Model) reloadPickerChoices() tea.Cmd {
 		return nil
 	}
 	m.pickerSerial++
-	generation := m.pickerSerial
-	m.picker.generation = generation
+	m.picker.generation = m.pickerSerial
 	m.picker.loading = true
-	store := m.opts.Store
-	settings := pickerSettings{statuses: slices.Clone(m.opts.Statuses), labels: slices.Clone(m.opts.Labels), milestones: slices.Clone(m.opts.Milestones), me: m.opts.Me[row.Ref.Source], backlogMD: m.isBacklogMD(row.Ref.Source)}
-	kind, remove := p.kind, p.remove
-	return func() tea.Msg {
-		choices := buildPickerChoices(store.Current(), kind, item, settings, remove)
-		return preparePickerChoices(generation, choices)
-	}
+	return m.loadPickerChoices(m.pickerSerial, p.kind, item, p.remove)
 }
 
 func pickerAction(kind pickerKind, value string, remove bool) (editAction, error) {
@@ -795,28 +792,7 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 			return editResultMsg{message: "No editable items are selected."}
 		}
 		snapshot := store.Current()
-		if coordinator, _ := engine.Coordination(m.opts.Context); coordinator != nil && len(refs) > 1 {
-			for _, ref := range refs {
-				item, _, ok := snapshot.Get(ref)
-				if !ok {
-					continue
-				}
-				mutation, ok := action.mutation(item)
-				if !ok {
-					continue
-				}
-				cfg := project.Config{Settings: project.Settings{Statuses: m.opts.Statuses}}
-				_, category, changes := engine.StatusTarget(cfg, mutation)
-				if changes && category == model.Active || action.workflow == model.Active {
-					return editResultMsg{message: "Coordination refuses multi-item activation."}
-				}
-			}
-		}
-		type result struct {
-			ref    model.Ref
-			result <-chan error
-		}
-		pending := make([]result, 0, len(refs))
+		mutations := make([]model.Mutation, 0, len(refs))
 		disabled := []string{}
 		noChanges := false
 		for _, ref := range refs {
@@ -838,6 +814,19 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 				}
 				mutation.Value = status
 			}
+			if action.step != 0 {
+				accepted, err := store.StatusChoices(item)
+				if err != nil {
+					disabled = append(disabled, ref.ID+": "+engine.ErrorMessage(err))
+					continue
+				}
+				status := stepStatus(m.opts.Statuses, accepted, item.Status, action.step)
+				if status == "" {
+					disabled = append(disabled, fmt.Sprintf("%s: source %s accepts no %s status", ref.ID, ref.Source, map[int]string{-1: "previous", 1: "next"}[action.step]))
+					continue
+				}
+				mutation.Value = status
+			}
 			mutation.ExpectedVersion = targets.displayedVersion(ref)
 			if mutation.ExpectedVersion == "" {
 				mutation.ExpectedVersion = marks[ref]
@@ -850,7 +839,24 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 				disabled = append(disabled, ref.ID+": "+reason)
 				continue
 			}
-			pending = append(pending, result{ref: ref, result: store.Mutate(mutation)})
+			mutations = append(mutations, mutation)
+		}
+		if coordinator, _ := engine.Coordination(m.opts.Context); coordinator != nil && len(refs) > 1 {
+			cfg := project.Config{Settings: project.Settings{Statuses: m.opts.Statuses}}
+			for _, mutation := range mutations {
+				_, category, changes := engine.StatusTarget(cfg, mutation)
+				if changes && category == model.Active || action.workflow == model.Active {
+					return editResultMsg{message: "Coordination refuses multi-item activation."}
+				}
+			}
+		}
+		type result struct {
+			ref    model.Ref
+			result <-chan error
+		}
+		pending := make([]result, 0, len(mutations))
+		for _, mutation := range mutations {
+			pending = append(pending, result{ref: mutation.Ref, result: store.Mutate(mutation)})
 		}
 		failures := []string{}
 		for _, write := range pending {
@@ -1055,21 +1061,53 @@ func (m *Model) workflowStatus(direction int) tea.Cmd {
 		m.notice = "Disabled: " + reason
 		return nil
 	}
-	index := -1
-	for i, status := range m.opts.Statuses {
-		if status.Key == row.Status {
-			index = i
-			break
-		}
-	}
-	next := index + direction
-	if index < 0 || next < 0 || next >= len(m.opts.Statuses) {
-		m.notice = "No previous or next configured status."
-		return nil
-	}
-	action := editAction{kind: editSimple, op: model.Set, field: "status", value: m.opts.Statuses[next].Key}
+	action := editAction{kind: editSimple, op: model.Set, field: "status", step: direction}
 	m.startEdit(action)
 	return m.editCommand(action, false)
+}
+
+// statusOrder lists the accepted keys in config order, then the source's own
+// keys config doesn't declare.
+func statusOrder(statuses []project.StatusConfig, accepted []model.StatusChoice) []string {
+	keys := []string{}
+	for _, status := range statuses {
+		if slices.ContainsFunc(accepted, func(c model.StatusChoice) bool { return c.Key == status.Key }) {
+			keys = append(keys, status.Key)
+		}
+	}
+	for _, choice := range accepted {
+		if !slices.Contains(keys, choice.Key) {
+			keys = append(keys, choice.Key)
+		}
+	}
+	return keys
+}
+
+// stepStatus is the accepted status before (-1) or after (1) current in
+// statusOrder, skipping statuses the source doesn't accept, or "" if none. An
+// unaccepted current status keeps its config position.
+func stepStatus(statuses []project.StatusConfig, accepted []model.StatusChoice, current string, direction int) string {
+	keys := statusOrder(statuses, accepted)
+	rank := func(key string) int {
+		if i := slices.IndexFunc(statuses, func(s project.StatusConfig) bool { return s.Key == key }); i >= 0 {
+			return i
+		}
+		if i := slices.Index(keys, key); i >= 0 {
+			return len(statuses) + i
+		}
+		return -1
+	}
+	at := rank(current)
+	if at < 0 {
+		return ""
+	}
+	best := ""
+	for _, key := range keys {
+		if r := rank(key); direction > 0 && r > at && best == "" || direction < 0 && r < at {
+			best = key
+		}
+	}
+	return best
 }
 
 func (m *Model) workflowTransition(category model.StatusCategory) tea.Cmd {

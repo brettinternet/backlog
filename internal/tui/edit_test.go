@@ -25,6 +25,7 @@ type editFakeSource struct {
 	capability model.Capabilities
 	mutations  []model.Mutation
 	sequence   int
+	choices    []model.StatusChoice // reported statuses; nil accepts every configured one
 }
 
 func newEditFakeSource(items []model.Item, caps model.Capabilities) *editFakeSource {
@@ -33,6 +34,9 @@ func newEditFakeSource(items []model.Item, caps model.Capabilities) *editFakeSou
 		byID[item.Ref.ID] = item
 	}
 	return &editFakeSource{items: byID, capability: caps}
+}
+func (s *editFakeSource) StatusChoices(context.Context, model.Item) ([]model.StatusChoice, bool, error) {
+	return s.choices, s.choices != nil, nil
 }
 func (s *editFakeSource) Info() source.Info {
 	return source.Info{ID: "tasks", Capabilities: s.capability}

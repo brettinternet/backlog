@@ -21,8 +21,11 @@ exact name instead of the last one used. Every key is remappable, and the
 6. **Color is never the only signal.** Glyphs and text carry meaning under
    `NO_COLOR` and `--high-contrast`.
 
-For Jira Cloud, the status picker offers only transitions discovered for the
-selected issue; unsupported required-field transitions are omitted. Replace a
+Status edits offer only the statuses the item's source accepts (design.md
+D35): GitHub's `open`, `closed`, `unknown`, and mapped labels or project
+options; Linear's team states; Jira's transitions discovered for the issue,
+omitting unsupported required-field transitions; and for other sources the
+configured statuses, narrowed by `sources[].statuses`. Replace a
 Jira single assignee through the confirmed CLI/MCP operation, not the additive
 assignee picker ([Jira](jira.md#writes)).
 
@@ -136,7 +139,7 @@ under a file lock. The tab appears at once and persists.
 | Layout | Navigation | Edits |
 | --- | --- | --- |
 | List | Group headers with counts. `za` folds, `[` `]` jump groups. | All item keys |
-| Board | A column per status (or group value). `h`/`l` change column, `j`/`k` move within it. | `<`/`>` move to the previous or next status |
+| Board | A column per status (or group value). `h`/`l` change column, `j`/`k` move within it. | `<`/`>` move to the previous or next status the source accepts |
 | Tree | Parent/child hierarchy. `h` collapses or goes to the parent; `l` expands or goes to the first child. | All item keys |
 
 **Board:** configured statuses in workflow order, including empty ones, then
@@ -244,7 +247,10 @@ multi-select, configured labels first. Milestones show names, hide archived
 entries, then list undeclared keys in use; typing a new key sets it. Sprints
 (Linear and Jira only) list the source's open sprints, current and next first;
 opening the picker loads the catalog if no view needed it yet. Status
-order follows config. Assignee and status pickers and filter completion show
+order follows config, then the source's undeclared keys. `<`/`>` step to the
+nearest accepted status in that order, skipping columns the item's source
+can't take; with none in that direction the status bar says so, naming the
+source. Assignee and status pickers and filter completion show
 provider names for opaque IDs and write the ID. Pickers never edit config. Unsupported operations show the
 missing capability in the status bar instead of opening.
 

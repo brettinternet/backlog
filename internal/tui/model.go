@@ -786,7 +786,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitDetail()
 	case pickerChoicesMsg:
-		if m.picker.open && msg.generation == m.picker.generation {
+		if m.picker.open && msg.generation == m.picker.generation && msg.notice != "" {
+			m.picker, m.notice = pickerState{}, msg.notice
+		} else if m.picker.open && msg.generation == m.picker.generation {
 			updatePickerChoices(&m.picker, msg)
 			if m.picker.query.text != "" {
 				return m, m.filterPicker()

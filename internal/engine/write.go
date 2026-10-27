@@ -239,6 +239,16 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 	if !caps.Allows(m.Op) {
 		return source.Refuse("unavailable", "unsupported operation "+string(m.Op))
 	}
+	// sources[].statuses keeps another source's statuses off this one (D35).
+	if narrowed := sourceStatuses(cfg, sourceID); len(narrowed) > 0 {
+		status, _, changes := StatusTarget(cfg, m)
+		if m.Op == model.Create && m.Item != nil {
+			status, changes = m.Item.Status, m.Item.Status != ""
+		}
+		if changes && !slices.Contains(narrowed, status) {
+			return reject(fmt.Sprintf("source %s does not accept status %s", sourceID, status))
+		}
+	}
 	switch m.Op {
 	case model.Batch:
 		if len(m.Changes) == 0 {
