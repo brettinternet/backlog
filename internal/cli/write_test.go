@@ -529,14 +529,14 @@ func TestNewResolvesCreateSource(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(paths.ConfigFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	put(t, paths.ConfigFile, "accounts:\n  github:\n    - name: work\n      host: github.com\n      user: alice\n")
+	put(t, paths.ConfigFile, "accounts:\n  github:\n    - name: work\n      host: github.com\n      user: alice\n  linear:\n    - name: work\n      user: 00000000-0000-0000-0000-000000000001\n")
 	statuses := "statuses: [{key: todo, name: To Do, category: todo}]\n"
-	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: gh, type: github, repo: o/r, account: work}]\n"+statuses)
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: eng, type: linear, site: 00000000-0000-0000-0000-000000000002, team: 00000000-0000-0000-0000-000000000003, account: work}]\n"+statuses)
 	if code, out, stderr := writeRun(root, "", "trust"); code != 0 {
 		t.Fatalf("trust: %d %s %s", code, out, stderr)
 	}
-	// Any write loads every source for readiness events, so offline the GitHub
-	// case stops at resolution, which reads only its declared capabilities.
+	// Any write loads every source for readiness events, so offline the remote
+	// cases stop at resolution, which reads only declared capabilities.
 	cfg, err := project.Resolve(paths, root, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -544,8 +544,16 @@ func TestNewResolvesCreateSource(t *testing.T) {
 	if id, err := engine.CreateSource(context.Background(), cfg, "", "", nil); id != "tasks" || err != nil {
 		t.Fatalf("implicit: %q %v", id, err)
 	}
-	if _, err := engine.CreateSource(context.Background(), cfg, "gh", "", nil); err == nil || !strings.Contains(err.Error(), "source gh cannot create items; creatable sources: tasks") {
-		t.Fatalf("explicit gh: %v", err)
+	if _, err := engine.CreateSource(context.Background(), cfg, "eng", "", nil); err == nil || !strings.Contains(err.Error(), "source eng cannot create items; creatable sources: tasks") {
+		t.Fatalf("explicit eng: %v", err)
+	}
+	// GitHub creates until a load shows the repository is read-only.
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: gh, type: github, repo: o/r, account: work}]\n"+statuses)
+	if cfg, err = project.Resolve(paths, root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := engine.CreateSource(context.Background(), cfg, "gh", "", nil); id != "gh" || err != nil {
+		t.Fatalf("explicit gh: %q %v", id, err)
 	}
 	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: issues, type: native, path: issues, prefix: IS}]\n"+statuses)
 	created := func(args ...string) string {

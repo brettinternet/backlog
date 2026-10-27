@@ -205,6 +205,10 @@ func (s *eventSource) Apply(ctx context.Context, m model.Mutation) (model.Item, 
 		if err != nil {
 			return err
 		}
+		if m.Op == model.Delete && result.Version == "" {
+			// The next full sync records the removal.
+			return nil
+		}
 		archived := prior.Archived
 		if m.Op == model.Archive {
 			archived = true
@@ -259,7 +263,7 @@ func runBeforeMutation(ctx context.Context, cfg project.Config, m model.Mutation
 	eventType := "item.updated"
 	if m.Op == model.Create {
 		eventType = "item.created"
-	} else if m.Op == model.Archive {
+	} else if m.Op == model.Archive || m.Op == model.Delete {
 		eventType = "item.archived"
 	}
 	ctx = context.WithValue(ctx, beforeHooksKey{}, true)
@@ -314,6 +318,8 @@ func runBeforeMutation(ctx context.Context, cfg project.Config, m model.Mutation
 	event.Changes = itemChanges(prior, after)
 	if m.Op == model.Archive {
 		event.Changes["archived"] = hooks.Change{From: false, To: true}
+	} else if m.Op == model.Delete {
+		event.Changes = map[string]hooks.Change{"present": {From: true, To: false}}
 	} else if m.Op == model.Unarchive {
 		event.Changes["archived"] = hooks.Change{From: true, To: false}
 	}

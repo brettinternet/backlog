@@ -305,8 +305,7 @@ One field and one value per command. `labels=` and `assignees=` replace the
 whole list. `+=` and `-=` use GitHub's add and remove endpoints, so a label or
 assignee someone else added in the meantime stays; adding a present entry or
 removing an absent one sends nothing. Description is the only editable section.
-Comments append and can't be undone. Creating issues, batches, and archiving
-aren't available.
+Comments append and can't be undone. Batches and archiving aren't available.
 
 Before each write, `bl` refreshes credentials, checks the user and permission,
 and compares a fresh composite version of the issue, its relationships, and its
@@ -317,6 +316,34 @@ mutation can still race. Each mutation is sent once. If the request or the
 reread after it fails, the write reports `unknown-outcome`: refresh and look
 before editing again, especially before commenting. Reads after writes are
 eventually consistent.
+
+### Creating issues
+
+```sh
+bl new 'Fix login' +issues ^12 '<9' '#bug' @alice --body 'Steps…'
+bl new 'Plan sync' --source issues --status option-active-id
+```
+
+A create sets title, body, labels, assignees, parent, blockers and status.
+Status is `open` (the default when it's the first todo status), a status label,
+which the issue POST adds in place of any other status label, or, with
+`allowWrites`, a project option ID. Parent and blockers must be issues on the
+same host, in this or another configured GitHub repository. Milestone, type,
+priority, criteria, sprint and other template fields are rejected before
+anything is sent. The TUI offers create unless the last refresh found the
+repository read-only.
+
+The issue POST is sent once. After it succeeds, each follow-up is sent once, in
+order: `addSubIssue` for the parent, `addBlockedBy` per blocker, then
+`addProjectV2ItemById` and the status option. If a follow-up or the read-back
+fails, the create reports `unknown-outcome` naming the new issue and records no
+undo; check it before creating again. The read-back can lag the project status.
+
+Undo deletes the issue when GitHub reports you can delete it (a repository
+admin, where the organization allows it) and nothing has changed since the
+create. Otherwise undo closes it as not planned. The status line says which,
+and a deleted issue offers no redo. Neither withdraws the notifications GitHub
+already sent.
 
 Claims use Worklease's `github` key from `HOST/OWNER/REPO` and the issue number,
 so they don't depend on aliases, project, status, title, or credential. Node
@@ -331,8 +358,10 @@ task cli:test PKG='./internal/source/github ./internal/source/remote'
 
 `FuzzProviderJSON` fuzzes provider JSON. The live test needs an authorized test
 repository and a new disposable project titled `bl-provider-test-…`. It creates
-one issue, comment, and project entry, exercises every write above and two
-change windows, and deletes them during cleanup:
+one issue, comment, and project entry and exercises every write above and two
+change windows. It then creates a child issue in the project with a parent and
+blocker and undoes it (closing it, since the project status moved its version),
+and creates a plain issue that undo deletes. Cleanup deletes everything:
 
 ```sh
 gh project create --owner OWNER --title bl-provider-test-roundtrip --format json

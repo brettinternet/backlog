@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/model"
@@ -43,16 +44,22 @@ type Options struct {
 	StatusLabels map[string]string
 }
 type Source struct {
-	o               Options
-	statusLabels    map[string]string // lower-case label name to configured key
-	client          remote.Client
-	mu              sync.Mutex
-	repositoryID    string
-	scopes          string
-	writable        bool
+	o            Options
+	statusLabels map[string]string // lower-case label name to configured key
+	client       remote.Client
+	mu           sync.Mutex
+	repositoryID string
+	scopes       string
+	writable     bool
+	// readOnly mirrors the last identity check for Info, which runs off the
+	// source lock: create is offered until a check shows it can't be written.
+	readOnly        atomic.Bool
 	issueWrite      bool
 	projectGrants   map[string]bool
 	projectWritable bool
+	// created maps issues this source created to the version create returned,
+	// so undo deletes only an issue nobody has changed since.
+	created map[string]string
 	// readSprints enables the iteration value and catalog on single-item reads
 	// once a sprint-enabled load or ReadSprints has requested them.
 	readSprints bool
@@ -114,7 +121,7 @@ func (s *Source) endpoint() string {
 	return "https://" + s.o.Host + "/api/graphql"
 }
 func (s *Source) Info() source.Info {
-	return source.Info{ID: s.o.ID, Kind: "github", Display: s.o.Repo, Capabilities: model.Capabilities{model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
+	return source.Info{ID: s.o.ID, Kind: "github", Display: s.o.Repo, Capabilities: model.Capabilities{model.Create: !s.readOnly.Load(), model.Delete: true, model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
 	var body *bytes.Reader
@@ -198,6 +205,7 @@ func (s *Source) identity(ctx context.Context, c remote.Credential) error {
 	}
 	s.repositoryID = r.ID
 	s.writable = r.ViewerPermission == "ADMIN" || r.ViewerPermission == "MAINTAIN" || r.ViewerPermission == "WRITE" || r.ViewerPermission == "TRIAGE"
+	s.readOnly.Store(!s.writable || s.o.Account.OAuth && !c.HasScope("write"))
 	return nil
 }
 

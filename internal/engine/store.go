@@ -29,6 +29,7 @@ type Store struct {
 	subMu          sync.Mutex
 	subscribers    map[chan *Snapshot]struct{}
 	results        sync.Map // outstanding result channels, completed exactly once
+	historyNote    atomic.Pointer[string]
 	sprints        atomic.Bool
 }
 type sourceWorker struct {
@@ -206,9 +207,19 @@ func (s *Store) Mutate(m model.Mutation) <-chan error {
 }
 func (s *Store) Undo() <-chan error { return s.history(-1) }
 func (s *Store) Redo() <-chan error { return s.history(1) }
+
+// HistoryNote describes what the last completed undo or redo did when that
+// differs from reversing the edit, such as deleting a created item.
+func (s *Store) HistoryNote() string {
+	if note := s.historyNote.Load(); note != nil {
+		return *note
+	}
+	return ""
+}
 func (s *Store) history(direction int) <-chan error {
 	result := make(chan error, 1)
 	s.request(func(st *storeState) {
+		st.store.historyNote.Store(nil)
 		stack := st.undo
 		if direction > 0 {
 			stack = st.redo
@@ -349,7 +360,7 @@ func (st *storeState) begin(job *editJob) {
 		reject(source.Refuse("busy", "source queue is full"))
 		return
 	}
-	preparePreview(cfg, job)
+	preparePreview(cfg, w.backend.Info().Capabilities, job)
 	if st.store.cfg.Workspace != nil {
 		job.preview.Project = cfg.Project.ID
 	}
@@ -500,12 +511,17 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 
 // The preview runs on the engine actor, before queued source I/O. Even a
 // second edit behind a slow write is visible immediately as pending.
-func preparePreview(cfg project.Config, job *editJob) {
+func preparePreview(cfg project.Config, caps model.Capabilities, job *editJob) {
 	m := job.mutation
 	if m.Op == model.Create {
 		job.preview = cloneItem(*m.Item)
 		job.preview.Ref = m.Ref
-		job.inverse = model.Mutation{Ref: m.Ref, Op: model.Archive}
+		switch {
+		case caps.Allows(model.Archive):
+			job.inverse = model.Mutation{Ref: m.Ref, Op: model.Archive}
+		case caps.Allows(model.Delete):
+			job.inverse = model.Mutation{Ref: m.Ref, Op: model.Delete}
+		}
 	} else {
 		job.preview = *job.before.item
 		if prepared, err := source.PrepareFields(job.preview, m); err == nil {
@@ -595,6 +611,22 @@ func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err e
 			} else {
 				n.records[ref] = &record{item: new(cloneItem(job.preview)), edit: state}
 			}
+		} else if job.mutation.Op == model.Delete {
+			// No redo: recreating would assign the item a new ID.
+			delete(n.records, ref)
+			note := "deleted " + ref.Source + ":" + ref.ID
+			if item.Version != "" {
+				n.records[ref] = &record{item: new(cloneItem(item))}
+				note = "couldn't delete " + ref.Source + ":" + ref.ID + ", so it's now " + item.Status
+				if item.Category == model.Canceled {
+					note += " (canceled)"
+				}
+			}
+			st.store.historyNote.Store(&note)
+			if job.history == -1 {
+				st.undo = st.undo[:len(st.undo)-1]
+			}
+			st.redo = nil
 		} else {
 			item = cloneItem(item)
 			delete(n.records, ref)

@@ -236,7 +236,8 @@ Edits apply at once, show `●` until confirmed, and roll back with `!` on failu
 Opening a failed item shows the reason, and for a conflict, both versions.
 Nothing retries automatically. `u`/`ctrl-r` undo and redo through version
 checks; an external edit breaks the undo chain. Undoing a create archives the
-item.
+item. GitHub has no archive: undo deletes the issue or closes it as not planned,
+the status line says which, and there's no redo.
 
 **Pickers** preselect current values and fuzzy-filter. Assignees and labels are
 multi-select, configured labels first. Milestones show names, hide archived

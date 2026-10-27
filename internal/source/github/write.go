@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
@@ -22,8 +23,14 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.Ref.Source != s.o.ID || !s.Info().Capabilities.Allows(m.Op) {
 		return model.Item{}, source.Refuse("rejected", "GitHub operation unavailable")
 	}
+	if m.Op == model.Create {
+		return s.create(ctx, m.Item)
+	}
 	if _, err := validNumber(m.Ref.ID); err != nil {
 		return model.Item{}, err
+	}
+	if m.Op == model.Delete {
+		return s.delete(ctx, m)
 	}
 	var payload any
 	method, endpoint := http.MethodPatch, s.issuePath(m.Ref.ID)
@@ -149,13 +156,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		}
 	}
 	if projectWrite {
-		scope := s.o.Account.OAuth && c.HasScope("write") && s.projectWritable
-		if !s.o.Account.OAuth {
-			for _, v := range strings.Split(s.scopes, ",") {
-				scope = scope || strings.TrimSpace(v) == "project"
-			}
-		}
-		if !scope {
+		if !s.projectScope(c) {
 			return model.Item{}, source.Refuse("rejected", "project OAuth scope required")
 		}
 		itemID, _ := current.Fields["projectItemID"].(string)
@@ -175,9 +176,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		_, err = s.request(ctx, c, method, endpoint, payload)
 	}
 	if err != nil {
-		// Only a local scheduler refusal proves the mutation was never sent.
-		var limited remote.ScheduleDiagnostic
-		if errors.As(err, &limited) {
+		if unsent(err) {
 			return model.Item{}, err
 		}
 		return model.Item{}, source.Refuse("unknown-outcome", "GitHub write unconfirmed; refresh before further edits")
@@ -189,6 +188,28 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	return item, nil
 }
+
+// unsent reports an error that proves the request wasn't applied: a local
+// scheduler refusal or a rate limit.
+func unsent(err error) bool {
+	var limited remote.ScheduleDiagnostic
+	var diagnostic *oauth.Diagnostic
+	return errors.As(err, &limited) || errors.As(err, &diagnostic) && diagnostic.Code == oauth.CodeRateLimited
+}
+
+// projectScope reports whether the credential may write Projects v2 fields.
+func (s *Source) projectScope(c remote.Credential) bool {
+	if s.o.Account.OAuth {
+		return c.HasScope("write") && s.projectWritable
+	}
+	for _, v := range strings.Split(s.scopes, ",") {
+		if strings.TrimSpace(v) == "project" {
+			return true
+		}
+	}
+	return false
+}
+
 func stringsValue(value any) ([]string, bool) {
 	switch values := value.(type) {
 	case []string:

@@ -182,6 +182,72 @@ func TestLiveRoundTrip(t *testing.T) {
 	})
 	gh(nil, "api", "--method", "DELETE", fmt.Sprintf("repos/%s/issues/comments/%d", repo, comments[0].ID))
 	t.Logf("deleted comment %d", comments[0].ID)
+
+	// Create a child of the roundtrip issue, blocked by it, in the project.
+	parent := item.Ref
+	child, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "bl-provider-test BL-118 create", Description: "Synthetic provider create; undone by test.", Labels: []string{label}, Assignees: []string{user}, Status: active, Parent: &parent, BlockedBy: []model.Ref{parent}}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	childNode, _ := child.Fields["id"].(string)
+	t.Logf("created issue %s#%s node=%s", repo, child.Ref.ID, childNode)
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		// Undo may already have deleted it; a failure here is then expected.
+		if exec.CommandContext(cleanupCtx, "gh", "api", "graphql", "-f", `query=mutation($id:ID!){deleteIssue(input:{issueId:$id}){clientMutationId}}`, "-f", "id="+childNode).Run() == nil {
+			t.Logf("deleted issue node=%s", childNode)
+		}
+	})
+	// Projects v2 can lag the create's read-back. Undo also needs a settled
+	// version; once it moves past create's, undo closes instead of deleting.
+	deadline, stop := context.WithTimeout(ctx, 30*time.Second)
+	defer stop()
+	for previous := ""; child.Category != model.Active || child.Version != previous; {
+		if deadline.Err() != nil {
+			t.Fatalf("create read-back: status=%s labels=%v assignees=%v parent=%v blockedBy=%v", child.Status, child.Labels, child.Assignees, child.Parent, child.BlockedBy)
+		}
+		previous = child.Version
+		if child, err = s.Read(deadline, child.Ref.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if child.Title != "bl-provider-test BL-118 create" || !slices.Equal(child.Labels, []string{label}) || !slices.Equal(child.Assignees, []string{user}) || child.Parent == nil || *child.Parent != parent || !slices.Equal(child.BlockedBy, []model.Ref{parent}) {
+		t.Fatalf("create read-back: labels=%v assignees=%v parent=%v blockedBy=%v", child.Labels, child.Assignees, child.Parent, child.BlockedBy)
+	}
+	undone, err := s.Apply(ctx, model.Mutation{Ref: child.Ref, ExpectedVersion: child.Version, Op: model.Delete})
+	if err != nil {
+		t.Fatalf("undo create: %v", err)
+	}
+	if undone.Version == "" {
+		t.Log("undo deleted the created issue")
+	} else if undone.Category != model.Canceled {
+		t.Fatalf("undo neither deleted nor closed as not planned: %s", undone.Status)
+	} else {
+		t.Log("undo closed the created issue as not planned")
+	}
+
+	// A plain create undone at once is unchanged, so the repository admin deletes it.
+	plain, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "bl-provider-test BL-118 delete", Description: "Synthetic provider create; deleted by undo."}})
+	if err != nil {
+		t.Fatalf("plain create: %v", err)
+	}
+	plainNode, _ := plain.Fields["id"].(string)
+	t.Logf("created issue %s#%s node=%s", repo, plain.Ref.ID, plainNode)
+	deleted, err := s.Apply(ctx, model.Mutation{Ref: plain.Ref, ExpectedVersion: plain.Version, Op: model.Delete})
+	if err != nil || deleted.Version != "" {
+		cmd := exec.CommandContext(context.Background(), "gh", "api", "graphql", "-f", `query=mutation($id:ID!){deleteIssue(input:{issueId:$id}){clientMutationId}}`, "-f", "id="+plainNode)
+		t.Fatalf("undo didn't delete the unchanged issue: status=%s err=%v (cleanup: %v)", deleted.Status, err, cmd.Run())
+	}
+	var lookup struct {
+		Data struct{ Node *struct{ ID string } }
+	}
+	cmd := exec.CommandContext(ctx, "gh", "api", "graphql", "-f", `query=query($id:ID!){node(id:$id){id}}`, "-f", "id="+plainNode)
+	raw, _ := cmd.Output() // NOT_FOUND exits 1 with the null node on stdout.
+	if json.Unmarshal(raw, &lookup) != nil || lookup.Data.Node != nil {
+		t.Fatal("deleted issue still resolves")
+	}
+	t.Logf("undo deleted issue node=%s", plainNode)
 }
 
 func liveRequired(t *testing.T, key string) string {

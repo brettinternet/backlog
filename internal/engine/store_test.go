@@ -621,6 +621,62 @@ func TestQueuedEditsArePendingBeforeSourceIO(t *testing.T) {
 	requireSuccess(t, a)
 	requireSuccess(t, b)
 }
+
+// deletingSource has GitHub's create undo shape: Delete instead of Archive,
+// returning a versionless item when deleted or the closed item otherwise.
+type deletingSource struct {
+	*native.Source
+	close bool
+}
+
+func (s deletingSource) Info() source.Info {
+	info := s.Source.Info()
+	info.Capabilities = model.Capabilities{model.Create: true, model.Set: true, model.Delete: true}
+	return info
+}
+func (s deletingSource) Prepare(ctx context.Context, m model.Mutation) (source.Prepared, error) {
+	if m.Op != model.Delete {
+		return s.Source.Prepare(ctx, m)
+	}
+	before, err := s.Read(ctx, m.Ref.ID)
+	if err != nil {
+		return source.Prepared{}, err
+	}
+	return source.PrepareFields(before, m)
+}
+func (s deletingSource) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
+	if m.Op != model.Delete {
+		return s.Source.Apply(ctx, m)
+	}
+	if s.close {
+		return s.Source.Apply(ctx, model.Mutation{Ref: m.Ref, ExpectedVersion: m.ExpectedVersion, Op: model.Set, Field: "status", Value: "done"})
+	}
+	return model.Item{Ref: m.Ref}, nil
+}
+
+// Undoing a create on a source without archive must remove or replace the
+// row, report which happened, and offer no redo that would recreate it.
+func TestCreateUndoByDelete(t *testing.T) {
+	t.Parallel()
+	for _, closeInstead := range []bool{false, true} {
+		initial, backend, _ := nativeStore(t)
+		initial.Close()
+		s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": deletingSource{backend, closeInstead}})
+		defer s.Close()
+		awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+		requireSuccess(t, s.Mutate(model.Mutation{Ref: model.Ref{Source: "tasks"}, Op: model.Create, Item: &model.Item{Title: "New", Status: "todo"}}))
+		requireSuccess(t, s.Undo())
+		_, _, present := s.Current().Get(model.Ref{Source: "tasks", ID: "BL-2"})
+		note := s.HistoryNote()
+		if closeInstead && (!present || note != "couldn't delete tasks:BL-2, so it's now done") || !closeInstead && (present || note != "deleted tasks:BL-2") {
+			t.Fatalf("close=%v: present=%v note=%q", closeInstead, present, note)
+		}
+		if err := awaitResult(t, s.Redo()); err == nil {
+			t.Fatalf("close=%v: redo recreated an undone create", closeInstead)
+		}
+	}
+}
+
 func TestCreateArchiveUndoAndShutdown(t *testing.T) {
 	t.Parallel()
 	s, nativeBackend, _ := nativeStore(t)
