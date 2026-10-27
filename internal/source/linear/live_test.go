@@ -320,6 +320,9 @@ func TestLiveRoundTrip(t *testing.T) {
 	} else if errors.As(err, &refusal) && refusal.Created != nil {
 		var r struct{ Issue *entity }
 		call(entityQuery, map[string]any{"id": refusal.Created.ID}, &r)
+		if r.Issue == nil {
+			t.Fatalf("cannot clean up partially created %s", refusal.Created.ID)
+		}
 		deleteAfter(struct{ ID, Identifier string }{r.Issue.ID, r.Issue.Identifier})
 	}
 	if err != nil {
