@@ -68,14 +68,16 @@ func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 			list = &result.Item.Assignees
 		}
 		// The inverse undoes only an actual change: a no-op stays a no-op.
-		present := slices.Contains(*list, value)
+		// Providers match names and logins case-insensitively.
+		same := func(v string) bool { return strings.EqualFold(v, value) }
+		present := slices.ContainsFunc(*list, same)
 		result.Inverse.Value = value
 		if m.Op == model.Add && !present {
 			result.Inverse.Op = model.Remove
 			*list = append(slices.Clone(*list), value)
 		} else if m.Op == model.Remove && present {
 			result.Inverse.Op = model.Add
-			*list = slices.DeleteFunc(slices.Clone(*list), func(v string) bool { return v == value })
+			*list = slices.DeleteFunc(slices.Clone(*list), same)
 		}
 		return result, nil
 	}

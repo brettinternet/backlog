@@ -107,10 +107,14 @@ func TestLiveRoundTrip(t *testing.T) {
 		t.Helper()
 		deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		for !ready(item) {
+		// The next write's preflight needs a settled version, not only the
+		// expected value: the composite version can keep moving after it appears.
+		previous := ""
+		for !ready(item) || item.Version != previous {
 			if deadline.Err() != nil {
 				t.Fatalf("provider read-back did not converge: status=%s fields=%v", item.Status, item.Fields)
 			}
+			previous = item.Version
 			item, err = s.Read(deadline, strconv.Itoa(created.Number))
 			if err != nil {
 				t.Fatal(err)

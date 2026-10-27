@@ -240,6 +240,13 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 		if (m.Op == model.Add || m.Op == model.Remove) && !ListField(m.Field) {
 			return reject(m.Field + " accepts = only; allowed list fields: assignees labels blocked_by related refs files")
 		}
+		if (m.Op == model.Add || m.Op == model.Remove) && m.Field != "labels" && m.Field != "assignees" {
+			for _, configured := range cfg.Sources {
+				if configured.ID == sourceID && configured.Type == "github" {
+					return reject("GitHub accepts += and -= for labels and assignees only")
+				}
+			}
+		}
 		if m.Field == "sprint" {
 			if !sprintSource(cfg, sourceID) {
 				return reject("source " + m.Ref.Source + " has no sprints; only Linear and Jira sources do")
