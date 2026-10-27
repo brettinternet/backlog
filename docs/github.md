@@ -155,6 +155,21 @@ A closed issue is closed whatever its project option says. An unmapped or unset
 option, or an issue not in the project, is `backlog` and never ready. Raw
 project values stay in item fields.
 
+The adapter assigns each status key its category; `statuses:` entries only name
+them:
+
+| Key | Category | When |
+| --- | --- | --- |
+| `open` | todo | Open issue without a project binding |
+| `closed` | done, or canceled for not planned | Closed issue |
+| `unknown` | backlog | Open issue not in the project or with an unmapped option |
+| option ID | as mapped in `options` | Open issue with a mapped option |
+
+With any GitHub source configured, a `statuses:` entry for one of these keys
+with another category fails config load (`closed` accepts done or canceled), and
+so does an option ID mapped to different categories by two GitHub sources.
+`bl doctor` reports the same error.
+
 Each refresh lists every project item and every issue, with `blockedBy` and
 sub-issue edges, so project-only edits and removed dependencies show up even
 when the issue's `updatedAt` doesn't change. A REST ETag `304` is only a hint.

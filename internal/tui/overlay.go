@@ -295,16 +295,26 @@ func (m Model) captureChips() string {
 	t := m.theme
 	line := m.capture.line.text
 	if strings.TrimSpace(line) == "" {
-		return t.faint.render("!priority  @assignee  #label  ~milestone  :type  ^parent  <blocker")
+		hint := "!priority  @assignee  #label  ~milestone  :type  ^parent  <blocker"
+		if len(m.opts.Sources) > 1 && !m.capture.child {
+			hint += "  +source"
+		}
+		return t.faint.render(hint)
 	}
-	item, err := query.QuickAdd(line, m.opts.Me[m.capture.source])
+	item, err := query.QuickAdd(line, m.captureMe)
 	if err != nil {
-		item, err = query.QuickAdd("x "+line, m.opts.Me[m.capture.source])
+		item, err = query.QuickAdd("x "+line, m.captureMe)
+	}
+	if err == nil {
+		_, err = m.captureSource(item.Ref.Source)
 	}
 	if err != nil {
 		return t.yellow.render(textutil.Line(err.Error()))
 	}
 	var chips []string
+	if item.Ref.Source != "" {
+		chips = append(chips, t.accent.render("+"+textutil.Line(item.Ref.Source)))
+	}
 	if item.Priority != "" {
 		chips = append(chips, t.priority(item.Priority).render(priorityGlyph(item.Priority)+" "+string(item.Priority)))
 	}

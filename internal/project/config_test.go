@@ -2,6 +2,7 @@ package project_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -57,6 +58,40 @@ func TestReadySprintRequiresCapableSource(t *testing.T) {
 	put(t, file, "project: {id: p}\nsources: [{id: tasks, type: native, path: backlog}, {id: eng, type: linear, team: ENG}]\nready: {sprint: current}\n")
 	if cfg, err := project.Resolve(paths, root, nil); err != nil || cfg.Ready.Sprint != "current" {
 		t.Fatalf("capable ready.sprint: %+v, %v", cfg.Ready, err)
+	}
+}
+
+// The GitHub adapter assigns categories itself, so a contradicting status entry
+// would silently leave open issues ready to claim.
+func TestGitHubStatusCategories(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
+	file := project.ProjectFile(root)
+	plain := "project: {id: p}\nsources: [{id: gh, type: github, repo: a/b}]\n"
+	bound := func(id, category string) string {
+		return fmt.Sprintf("{id: %s, type: github, repo: a/%s, githubProject: {owner: a, number: 1, id: P, fieldId: F, options: {opt: %s}}}", id, id, category)
+	}
+	for _, tc := range []struct{ config, want string }{
+		{plain + "statuses: [{key: open, name: Open, category: backlog}]\n", "line 3: key statuses[0].category: GitHub assigns open the todo category, not backlog; set category: todo or remove the entry"},
+		{plain + "statuses: [{key: unknown, name: Unknown, category: todo}]\n", "line 3: key statuses[0].category: GitHub assigns unknown the backlog category, not todo; set category: backlog or remove the entry"},
+		{plain + "statuses: [{key: closed, name: Closed, category: todo}]\n", "line 3: key statuses[0].category: GitHub assigns closed the done or canceled category, not todo; set category: done or remove the entry"},
+		{"project: {id: p}\nsources: [" + bound("x", "active") + "]\nstatuses: [{key: opt, name: Doing, category: todo}]\n", "line 3: key statuses[0].category: source x assigns opt the active category, not todo; set category: active or remove the entry"},
+		{"project: {id: p}\nsources: [" + bound("x", "active") + ", " + bound("y", "todo") + "]\n", "line 2: key sources[1].githubProject.options.opt: source y maps opt to todo, but source x assigns it active; map it to one category"},
+	} {
+		put(t, file, tc.config)
+		if _, err := project.Resolve(paths, root, nil); err == nil || err.Error() != file+": "+tc.want {
+			t.Errorf("%q: %v", tc.config, err)
+		}
+	}
+	put(t, file, "project: {id: p}\nsources: ["+bound("x", "active")+", "+bound("y", "active")+"]\nstatuses: [{key: open, name: Open, category: todo}, {key: closed, name: Not planned, category: canceled}, {key: unknown, name: Unknown, category: backlog}, {key: opt, name: Doing, category: active}, {key: open-ish, name: Other, category: backlog}]\n")
+	if _, err := project.Resolve(paths, root, nil); err != nil {
+		t.Fatalf("matching statuses: %v", err)
+	}
+	// Without a GitHub source, the same keys mean whatever the project says.
+	put(t, file, "project: {id: p}\nsources: [{id: tasks, type: native, path: backlog}]\nstatuses: [{key: open, name: Open, category: backlog}]\n")
+	if _, err := project.Resolve(paths, root, nil); err != nil {
+		t.Fatalf("non-GitHub open status: %v", err)
 	}
 }
 

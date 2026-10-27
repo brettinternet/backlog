@@ -180,6 +180,8 @@ func TestFoundationToolsAndWriteGuards(t *testing.T) {
 	}
 	// A newline would split one criterion into Markdown the parser reads back differently.
 	assertErr(call("create", map[string]any{"title": "Bad criterion", "criteria": []string{"one\n- [ ] two"}}), "usage")
+	// MCP resolves the target with bl new's rules, so an unknown source is a usage error.
+	assertErr(call("create", map[string]any{"title": "Nowhere", "source": "nope"}), "usage")
 	path := filepath.Join(root, "items", ready.Item.ID+".md")
 	before, err := os.ReadFile(path)
 	if err != nil {

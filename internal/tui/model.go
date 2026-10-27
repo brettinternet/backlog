@@ -41,6 +41,8 @@ type Options struct {
 	Read                       func(context.Context, model.Ref) (model.Item, error)
 	Render                     func(string, int) (string, error)
 	Views                      []project.SavedView
+	Filter                     string // ANDed with every tab's declared query
+	View                       string // starting tab; overrides the restored one
 	Session                    *Session
 	Warning                    string
 	TrustWarning               string
@@ -1033,9 +1035,15 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			m.inputSerial++
 			return m, m.toggleLayout(map[string]string{"B": "board", "T": "tree"}[s])
 		case "F":
-			m.query = clearQuery(m.query)
+			// Reset returns the tab to its definition, clearing the • mark.
+			v := &m.views[m.view]
+			v.Config = v.Base
+			m.query = v.Base.Query
 			m.queryError = ""
 			m.queryWarning = ""
+			m.folded = nil
+			m.foldAll = false
+			m.board = boardState{}
 			m.serial++
 			m.project()
 			return m, nil

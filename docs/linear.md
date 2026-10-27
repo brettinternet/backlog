@@ -3,7 +3,9 @@
 ## Setup
 
 Use immutable UUIDs for the organization, team, optional project, viewer, and
-states, never names or display IDs. Project config (`backlog.yaml`):
+states, never names or display IDs. Name the source `id` after the team, such as
+`eng` or `product`: it's the name people and agents filter by (`source:product`).
+Project config (`backlog.yaml`):
 
 ```yaml
 sources:

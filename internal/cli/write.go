@@ -163,7 +163,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		&urfave.StringFlag{Name: "status", Aliases: []string{"s"}, Usage: "Create in status `KEY`, such as draft"},
 		&urfave.StringFlag{Name: "body", Aliases: []string{"b"}, Usage: "Set the description to `TEXT`; - reads stdin"},
 		&urfave.StringSliceFlag{Name: "ac", Usage: "Add the acceptance criterion `TEXT`"},
-		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (required with several sources)"},
+		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (default: defaults.source, else the only source that can create)"},
 		&urfave.StringFlag{Name: "sprint", Usage: "Add to sprint `VALUE`: current, next, or a name or key (Linear)"},
 	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if !cmd.Args().Present() {
@@ -173,17 +173,23 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if err != nil {
 			return err
 		}
-		sourceID := cmd.String("source")
-		if sourceID == "" {
-			if len(cfg.Sources) != 1 {
-				return writeUsage("new requires --source with multiple or no sources")
-			}
-			sourceID = cfg.Sources[0].ID
+		// @me needs the target source, so QuickAdd may resolve it first.
+		sourceID := ""
+		resolve := func(token string) (string, error) {
+			var err error
+			sourceID, err = engine.CreateSource(ctx, cfg, cmd.String("source"), token, nil)
+			return cfg.Identities()[sourceID], err
 		}
-		item, err := query.QuickAdd(strings.Join(cmd.Args().Slice(), " "), cfg.Identities()[sourceID])
+		item, err := query.QuickAdd(strings.Join(cmd.Args().Slice(), " "), resolve)
 		if err != nil {
-			return writeUsage(err.Error())
+			return writeUsage(engine.ErrorMessage(err))
 		}
+		if sourceID == "" {
+			if _, err := resolve(item.Ref.Source); err != nil {
+				return writeError(err)
+			}
+		}
+		item.Ref.Source = sourceID
 		engine.ApplyCreateDefaults(cfg, sourceID, &item)
 		for _, c := range cmd.StringSlice("ac") {
 			if strings.TrimSpace(c) == "" || strings.ContainsAny(c, "\r\n") {

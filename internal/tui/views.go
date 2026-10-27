@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -77,6 +78,11 @@ func (m Model) SaveSession(cfg project.Config) error {
 	}
 	return project.WriteUIState(cfg, data)
 }
+
+// HasView reports whether name is a tab: built in or saved.
+func HasView(saved []project.SavedView, name string) bool {
+	return slices.Contains(viewNames, name) || slices.ContainsFunc(saved, func(v project.SavedView) bool { return v.Name == name })
+}
 func viewQuery(v project.ViewConfig) string {
 	text := v.Query
 	if v.Sort != "" {
@@ -101,6 +107,13 @@ func (m *Model) initViews() {
 		v.Group = ""
 		m.views = append(m.views, viewState{ID: v.ID, Config: v.ViewConfig, Base: v.ViewConfig})
 	}
+	if m.opts.Filter != "" {
+		for i := range m.views {
+			v := &m.views[i]
+			v.Base.Query = strings.TrimSpace(v.Base.Query + " " + m.opts.Filter)
+			v.Config = v.Base
+		}
+	}
 	if s := m.opts.Session; s != nil {
 		for i := range m.views {
 			for _, saved := range s.Views {
@@ -116,6 +129,14 @@ func (m *Model) initViews() {
 		m.detailTab = detailTab(s.DetailTab)
 		m.detailOpen = s.DetailOpen
 		m.splitWidth = s.SplitWidth
+	}
+	if m.opts.View != "" {
+		for i := range m.views {
+			if m.views[i].Base.Name == m.opts.View {
+				m.view = i
+				break
+			}
+		}
 	}
 	m.query = m.views[m.view].Config.Query
 	m.restore = &m.views[m.view].Selection

@@ -134,6 +134,11 @@ func (q Query) Match(item model.Item, s Snapshot, event *Event) bool {
 	return true
 }
 func equal(field, a, b string) bool {
+	if field == "source" {
+		// A workspace source key also matches its bare source ID (design.md D30).
+		_, id, composed := strings.Cut(a, "/")
+		return a == b || composed && id == b
+	}
 	if slices.Contains([]string{"status", "category", "priority", "is", "has", "claimed", "outcome"}, field) {
 		return strings.EqualFold(a, b)
 	}
@@ -196,7 +201,7 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 	case "sprint":
 		return matchSprint(i, s, text)
 	case "source":
-		return scalar(i.Ref.Source, text)
+		return scalar(i.Ref.Source, text) || equal(f, i.Ref.Source, text)
 	case "parent":
 		if i.Parent == nil {
 			return lower == "none"

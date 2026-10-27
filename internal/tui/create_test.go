@@ -18,7 +18,7 @@ import (
 func TestQuickAddExpandsToSameItem(t *testing.T) {
 	t.Parallel()
 	line := `Debounce detail !high @me #tui ^BL-3 <BL-10 ~m-2 :feature`
-	expected, err := query.QuickAdd(line, "alice")
+	expected, err := query.QuickAdd(line, func(string) (string, error) { return "alice", nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,4 +113,51 @@ func TestBacklogMDUnsupportedChoices(t *testing.T) {
 			t.Fatal("unsupported rank creation was offered")
 		}
 	}
+}
+
+// n and quick-add must pick the same source as bl new, or a TUI create lands
+// somewhere the CLI wouldn't put it.
+func TestCaptureResolvesCreateSource(t *testing.T) {
+	t.Parallel()
+	cfg := project.Config{Settings: project.Settings{Defaults: project.DefaultsConfig{Source: "other"}}}
+	store := engine.OpenStore(context.Background(), cfg, source.Registry{
+		"tasks": newEditFakeSource(nil, model.Capabilities{model.Create: true}),
+		"other": newEditFakeSource(nil, model.Capabilities{model.Create: true}),
+		"gh":    newEditFakeSource(nil, model.Capabilities{model.Set: true}),
+	})
+	defer store.Close()
+	m := New(Options{Store: store, Workspace: &cfg, Sources: []string{"tasks", "other", "gh"}, Me: map[string]string{"tasks": "@t", "other": "@o"}})
+	m.beginCapture(false)
+	if m.capture.choosing || m.capture.source != "other" {
+		t.Fatalf("defaults.source not preselected: %+v", m.capture)
+	}
+	m.capture.line = newLine("T @me +tasks")
+	m.expandCapture(false)
+	if m.capture.errorText != "" || m.capture.source != "tasks" || captureValue(mustCaptureItem(t, m), "assignees") != "@t" {
+		t.Fatalf("+tasks: %q %q", m.capture.errorText, m.capture.source)
+	}
+	m.capture = captureState{open: true, source: "other", line: newLine("T +gh")}
+	m.expandCapture(false)
+	if !strings.Contains(m.capture.errorText, "source gh cannot create items; creatable sources: tasks, other") {
+		t.Fatalf("+gh: %q", m.capture.errorText)
+	}
+	m.capture = captureState{open: true, child: true, source: "other", line: newLine("T +tasks")}
+	m.expandCapture(false)
+	if m.capture.errorText != "a child is created in its parent's source other" {
+		t.Fatalf("child: %q", m.capture.errorText)
+	}
+	cfg.Defaults.Source = ""
+	m = New(Options{Store: store, Workspace: &cfg, Sources: []string{"tasks", "other", "gh"}})
+	m.beginCapture(false)
+	if !m.capture.choosing || strings.Join(m.capture.sources, ",") != "tasks,other" {
+		t.Fatalf("chooser: %+v", m.capture)
+	}
+}
+func mustCaptureItem(t *testing.T, m Model) model.Item {
+	t.Helper()
+	item, err := captureItem(m.capture.fields, m.capture.source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item
 }

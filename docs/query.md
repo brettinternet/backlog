@@ -73,7 +73,8 @@ snapshot.
 | `category` | `backlog`, `todo`, `active`, `done`, `canceled` |
 | `priority` | `urgent`, `high`, `medium`, `low`, `none`; ordered |
 | `assignee` | Handle, `me`, or `none` |
-| `label`, `type`, `milestone`, `source` | Exact value, or `none` |
+| `label`, `type`, `milestone` | Exact value, or `none` |
+| `source` | Source ID, or `none`. In a workspace, the full source key or the bare source ID, which matches that source in every project. |
 | `parent` | ID, or `none` |
 | `sprint` | `current` (active), `next` (earliest future), `none`, or a sprint key or name. Linear and Jira always; GitHub only with a Projects v2 source bound to an iteration field. |
 | `blocked-by`, `blocks` | ID. `blocks` is derived from the loaded target's blockers; the item's own list counts only for targets that aren't loaded. |
@@ -188,5 +189,7 @@ defaults, ID allocation, or I/O. It's shared by the TUI, `bl new`, and MCP.
   handles keep their `@`.
 - List tokens collect without duplicates; a repeated scalar token keeps the
   last value. `^` and `<` accept `source:ID`.
+- `+ID` names the source to create in; the caller validates it. `\+` keeps it
+  as title text. `@me` uses the identity of the final `+ID` source.
 - Empty values, invalid priorities, and unfinished quotes or escapes fail with
   a position. The caller validates field values and references.
