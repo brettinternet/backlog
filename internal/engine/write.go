@@ -463,8 +463,12 @@ func githubCreate(cfg project.Config, configured project.SourceConfig, item mode
 			return source.Refuse("rejected", "GitHub parent and blocked_by must be GitHub issues, not "+ref.Source+":"+ref.ID)
 		}
 	}
-	if p := configured.GitHubProject; item.Status != "" && item.Status != "open" && (p == nil || !p.AllowWrites || p.Options[item.Status] == "") {
-		return source.Refuse("rejected", "GitHub creates open issues; status must be open or a writable project option, not "+item.Status)
+	labeled := false
+	for label := range configured.StatusLabels {
+		labeled = labeled || strings.EqualFold(label, item.Status)
+	}
+	if p := configured.GitHubProject; item.Status != "" && item.Status != "open" && !labeled && (p == nil || !p.AllowWrites || p.Options[item.Status] == "") {
+		return source.Refuse("rejected", "GitHub creates open issues; status must be open, a status label or a writable project option, not "+item.Status)
 	}
 	unsupported := remoteCreateUnsupported(item)
 	if item.Priority != "" {

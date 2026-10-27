@@ -569,6 +569,13 @@ func TestLabelStatuses(t *testing.T) {
 	if current, err = apply("open"); err != nil || current.Status != "unknown" || f.state != "OPEN" {
 		t.Fatalf("reopen: %+v %v", current, err)
 	}
+	// A create status sends its label in the issue POST, replacing other mapped labels.
+	if _, err = s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "New", Status: "In-Progress", Labels: []string{"Ready", "bug"}}}); err != nil || f.created != `{"body":"","labels":["in-progress","bug"],"title":"New"}` {
+		t.Fatalf("create with label status: %v %s", err, f.created)
+	}
+	if _, err = s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &model.Item{Title: "New", Status: "active"}}); !reason(err, "rejected") {
+		t.Fatalf("create with unmapped status: %v", err)
+	}
 }
 
 // Add and remove must change one entry without replacing the list, so an entry

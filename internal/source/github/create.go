@@ -75,8 +75,20 @@ func (s *Source) create(ctx context.Context, item *model.Item) (model.Item, erro
 	if item.Milestone != "" || item.Type != "" && item.Type != "issue" || item.Priority != "" || len(item.Criteria) > 0 || len(item.DoD) > 0 || item.Sprint != "" {
 		return model.Item{}, source.Refuse("rejected", "GitHub create doesn't support milestone, type, priority, criteria or sprint")
 	}
-	option := ""
-	if item.Status != "" && item.Status != "open" {
+	option, labels := "", item.Labels
+	if s.statusLabels != nil && item.Status != "" && item.Status != "open" {
+		// Like a status write, the status label replaces any other mapped label.
+		label := s.statusLabels[strings.ToLower(item.Status)]
+		if label == "" {
+			return model.Item{}, source.Refuse("rejected", "GitHub create status must be open or a configured status label")
+		}
+		labels = []string{label}
+		for _, l := range item.Labels {
+			if s.statusLabels[strings.ToLower(l)] == "" {
+				labels = append(labels, l)
+			}
+		}
+	} else if item.Status != "" && item.Status != "open" {
 		if s.o.Project == nil || !s.o.Project.AllowWrites || s.o.Project.Options[item.Status] == "" {
 			return model.Item{}, source.Refuse("rejected", "GitHub create status must be open or a writable configured project option ID")
 		}
@@ -118,8 +130,8 @@ func (s *Source) create(ctx context.Context, item *model.Item) (model.Item, erro
 		}
 	}
 	payload := map[string]any{"title": item.Title, "body": item.Description}
-	if len(item.Labels) > 0 {
-		payload["labels"] = item.Labels
+	if len(labels) > 0 {
+		payload["labels"] = labels
 	}
 	if len(item.Assignees) > 0 {
 		payload["assignees"] = item.Assignees

@@ -325,7 +325,8 @@ bl new 'Plan sync' --source issues --status option-active-id
 ```
 
 A create sets title, body, labels, assignees, parent, blockers and status.
-Status is `open` (the default when it's the first todo status) or, with
+Status is `open` (the default when it's the first todo status), a status label,
+which the issue POST adds in place of any other status label, or, with
 `allowWrites`, a project option ID. Parent and blockers must be issues on the
 same host, in this or another configured GitHub repository. Milestone, type,
 priority, criteria, sprint and other template fields are rejected before
