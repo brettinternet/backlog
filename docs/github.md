@@ -257,6 +257,34 @@ other one is future, even if its own dates have already elapsed. A break with
 none in range leaves the whole list future, with no active sprint. Sprint keys
 are the iteration's node ID.
 
+## Project-only sources
+
+Omit `repo` to read every issue in the project, across repositories:
+
+```yaml
+sources:
+  - id: board
+    type: github
+    account: personal
+    githubProject: {owner: acme, number: 12, id: PVT_example, fieldId: PVTSSF_example, options: {…}}
+```
+
+Item IDs name the repository, `board:acme/app#123`; a bare number is
+`invalid-id`. Relations between project issues use the same form. Pull
+requests and draft items are skipped. Items in repositories the account can't
+read come back redacted; each load skips them with one warning naming the
+count. Status labels need one repository, so `statusLabels` without `repo`
+fails config load.
+
+Issue, label, assignee, comment and project status writes go to the item's
+repository, and each preflight rechecks your permission there (with
+[OAuth](#oauth-login), also the App's installation on it). Creates are
+refused: set `repo` for a create target.
+
+With both `repo` and `githubProject`, the source stays repository-scoped
+(numeric IDs, issues outside the project included) and `repo` is the create
+target.
+
 ## Sync
 
 Two scans, as in [Linear](linear.md#sync):
@@ -266,6 +294,11 @@ Two scans, as in [Linear](linear.md#sync):
 | Change window | Every refresh between reconciliations | Issues updated since the last scan's start minus two minutes, plus issues whose project item was updated since then |
 | Reconciliation | Startup (no cached cursor), hourly, and on `R` in the TUI | Every issue with its relations, and every project item |
 
+A [project-only source](#project-only-sources) reads project items updated
+since then, plus the issues updated since then in each repository its last
+scan saw, because a comment bumps the issue's `updatedAt` but not the item's.
+Reconciliation enumerates the project items with their issues.
+
 Requests per scan, excluding relation overflow pages and writes:
 
 | Scan | Requests |
@@ -273,6 +306,8 @@ Requests per scan, excluding relation overflow pages and writes:
 | Empty change window | 3 (identity check, repository, one issue page), plus 2 with a project (fields, one item page), regardless of issue count |
 | Window with C changed issues | The above, plus ⌈C/100⌉ − 1 issue pages and ⌈P/10⌉ batched reads for P issues changed only in the project |
 | Reconciliation of N issues and M project items | 3 + ⌈N/100⌉ (identity, repository, REST hint, issue pages), plus 1 + ⌈M/100⌉ with a project |
+| Project-only empty change window across R repositories | 2 + R (fields, one item page, one issue page per repository) |
+| Project-only reconciliation of M items | 1 + ⌈M/100⌉ (fields, item pages) |
 
 The project item filter accepts only dates (`updated:>=YYYY-MM-DD`; a timestamp
 matches nothing), so the window reads items updated since the day before and
@@ -358,7 +393,9 @@ and a deleted issue offers no redo. Neither withdraws the notifications GitHub
 already sent.
 
 Claims use Worklease's `github` key from `HOST/OWNER/REPO` and the issue number,
-so they don't depend on aliases, project, status, title, or credential. Node
+so they don't depend on aliases, project, status, title, or credential. A
+project-only source takes `OWNER/REPO` from the ID, so it and a repository
+source claim an issue under the same key. Node
 IDs are checked on every read; transfers or binding changes fail closed. Use the
 `resource` from `bl show --json`.
 

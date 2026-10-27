@@ -26,14 +26,15 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.Op == model.Create {
 		return s.create(ctx, m.Item)
 	}
-	if _, err := validNumber(m.Ref.ID); err != nil {
+	repo, n, err := s.parseID(m.Ref.ID)
+	if err != nil {
 		return model.Item{}, err
 	}
 	if m.Op == model.Delete {
 		return s.delete(ctx, m)
 	}
 	var payload any
-	method, endpoint := http.MethodPatch, s.issuePath(m.Ref.ID)
+	method, endpoint := http.MethodPatch, s.issuePath(repo, n)
 	projectWrite, labelStatus := false, ""
 	entry := ""
 	switch m.Op {
@@ -116,6 +117,13 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		return model.Item{}, err
+	}
+	if s.projectOnly() && s.o.Account.OAuth {
+		// Recheck the App's installation on the item's repository; read
+		// rechecks the viewer's permission there and the project grant.
+		if err = s.appPermissions(ctx, c, repo); err != nil {
+			return model.Item{}, err
+		}
 	}
 	current, err := s.read(ctx, c, m.Ref.ID)
 	if err != nil {

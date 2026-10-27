@@ -14,7 +14,9 @@ import (
 
 // Discover live installation grants before every OAuth source use, including
 // writes. A scope header or the user's repository role alone is not app consent.
-func (s *Source) appPermissions(ctx context.Context, c remote.Credential) error {
+// repo must be installed for reads; a project-only source passes "" on use,
+// leaving unreadable repositories redacted, and each write's repository after.
+func (s *Source) appPermissions(ctx context.Context, c remote.Credential, repo string) error {
 	get := func(ctx context.Context, path string) ([]byte, error) {
 		response, err := s.request(ctx, c, http.MethodGet, s.base()+path, nil)
 		return response.Body, err
@@ -41,7 +43,7 @@ func (s *Source) appPermissions(ctx context.Context, c remote.Credential) error 
 		if i.Account.Type == "Organization" && i.Permissions["organization_projects"] == "write" {
 			s.projectGrants[strings.ToLower(i.Account.Login)] = true
 		}
-		if !strings.EqualFold(i.Account.Login, strings.Split(s.o.Repo, "/")[0]) {
+		if owner, _, _ := strings.Cut(repo, "/"); !strings.EqualFold(i.Account.Login, owner) {
 			continue
 		}
 		if i.Permissions["issues"] != "read" && i.Permissions["issues"] != "write" {
@@ -65,12 +67,12 @@ func (s *Source) appPermissions(ctx context.Context, c remote.Credential) error 
 				return oauth.Failure(oauth.CodeProviderDown, time.Time{})
 			}
 			total = *r.Total
-			for _, repo := range r.Repositories {
-				if repo.ID <= 0 || seen[repo.ID] || repo.FullName == "" {
+			for _, entry := range r.Repositories {
+				if entry.ID <= 0 || seen[entry.ID] || entry.FullName == "" {
 					return oauth.Failure(oauth.CodeProviderDown, time.Time{})
 				}
-				seen[repo.ID] = true
-				if strings.EqualFold(repo.FullName, s.o.Repo) {
+				seen[entry.ID] = true
+				if strings.EqualFold(entry.FullName, repo) {
 					readable = true
 					s.issueWrite = i.Permissions["issues"] == "write"
 				}
@@ -83,7 +85,7 @@ func (s *Source) appPermissions(ctx context.Context, c remote.Credential) error 
 			}
 		}
 	}
-	if !readable {
+	if !readable && repo != "" {
 		return oauth.Failure(oauth.CodeInsufficientScope, time.Time{})
 	}
 	return nil

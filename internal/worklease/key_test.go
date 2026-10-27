@@ -44,6 +44,12 @@ func TestGitHubResourceIdentity(t *testing.T) {
 	if err != nil || first != second || first != "github:github.com%2Fowner%2Frepo#123" {
 		t.Fatalf("claim identity drift: %s %s %v", first, second, err)
 	}
+	// A project-only source names the repository in the ID instead.
+	cfg.Sources[0].Repo = ""
+	item.Ref.ID = "Owner/Repo#123"
+	if third, err := resource(cfg, item); err != nil || third != first {
+		t.Fatalf("project-only claim identity: %s %v", third, err)
+	}
 }
 
 type keyVector struct{ Provider, Source, Item, Resource string }

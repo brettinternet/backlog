@@ -503,6 +503,9 @@ func remoteCreateUnsupported(item model.Item) []string {
 // githubCreate names the template fields and values an issue create can't
 // store, before the remote wrapper reduces source refusals to a generic message.
 func githubCreate(cfg project.Config, configured project.SourceConfig, item model.Item) error {
+	if configured.Repo == "" {
+		return source.Refuse("rejected", "source "+configured.ID+" reads a project without a repo to create in; set repo")
+	}
 	refs := item.BlockedBy
 	if item.Parent != nil {
 		refs = append([]model.Ref{*item.Parent}, refs...)

@@ -374,3 +374,121 @@ func TestLiveLabelStatus(t *testing.T) {
 		t.Fatalf("label status on closed issue: %v", err)
 	}
 }
+
+// Opt-in only, with TestLiveRoundTrip's inputs. Reads the disposable project
+// through a project-only source: an OWNER/REPO#N ID, a write to the item's
+// repository and project, and a change window that sees a comment-only edit,
+// which leaves the project item's updatedAt alone.
+func TestLiveProjectOnly(t *testing.T) {
+	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
+		t.Skip("set BL_PROVIDER_TESTS=1 and explicit GitHub test inputs")
+	}
+	required := func(key string) string { return liveRequired(t, key) }
+	repo, user := required("BL_GITHUB_TEST_REPO"), required("BL_GITHUB_TEST_USER")
+	number, err := strconv.Atoi(required("BL_GITHUB_TEST_PROJECT_NUMBER"))
+	if err != nil || number < 1 {
+		t.Fatal("invalid project number")
+	}
+	projectID, fieldID := required("BL_GITHUB_TEST_PROJECT_ID"), required("BL_GITHUB_TEST_FIELD_ID")
+	todo, active := required("BL_GITHUB_TEST_TODO_OPTION"), required("BL_GITHUB_TEST_ACTIVE_OPTION")
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	gh := liveGH(t, ctx)
+	var approved struct{ ID, Title string }
+	gh(&approved, "project", "view", strconv.Itoa(number), "--owner", user, "--format", "json")
+	if approved.ID != projectID || !strings.HasPrefix(approved.Title, "bl-provider-test-") {
+		t.Fatal("project is not the explicit disposable test project")
+	}
+	var created struct {
+		ID     string `json:"node_id"`
+		Number int
+		URL    string `json:"html_url"`
+	}
+	gh(&created, "api", "--method", "POST", "repos/"+repo+"/issues", "-f", "title=bl-provider-test BL-129 project-only", "-f", "body=Synthetic provider test; deleted by test cleanup.")
+	if created.ID == "" || created.Number < 1 {
+		t.Fatal("created issue identity missing")
+	}
+	t.Logf("created issue %s#%d node=%s", repo, created.Number, created.ID)
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(cleanupCtx, "gh", "api", "graphql", "-f", `query=mutation($id:ID!){deleteIssue(input:{issueId:$id}){clientMutationId}}`, "-f", "id="+created.ID)
+		if err := cmd.Run(); err != nil {
+			t.Errorf("issue cleanup failed: %v", err)
+			return
+		}
+		t.Logf("deleted issue node=%s (also removes its comments and project item)", created.ID)
+	})
+	var entry struct{ ID string }
+	gh(&entry, "project", "item-add", strconv.Itoa(number), "--owner", user, "--url", created.URL, "--format", "json")
+	if entry.ID == "" {
+		t.Fatal("missing created project item")
+	}
+	t.Logf("created project item %s", entry.ID)
+	gh(nil, "project", "item-edit", "--id", entry.ID, "--project-id", projectID, "--field-id", fieldID, "--single-select-option-id", todo)
+	// Shifting the clock by the change overlap starts the window at the
+	// reconciliation's real start, after every project item edit above.
+	shift := changeOverlap
+	secrets := &remote.Secrets{}
+	s, err := New(Options{ID: "gh", Account: project.AccountConfig{Host: "github.com", User: user, Credential: []string{"gh", "auth", "token", "--hostname", "github.com", "--user", user}}, Project: &project.GitHubProjectConfig{ID: projectID, Owner: user, Number: number, FieldID: fieldID, Options: map[string]string{todo: "todo", active: "active"}, AllowWrites: true}, Secrets: secrets, Credentials: &remote.Credentials{Secrets: secrets}, Now: func() time.Time { return time.Now().Add(shift) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Info().Capabilities.Allows(model.Create) {
+		t.Fatal("project-only source offers create")
+	}
+	id := fmt.Sprintf("%s#%d", repo, created.Number)
+	var item model.Item
+	await := func(ready func(model.Item) bool) {
+		t.Helper()
+		deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		previous := ""
+		for item.Ref.ID == "" || !ready(item) || item.Version != previous {
+			if deadline.Err() != nil {
+				t.Fatalf("provider read-back did not converge: status=%s title=%s", item.Status, item.Title)
+			}
+			// A comment's effects reach reads unevenly; space the reads so
+			// two equal versions mean settled, not one lagging replica.
+			if previous = item.Version; previous != "" {
+				time.Sleep(2 * time.Second)
+			}
+			if item, err = s.Read(deadline, id); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	await(func(i model.Item) bool { return i.Category == model.Todo })
+	if item.Ref != (model.Ref{Source: "gh", ID: id}) {
+		t.Fatalf("project-only ref: %+v", item.Ref)
+	}
+	time.Sleep(5 * time.Second)
+	full, err := s.Load(ctx, source.Cursor{})
+	if err != nil || full.Incremental || !slices.ContainsFunc(full.Items, func(i model.Item) bool { return i.Ref.ID == id }) {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	time.Sleep(5 * time.Second)
+	gh(nil, "issue", "comment", strconv.Itoa(created.Number), "--repo", repo, "--body", "bl-provider-test BL-129 comment")
+	t.Log("created comment")
+	deadline, stop := context.WithTimeout(ctx, 60*time.Second)
+	defer stop()
+	for found := false; !found; {
+		if deadline.Err() != nil {
+			t.Fatal("change window missed the comment-only edit")
+		}
+		delta, err := s.Load(deadline, full.Cursor)
+		if err != nil || !delta.Incremental {
+			t.Fatalf("change window: %v", err)
+		}
+		found = slices.ContainsFunc(delta.Items, func(i model.Item) bool { return i.Ref.ID == id && i.Updated.After(item.Updated) })
+	}
+	await(func(model.Item) bool { return true })
+	if item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "title", Value: "bl-provider-test BL-129 renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	await(func(i model.Item) bool { return i.Title == "bl-provider-test BL-129 renamed" })
+	if item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "status", Value: active}); err != nil {
+		t.Fatal(err)
+	}
+	await(func(i model.Item) bool { return i.Category == model.Active })
+}

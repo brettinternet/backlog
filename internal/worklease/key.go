@@ -95,6 +95,15 @@ func resource(cfg project.Config, item model.Item) (string, error) {
 			if host == "" {
 				host = "github.com"
 			}
+			// A project-only source's OWNER/REPO#N IDs key as that repository's
+			// source would, so both sources claim the same issue.
+			if s.Repo == "" {
+				repo, number, ok := strings.Cut(item.Ref.ID, "#")
+				if !ok || strings.Count(repo, "/") != 1 {
+					return "", fmt.Errorf("github issue ID %s is not OWNER/REPO#N", strconv.Quote(item.Ref.ID))
+				}
+				return Key("github", host+"/"+repo, number)
+			}
 			return Key("github", host+"/"+s.Repo, strings.TrimPrefix(item.Ref.ID, "#"))
 		case "linear":
 			stable, _ := item.Fields["uuid"].(string)

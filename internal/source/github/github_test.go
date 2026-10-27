@@ -56,6 +56,26 @@ type fixture struct {
 	canDelete             bool
 	// missing is an issue number the detail query reports as NOT_FOUND.
 	missing int
+	// projectOnly serves a project spanning owner/repo#1 and other/lib#5 plus
+	// a redacted item, a pull request and a draft; paths records REST writes.
+	projectOnly bool
+	paths       []string
+}
+
+// projectIssues are the issues in a projectOnly fixture's project.
+var projectIssues = []struct {
+	repo string
+	n    int
+}{{"owner/repo", 1}, {"other/lib", 5}}
+
+// projectRow is a project-only issue with its bound project item.
+func (f *fixture) projectRow(repo string, n int) map[string]any {
+	row := f.row(n)
+	row["repository"] = map[string]string{"id": "R_" + repo, "nameWithOwner": repo}
+	item := f.projectItem()
+	item["id"], item["project"] = fmt.Sprint("PVTI_", n), map[string]string{"id": "PVT_test"}
+	row["projectItems"] = map[string]any{"nodes": []any{item}, "pageInfo": map[string]any{"hasNextPage": false}}
+	return row
 }
 
 func newFixture(t *testing.T, configure ...func(*Options)) (*Source, *fixture) {
@@ -157,6 +177,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasSuffix(r.URL.Path, "graphql") {
 		f.writes++
+		f.paths = append(f.paths, r.URL.Path)
 		if f.failWrites {
 			w.WriteHeader(502)
 			return
@@ -232,7 +253,39 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	repo := fmt.Sprint(v["owner"], "/", v["repo"])
 	switch {
+	case f.projectOnly && strings.Contains(q, "id type updatedAt"):
+		since := time.Time{}
+		if filter, ok := v["filter"].(string); ok {
+			since, _ = time.Parse("updated:>=2006-01-02", filter)
+		}
+		rows := []any{map[string]any{"type": "REDACTED", "content": nil}, map[string]any{"id": "PVTI_pr", "type": "PULL_REQUEST", "updatedAt": f.itemUpdated, "content": map[string]any{"__typename": "PullRequest"}}, map[string]any{"id": "PVTI_draft", "type": "DRAFT_ISSUE", "updatedAt": f.itemUpdated, "content": map[string]any{"__typename": "DraftIssue"}}}
+		for _, issue := range projectIssues {
+			if !f.itemUpdated.Before(since) {
+				row := f.projectRow(issue.repo, issue.n)
+				row["__typename"] = "Issue"
+				item := f.projectItem()
+				item["id"], item["type"], item["content"] = fmt.Sprint("PVTI_", issue.n), "ISSUE", row
+				rows = append(rows, item)
+			}
+		}
+		emit(map[string]any{"node": map[string]any{"id": "PVT_test", "number": 9, "owner": map[string]string{"login": "alice"}, "items": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}}})
+	case f.projectOnly && strings.Contains(q, "filterBy:{since:$since}"):
+		since, _ := time.Parse(time.RFC3339, v["since"].(string))
+		rows := []any{}
+		for _, issue := range projectIssues {
+			if issue.repo == repo && !f.issueUpdated(issue.n).Before(since) {
+				rows = append(rows, f.projectRow(issue.repo, issue.n))
+			}
+		}
+		emit(map[string]any{"repository": map[string]any{"id": "R_" + repo, "nameWithOwner": repo, "issues": map[string]any{"nodes": rows, "pageInfo": map[string]any{"hasNextPage": false}}}})
+	case f.projectOnly && strings.Contains(q, "viewerPermission"):
+		permission := "WRITE"
+		if f.readOnly {
+			permission = "READ"
+		}
+		emit(map[string]any{"repository": map[string]any{"id": "R_" + repo, "nameWithOwner": repo, "viewerPermission": permission, "issue": f.projectRow(repo, int(v["number"].(float64)))}})
 	case strings.Contains(q, "addSubIssue"):
 		emit(map[string]any{"addSubIssue": map[string]any{"issue": map[string]any{"id": v["parent"]}, "subIssue": map[string]any{"id": v["child"]}}})
 	case strings.Contains(q, "addBlockedBy"):
@@ -335,6 +388,74 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		emit(map[string]any{"repository": map[string]any{"id": "R_test", "nameWithOwner": "owner/repo", "issue": f.row(n)}})
 	default:
 		w.WriteHeader(400)
+	}
+}
+
+// A project-only source reads issues across repositories under OWNER/REPO#N,
+// counts the items it can't read, and writes to each item's own repository
+// only after rechecking the viewer's permission there.
+func TestProjectOnlySource(t *testing.T) {
+	s, f := newFixture(t, func(o *Options) { o.Repo = "" })
+	f.projectOnly = true
+	ctx := context.Background()
+	if caps := s.Info().Capabilities; caps.Allows(model.Create) || caps.Allows(model.Delete) {
+		t.Fatal("project-only source offers create or delete")
+	}
+	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	s.o.Now = func() time.Time { return now }
+	full, err := s.Load(ctx, source.Cursor{})
+	if err != nil || len(full.Items) != 2 || len(full.Findings) != 1 || full.Findings[0].Code != "github-project-redacted" || !strings.HasPrefix(full.Findings[0].Message, "1 project items") {
+		t.Fatalf("project-only load: %+v %v", full, err)
+	}
+	lib := itemByID(t, full.Items, "other/lib#5")
+	itemByID(t, full.Items, "owner/repo#1")
+	if lib.Parent == nil || *lib.Parent != (model.Ref{Source: "gh", ID: "owner/repo#2"}) || lib.Category != model.Todo {
+		t.Fatalf("cross-repository refs: %+v", lib)
+	}
+	// A comment bumps only the issue, so the item's repository window finds it.
+	now = now.Add(5 * time.Minute)
+	f.mu.Lock()
+	f.updated[5] = now.Add(-10 * time.Second)
+	f.mu.Unlock()
+	now = now.Add(time.Minute)
+	delta, err := s.Load(ctx, full.Cursor)
+	if err != nil || !delta.Incremental || len(delta.Items) != 1 || delta.Items[0].Ref.ID != "other/lib#5" {
+		t.Fatalf("repository window: %+v %v", delta, err)
+	}
+	// A project option edit bumps only the project item.
+	now = now.Add(5 * time.Minute)
+	f.mu.Lock()
+	f.option, f.itemUpdated = "active", now.Add(-10*time.Second)
+	f.mu.Unlock()
+	now = now.Add(time.Minute)
+	if delta, err = s.Load(ctx, delta.Cursor); err != nil || !delta.Incremental || len(delta.Items) != 2 || delta.Items[0].Category != model.Active {
+		t.Fatalf("project item window: %+v %v", delta, err)
+	}
+
+	if _, err = s.Read(ctx, "5"); !reason(err, "invalid-id") {
+		t.Fatalf("bare number: %v", err)
+	}
+	current, err := s.Read(ctx, "other/lib#5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rename := model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Set, Field: "title", Value: "Renamed"}
+	f.mu.Lock()
+	f.readOnly = true
+	f.mu.Unlock()
+	if _, err = s.Apply(ctx, rename); !reason(err, "rejected") {
+		t.Fatalf("read-only repository: %v", err)
+	}
+	f.mu.Lock()
+	f.readOnly = false
+	f.mu.Unlock()
+	if current, err = s.Apply(ctx, rename); err != nil || current.Title != "Renamed" {
+		t.Fatalf("write: %+v %v", current, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.Equal(f.paths, []string{"/repos/other/lib/issues/5"}) {
+		t.Fatalf("write paths: %v", f.paths)
 	}
 }
 

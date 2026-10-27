@@ -252,7 +252,8 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 		}
 		aliases := map[string]string{}
 		for _, configured := range cfg.Sources {
-			if configured.Type != "github" {
+			// A project-only source names issues OWNER/REPO#N, so it's no alias.
+			if configured.Type != "github" || configured.Repo == "" {
 				continue
 			}
 			h := configured.Host
