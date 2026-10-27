@@ -17,38 +17,37 @@ import (
 )
 
 type Options struct {
-	Workspace                               *project.Config
-	WorkspaceScope                          bool
-	Automation                              *project.Config
-	HighContrast, NoColor                   bool
-	Project                                 string // display name
-	Store                                   *engine.Store
-	Projector                               *engine.Projector
-	Context                                 context.Context
-	Sources                                 []string
-	Statuses                                []project.StatusConfig
-	Workflow                                project.WorkflowConfig
-	Labels                                  []string
-	Milestones                              []project.Milestone
-	Me                                      map[string]string // source ID to the caller's assignee value there
-	CreateSource, CreateStatus, DefaultType string
-	DefaultDoD                              []string
-	ValidateItem                            func(model.Item) error
-	ResolveRef                              func(context.Context, string, model.Ref) (model.Ref, error)
-	NativeBytes                             func(context.Context, model.Item) ([]byte, error)
-	NativeSource                            func(string) bool
-	EditorDir, CommentAuthor                string
-	OpenURL                                 func(context.Context, string) error
-	Read                                    func(context.Context, model.Ref) (model.Item, error)
-	Render                                  func(string, int) (string, error)
-	Views                                   []project.SavedView
-	Session                                 *Session
-	Warning                                 string
-	TrustWarning                            string
-	SaveView                                func(project.ViewConfig, bool) (project.SavedView, error)
-	Keys                                    map[string]string
-	GoToItems                               func(context.Context) ([]GoToItem, error)
-	Now                                     func() time.Time
+	Workspace                  *project.Config
+	WorkspaceScope             bool
+	Automation                 *project.Config
+	HighContrast, NoColor      bool
+	Project                    string // display name
+	Store                      *engine.Store
+	Projector                  *engine.Projector
+	Context                    context.Context
+	Sources                    []string
+	Statuses                   []project.StatusConfig
+	Workflow                   project.WorkflowConfig
+	Labels                     []string
+	Milestones                 []project.Milestone
+	Me                         map[string]string // source ID to the caller's assignee value there
+	CreateSource, CreateStatus string
+	ValidateItem               func(model.Item) error
+	ResolveRef                 func(context.Context, string, model.Ref) (model.Ref, error)
+	NativeBytes                func(context.Context, model.Item) ([]byte, error)
+	NativeSource               func(string) bool
+	EditorDir, CommentAuthor   string
+	OpenURL                    func(context.Context, string) error
+	Read                       func(context.Context, model.Ref) (model.Item, error)
+	Render                     func(string, int) (string, error)
+	Views                      []project.SavedView
+	Session                    *Session
+	Warning                    string
+	TrustWarning               string
+	SaveView                   func(project.ViewConfig, bool) (project.SavedView, error)
+	Keys                       map[string]string
+	GoToItems                  func(context.Context) ([]GoToItem, error)
+	Now                        func() time.Time
 }
 
 type screenRow struct {

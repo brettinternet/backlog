@@ -178,7 +178,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			Workspace: &cfg, WorkspaceScope: workspaceScope,
 			Automation:   &cfg,
 			TrustWarning: trustWarning,
-			CreateSource: createSource, DefaultType: cfg.Defaults.Type, DefaultDoD: cfg.Defaults.DOD,
+			CreateSource: createSource,
 			ValidateItem: func(item model.Item) error {
 				p, _ := cfg.SourceProject(item.Ref.Source)
 				return engine.ValidateItem(p, item)

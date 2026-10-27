@@ -222,7 +222,7 @@ milestones:
   - {key: m-2, name: Agents and automation, description: "MCP, events, hooks, actions, and claims"}
 labels: [tui, perf, blocked, deferred]   # suggestions; items may carry others
 ready: {statuses: [todo], excludeLabels: [blocked, deferred]}
-defaults: {type: task, dod: ["task ci passes on the final commit"]}   # applied by `bl new`
+defaults: {type: task, dod: ["task ci passes on the final commit"]}   # applied by `bl new` to native and Backlog.md sources
 views:
   - {name: Next, query: "is:ready", sort: next}
   - {name: Mine, query: "assignee:me is:open"}

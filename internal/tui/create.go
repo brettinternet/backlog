@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/query"
 )
@@ -307,8 +308,8 @@ func (m *Model) expandCapture(untitled bool) {
 		row, _ := m.selectedRow()
 		item.Parent = &model.Ref{ID: row.Ref.ID}
 	}
-	if item.Type == "" {
-		item.Type = m.opts.DefaultType
+	if m.opts.Workspace != nil {
+		engine.ApplyCreateDefaults(*m.opts.Workspace, m.capture.source, &item)
 	}
 	if item.Status == "" {
 		item.Status = m.opts.CreateStatus
@@ -326,9 +327,6 @@ func (m *Model) expandCapture(untitled bool) {
 				item.Status = m.opts.Statuses[0].Key
 			}
 		}
-	}
-	for _, s := range m.opts.DefaultDoD {
-		item.DoD = append(item.DoD, model.Criterion{Text: s})
 	}
 	m.capture.loadFields(item, m.isBacklogMD(m.capture.source))
 	m.capture.full = true

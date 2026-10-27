@@ -223,7 +223,7 @@ edits aren't offered.
 | `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
 | `sprint` | `current`, `next`, `none` (or empty), a cycle name, or a cycle UUID from the catalog → `cycleId`. Closed cycles are refused. |
 | Comment | Appends once; can't be undone |
-| Create | `issueCreate` with title, body, status (else the team's default state), one assignee, priority, labels, and sprint, each checked like `set` before the mutation; the result is read back. Parent, blockers, and other native fields (milestone, criteria, DoD, …) are refused, including `defaults.type` and `defaults.dod`. Undo archives the new issue. |
+| Create | `issueCreate` with title, body, status (else the team's default state), one assignee, priority, labels, and sprint, each checked like `set` before the mutation; the result is read back. Parent, blockers, and other native fields (milestone, criteria, DoD, …) are refused; `defaults.type` and `defaults.dod` are not applied. Undo archives the new issue. |
 | Archive, unarchive | `issueArchive` / `issueUnarchive`; each undoes the other. A no-op when the issue is already in the target state. Trashed issues are refused. |
 
 Archived issues accept only unarchive. A write's result replaces the issue's

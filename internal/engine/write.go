@@ -304,6 +304,23 @@ func linearCreate(item model.Item) error {
 	return nil
 }
 
+// ApplyCreateDefaults fills defaults.type and defaults.dod into a new item
+// for the sources that store them: native and Backlog.md. Linear has neither,
+// so its creates omit them, while linearCreate still refuses explicit values.
+func ApplyCreateDefaults(cfg project.Config, sourceID string, item *model.Item) {
+	p, local := cfg.SourceProject(sourceID)
+	for _, c := range p.Sources {
+		if c.ID == local && (c.Type == "native" || c.Type == "backlog-md") {
+			if item.Type == "" {
+				item.Type = p.Defaults.Type
+			}
+			for _, d := range p.Defaults.DOD {
+				item.DoD = append(item.DoD, model.Criterion{Text: d})
+			}
+		}
+	}
+}
+
 // ValidateItem also validates whole-file editor saves and creation templates.
 func ValidateItem(cfg project.Config, item model.Item) error {
 	allowed := []string{}

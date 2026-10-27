@@ -184,7 +184,8 @@ echo 'Long description' | bl new 'Write docs' --body -
 - `--status` takes a status key. `--status draft` creates an item that is never
   ready. An unknown key exits 5 and lists the allowed keys. The default is the
   first todo-category status, else the first status.
-- `defaults.type` and `defaults.dod` from config apply.
+- `defaults.type` and `defaults.dod` from config apply to native and Backlog.md
+  sources; Linear has no type or DoD, so its creates omit them.
 - `--source` is required when there are several sources.
 - `--sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
   like `bl set sprint=`. Only Linear sources create with a sprint.
