@@ -165,7 +165,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 	}
 	commands := []*urfave.Command{}
 	// Criteria are prose, so a comma must not split one --ac into several.
-	commands = append(commands, &urfave.Command{Name: "new", Usage: "Create an item", ArgsUsage: "TITLE [TOKENS...]", Description: newHelp, DisableSliceFlagSeparator: true, Flags: append([]urfave.Flag{
+	commands = append(commands, &urfave.Command{Name: "new", Aliases: []string{"create"}, Usage: "Create an item", ArgsUsage: "TITLE [TOKENS...]", Description: newHelp, DisableSliceFlagSeparator: true, Flags: append([]urfave.Flag{
 		&urfave.StringFlag{Name: "status", Aliases: []string{"s"}, Usage: "Create in status `KEY`, such as draft"},
 		&urfave.StringFlag{Name: "body", Aliases: []string{"b"}, Usage: "Set the description to `TEXT`; - reads stdin"},
 		&urfave.StringSliceFlag{Name: "ac", Usage: "Add the acceptance criterion `TEXT`"},

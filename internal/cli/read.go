@@ -59,7 +59,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 		return &urfave.IntFlag{Name: "n", Value: n, HideDefault: n == 0, Usage: "Print at most `N` items; 0 prints all"}
 	}
 	return []*urfave.Command{
-		{Name: "ls", Usage: "List items", ArgsUsage: "[QUERY]", Description: lsHelp, Flags: []urfave.Flag{
+		{Name: "ls", Aliases: []string{"list"}, Usage: "List items", ArgsUsage: "[QUERY]", Description: lsHelp, Flags: []urfave.Flag{
 			&urfave.StringFlag{Name: "view", Usage: "Apply the saved view `NAME`"},
 			&urfave.StringFlag{Name: "sort", Usage: "Sort by comma-separated `KEYS`; prefix - to reverse"},
 			&urfave.StringFlag{Name: "group", Usage: "Group by `FIELD`"},

@@ -42,6 +42,8 @@ A missing ID exits 3.
 
 ### `bl ls [QUERY] [--view V] [--sort S] [--group G] [-n N] [--workspace NAME]`
 
+Alias: `bl list`.
+
 QUERY uses the [query language](query.md); multiple arguments are joined with
 spaces. Put `--` before a negated first term: `bl ls -- -label:wontfix`.
 
@@ -165,6 +167,8 @@ keeps `data.outcomes`. `--if-version` with several IDs exits 2 before writing.
 Text output prints each written item, then `ID: message` for each failure.
 
 ### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--source SOURCE] [--sprint S]`
+
+Alias: `bl create`.
 
 ```sh
 bl new 'Fix login redirect !h @me #bug ^BL-1 <BL-2 ~m-1 :bug' --ac 'Redirect keeps the path'
