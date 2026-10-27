@@ -2,11 +2,15 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
 // Apply checks a fresh composite version immediately before a single mutation.
@@ -24,6 +28,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	var payload any
 	method, endpoint := http.MethodPatch, s.issuePath(m.Ref.ID)
 	projectWrite := false
+	entry := ""
 	switch m.Op {
 	case model.AppendComment:
 		text := m.Comment.Body
@@ -34,8 +39,35 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			return model.Item{}, source.Refuse("rejected", "comment body required")
 		}
 		method, endpoint, payload = http.MethodPost, endpoint+"/comments", map[string]any{"body": text}
+	case model.ReplaceSection:
+		if m.Section != "Description" {
+			return model.Item{}, source.Refuse("rejected", "GitHub section unavailable; only the description is editable")
+		}
+		payload = map[string]any{"body": m.Text}
+	case model.Add, model.Remove:
+		v, ok := m.Value.(string)
+		if !ok || strings.TrimSpace(v) == "" || m.Field != "labels" && m.Field != "assignees" {
+			return model.Item{}, source.Refuse("rejected", "one label or assignee required")
+		}
+		// GitHub's add and remove endpoints leave entries added concurrently by
+		// others in place, unlike a whole-list replace.
+		entry = v
+		switch {
+		case m.Op == model.Add:
+			method, endpoint, payload = http.MethodPost, endpoint+"/"+m.Field, map[string]any{m.Field: []string{v}}
+		case m.Field == "labels":
+			method, endpoint = http.MethodDelete, endpoint+"/labels/"+url.PathEscape(v)
+		default:
+			method, endpoint, payload = http.MethodDelete, endpoint+"/assignees", map[string]any{"assignees": []string{v}}
+		}
 	case model.Set:
 		switch m.Field {
+		case "title":
+			v, ok := m.Value.(string)
+			if !ok || strings.TrimSpace(v) == "" {
+				return model.Item{}, source.Refuse("rejected", "title required")
+			}
+			payload = map[string]any{"title": v}
 		case "status":
 			v, ok := m.Value.(string)
 			if !ok {
@@ -79,6 +111,17 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !projectWrite && !s.issueWrite) {
 		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
 	}
+	if entry != "" {
+		list := current.Labels
+		if m.Field == "assignees" {
+			list = current.Assignees
+		}
+		// Names and logins are case-insensitive. Removing an absent entry would
+		// fail after dispatch, so an add or remove that changes nothing sends nothing.
+		if slices.ContainsFunc(list, func(v string) bool { return strings.EqualFold(v, entry) }) == (m.Op == model.Add) {
+			return current, nil
+		}
+	}
 	if projectWrite {
 		scope := s.o.Account.OAuth && c.HasScope("write") && s.projectWritable
 		if !s.o.Account.OAuth {
@@ -98,19 +141,27 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 				Item *struct{ ID string } `json:"projectV2Item"`
 			} `json:"updateProjectV2ItemFieldValue"`
 		}
-		if err = s.query(ctx, c, projectStatusMutation, map[string]any{"projectID": s.o.Project.ID, "itemID": itemID, "fieldID": s.o.Project.FieldID, "optionID": m.Value}, &result); err != nil {
-			return model.Item{}, err
-		}
-		if result.Update == nil || result.Update.Item == nil || result.Update.Item.ID != itemID {
-			return model.Item{}, source.Refuse("unavailable", "project write outcome unknown; refresh before further edits")
+		err = s.query(ctx, c, projectStatusMutation, map[string]any{"projectID": s.o.Project.ID, "itemID": itemID, "fieldID": s.o.Project.FieldID, "optionID": m.Value}, &result)
+		if err == nil && (result.Update == nil || result.Update.Item == nil || result.Update.Item.ID != itemID) {
+			err = errors.New("project item missing from mutation result")
 		}
 	} else {
-		if _, err = s.request(ctx, c, method, endpoint, payload); err != nil {
+		_, err = s.request(ctx, c, method, endpoint, payload)
+	}
+	if err != nil {
+		// Only a local scheduler refusal proves the mutation was never sent.
+		var limited remote.ScheduleDiagnostic
+		if errors.As(err, &limited) {
 			return model.Item{}, err
 		}
+		return model.Item{}, source.Refuse("unknown-outcome", "GitHub write unconfirmed; refresh before further edits")
 	}
 	// Read-back failures are not a reason to replay an already dispatched write.
-	return s.read(ctx, c, m.Ref.ID)
+	item, err := s.read(ctx, c, m.Ref.ID)
+	if err != nil {
+		return model.Item{}, source.Refuse("unknown-outcome", "GitHub write sent but refresh failed; refresh before further edits")
+	}
+	return item, nil
 }
 func stringsValue(value any) ([]string, bool) {
 	switch values := value.(type) {

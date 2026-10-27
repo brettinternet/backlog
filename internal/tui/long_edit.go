@@ -59,7 +59,7 @@ func (m *Model) beginLongEdit(section string) tea.Cmd {
 // beginNotes opens Notes with their current text, or an empty note where the
 // source can only append.
 func (m *Model) beginNotes() tea.Cmd {
-	if row, ok := m.selectedRow(); ok && m.capability(row.Ref, model.ReplaceSection) == "" {
+	if row, ok := m.selectedRow(); ok && m.capability(row.Ref, model.ReplaceSection, model.AppendNote) == "" {
 		return m.beginLongEdit("Notes")
 	}
 	return m.beginTextAppend(model.AppendNote)

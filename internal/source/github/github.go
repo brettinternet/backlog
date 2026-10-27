@@ -93,7 +93,7 @@ func (s *Source) endpoint() string {
 	return "https://" + s.o.Host + "/api/graphql"
 }
 func (s *Source) Info() source.Info {
-	return source.Info{ID: s.o.ID, Kind: "github", Display: s.o.Repo, Capabilities: model.Capabilities{model.Set: true, model.AppendComment: true}}
+	return source.Info{ID: s.o.ID, Kind: "github", Display: s.o.Repo, Capabilities: model.Capabilities{model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
 	var body *bytes.Reader

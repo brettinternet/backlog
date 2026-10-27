@@ -118,13 +118,18 @@ func TestLiveRoundTrip(t *testing.T) {
 		}
 	}
 	await(func(i model.Item) bool { return i.Category == model.Todo })
-	apply := func(field string, value any) {
+	change := func(m model.Mutation) {
 		t.Helper()
 		var err error
-		item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: field, Value: value})
+		m.Ref, m.ExpectedVersion = item.Ref, item.Version
+		item, err = s.Apply(ctx, m)
 		if err != nil {
-			t.Fatalf("set %s: %v", field, err)
+			t.Fatalf("%s %s%s: %v", m.Op, m.Field, m.Section, err)
 		}
+	}
+	apply := func(field string, value any) {
+		t.Helper()
+		change(model.Mutation{Op: model.Set, Field: field, Value: value})
 	}
 	apply("status", active)
 	await(func(i model.Item) bool { return i.Category == model.Active })
@@ -132,6 +137,18 @@ func TestLiveRoundTrip(t *testing.T) {
 	await(func(i model.Item) bool { return len(i.Labels) == 1 && i.Labels[0] == label })
 	apply("assignees", []string{user})
 	await(func(i model.Item) bool { return len(i.Assignees) == 1 && i.Assignees[0] == user })
+	change(model.Mutation{Op: model.Remove, Field: "labels", Value: label})
+	await(func(i model.Item) bool { return len(i.Labels) == 0 })
+	change(model.Mutation{Op: model.Add, Field: "labels", Value: label})
+	await(func(i model.Item) bool { return len(i.Labels) == 1 && i.Labels[0] == label })
+	change(model.Mutation{Op: model.Remove, Field: "assignees", Value: user})
+	await(func(i model.Item) bool { return len(i.Assignees) == 0 })
+	change(model.Mutation{Op: model.Add, Field: "assignees", Value: user})
+	await(func(i model.Item) bool { return len(i.Assignees) == 1 && i.Assignees[0] == user })
+	apply("title", "bl-provider-test BL-119 renamed")
+	await(func(i model.Item) bool { return i.Title == "bl-provider-test BL-119 renamed" })
+	change(model.Mutation{Op: model.ReplaceSection, Section: "Description", Text: "Synthetic provider roundtrip; edited body."})
+	await(func(i model.Item) bool { return i.Description == "Synthetic provider roundtrip; edited body." })
 	item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.AppendComment, Text: "bl-provider-test BL-38 comment"})
 	if err != nil {
 		t.Fatal(err)

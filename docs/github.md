@@ -190,23 +190,30 @@ are the iteration's node ID.
 
 ```sh
 bl set issues:123 status=option-active-id --if-version VERSION
+bl set issues:123 title='Clearer title'
+bl edit issues:123 --section description --text 'New body'
 bl set issues:123 labels=bug
-bl set issues:123 assignees=alice
+bl set issues:123 labels+=docs
+bl set issues:123 assignees-=alice
 bl comment issues:123 'Progress update'
 ```
 
-One field per command. Labels and assignees replace the whole list. Comments
-append and can't be undone. Creating issues, editing title or body, `+=`/`-=`,
-batches, and archiving aren't available.
+One field and one value per command. `labels=` and `assignees=` replace the
+whole list. `+=` and `-=` use GitHub's add and remove endpoints, so a label or
+assignee someone else added in the meantime stays; adding a present entry or
+removing an absent one sends nothing. Description is the only editable section.
+Comments append and can't be undone. Creating issues, batches, and archiving
+aren't available.
 
 Before each write, `bl` refreshes credentials, checks the user and permission,
 and compares a fresh composite version of the issue, its relationships, and its
 project item. Missing or stale versions fail with `conflict`.
 
 GitHub has no conditional write here, so an edit between that check and the
-mutation can still race. Each mutation is sent once. If the network or reread
-fails afterward, the outcome is unknown: refresh and look before editing again,
-especially before commenting. Reads after writes are eventually consistent.
+mutation can still race. Each mutation is sent once. If the request or the
+reread after it fails, the write reports `unknown-outcome`: refresh and look
+before editing again, especially before commenting. Reads after writes are
+eventually consistent.
 
 Claims use Worklease's `github` key from `HOST/OWNER/REPO` and the issue number,
 so they don't depend on aliases, project, status, title, or credential. Node
@@ -221,7 +228,8 @@ task cli:test PKG='./internal/source/github ./internal/source/remote'
 
 `FuzzProviderJSON` fuzzes provider JSON. The live test needs an authorized test
 repository and a new disposable project titled `bl-provider-test-…`. It creates
-one issue, comment, and project entry, and deletes them during cleanup:
+one issue, comment, and project entry, exercises every write above, and deletes
+them during cleanup:
 
 ```sh
 gh project create --owner OWNER --title bl-provider-test-roundtrip --format json

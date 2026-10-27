@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,8 +25,9 @@ import (
 
 type fixture struct {
 	mu                                              sync.Mutex
-	option, state                                   string
+	option, state, title, body                      string
 	labels, assignees                               []string
+	failWrites                                      bool
 	writes, lists, hints, notModified, projectPages int
 	limited, readOnly                               bool
 	oauthApp, issuePermission, projectPermission    string
@@ -45,7 +47,7 @@ func newFixture(t *testing.T) (*Source, *fixture) {
 	t.Helper()
 	testkit.Isolate(t)
 	t.Setenv("BL_GITHUB_TEST_TOKEN", "fake-secret")
-	f := &fixture{option: "todo", state: "OPEN"}
+	f := &fixture{option: "todo", state: "OPEN", title: "Issue", body: "Body"}
 	server := httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(server.Close)
 	u, _ := url.Parse(server.URL)
@@ -78,7 +80,7 @@ func (f *fixture) row(n int) map[string]any {
 	for _, v := range f.assignees {
 		assignees = append(assignees, map[string]string{"login": v})
 	}
-	return map[string]any{"id": fmt.Sprint("I_", n), "number": n, "title": "Issue", "body": "Body", "state": f.state, "stateReason": "COMPLETED", "updatedAt": "2026-01-01T00:00:00Z", "repository": map[string]string{"nameWithOwner": "owner/repo"}, "labels": nodes(labels), "assignees": nodes(assignees), "blockedBy": nodes([]any{map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}), "subIssues": nodes([]any{}), "parent": map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}
+	return map[string]any{"id": fmt.Sprint("I_", n), "number": n, "title": f.title, "body": f.body, "state": f.state, "stateReason": "COMPLETED", "updatedAt": "2026-01-01T00:00:00Z", "repository": map[string]string{"nameWithOwner": "owner/repo"}, "labels": nodes(labels), "assignees": nodes(assignees), "blockedBy": nodes([]any{map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}), "subIssues": nodes([]any{}), "parent": map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}
 }
 func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
@@ -118,8 +120,39 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasSuffix(r.URL.Path, "graphql") {
 		f.writes++
+		if f.failWrites {
+			w.WriteHeader(502)
+			return
+		}
 		var payload map[string]json.RawMessage
 		_ = json.NewDecoder(r.Body).Decode(&payload)
+		// Add and remove endpoints change one entry and keep the rest.
+		if _, entry, ok := strings.Cut(r.URL.Path, "/issues/1/"); ok && (strings.HasPrefix(entry, "labels") || entry == "assignees") {
+			field := &f.assignees
+			var values []string
+			if strings.HasPrefix(entry, "labels") {
+				field = &f.labels
+				_ = json.Unmarshal(payload["labels"], &values)
+				if name, found := strings.CutPrefix(entry, "labels/"); found {
+					values = []string{name}
+				}
+			} else {
+				_ = json.Unmarshal(payload["assignees"], &values)
+			}
+			for _, v := range values {
+				*field = slices.DeleteFunc(*field, func(e string) bool { return e == v })
+				if r.Method == http.MethodPost {
+					*field = append(*field, v)
+				}
+			}
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		for key, target := range map[string]*string{"title": &f.title, "body": &f.body} {
+			if v := payload[key]; v != nil {
+				_ = json.Unmarshal(v, target)
+			}
+		}
 		if v := payload["state"]; v != nil {
 			var state string
 			_ = json.Unmarshal(v, &state)
@@ -293,7 +326,7 @@ func TestVersionedCapabilityGatedWrites(t *testing.T) {
 	for _, change := range []struct {
 		field string
 		value any
-	}{{"labels", []string{"bug"}}, {"assignees", []string{"alice"}}, {"status", "todo"}, {"status", "closed"}} {
+	}{{"labels", []string{"bug"}}, {"assignees", []string{"alice"}}, {"title", "Renamed"}, {"status", "todo"}, {"status", "closed"}} {
 		current, err = apply(change.field, change.value, current.Version)
 		if err != nil {
 			t.Fatalf("%s: %v", change.field, err)
@@ -303,10 +336,10 @@ func TestVersionedCapabilityGatedWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Category != model.Done || len(current.Labels) != 1 || len(current.Assignees) != 1 {
+	if current.Category != model.Done || len(current.Labels) != 1 || len(current.Assignees) != 1 || current.Title != "Renamed" {
 		t.Fatalf("write read-back: %+v", current)
 	}
-	if _, err = apply("title", "not supported", current.Version); !reason(err, "rejected") {
+	if _, err = apply("milestone", "not supported", current.Version); !reason(err, "rejected") {
 		t.Fatal(err)
 	}
 	s.o.Project.AllowWrites = false
@@ -315,8 +348,59 @@ func TestVersionedCapabilityGatedWrites(t *testing.T) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.writes != 5 {
+	if f.writes != 6 {
 		t.Fatalf("writes=%d", f.writes)
+	}
+}
+
+// Add and remove must change one entry without replacing the list, so an entry
+// another writer added survives; a write whose result is lost is never resent.
+func TestEntryEditsAndUnknownOutcome(t *testing.T) {
+	s, f := newFixture(t)
+	ctx := context.Background()
+	f.labels = []string{"bug"}
+	current, err := s.Read(ctx, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := func(m model.Mutation) {
+		t.Helper()
+		m.Ref, m.ExpectedVersion = current.Ref, current.Version
+		if current, err = s.Apply(ctx, m); err != nil {
+			t.Fatalf("%s %s: %v", m.Op, m.Field, err)
+		}
+	}
+	edit(model.Mutation{Op: model.Add, Field: "labels", Value: "docs"})
+	f.mu.Lock()
+	f.labels = append(f.labels, "concurrent")
+	f.mu.Unlock()
+	if current, err = s.Read(ctx, "1"); err != nil {
+		t.Fatal(err)
+	}
+	edit(model.Mutation{Op: model.Remove, Field: "labels", Value: "bug"})
+	edit(model.Mutation{Op: model.Remove, Field: "labels", Value: "absent"})
+	edit(model.Mutation{Op: model.Add, Field: "assignees", Value: "alice"})
+	edit(model.Mutation{Op: model.Add, Field: "assignees", Value: "bob"})
+	edit(model.Mutation{Op: model.Remove, Field: "assignees", Value: "alice"})
+	edit(model.Mutation{Op: model.ReplaceSection, Section: "Description", Text: "New body"})
+	if !slices.Equal(current.Labels, []string{"docs", "concurrent"}) || !slices.Equal(current.Assignees, []string{"bob"}) || current.Description != "New body" {
+		t.Fatalf("entry read-back: labels=%v assignees=%v body=%q", current.Labels, current.Assignees, current.Description)
+	}
+	f.mu.Lock()
+	writes := f.writes
+	f.failWrites = true
+	f.mu.Unlock()
+	if writes != 6 {
+		t.Fatalf("no-op remove dispatched: writes=%d", writes)
+	}
+	_, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Set, Field: "title", Value: "Lost"})
+	if !reason(err, "unknown-outcome") {
+		t.Fatalf("lost write: %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.writes != writes+1 {
+		t.Fatalf("lost write resent: writes=%d", f.writes-writes)
 	}
 }
 
