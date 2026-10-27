@@ -95,11 +95,16 @@ type Watcher interface {
 	Watch(context.Context, func()) error
 }
 
-// Error carries a stable machine-readable refusal reason.
-type Error struct{ Reason, Message string }
+// Error carries a stable machine-readable refusal reason. Created names the
+// item a create left behind when a later step failed: callers must report it
+// and never repeat the create.
+type Error struct {
+	Reason, Message string
+	Created         *model.Ref
+}
 
 func (e *Error) Error() string            { return e.Reason + ": " + e.Message }
-func Refuse(reason, message string) error { return &Error{reason, message} }
+func Refuse(reason, message string) error { return &Error{Reason: reason, Message: message} }
 
 type Registry map[string]Source
 

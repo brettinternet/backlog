@@ -367,6 +367,10 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 		return failed[any](reason(err), err.Error())
 	}
 	created, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Create, Ref: item.Ref, Item: &item})
+	if ref := engine.ErrorCreated(err); ref != "" {
+		b, _ := json.Marshal(map[string]string{"reason": reason(err), "message": engine.ErrorMessage(err), "created": ref})
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+	}
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}

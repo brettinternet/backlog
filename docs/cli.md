@@ -189,6 +189,9 @@ echo 'Long description' | bl new 'Write docs' --body -
 - `--sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
   like `bl set sprint=`. Only Linear sources create with a sprint.
 - `--if-version` on create always conflicts.
+- A create that leaves an item behind but fails a later step, such as a Linear
+  blocker relation, exits 6 with `unknown-outcome` and names the item in the
+  message and `error.details.created`. Check it before creating again.
 
 ### `bl set ID... FIELD=V FIELD+=V FIELD-=V [--yes]`
 

@@ -175,6 +175,11 @@ func (s *Source) safeError(err error) error {
 	}
 	var refusal *source.Error
 	if errors.As(err, &refusal) {
+		if refusal.Created != nil {
+			// The created ID is the one provider detail callers need.
+			created := model.Ref{Source: s.secrets.Redact(refusal.Created.Source), ID: s.secrets.Redact(refusal.Created.ID)}
+			return &source.Error{Reason: "unknown-outcome", Message: "created " + created.ID + ", but the rest of the write is unconfirmed; check it before retrying", Created: &created}
+		}
 		switch refusal.Reason {
 		case "conflict", "not-found", "unavailable", "rejected", "unknown-outcome":
 			return source.Refuse(refusal.Reason, "remote source refused operation")

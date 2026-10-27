@@ -69,6 +69,8 @@ The `bl://instructions` resource serves the `bl instructions` overview.
   item that is never ready.
 - Comment `author` defaults to `me.default`.
 - Errors are tool results with `isError: true` and JSON `reason` and `message`.
+  A `create` that leaves an item behind but fails a later step also returns
+  `created`, the item's `source:ID`.
 
 ## Results
 

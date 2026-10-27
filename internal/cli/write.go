@@ -37,7 +37,11 @@ func writeError(err error) *Error {
 	if errors.As(err, &e) {
 		return e
 	}
-	return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+	e = &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+	if created := engine.ErrorCreated(err); created != "" {
+		e.Details = map[string]any{"created": created}
+	}
+	return e
 }
 func writeUsage(message string) error { return &Error{Reason: "usage", Message: message} }
 

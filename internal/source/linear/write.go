@@ -3,6 +3,7 @@ package linear
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
@@ -71,6 +72,7 @@ const commentMutation = `mutation($issueId:String!,$body:String!){commentCreate(
 const archiveMutation = `mutation($id:String!){issueArchive(id:$id){success entity{id}}}`
 const unarchiveMutation = `mutation($id:String!){issueUnarchive(id:$id){success entity{id}}}`
 const createMutation = `mutation($input:IssueCreateInput!){issueCreate(input:$input){success issue{id identifier}}}`
+const relationMutation = `mutation($input:IssueRelationCreateInput!){issueRelationCreate(input:$input){success issueRelation{id}}}`
 
 func stringsValue(value any) ([]string, bool) {
 	switch v := value.(type) {
@@ -337,13 +339,60 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	return s.read(ctx, c, m.Ref.ID)
 }
 
-// create has no version to preflight. Catalog checks run before the single
-// non-retried issueCreate; any failure after dispatch has an unknown outcome.
+const entityQuery = `query($id:String!){issue(id:$id){` + entityFields + `}}`
+
+// issueID resolves a parent or blocker ref to the UUID of the Linear issue it
+// names, in this source or under its out-of-scope alias. Other sources refuse.
+func (s *Source) issueID(ctx context.Context, c remote.Credential, ref model.Ref) (string, error) {
+	if ref.Source == "" {
+		ref.Source = s.o.ID
+	}
+	if ref.Source != s.o.ID && !strings.HasPrefix(ref.Source, "linear/"+s.o.Organization+"/") || ref.ID == "" || len(ref.ID) > 128 || strings.ContainsAny(ref.ID, "\r\n\x00") {
+		return "", source.Refuse("rejected", "Linear parent and blockers must be Linear issues")
+	}
+	var r struct{ Issue *entity }
+	if err := s.query(ctx, c, entityQuery, map[string]any{"id": ref.ID}, &r); err != nil {
+		return "", err
+	}
+	if r.Issue == nil {
+		return "", source.Refuse("not-found", "Linear parent or blocker unavailable")
+	}
+	resolved, err := s.ref(r.Issue)
+	if err != nil {
+		return "", err
+	}
+	if resolved != ref {
+		return "", source.Refuse("rejected", "Linear parent or blocker outside its source")
+	}
+	return r.Issue.ID, nil
+}
+
+// create has no version to preflight. Catalog and ref checks run before the
+// single non-retried issueCreate; any failure after dispatch has an unknown
+// outcome. Blocker relations need one more non-retried mutation each, so a
+// failure after the issue exists reports it as Created.
 func (s *Source) create(ctx context.Context, c remote.Credential, item *model.Item) (model.Item, error) {
-	if item == nil || strings.TrimSpace(item.Title) == "" || item.Parent != nil || len(item.BlockedBy) > 0 {
-		return model.Item{}, source.Refuse("rejected", "Linear create requires a title and supports no parent or blockers")
+	if item == nil || strings.TrimSpace(item.Title) == "" {
+		return model.Item{}, source.Refuse("rejected", "Linear create requires a title")
 	}
 	input := map[string]any{"teamId": s.o.Team, "title": item.Title}
+	if item.Parent != nil {
+		id, err := s.issueID(ctx, c, *item.Parent)
+		if err != nil {
+			return model.Item{}, err
+		}
+		input["parentId"] = id
+	}
+	var blockers []string
+	for _, ref := range item.BlockedBy {
+		id, err := s.issueID(ctx, c, ref)
+		if err != nil {
+			return model.Item{}, err
+		}
+		if !slices.Contains(blockers, id) {
+			blockers = append(blockers, id)
+		}
+	}
 	if item.Description != "" {
 		input["description"] = item.Description
 	}
@@ -394,9 +443,23 @@ func (s *Source) create(ctx context.Context, c remote.Credential, item *model.It
 	if r.IssueCreate == nil || !r.IssueCreate.Success || r.IssueCreate.Issue == nil || !uuid(r.IssueCreate.Issue.ID) || r.IssueCreate.Issue.Identifier == "" {
 		return model.Item{}, source.Refuse("unknown-outcome", "Linear create unconfirmed; refresh before creating again")
 	}
+	partial := &source.Error{Reason: "unknown-outcome", Message: "Linear issue " + r.IssueCreate.Issue.Identifier + " created but blocker relations unconfirmed", Created: &model.Ref{Source: s.o.ID, ID: r.IssueCreate.Issue.Identifier}}
+	for _, blocker := range blockers {
+		var rel struct {
+			IssueRelationCreate *struct {
+				Success       bool
+				IssueRelation *struct{ ID string }
+			}
+		}
+		err := s.query(ctx, c, relationMutation, map[string]any{"input": map[string]any{"type": "blocks", "issueId": blocker, "relatedIssueId": r.IssueCreate.Issue.ID}}, &rel)
+		if err != nil || rel.IssueRelationCreate == nil || !rel.IssueRelationCreate.Success || rel.IssueRelationCreate.IssueRelation == nil || !uuid(rel.IssueRelationCreate.IssueRelation.ID) {
+			return model.Item{}, partial
+		}
+	}
 	created, err := s.read(ctx, c, r.IssueCreate.Issue.Identifier)
 	if err != nil {
-		return model.Item{}, source.Refuse("unknown-outcome", "Linear issue "+r.IssueCreate.Issue.Identifier+" created but refresh failed")
+		partial.Message = "Linear issue " + r.IssueCreate.Issue.Identifier + " created but refresh failed"
+		return model.Item{}, partial
 	}
 	return created, nil
 }
