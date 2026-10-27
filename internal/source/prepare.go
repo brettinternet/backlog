@@ -42,6 +42,11 @@ func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 		result.Inverse = model.Mutation{}
 		return result, nil
 	}
+	if m.Op == model.Delete {
+		// A deleted item can't be recreated under its ID.
+		result.Inverse = model.Mutation{}
+		return result, nil
+	}
 	if m.Op == model.Archive || m.Op == model.Unarchive {
 		// Like native files, the inverse restores the observed archive state.
 		result.Inverse.Op = model.Unarchive

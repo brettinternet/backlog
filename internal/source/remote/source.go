@@ -127,6 +127,10 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if err != nil {
 		return model.Item{}, s.safeError(err)
 	}
+	if m.Op == model.Delete && item.Version == "" {
+		_, _ = s.cache.RemoteObserve(ctx, m.Ref, nil)
+		return model.Item{Ref: m.Ref}, nil
+	}
 	// An unarchive bumps no timestamp a change window could see.
 	return s.observe(ctx, item)
 }

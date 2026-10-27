@@ -70,3 +70,22 @@ with `conflict`: the composite version kept moving after a write's value
 appeared. The test now waits for two equal consecutive reads before the next
 write. Afterward the project was empty and deleted, and GraphQL lookups of both
 issues and the project returned `NOT_FOUND`.
+
+## BL-118 live verification
+
+Same target and helper. Disposable project `bl-provider-test-BL118-20261027`:
+number **10**, ID `PVT_kwHOAT55tM4BpBf0`, status field
+`PVTSSF_lAHOAT55tM4BpBf0zhne70g`, options as above, label `bug`.
+
+Result: **PASS**, 104.34 seconds. Adds two creates through the adapter. Child
+issue #20 `I_kwDOVS6Ow88AAAABaaE60Q` was created with label, assignee, parent
+and blocker #19, and project status active. The project status moved its
+version, so undo closed it as not planned. Plain issue #21
+`I_kwDOVS6Ow88AAAABaaFHXA` was deleted by undo through `deleteIssue`. Cleanup
+deleted #19, #20 and the project entry.
+
+Earlier runs, cleaned up by the test: #12 and #15 failed because the create's
+read-back lagged the project status (the test now polls), and #16 hit the
+BL-119 version drift in `assignees+=`. #17 and #18 passed before the plain
+delete step was added. Afterward the project was empty and deleted, and GraphQL
+lookups of all eight issues and the project returned `NOT_FOUND`.

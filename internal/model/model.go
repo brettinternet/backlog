@@ -121,6 +121,10 @@ const (
 	RemoveCriterion  Operation = "remove-criterion"
 	SetCriterion     Operation = "set-criterion"
 	Restore          Operation = "restore"
+	// Delete undoes a create on a source without archive. Only engine undo
+	// sends it. Apply returns an item without a version when it deleted the
+	// item, or the item it kept instead.
+	Delete Operation = "delete"
 )
 
 // Mutation targets a field or section. Index is one-based. Apply binds an

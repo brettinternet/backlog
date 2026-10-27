@@ -25,7 +25,7 @@ import (
 
 type fixture struct {
 	mu                                              sync.Mutex
-	option, state, title, body                      string
+	option, state, stateReason, title, body         string
 	labels, assignees                               []string
 	failWrites                                      bool
 	writes, lists, hints, notModified, projectPages int
@@ -41,13 +41,19 @@ type fixture struct {
 	iterations, completedIterations          []map[string]any
 	itemIterationID                          string
 	lastFieldsQuery, lastSprintFieldName     string
+	// mutations records GraphQL follow-up and delete mutations by name with
+	// their variables; failMutation fails the named one after dispatch.
+	mutations             []string
+	mutationVars          []map[string]any
+	failMutation, created string
+	canDelete             bool
 }
 
 func newFixture(t *testing.T) (*Source, *fixture) {
 	t.Helper()
 	testkit.Isolate(t)
 	t.Setenv("BL_GITHUB_TEST_TOKEN", "fake-secret")
-	f := &fixture{option: "todo", state: "OPEN", title: "Issue", body: "Body"}
+	f := &fixture{option: "todo", state: "OPEN", stateReason: "COMPLETED", title: "Issue", body: "Body"}
 	server := httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(server.Close)
 	u, _ := url.Parse(server.URL)
@@ -80,7 +86,7 @@ func (f *fixture) row(n int) map[string]any {
 	for _, v := range f.assignees {
 		assignees = append(assignees, map[string]string{"login": v})
 	}
-	return map[string]any{"id": fmt.Sprint("I_", n), "number": n, "title": f.title, "body": f.body, "state": f.state, "stateReason": "COMPLETED", "updatedAt": "2026-01-01T00:00:00Z", "repository": map[string]string{"nameWithOwner": "owner/repo"}, "labels": nodes(labels), "assignees": nodes(assignees), "blockedBy": nodes([]any{map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}), "subIssues": nodes([]any{}), "parent": map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}
+	return map[string]any{"id": fmt.Sprint("I_", n), "number": n, "title": f.title, "body": f.body, "state": f.state, "stateReason": f.stateReason, "updatedAt": "2026-01-01T00:00:00Z", "repository": map[string]string{"nameWithOwner": "owner/repo"}, "labels": nodes(labels), "assignees": nodes(assignees), "blockedBy": nodes([]any{map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}), "subIssues": nodes([]any{}), "parent": map[string]any{"id": "I_2", "number": 2, "repository": map[string]string{"nameWithOwner": "owner/repo"}}}
 }
 func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
@@ -164,6 +170,17 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		if v := payload["assignees"]; v != nil {
 			_ = json.Unmarshal(v, &f.assignees)
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/repos/owner/repo/issues" {
+			raw, _ := json.Marshal(payload)
+			f.created = string(raw)
+			fmt.Fprint(w, `{"number":3,"node_id":"I_3"}`)
+			return
+		}
+		if v := payload["state_reason"]; v != nil {
+			var reason string
+			_ = json.Unmarshal(v, &reason)
+			f.stateReason = strings.ToUpper(reason)
+		}
 		fmt.Fprint(w, `{}`)
 		return
 	}
@@ -174,7 +191,28 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	q, v := request.Query, request.Variables
 	emit := func(data any) { _ = json.NewEncoder(w).Encode(map[string]any{"data": data}) }
+	for _, name := range []string{"addSubIssue", "addBlockedBy", "addProjectV2ItemById", "updateProjectV2ItemFieldValue", "deleteIssue"} {
+		if strings.Contains(q, name+"(") {
+			f.mutations = append(f.mutations, name)
+			f.mutationVars = append(f.mutationVars, v)
+			if name == f.failMutation {
+				w.WriteHeader(502)
+				return
+			}
+		}
+	}
 	switch {
+	case strings.Contains(q, "addSubIssue"):
+		emit(map[string]any{"addSubIssue": map[string]any{"issue": map[string]any{"id": v["parent"]}, "subIssue": map[string]any{"id": v["child"]}}})
+	case strings.Contains(q, "addBlockedBy"):
+		emit(map[string]any{"addBlockedBy": map[string]any{"issue": map[string]any{"id": v["id"]}, "blockingIssue": map[string]any{"id": v["blocker"]}}})
+	case strings.Contains(q, "addProjectV2ItemById"):
+		emit(map[string]any{"addProjectV2ItemById": map[string]any{"item": map[string]any{"id": "PVTI_3"}}})
+	case strings.Contains(q, "deleteIssue"):
+		emit(map[string]any{"deleteIssue": map[string]any{"repository": map[string]any{"id": "R_test"}}})
+	case strings.Contains(q, "viewerCanDelete"):
+		n := int(v["number"].(float64))
+		emit(map[string]any{"repository": map[string]any{"id": "R_test", "issue": map[string]any{"id": fmt.Sprint("I_", n), "number": n, "viewerCanDelete": f.canDelete}}})
 	case strings.Contains(q, "viewer {login}"):
 		emit(map[string]any{"viewer": map[string]string{"login": "alice"}})
 	case strings.Contains(q, "viewerPermission"):
@@ -186,7 +224,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(q, "updateProjectV2ItemFieldValue"):
 		f.writes++
 		f.option = v["optionID"].(string)
-		emit(map[string]any{"updateProjectV2ItemFieldValue": map[string]any{"projectV2Item": map[string]string{"id": "PVTI_1"}}})
+		emit(map[string]any{"updateProjectV2ItemFieldValue": map[string]any{"projectV2Item": map[string]any{"id": v["itemID"]}}})
 	case strings.Contains(q, "fields(first:"):
 		f.lastFieldsQuery = q
 		owner := "alice"
@@ -328,6 +366,10 @@ func TestVersionedCapabilityGatedWrites(t *testing.T) {
 	if _, err = apply("status", "closed", current.Version); !reason(err, "rejected") {
 		t.Fatalf("permission: %v", err)
 	}
+	// The TUI offers create from capabilities, so a read-only repository hides it.
+	if s.Info().Capabilities.Allows(model.Create) {
+		t.Fatal("read-only repository still offers create")
+	}
 	f.mu.Lock()
 	f.readOnly = false
 	if f.writes != 0 {
@@ -412,6 +454,87 @@ func TestEntryEditsAndUnknownOutcome(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.writes != writes+1 {
 		t.Fatalf("lost write resent: writes=%d", f.writes-writes)
+	}
+}
+
+// A create sends one issue POST, then each follow-up once. A failure after
+// dispatch names the created issue and is never retried (writes count the
+// issue POST and the project field update); undo deletes only an
+// unchanged issue the viewer can delete and otherwise closes it as not planned.
+func TestCreateFollowUpsAndUndo(t *testing.T) {
+	s, f := newFixture(t)
+	ctx := context.Background()
+	two := model.Ref{Source: "gh", ID: "2"}
+	template := func() *model.Item {
+		return &model.Item{Title: "New", Description: "Text", Labels: []string{"bug"}, Assignees: []string{"alice"}, Status: "active", Parent: &two, BlockedBy: []model.Ref{two}}
+	}
+	created, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: template()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	if created.Ref.ID != "3" || created.Version == "" || f.created != `{"assignees":["alice"],"body":"Text","labels":["bug"],"title":"New"}` || f.writes != 2 {
+		t.Fatalf("create: ref=%v payload=%s writes=%d", created.Ref, f.created, f.writes)
+	}
+	if !slices.Equal(f.mutations, []string{"addSubIssue", "addBlockedBy", "addProjectV2ItemById", "updateProjectV2ItemFieldValue"}) || f.mutationVars[0]["parent"] != "I_2" || f.mutationVars[1]["blocker"] != "I_2" || f.mutationVars[2]["contentID"] != "I_3" || f.mutationVars[3]["optionID"] != "active" || f.mutationVars[3]["itemID"] != "PVTI_3" {
+		t.Fatalf("follow-ups: %v %v", f.mutations, f.mutationVars)
+	}
+	f.mutations, f.writes, f.failMutation = nil, 0, "addBlockedBy"
+	f.mu.Unlock()
+	_, err = s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: template()})
+	var refusal *source.Error
+	if !errors.As(err, &refusal) || refusal.Reason != "unknown-outcome" || refusal.Created == nil || *refusal.Created != (model.Ref{Source: "gh", ID: "3"}) {
+		t.Fatalf("failed follow-up: %v", err)
+	}
+	f.mu.Lock()
+	if f.writes != 1 || !slices.Equal(f.mutations, []string{"addSubIssue", "addBlockedBy"}) {
+		t.Fatalf("failed follow-up resent or continued: writes=%d %v", f.writes, f.mutations)
+	}
+	f.writes, f.failMutation, f.failWrites = 0, "", true
+	f.mu.Unlock()
+	_, err = s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: template()})
+	if !errors.As(err, &refusal) || refusal.Reason != "unknown-outcome" || refusal.Created != nil {
+		t.Fatalf("lost create: %v", err)
+	}
+	f.mu.Lock()
+	if f.writes != 1 {
+		t.Fatalf("lost create resent: writes=%d", f.writes)
+	}
+	f.writes, f.failWrites = 0, false
+	f.mu.Unlock()
+	for _, item := range []model.Item{{Title: "x", Priority: model.High}, {Title: "x", Milestone: "m-1"}, {Title: "x", Status: "closed"}, {Title: "x", Parent: &model.Ref{Source: "tasks", ID: "BL-1"}}} {
+		if _, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: "gh"}, Op: model.Create, Item: &item}); !reason(err, "rejected") {
+			t.Fatalf("unsupported %+v: %v", item, err)
+		}
+	}
+
+	// The second create's version was never recorded: undo closes it.
+	f.mu.Lock()
+	f.canDelete, f.mutations = true, nil
+	f.mu.Unlock()
+	undo := func(version string) (model.Item, error) {
+		return s.Apply(ctx, model.Mutation{Ref: created.Ref, Op: model.Delete, ExpectedVersion: version})
+	}
+	s.created = map[string]string{}
+	kept, err := undo(created.Version)
+	if err != nil || kept.Version == "" || kept.Category != model.Canceled || f.mutations != nil {
+		t.Fatalf("undo of an unrecorded create: %+v %v %v", kept, err, f.mutations)
+	}
+	f.mu.Lock()
+	f.state, f.stateReason = "OPEN", "COMPLETED"
+	f.mu.Unlock()
+	s.created = map[string]string{"3": created.Version}
+	f.canDelete = false
+	if kept, err = undo(created.Version); err != nil || kept.Category != model.Canceled || f.mutations != nil {
+		t.Fatalf("undo without delete permission: %+v %v %v", kept, err, f.mutations)
+	}
+	f.mu.Lock()
+	f.state, f.stateReason, f.canDelete = "OPEN", "COMPLETED", true
+	f.mu.Unlock()
+	s.created = map[string]string{"3": created.Version}
+	deleted, err := undo(created.Version)
+	if err != nil || deleted.Version != "" || deleted.Ref != created.Ref || !slices.Equal(f.mutations, []string{"deleteIssue"}) || f.mutationVars[len(f.mutationVars)-1]["id"] != "I_3" {
+		t.Fatalf("undo delete: %+v %v %v", deleted, err, f.mutations)
 	}
 }
 

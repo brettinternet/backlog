@@ -130,6 +130,9 @@ func (m Model) historyCommand(redo bool) tea.Cmd {
 			if err != nil {
 				return editResultMsg{message: name + " edit failed: " + textutil.Line(err.Error())}
 			}
+			if note := store.HistoryNote(); note != "" {
+				return editResultMsg{message: name + " the last edit: " + textutil.Line(note) + "."}
+			}
 			return editResultMsg{message: name + " the last edit."}
 		case <-ctx.Done():
 			return editResultMsg{message: name + " canceled."}

@@ -209,7 +209,7 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 			return reject("empty mutation")
 		}
 		for _, change := range m.Changes {
-			if change.Op == model.Batch || change.Op == model.Create || change.Op == model.Restore || change.Op == model.Archive || change.Op == model.Unarchive || (change.Ref != (model.Ref{}) && change.Ref != m.Ref) {
+			if change.Op == model.Batch || change.Op == model.Create || change.Op == model.Restore || change.Op == model.Archive || change.Op == model.Unarchive || change.Op == model.Delete || (change.Ref != (model.Ref{}) && change.Ref != m.Ref) {
 				return reject("invalid batch operation")
 			}
 			change.Ref = m.Ref
@@ -230,6 +230,11 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 		for _, configured := range cfg.Sources {
 			if configured.ID == sourceID && configured.Type == "linear" {
 				if err := linearCreate(sourceID, *m.Item); err != nil {
+					return err
+				}
+			}
+			if configured.ID == sourceID && configured.Type == "github" {
+				if err := githubCreate(cfg, configured, *m.Item); err != nil {
 					return err
 				}
 			}
@@ -278,6 +283,10 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 				return reject(fmt.Sprintf("unknown %s %q; allowed values: %s", m.Field, value, strings.Join(allowed, ", ")))
 			}
 		}
+	case model.Delete:
+		if m.ExpectedVersion == "" {
+			return source.Refuse("conflict", "delete requires the created version")
+		}
 	case model.Restore:
 		for _, configured := range cfg.Sources {
 			if configured.ID == sourceID && configured.Type == "backlog-md" {
@@ -310,19 +319,7 @@ func linearCreate(sourceID string, item model.Item) error {
 	if len(item.Assignees) > 1 {
 		return source.Refuse("rejected", "Linear issues take at most one assignee")
 	}
-	var unsupported []string
-	for _, f := range []struct {
-		name string
-		set  bool
-	}{
-		{"type", item.Type != "" && item.Type != "issue"}, {"rank", item.Rank != ""}, {"milestone", item.Milestone != ""}, {"due", item.Due != ""},
-		{"blocks", len(item.Blocks) > 0}, {"related", len(item.Related) > 0}, {"duplicate_of", item.DuplicateOf != nil}, {"refs", len(item.Refs) > 0}, {"files", len(item.Files) > 0},
-		{"criteria", len(item.Criteria) > 0}, {"dod", len(item.DoD) > 0}, {"plan", item.Plan != ""}, {"notes", item.Notes != ""}, {"summary", item.Summary != ""},
-	} {
-		if f.set {
-			unsupported = append(unsupported, f.name)
-		}
-	}
+	unsupported := remoteCreateUnsupported(item)
 	if len(unsupported) > 0 {
 		return source.Refuse("rejected", "Linear create doesn't support "+strings.Join(unsupported, ", ")+"; it sets title, body, status, assignee, priority, labels, sprint, parent and blocked_by")
 	}
@@ -427,6 +424,54 @@ func ValidateItem(cfg project.Config, item model.Item) error {
 	}
 	if _, err := format.Serialize(item); err != nil {
 		return source.Refuse("rejected", err.Error())
+	}
+	return nil
+}
+
+// remoteCreateUnsupported names the template fields that no remote create sets.
+func remoteCreateUnsupported(item model.Item) []string {
+	var unsupported []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"type", item.Type != "" && item.Type != "issue"}, {"rank", item.Rank != ""}, {"milestone", item.Milestone != ""}, {"due", item.Due != ""},
+		{"blocks", len(item.Blocks) > 0}, {"related", len(item.Related) > 0}, {"duplicate_of", item.DuplicateOf != nil}, {"refs", len(item.Refs) > 0}, {"files", len(item.Files) > 0},
+		{"criteria", len(item.Criteria) > 0}, {"dod", len(item.DoD) > 0}, {"plan", item.Plan != ""}, {"notes", item.Notes != ""}, {"summary", item.Summary != ""},
+	} {
+		if f.set {
+			unsupported = append(unsupported, f.name)
+		}
+	}
+	return unsupported
+}
+
+// githubCreate names the template fields and values an issue create can't
+// store, before the remote wrapper reduces source refusals to a generic message.
+func githubCreate(cfg project.Config, configured project.SourceConfig, item model.Item) error {
+	refs := item.BlockedBy
+	if item.Parent != nil {
+		refs = append([]model.Ref{*item.Parent}, refs...)
+	}
+	github := map[string]bool{"": true}
+	for _, s := range cfg.Sources {
+		github[s.ID] = s.Type == "github"
+	}
+	for _, ref := range refs {
+		// Unconfigured HOST/OWNER/REPO refs resolve at the source.
+		if known, configured := github[ref.Source]; configured && !known || !configured && !strings.Contains(ref.Source, "/") {
+			return source.Refuse("rejected", "GitHub parent and blocked_by must be GitHub issues, not "+ref.Source+":"+ref.ID)
+		}
+	}
+	if p := configured.GitHubProject; item.Status != "" && item.Status != "open" && (p == nil || !p.AllowWrites || p.Options[item.Status] == "") {
+		return source.Refuse("rejected", "GitHub creates open issues; status must be open or a writable project option, not "+item.Status)
+	}
+	unsupported := remoteCreateUnsupported(item)
+	if item.Priority != "" {
+		unsupported = append(unsupported, "priority")
+	}
+	if len(unsupported) > 0 {
+		return source.Refuse("rejected", "GitHub create doesn't support "+strings.Join(unsupported, ", ")+"; it sets title, body, status, labels, assignees, parent and blocked_by")
 	}
 	return nil
 }
