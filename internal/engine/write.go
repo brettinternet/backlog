@@ -147,6 +147,16 @@ func ErrorMessage(err error) string {
 	return err.Error()
 }
 
+// ErrorCreated names the item a failed create left behind, as source:ID, or
+// returns "" when the create applied nothing or succeeded.
+func ErrorCreated(err error) string {
+	var refusal *source.Error
+	if errors.As(err, &refusal) && refusal.Created != nil {
+		return refusal.Created.Source + ":" + refusal.Created.ID
+	}
+	return ""
+}
+
 // ApplyWrite is synchronous and UI-independent. Every operation is validated
 // before the source applies the entire mutation under its lock. Callers bind
 // ExpectedVersion to the version they read, even without an explicit CLI guard.
@@ -217,7 +227,7 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 		}
 		for _, configured := range cfg.Sources {
 			if configured.ID == sourceID && configured.Type == "linear" {
-				if err := linearCreate(*m.Item); err != nil {
+				if err := linearCreate(sourceID, *m.Item); err != nil {
 					return err
 				}
 			}
@@ -278,9 +288,15 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 
 // linearCreate names the template fields issueCreate can't set, before
 // the remote wrapper reduces source refusals to a generic message.
-func linearCreate(item model.Item) error {
-	if item.Parent != nil || len(item.BlockedBy) > 0 {
-		return source.Refuse("rejected", "Linear create doesn't support parent or blocked_by; link the issue after creating it")
+func linearCreate(sourceID string, item model.Item) error {
+	refs := item.BlockedBy
+	if item.Parent != nil {
+		refs = append([]model.Ref{*item.Parent}, refs...)
+	}
+	for _, ref := range refs {
+		if ref.Source != "" && ref.Source != sourceID && !strings.HasPrefix(ref.Source, "linear/") {
+			return source.Refuse("rejected", "Linear parent and blocked_by must be Linear issues, not "+ref.Source+":"+ref.ID)
+		}
 	}
 	if len(item.Assignees) > 1 {
 		return source.Refuse("rejected", "Linear issues take at most one assignee")
@@ -299,7 +315,7 @@ func linearCreate(item model.Item) error {
 		}
 	}
 	if len(unsupported) > 0 {
-		return source.Refuse("rejected", "Linear create doesn't support "+strings.Join(unsupported, ", ")+"; it sets title, body, status, assignee, priority, labels and sprint")
+		return source.Refuse("rejected", "Linear create doesn't support "+strings.Join(unsupported, ", ")+"; it sets title, body, status, assignee, priority, labels, sprint, parent and blocked_by")
 	}
 	return nil
 }

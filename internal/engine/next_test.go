@@ -526,6 +526,11 @@ func TestLinearCreate(t *testing.T) {
 			data = map[string]any{"team": map[string]any{"id": team, "issues": empty, "cycles": cycles}}
 		case strings.Contains(q, "states("):
 			data = map[string]any{"team": map[string]any{"id": team, "states": map[string]any{"nodes": []any{map[string]string{"id": state, "name": "Todo", "type": "unstarted"}}, "pageInfo": map[string]any{"hasNextPage": false}}}}
+		case strings.Contains(q, "issueRelationCreate"):
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		case strings.HasSuffix(q, "{issue(id:$id){id identifier team{id} project{id}}}"):
+			data = map[string]any{"issue": map[string]any{"id": "60000000-0000-0000-0000-000000000002", "identifier": req.Variables["id"], "team": map[string]string{"id": team}}}
 		case strings.Contains(q, "issueCreate"):
 			created = req.Variables["input"].(map[string]any)
 			data = map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]any{"id": issue, "identifier": "TEST-1"}}}
@@ -568,12 +573,18 @@ func TestLinearCreate(t *testing.T) {
 	if err != nil || created["cycleId"] != cycle || got.Ref.ID != "TEST-1" || got.Sprint != cycle {
 		t.Fatalf("create: %+v %v input=%v", got, err, created)
 	}
+	// A blocker relation failing after the issue exists must still name it,
+	// past the remote wrapper's scrubbed message.
+	_, err = create(model.Item{Title: "Child", Parent: &model.Ref{ID: "TEST-2"}, BlockedBy: []model.Ref{{Source: "lin", ID: "TEST-2"}}})
+	if created["parentId"] != "60000000-0000-0000-0000-000000000002" || engine.ErrorReason(err) != "unknown-outcome" || engine.ErrorCreated(err) != "lin:TEST-1" || !strings.Contains(engine.ErrorMessage(err), "TEST-1") {
+		t.Fatalf("partial create: %v created=%q input=%v", err, engine.ErrorCreated(err), created)
+	}
 	for _, c := range []struct {
 		want string
 		item model.Item
 	}{
-		{"parent or blocked_by", model.Item{Parent: &model.Ref{Source: "lin", ID: "TEST-1"}}},
-		{"parent or blocked_by", model.Item{BlockedBy: []model.Ref{{Source: "lin", ID: "TEST-1"}}}},
+		{"must be Linear issues", model.Item{Parent: &model.Ref{Source: "tasks", ID: "BL-1"}}},
+		{"must be Linear issues", model.Item{BlockedBy: []model.Ref{{Source: "tasks", ID: "BL-1"}}}},
 		{"milestone, criteria", model.Item{Milestone: "m-1", Criteria: []model.Criterion{{Text: "c"}}}},
 		{"at most one assignee", model.Item{Assignees: []string{user, user}}},
 	} {

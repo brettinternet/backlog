@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,6 +53,8 @@ type fixture struct {
 	cycleActive, wantCycle, noCycle                                                bool
 	cycleQueries                                                                   int
 	created                                                                        map[string]any
+	relationInputs                                                                 []any
+	failRelation                                                                   bool
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -235,6 +238,21 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			n, _ = strconv.Atoi(id[24:])
 		}
 		emit(map[string]any{"issue": f.row(n)})
+	case entityQuery:
+		n, _ := strconv.Atoi(strings.TrimPrefix(v["id"].(string), "TEST-"))
+		if n > 10 {
+			emit(map[string]any{"issue": nil})
+			return
+		}
+		emit(map[string]any{"issue": entityRow(n)})
+	case relationMutation:
+		f.writes++
+		if f.failRelation {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		f.relationInputs = append(f.relationInputs, v["input"])
+		emit(map[string]any{"issueRelationCreate": map[string]any{"success": true, "issueRelation": map[string]string{"id": "80000000-0000-0000-0000-000000000001"}}})
 	case relationsQuery, inverseQuery:
 		f.relations++
 		nodes := []any{}
@@ -315,7 +333,12 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.created = v["input"].(map[string]any)
-		f.state, f.assignee, f.priority = f.created["stateId"].(string), f.created["assigneeId"].(string), int(f.created["priority"].(float64))
+		f.state, _ = f.created["stateId"].(string)
+		if f.state == "" {
+			f.state = stateID
+		}
+		f.assignee, _ = f.created["assigneeId"].(string)
+		f.priority = int(f.created["priority"].(float64))
 		f.labels = []string{"bug"}
 		emit(map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]any{"id": issueID(1), "identifier": "TEST-1"}}})
 	case commentMutation:
@@ -715,10 +738,10 @@ func TestCreateWrites(t *testing.T) {
 		t.Fatal("create offered without allowWrites")
 	}
 	s.o.AllowWrites = true
-	for _, bad := range []model.Item{{Title: "New", Labels: []string{"missing"}}, {Title: "New", Status: issueID(9)}, {Title: "New", Parent: &model.Ref{Source: "lin", ID: "TEST-2"}}} {
+	for _, bad := range []model.Item{{Title: "New", Labels: []string{"missing"}}, {Title: "New", Status: issueID(9)}, {Title: "New", Parent: &model.Ref{Source: "tasks", ID: "TEST-2"}}, {Title: "New", BlockedBy: []model.Ref{{Source: "linear/" + orgID + "/" + teamID, ID: "TEST-2"}}}, {Title: "New", Parent: &model.Ref{ID: "TEST-99"}}} {
 		var e *source.Error
-		if _, err := create(bad); !errors.As(err, &e) || e.Reason != "rejected" || f.writes != 0 {
-			t.Fatalf("expected rejection without dispatch: %v writes=%d", err, f.writes)
+		if _, err := create(bad); !errors.As(err, &e) || e.Reason != "rejected" && e.Reason != "not-found" || f.writes != 0 {
+			t.Fatalf("expected refusal without dispatch: %+v %v writes=%d", bad, err, f.writes)
 		}
 	}
 	item, err := create(full)
@@ -731,9 +754,22 @@ func TestCreateWrites(t *testing.T) {
 	if item, err = wrapped.Apply(ctx, model.Mutation{Ref: item.Ref, Op: model.Archive, ExpectedVersion: item.Version}); err != nil || item.Fields["archived"] != true {
 		t.Fatalf("undo create: %v", err)
 	}
-	f.failWrite = true
+	linked := model.Item{Title: "Child", Parent: &model.Ref{Source: "lin", ID: "TEST-2"}, BlockedBy: []model.Ref{{ID: "TEST-3"}, {Source: "lin", ID: "TEST-3"}}}
+	if item, err = create(linked); err != nil || f.created["parentId"] != issueID(2) || f.writes != 4 || len(f.relationInputs) != 1 {
+		t.Fatalf("linked create: %+v %v input=%v relations=%v writes=%d", item, err, f.created, f.relationInputs, f.writes)
+	}
+	if want := map[string]any{"type": "blocks", "issueId": issueID(3), "relatedIssueId": issueID(1)}; !reflect.DeepEqual(f.relationInputs[0], want) {
+		t.Fatalf("relation input: %v", f.relationInputs[0])
+	}
+	// A failed relation is reported with the created issue, never retried, and
+	// survives the remote wrapper's message scrubbing.
+	f.failRelation = true
 	var e *source.Error
-	if _, err = create(full); !errors.As(err, &e) || e.Reason != "unknown-outcome" || f.writes != 3 {
+	if _, err = create(linked); !errors.As(err, &e) || e.Reason != "unknown-outcome" || e.Created == nil || *e.Created != (model.Ref{Source: "lin", ID: "TEST-1"}) || !strings.Contains(e.Message, "TEST-1") || f.writes != 6 {
+		t.Fatalf("partial create: %+v writes=%d", err, f.writes)
+	}
+	f.failWrite = true
+	if _, err = create(full); !errors.As(err, &e) || e.Reason != "unknown-outcome" || e.Created != nil || f.writes != 7 {
 		t.Fatalf("uncertain create: %v writes=%d", err, f.writes)
 	}
 }

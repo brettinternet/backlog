@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -309,6 +310,27 @@ func TestLiveRoundTrip(t *testing.T) {
 		if err != nil || item.Fields["archived"] != (op == model.Archive) {
 			t.Fatalf("%s roundtrip failed: %v", op, err)
 		}
+	}
+	// BL-113: create sets the parent and links the blocker.
+	childTemplate := model.Item{Title: "bl-provider-test BL-113 child", Parent: &model.Ref{ID: first.Identifier}, BlockedBy: []model.Ref{{Source: s.o.ID, ID: blocker.Identifier}}}
+	child, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: s.o.ID}, Op: model.Create, Item: &childTemplate})
+	var refusal *source.Error
+	if err == nil {
+		deleteAfter(struct{ ID, Identifier string }{fmt.Sprint(child.Fields["uuid"]), child.Ref.ID})
+	} else if errors.As(err, &refusal) && refusal.Created != nil {
+		var r struct{ Issue *entity }
+		call(entityQuery, map[string]any{"id": refusal.Created.ID}, &r)
+		if r.Issue == nil {
+			t.Fatalf("cannot clean up partially created %s", refusal.Created.ID)
+		}
+		deleteAfter(struct{ ID, Identifier string }{r.Issue.ID, r.Issue.Identifier})
+	}
+	if err != nil {
+		t.Fatalf("linked create failed: %v", err)
+	}
+	t.Logf("created issue %s through the source with parent %s and blocker %s", child.Ref.ID, first.Identifier, blocker.Identifier)
+	if child.Parent == nil || child.Parent.ID != first.Identifier || len(child.BlockedBy) != 1 || child.BlockedBy[0].ID != blocker.Identifier {
+		t.Fatalf("linked create roundtrip failed: parent=%v blockedBy=%v", child.Parent, child.BlockedBy)
 	}
 	t.Logf("roundtrip passed in Test team=%s org=%s; relation fingerprint conflict rejected; archive and unarchive round-tripped", team, identity.Viewer.Organization.ID)
 }

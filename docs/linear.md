@@ -223,7 +223,7 @@ edits aren't offered.
 | `labels` | Exact team or workspace label names; replaces all; empty clears. Missing or ambiguous names fail. |
 | `sprint` | `current`, `next`, `none` (or empty), a cycle name, or a cycle UUID from the catalog → `cycleId`. Closed cycles are refused. |
 | Comment | Appends once; can't be undone |
-| Create | `issueCreate` with title, body, status (else the team's default state), one assignee, priority, labels, and sprint, each checked like `set` before the mutation; the result is read back. Parent, blockers, and other native fields (milestone, criteria, DoD, …) are refused; `defaults.type` and `defaults.dod` are not applied. Undo archives the new issue. |
+| Create | `issueCreate` with title, body, status (else the team's default state), one assignee, priority, labels, sprint, and parent (`parentId`), each checked like `set` before the mutation. Each blocker then gets one `issueRelationCreate` (`blocks`), and the result is read back. Parent and blockers must resolve to Linear issues in this source or under its out-of-team alias; other sources' refs are refused before dispatch. Other native fields (milestone, criteria, DoD, …) are refused; `defaults.type` and `defaults.dod` are not applied. Undo archives the new issue. |
 | Archive, unarchive | `issueArchive` / `issueUnarchive`; each undoes the other. A no-op when the issue is already in the target state. Trashed issues are refused. |
 
 Archived issues accept only unarchive. A write's result replaces the issue's
@@ -233,7 +233,11 @@ bumps no timestamp a change window could see.
 Each write changes one field in one mutation. A fresh fingerprint of the issue
 and its relations is checked first; missing or stale versions fail with
 `conflict`. Create has no version to check. A create that fails after dispatch
-reports `unknown-outcome`: look for the issue before creating it again. Linear has no compare-and-swap, so another writer can still race
+reports `unknown-outcome`: look for the issue before creating it again. When the
+issue exists but a blocker relation or the read-back fails, the error names it
+(CLI `error.details.created`, MCP `created`, and the TUI message); the create
+isn't undoable, and it and its relations are never retried. Parent and
+blockers can't yet be changed on an existing issue. Linear has no compare-and-swap, so another writer can still race
 between check and write. Versions exclude the cycle, so a sprint write also
 re-reads it and fails with `conflict` if it differs from what the caller saw.
 Mutations are never retried; after a network or reread
@@ -254,9 +258,10 @@ moving cursor, relation-only changes, blocker direction, conflicts, capability
 and identity checks, and every write. Provider JSON is fuzzed. Scheduler tests
 cover Linear's request and complexity quotas.
 
-The live test runs only against a team named **Test**. It creates two issues
-(one through `bl`'s own create, in an open cycle if the team has one), a
-blocking relation, and a comment, edits only those, and deletes them all,
+The live test runs only against a team named **Test**. It creates three issues
+(one through `bl`'s own create, in an open cycle if the team has one, and a
+child of it, created with a parent and a blocker), a blocking relation, and a
+comment, edits only those, and deletes them all,
 logging artifact IDs. It needs existing todo, active, and done states and at
 least one label, and changes no team settings or existing data:
 
