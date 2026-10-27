@@ -67,6 +67,8 @@ The `bl://instructions` resource serves the `bl instructions` overview.
   `summary`.
 - References accept the same shorthand as `bl new`. `status: draft` creates an
   item that is never ready.
+- `create` picks its source like `bl new`: `source`, `defaults.source`, else
+  the only source that can create.
 - Comment `author` defaults to `me.default`.
 - Errors are tool results with `isError: true` and JSON `reason` and `message`.
   A `create` that leaves an item behind but fails a later step also returns

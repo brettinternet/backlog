@@ -329,12 +329,9 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	if status == "" && len(s.cfg.Statuses) > 0 {
 		status = s.cfg.Statuses[0].Key
 	}
-	sourceID := args.Source
-	if sourceID == "" {
-		if len(s.cfg.Sources) != 1 {
-			return failed[any]("usage", "source is required with multiple or no sources")
-		}
-		sourceID = s.cfg.Sources[0].ID
+	sourceID, err := engine.CreateSource(ctx, s.cfg, args.Source, "", nil)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
 	}
 	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Sprint: args.Sprint}
 	if args.Parent != "" {

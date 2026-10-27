@@ -150,6 +150,9 @@ Other settings:
 
 - `NO_COLOR=1` disables styling.
 - `git: {autoCommit: true}` commits only the files `bl` writes ([details](cli.md#git-auto-commit)).
+- `defaults: {source: ID}` picks where `bl new`, MCP `create`, and TUI `n`
+  create when several sources can. Set it per person in `backlog.local.yaml` or
+  user `projects.<id>`; `config show` reports which layer set it.
 - User-config `workspaces` browse several projects together: `W` toggles in the
   TUI, and `--workspace NAME` works with `ls` and `next`.
 

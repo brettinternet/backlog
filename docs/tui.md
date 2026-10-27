@@ -276,13 +276,16 @@ Debounce detail rendering !high @me #tui #perf ^BL-3 <BL-10 ~m-2 :feature
 | `<ID` | Blocked by |
 | `~milestone` | Milestone |
 | `:type` | Type |
+| `+source` | Source to create in |
 
 Everything else is the title. Escape a token with `\` (`\#1`) or quote it.
 `bl new` and MCP use the same parser (`internal/query`). References resolve like
 `bl new`.
 
-`N` creates a child of the selected item, in its source. With several sources
-that can create, `n` asks for one first. Sources that can't create disable both.
+`n` preselects the source `bl new` would use: `defaults.source`, else the only
+source that can create. Without either, it asks for one first. `+source`
+switches it. `N` creates a child of the selected item, in its source. Sources
+that can't create disable both.
 On a board, the focused column sets the status.
 
 ### Forms and editors
