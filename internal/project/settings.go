@@ -101,8 +101,9 @@ type ReadyConfig struct {
 	Sprint string `yaml:"sprint,omitempty" json:"sprint,omitempty"`
 }
 type DefaultsConfig struct {
-	Type string   `yaml:"type,omitempty" json:"type,omitempty"`
-	DOD  []string `yaml:"dod,omitempty" json:"dod,omitempty"`
+	Source string   `yaml:"source,omitempty" json:"source,omitempty"`
+	Type   string   `yaml:"type,omitempty" json:"type,omitempty"`
+	DOD    []string `yaml:"dod,omitempty" json:"dod,omitempty"`
 }
 type ViewConfig struct {
 	Columns []string `yaml:"columns,omitempty" json:"columns,omitempty"`

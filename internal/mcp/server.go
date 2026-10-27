@@ -336,12 +336,9 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	if status == "" && len(s.cfg.Statuses) > 0 {
 		status = s.cfg.Statuses[0].Key
 	}
-	sourceID := args.Source
-	if sourceID == "" {
-		if len(s.cfg.Sources) != 1 {
-			return failed[any]("usage", "source is required with multiple or no sources")
-		}
-		sourceID = s.cfg.Sources[0].ID
+	sourceID, err := engine.CreateSource(ctx, s.cfg, args.Source, "", nil)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
 	}
 	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Sprint: args.Sprint}
 	if args.Parent != "" {
@@ -475,7 +472,13 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes, Confirmed: args.Confirm})
+	m := model.Mutation{Op: model.Batch, Changes: changes}
+	// Like the CLI, one change is sent unbatched for sources without batches.
+	if len(changes) == 1 {
+		m = changes[0]
+	}
+	m.Ref, m.ExpectedVersion, m.Confirmed = item.Ref, version, args.Confirm
+	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, m)
 	if err != nil {
 		return failedTransition(err, updated, transition)
 	}

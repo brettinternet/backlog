@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -240,6 +242,13 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 		if (m.Op == model.Add || m.Op == model.Remove) && !ListField(m.Field) {
 			return reject(m.Field + " accepts = only; allowed list fields: assignees labels blocked_by related refs files")
 		}
+		if (m.Op == model.Add || m.Op == model.Remove) && m.Field != "labels" && m.Field != "assignees" {
+			for _, configured := range cfg.Sources {
+				if configured.ID == sourceID && configured.Type == "github" {
+					return reject("GitHub accepts += and -= for labels and assignees only")
+				}
+			}
+		}
 		if m.Field == "sprint" {
 			if !sprintSource(cfg, sourceID) {
 				return reject("source " + m.Ref.Source + " has no sprints; only Linear and Jira sources do")
@@ -318,6 +327,73 @@ func linearCreate(sourceID string, item model.Item) error {
 		return source.Refuse("rejected", "Linear create doesn't support "+strings.Join(unsupported, ", ")+"; it sets title, body, status, assignee, priority, labels, sprint, parent and blocked_by")
 	}
 	return nil
+}
+
+// CreateSource resolves the source a new item goes to; the first match wins:
+// explicit (--source or MCP source) or a +ID quick-add token, which must agree;
+// defaults.source; then the only source that can create. caps reports a
+// source's capabilities, nil when they can't be read (the write then reports
+// why); a nil caps opens each source to ask it. In a workspace, a bare ID names
+// the anchor project's source.
+func CreateSource(ctx context.Context, cfg project.Config, explicit, token string, caps func(string) model.Capabilities) (string, error) {
+	if explicit != "" && token != "" && explicit != token {
+		return "", source.Refuse("usage", "--source "+explicit+" and +"+token+" name different sources")
+	}
+	if caps == nil {
+		caps = func(id string) model.Capabilities {
+			for _, c := range cfg.Sources {
+				if c.ID != id {
+					continue
+				}
+				backend, err := readSource(cfg, c)
+				if err != nil {
+					return nil
+				}
+				if initializer, ok := backend.(interface{ Initialize(context.Context) error }); ok && initializer.Initialize(ctx) != nil {
+					return nil
+				}
+				return backend.Info().Capabilities
+			}
+			return nil
+		}
+	}
+	creatable := func() (ids []string) {
+		for _, c := range cfg.Sources {
+			if caps(c.ID).Allows(model.Create) {
+				ids = append(ids, c.ID)
+			}
+		}
+		return ids
+	}
+	refuse := func(message string) error {
+		if ids := creatable(); len(ids) > 0 {
+			return source.Refuse("usage", message+"; creatable sources: "+strings.Join(ids, ", "))
+		}
+		return source.Refuse("usage", message+"; no source can create items")
+	}
+	if id := cmp.Or(explicit, token, cfg.Defaults.Source); id != "" {
+		name := "source " + id
+		if explicit == "" && token == "" {
+			name = "defaults.source " + id
+		}
+		for _, c := range cfg.Sources {
+			if c.ID == id || cfg.Workspace != nil && c.ID == url.QueryEscape(cfg.Project.ID)+"/"+id {
+				if granted := caps(c.ID); granted == nil || granted.Allows(model.Create) {
+					return c.ID, nil
+				}
+				return "", refuse(name + " cannot create items")
+			}
+		}
+		return "", refuse("unknown " + name)
+	}
+	ids := creatable()
+	if len(ids) == 1 {
+		return ids[0], nil
+	}
+	if len(ids) == 0 {
+		return "", source.Refuse("usage", "no source can create items")
+	}
+	return "", source.Refuse("usage", "several sources can create items; name one or set defaults.source: "+strings.Join(ids, ", "))
 }
 
 // ApplyCreateDefaults fills defaults.type and defaults.dod into a new item

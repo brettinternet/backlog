@@ -126,7 +126,7 @@ Explicit `sort` and `group` override query directives. Columns are `id`,
 a count). Each tab keeps its query, folds, and selected item across refreshes,
 following the item into another group; if it disappears, the row taking its
 place is selected. A tab whose query, layout, or columns differ from its
-definition is marked `•` until restart; `ctrl-s` keeps the edit as a view.
+definition is marked `•`; `F` resets it, and `ctrl-s` keeps the edit as a view.
 
 `ctrl-s` saves the current view. Edit the name (`ctrl-u` clears it), press `tab`
 to switch between user and project config, then `enter`. Saving replaces a
@@ -226,8 +226,9 @@ title matches are bold and underlined.
 a value picker. `fr` toggles ready-only; `fd` toggles closed items (not archived);
 `fb` toggles drafts (`-category:backlog`). Each toggles only its own term, so
 `is:mine` and other `is:` terms stay.
-`F` or `fc` clears filters but keeps sort and group. `oo` reverses every sort
-key. `zA` groups by assignee, since `za` folds.
+`fc` clears filters but keeps sort and group. `F` resets the tab to its
+definition: query, layout, columns, and folds. `oo` reverses every sort key.
+`zA` groups by assignee, since `za` folds.
 
 ## Editing
 
@@ -279,13 +280,16 @@ Debounce detail rendering !high @me #tui #perf ^BL-3 <BL-10 ~m-2 :feature
 | `<ID` | Blocked by |
 | `~milestone` | Milestone |
 | `:type` | Type |
+| `+source` | Source to create in |
 
 Everything else is the title. Escape a token with `\` (`\#1`) or quote it.
 `bl new` and MCP use the same parser (`internal/query`). References resolve like
 `bl new`.
 
-`N` creates a child of the selected item, in its source. With several sources
-that can create, `n` asks for one first. Sources that can't create disable both.
+`n` preselects the source `bl new` would use: `defaults.source`, else the only
+source that can create. Without either, it asks for one first. `+source`
+switches it. `N` creates a child of the selected item, in its source. Sources
+that can't create disable both.
 On a board, the focused column sets the status.
 
 ### Forms and editors
@@ -443,7 +447,7 @@ keys:
 | `board` | `B` | Board layout |
 | `tree` | `T` | Tree layout |
 | `query` | `/` | Edit query / find |
-| `clear-filter` | `F` | Clear filters |
+| `reset-view` | `F` | Reset view |
 | `save-view` | `ctrl+s` | Save view |
 | `workspace` | `W` | Toggle workspace |
 | `refresh` | `R` | Resync sources |

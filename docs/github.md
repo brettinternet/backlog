@@ -218,10 +218,8 @@ so does an option ID or label mapped to different categories by two GitHub
 sources.
 `bl doctor` reports the same error.
 
-Each refresh lists every project item and every issue, with `blockedBy` and
-sub-issue edges, so project-only edits and removed dependencies show up even
-when the issue's `updatedAt` doesn't change. A REST ETag `304` is only a hint.
-Inaccessible or incomplete reads fail rather than claim completeness.
+Inaccessible or incomplete reads fail rather than claim completeness. See
+[Sync](#sync) for which edits a refresh sees when.
 
 ### Sprints
 
@@ -249,27 +247,76 @@ other one is future, even if its own dates have already elapsed. A break with
 none in range leaves the whole list future, with no active sprint. Sprint keys
 are the iteration's node ID.
 
+## Sync
+
+Two scans, as in [Linear](linear.md#sync):
+
+| Scan | When | Reads |
+| --- | --- | --- |
+| Change window | Every refresh between reconciliations | Issues updated since the last scan's start minus two minutes, plus issues whose project item was updated since then |
+| Reconciliation | Startup (no cached cursor), hourly, and on `R` in the TUI | Every issue with its relations, and every project item |
+
+Requests per scan, excluding relation overflow pages and writes:
+
+| Scan | Requests |
+| --- | --- |
+| Empty change window | 3 (identity check, repository, one issue page), plus 2 with a project (fields, one item page), regardless of issue count |
+| Window with C changed issues | The above, plus ⌈C/100⌉ − 1 issue pages and ⌈P/10⌉ batched reads for P issues changed only in the project |
+| Reconciliation of N issues and M project items | 3 + ⌈N/100⌉ (identity, repository, REST hint, issue pages), plus 1 + ⌈M/100⌉ with a project |
+
+The project item filter accepts only dates (`updated:>=YYYY-MM-DD`; a timestamp
+matches nothing), so the window reads items updated since the day before and
+compares `updatedAt` itself. Its page count follows items edited in the last day
+or two, not project size. Each changed issue's project status and iteration come
+from its own `projectItems`.
+
+Measured live for BL-120, polling 70 seconds after each mutation:
+
+| Edit | Issue `updatedAt` | Project item `updatedAt` |
+| --- | --- | --- |
+| Title or other issue edit | Bumped | Bumped |
+| Project status option | Unchanged | Bumped |
+| Add or remove `blockedBy`, either side | Unchanged | Unchanged |
+| Add or remove a sub-issue, either side | Unchanged | Unchanged |
+
+So a change window sees issue and project edits, including new, closed and
+relabelled issues, but no dependency or hierarchy change. Those, removal from
+the project, deletions and transfers appear at the next reconciliation.
+Unchanged rows keep their freshness; a change window never removes rows.
+Single-issue reads don't wait: `bl next --claim` reads each candidate fresh,
+and `bl show`, the TUI detail pane and write preflights replace the cached row.
+
+Reconciliation is a complete enumeration and removes unseen rows. A REST ETag
+`304` is only a hint. The cursor and its schedule survive restarts in the cache.
+
 ## Writes and claims
 
 ```sh
 bl set issues:123 status=option-active-id --if-version VERSION
+bl set issues:123 title='Clearer title'
+bl edit issues:123 --section description --text 'New body'
 bl set issues:123 labels=bug
-bl set issues:123 assignees=alice
+bl set issues:123 labels+=docs
+bl set issues:123 assignees-=alice
 bl comment issues:123 'Progress update'
 ```
 
-One field per command. Labels and assignees replace the whole list. Comments
-append and can't be undone. Creating issues, editing title or body, `+=`/`-=`,
-batches, and archiving aren't available.
+One field and one value per command. `labels=` and `assignees=` replace the
+whole list. `+=` and `-=` use GitHub's add and remove endpoints, so a label or
+assignee someone else added in the meantime stays; adding a present entry or
+removing an absent one sends nothing. Description is the only editable section.
+Comments append and can't be undone. Creating issues, batches, and archiving
+aren't available.
 
 Before each write, `bl` refreshes credentials, checks the user and permission,
 and compares a fresh composite version of the issue, its relationships, and its
 project item. Missing or stale versions fail with `conflict`.
 
 GitHub has no conditional write here, so an edit between that check and the
-mutation can still race. Each mutation is sent once. If the network or reread
-fails afterward, the outcome is unknown: refresh and look before editing again,
-especially before commenting. Reads after writes are eventually consistent.
+mutation can still race. Each mutation is sent once. If the request or the
+reread after it fails, the write reports `unknown-outcome`: refresh and look
+before editing again, especially before commenting. Reads after writes are
+eventually consistent.
 
 Claims use Worklease's `github` key from `HOST/OWNER/REPO` and the issue number,
 so they don't depend on aliases, project, status, title, or credential. Node
@@ -284,7 +331,8 @@ task cli:test PKG='./internal/source/github ./internal/source/remote'
 
 `FuzzProviderJSON` fuzzes provider JSON. The live test needs an authorized test
 repository and a new disposable project titled `bl-provider-test-…`. It creates
-one issue, comment, and project entry, and deletes them during cleanup:
+one issue, comment, and project entry, exercises every write above and two
+change windows, and deletes them during cleanup:
 
 ```sh
 gh project create --owner OWNER --title bl-provider-test-roundtrip --format json

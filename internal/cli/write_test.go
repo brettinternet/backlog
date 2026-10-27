@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/cli"
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
@@ -515,4 +516,74 @@ func TestNewResolvesBlockersAcrossSources(t *testing.T) {
 			t.Fatalf("<%s stored %+v", tc.blocker, got)
 		}
 	}
+}
+
+// Adding a remote source that can't create used to break every bl new without
+// --source; the target must resolve the same way from flag, token, and config.
+func TestNewResolvesCreateSource(t *testing.T) {
+	root := writeFixture(t)
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	put(t, paths.ConfigFile, "accounts:\n  github:\n    - name: work\n      host: github.com\n      user: alice\n")
+	statuses := "statuses: [{key: todo, name: To Do, category: todo}]\n"
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: gh, type: github, repo: o/r, account: work}]\n"+statuses)
+	if code, out, stderr := writeRun(root, "", "trust"); code != 0 {
+		t.Fatalf("trust: %d %s %s", code, out, stderr)
+	}
+	// Any write loads every source for readiness events, so offline the GitHub
+	// case stops at resolution, which reads only its declared capabilities.
+	cfg, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, err := engine.CreateSource(context.Background(), cfg, "", "", nil); id != "tasks" || err != nil {
+		t.Fatalf("implicit: %q %v", id, err)
+	}
+	if _, err := engine.CreateSource(context.Background(), cfg, "gh", "", nil); err == nil || !strings.Contains(err.Error(), "source gh cannot create items; creatable sources: tasks") {
+		t.Fatalf("explicit gh: %v", err)
+	}
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: issues, type: native, path: issues, prefix: IS}]\n"+statuses)
+	created := func(args ...string) string {
+		t.Helper()
+		var envelope struct {
+			Data struct{ Source, Title string }
+		}
+		if err := json.Unmarshal([]byte(writeOK(t, root, "", append([]string{"new"}, args...)...)), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		return envelope.Data.Source + " " + envelope.Data.Title
+	}
+	refused := func(want string, args ...string) {
+		t.Helper()
+		code, out, _ := writeRun(root, "", append([]string{"new"}, args...)...)
+		if code != 2 || !strings.Contains(out, want) {
+			t.Fatalf("%v: %d %s", args, code, out)
+		}
+	}
+	refused("several sources can create items; name one or set defaults.source: tasks, issues", "T")
+	refused("unknown source nope; creatable sources: tasks, issues", "T +nope")
+	refused("--source tasks and +issues name different sources", "--source", "tasks", "T +issues")
+	for _, args := range [][]string{{"T +issues"}, {"--source", "issues", "T"}, {"--source", "issues", "T", "+issues"}} {
+		if got := created(args...); got != "issues T" {
+			t.Fatalf("%v: %s", args, got)
+		}
+	}
+	put(t, filepath.Join(root, "backlog.local.yaml"), "defaults: {source: issues}\n")
+	if got := created(`T \+x`); got != "issues T +x" {
+		t.Fatal(got)
+	}
+	if got := created("T +tasks"); got != "tasks T" {
+		t.Fatal(got)
+	}
+	code, out, _ := writeRun(root, "", "config", "show")
+	if code != 0 || !strings.Contains(out, `"defaults.source":{"layer":"local"`) {
+		t.Fatalf("config show: %d %s", code, out)
+	}
+	put(t, filepath.Join(root, "backlog.local.yaml"), "defaults: {source: nope}\n")
+	refused("unknown defaults.source nope; creatable sources: tasks, issues", "T")
 }

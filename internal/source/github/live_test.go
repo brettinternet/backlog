@@ -14,6 +14,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
@@ -92,10 +93,14 @@ func TestLiveRoundTrip(t *testing.T) {
 		t.Helper()
 		deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		for !ready(item) {
+		// The next write's preflight needs a settled version, not only the
+		// expected value: the composite version can keep moving after it appears.
+		previous := ""
+		for !ready(item) || item.Version != previous {
 			if deadline.Err() != nil {
 				t.Fatalf("provider read-back did not converge: status=%s fields=%v", item.Status, item.Fields)
 			}
+			previous = item.Version
 			item, err = s.Read(deadline, strconv.Itoa(created.Number))
 			if err != nil {
 				t.Fatal(err)
@@ -103,20 +108,60 @@ func TestLiveRoundTrip(t *testing.T) {
 		}
 	}
 	await(func(i model.Item) bool { return i.Category == model.Todo })
-	apply := func(field string, value any) {
+	full, err := s.Load(ctx, source.Cursor{})
+	if err != nil || full.Incremental {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	// A change window from the reconciled cursor must see each edit.
+	awaitWindow := func(ready func(model.Item) bool) {
+		t.Helper()
+		deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		for deadline.Err() == nil {
+			delta, err := s.Load(deadline, full.Cursor)
+			if err != nil || !delta.Incremental {
+				t.Fatalf("change window: %v", err)
+			}
+			for _, i := range delta.Items {
+				if i.Ref == item.Ref && ready(i) {
+					return
+				}
+			}
+		}
+		t.Fatal("change window missed the edit")
+	}
+	change := func(m model.Mutation) {
 		t.Helper()
 		var err error
-		item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: field, Value: value})
+		m.Ref, m.ExpectedVersion = item.Ref, item.Version
+		item, err = s.Apply(ctx, m)
 		if err != nil {
-			t.Fatalf("set %s: %v", field, err)
+			t.Fatalf("%s %s%s: %v", m.Op, m.Field, m.Section, err)
 		}
+	}
+	apply := func(field string, value any) {
+		t.Helper()
+		change(model.Mutation{Op: model.Set, Field: field, Value: value})
 	}
 	apply("status", active)
 	await(func(i model.Item) bool { return i.Category == model.Active })
+	awaitWindow(func(i model.Item) bool { return i.Category == model.Active })
 	apply("labels", []string{label})
 	await(func(i model.Item) bool { return len(i.Labels) == 1 && i.Labels[0] == label })
 	apply("assignees", []string{user})
 	await(func(i model.Item) bool { return len(i.Assignees) == 1 && i.Assignees[0] == user })
+	change(model.Mutation{Op: model.Remove, Field: "labels", Value: label})
+	await(func(i model.Item) bool { return len(i.Labels) == 0 })
+	change(model.Mutation{Op: model.Add, Field: "labels", Value: label})
+	await(func(i model.Item) bool { return len(i.Labels) == 1 && i.Labels[0] == label })
+	change(model.Mutation{Op: model.Remove, Field: "assignees", Value: user})
+	await(func(i model.Item) bool { return len(i.Assignees) == 0 })
+	change(model.Mutation{Op: model.Add, Field: "assignees", Value: user})
+	await(func(i model.Item) bool { return len(i.Assignees) == 1 && i.Assignees[0] == user })
+	apply("title", "bl-provider-test BL-119 renamed")
+	await(func(i model.Item) bool { return i.Title == "bl-provider-test BL-119 renamed" })
+	change(model.Mutation{Op: model.ReplaceSection, Section: "Description", Text: "Synthetic provider roundtrip; edited body."})
+	await(func(i model.Item) bool { return i.Description == "Synthetic provider roundtrip; edited body." })
 	item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.AppendComment, Text: "bl-provider-test BL-38 comment"})
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +177,9 @@ func TestLiveRoundTrip(t *testing.T) {
 	t.Logf("created comment %d", comments[0].ID)
 	apply("status", "closed")
 	await(func(i model.Item) bool { return i.Category == model.Done })
+	awaitWindow(func(i model.Item) bool {
+		return i.Category == model.Done && i.Title == "bl-provider-test BL-119 renamed" && len(i.Labels) == 1 && i.Labels[0] == label
+	})
 	gh(nil, "api", "--method", "DELETE", fmt.Sprintf("repos/%s/issues/comments/%d", repo, comments[0].ID))
 	t.Logf("deleted comment %d", comments[0].ID)
 }

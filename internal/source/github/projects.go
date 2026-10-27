@@ -14,7 +14,9 @@ import (
 type projectItem struct {
 	ID        string
 	UpdatedAt time.Time
-	Content   *struct {
+	// Project is read only through an issue's projectItems in a change window.
+	Project *struct{ ID string }
+	Content *struct {
 		TypeName   string `json:"__typename"`
 		ID         string
 		Number     int
@@ -304,6 +306,83 @@ func (s *Source) projects(ctx context.Context, c remote.Credential, sprints bool
 		}
 		vars["after"] = next
 	}
+}
+
+const projectWindowQuery = `query($projectID:ID!,$filter:String!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after,query:$filter,archivedStates:[ARCHIVED,NOT_ARCHIVED]){nodes{id updatedAt content{__typename ... on Issue{id number repository{nameWithOwner}}}} pageInfo{hasNextPage endCursor}}}}}`
+
+// changedProjectIssues returns the numbers of this repository's issues whose
+// project item changed at or after since. A field edit bumps only the item's
+// updatedAt, not the issue's. The items filter accepts only dates, so it
+// reads a day early and compares the timestamp here.
+func (s *Source) changedProjectIssues(ctx context.Context, c remote.Credential, since time.Time) ([]int, error) {
+	vars := map[string]any{"projectID": s.o.Project.ID, "filter": "updated:>=" + since.AddDate(0, 0, -1).Format(time.DateOnly)}
+	seen := map[string]bool{}
+	var numbers []int
+	for {
+		var data struct {
+			Node *struct {
+				ID     string
+				Number int
+				Owner  struct{ Login string }
+				Items  struct {
+					Nodes    []projectItem
+					PageInfo *pageInfo
+				}
+			}
+		}
+		if err := s.query(ctx, c, projectWindowQuery, vars, &data); err != nil {
+			return nil, err
+		}
+		if data.Node == nil {
+			return nil, source.Refuse("unavailable", "project inaccessible")
+		}
+		if err := s.projectIdentity(data.Node.ID, data.Node.Number, data.Node.Owner.Login); err != nil {
+			return nil, err
+		}
+		for _, item := range data.Node.Items.Nodes {
+			if item.Content == nil || item.Content.TypeName != "Issue" || !strings.EqualFold(item.Content.Repository.NameWithOwner, s.o.Repo) {
+				continue
+			}
+			if item.ID == "" || item.Content.Number < 1 || item.UpdatedAt.IsZero() {
+				return nil, source.Refuse("unavailable", "invalid project item binding")
+			}
+			if !item.UpdatedAt.Before(since) {
+				numbers = append(numbers, item.Content.Number)
+			}
+		}
+		next, err := advance(data.Node.Items.PageInfo, seen)
+		if err != nil {
+			return nil, err
+		}
+		if next == "" {
+			return numbers, nil
+		}
+		vars["after"] = next
+	}
+}
+
+// boundItem picks the issue's item in the bound project from its projectItems.
+func (s *Source) boundItem(row issue) (projectItem, error) {
+	var found projectItem
+	if s.o.Project == nil {
+		return found, nil
+	}
+	if row.ProjectItems == nil || row.ProjectItems.PageInfo == nil || row.ProjectItems.PageInfo.HasNextPage {
+		return found, source.Refuse("unavailable", "issue project items exceed complete read limit")
+	}
+	for _, item := range row.ProjectItems.Nodes {
+		if item.Project == nil || item.Project.ID != s.o.Project.ID {
+			continue
+		}
+		if found.ID != "" {
+			return found, source.Refuse("unavailable", "ambiguous project issue")
+		}
+		if item.ID == "" || item.UpdatedAt.IsZero() || item.Value.OptionID != "" && item.Value.Field.ID != s.o.Project.FieldID {
+			return found, source.Refuse("unavailable", "invalid project item binding")
+		}
+		found = item
+	}
+	return found, nil
 }
 
 const projectStatusMutation = `mutation($projectID:ID!,$itemID:ID!,$fieldID:ID!,$optionID:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectID,itemId:$itemID,fieldId:$fieldID,value:{singleSelectOptionId:$optionID}}){projectV2Item{id}}}`

@@ -170,6 +170,21 @@ task cli:test PKG=./internal/tui -- -run '^$' -bench '^BenchmarkGoTo50k$' -bench
 `task bench` includes a 50k-item, 100k-edge shared-prerequisite graph for
 `engine.Evaluate`, reporting time and allocations only.
 
+## Remote sync
+
+A GitHub source refreshes with a change window between hourly reconciliations
+([github.md](github.md#sync)). Adapter `Load` against `charmbracelet/vhs` (262
+issues, no project), from the reference host over home broadband, BL-120:
+
+| Load | Wall time | Requests |
+| --- | ---: | ---: |
+| Reconciliation (cold, or hourly) | 4.30 s | 6 |
+| Change window, no changes (three runs) | 0.75–0.85 s | 3 |
+
+The change window's request count doesn't grow with the repository, which the
+fake-server test `TestChangeWindowSync` asserts. Most of its time is the
+credential helper and three round trips.
+
 ## History
 
 How the budgets were reached. Details are in each backlog task.
@@ -186,6 +201,7 @@ How the budgets were reached. Details are in each backlog task.
 | BL-56 | Filter completion values before sorting; collect matches before allocating | 50k filter 132.1 → 16.6 ms |
 | BL-57 | Reuse the watched native source and stat-validate in memory | 10k external change 258.3 → 100.1 ms |
 | BL-58 | Share immutable items between source and store; dedupe repeated body strings per refresh; 20% GC heap growth | TUI RSS 300 / 1,073 → 133 / 383 MiB |
+| BL-120 | GitHub change window between hourly reconciliations | vhs warm refresh 4.30 → 0.80 s, 6 → 3 requests |
 
 Notes that still matter:
 

@@ -235,6 +235,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "source": {
+          "type": "string"
+        },
         "type": {
           "type": "string"
         },

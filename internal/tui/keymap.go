@@ -56,7 +56,7 @@ func defaultKeymap() []action {
 		{id: "board", label: "Board layout", canonical: "B", bindings: []string{"B"}},
 		{id: "tree", label: "Tree layout", canonical: "T", bindings: []string{"T"}},
 		{id: "query", label: "Edit query / find", canonical: "/", bindings: []string{"/"}},
-		{id: "clear-filter", label: "Clear filters", canonical: "F", bindings: []string{"F"}},
+		{id: "reset-view", label: "Reset view", canonical: "F", bindings: []string{"F"}},
 		{id: "save-view", label: "Save view", canonical: "ctrl+s", bindings: []string{"ctrl+s"}},
 		{id: "workspace", label: "Toggle workspace", bindings: []string{"W"}},
 		{id: "refresh", label: "Resync sources", canonical: "R", bindings: []string{"R"}},
@@ -326,7 +326,7 @@ const focusList = "focus the list first"
 // listViewAction reports a filter, sort, group, fold or layout action, which
 // changes the list without acting on an item.
 func listViewAction(id string) bool {
-	return id == "board" || id == "tree" || id == "clear-filter" || zCommand(id) ||
+	return id == "board" || id == "tree" || id == "reset-view" || zCommand(id) ||
 		strings.HasPrefix(id, "filter-") || strings.HasPrefix(id, "sort-") || strings.HasPrefix(id, "group-")
 }
 
@@ -430,7 +430,7 @@ func (m Model) disabledReason(a action) string {
 		if !found {
 			return "select an item"
 		}
-		if a.id == "note" && m.capability(row.Ref, model.ReplaceSection) == "" {
+		if a.id == "note" && m.capability(row.Ref, model.ReplaceSection, model.AppendNote) == "" {
 			return ""
 		}
 		if reason := m.capability(row.Ref, op); reason != "" {

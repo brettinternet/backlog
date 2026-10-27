@@ -50,6 +50,37 @@ func PrepareFields(before model.Item, m model.Mutation) (Prepared, error) {
 		}
 		return result, nil
 	}
+	if m.Op == model.ReplaceSection {
+		if m.Section != "Description" {
+			return Prepared{}, Refuse("unavailable", "provider preparation required for this section")
+		}
+		result.Inverse.Section, result.Inverse.Text = m.Section, before.Description
+		result.Item.Description = m.Text
+		return result, nil
+	}
+	if (m.Op == model.Add || m.Op == model.Remove) && (m.Field == "assignees" || m.Field == "labels") {
+		value, ok := m.Value.(string)
+		if !ok {
+			return Prepared{}, Refuse("rejected", "list entry requires a string")
+		}
+		list := &result.Item.Labels
+		if m.Field == "assignees" {
+			list = &result.Item.Assignees
+		}
+		// The inverse undoes only an actual change: a no-op stays a no-op.
+		// Providers match names and logins case-insensitively.
+		same := func(v string) bool { return strings.EqualFold(v, value) }
+		present := slices.ContainsFunc(*list, same)
+		result.Inverse.Value = value
+		if m.Op == model.Add && !present {
+			result.Inverse.Op = model.Remove
+			*list = append(slices.Clone(*list), value)
+		} else if m.Op == model.Remove && present {
+			result.Inverse.Op = model.Add
+			*list = slices.DeleteFunc(slices.Clone(*list), same)
+		}
+		return result, nil
+	}
 	if m.Op != model.Set {
 		return Prepared{}, Refuse("unavailable", "provider preparation required for this operation")
 	}

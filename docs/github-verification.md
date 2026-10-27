@@ -1,4 +1,6 @@
-# BL-38 live verification
+# GitHub live verification
+
+## BL-38 live verification
 
 Authorized target: `brettinternet/backlog`; helper: `gh auth token` for
 `brettinternet`, refreshed with `project` scope. No token values were recorded.
@@ -51,3 +53,41 @@ Final independent cleanup checks:
 The project, issues, comments and project entries no longer exist. The null-node
 verification commands intentionally return gh exit status 1 for `NOT_FOUND`;
 these are positive cleanup evidence, not failed cleanup operations.
+
+## BL-119 live verification
+
+Same target and helper. Disposable project `bl-provider-test-BL119-20261027`:
+number **8**, ID `PVT_kwHOAT55tM4BpBM0`, status field
+`PVTSSF_lAHOAT55tM4BpBM0zhneqDY`, options as above, label `bug`.
+
+Result: **PASS**, 78.10 seconds. Adds title, description, `labels-=`/`+=` and
+`assignees-=`/`+=` to the BL-38 writes. Issue #7 `I_kwDOVS6Ow88AAAABaZYC-w`,
+project entry `PVTI_lAHOAT55tM4BpBM0zhD_wss` and comment `6451834800` were
+deleted by the test.
+
+A first run (issue #6 `I_kwDOVS6Ow88AAAABaZXWpw`, cleaned up by the test) failed
+with `conflict`: the composite version kept moving after a write's value
+appeared. The test now waits for two equal consecutive reads before the next
+write. Afterward the project was empty and deleted, and GraphQL lookups of both
+issues and the project returned `NOT_FOUND`.
+
+## BL-120 live verification
+
+Same target and helper. Disposable project `bl-provider-test-BL120-20261027`:
+number **9**, ID `PVT_kwHOAT55tM4BpBZ0`, status field
+`PVTSSF_lAHOAT55tM4BpBZ0zhne2Ng`, options as above, label `bug`.
+
+A probe script created issues #8 `I_kwDOVS6Ow88AAAABaZyu7w` and #9
+`I_kwDOVS6Ow88AAAABaZyvmQ`, added both to the project, and after each mutation
+polled both issues' and project items' `updatedAt` every 5 seconds for up to
+70 seconds. Results are in [github.md](github.md#sync): a status option change
+bumped only the item, a title edit bumped both, and `addBlockedBy`,
+`removeBlockedBy`, `addSubIssue` and `removeSubIssue` bumped neither.
+`items(query:"updated:>=TIMESTAMP")` matched nothing; `updated:>=DATE` matched.
+
+`TestLiveRoundTrip` then passed in 84.65 seconds, including two change-window
+loads from a reconciled cursor: one saw the project-only status change, the
+other the renamed, relabelled, closed issue. Issue #10
+`I_kwDOVS6Ow88AAAABaZ5U3w`, project entry `PVTI_lAHOAT55tM4BpBZ0zhEANpY` and
+comment `6452554788` were deleted by the test. The probe issues and the project
+were then deleted, and GraphQL lookups of all three returned `NOT_FOUND`.

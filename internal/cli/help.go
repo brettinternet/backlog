@@ -23,7 +23,7 @@ Examples:
   bl ls is:closed sort:-updated -n 10`
 
 const newHelp = `Tokens in TITLE set fields: !high priority, @me assignee, #bug label,
-^BL-1 parent, <BL-2 blocker, ~m-1 milestone, and :feature type.
+^BL-1 parent, <BL-2 blocker, ~m-1 milestone, :feature type, and +tasks source.
 
 Examples:
   bl new 'Fix login !high #bug @me'
