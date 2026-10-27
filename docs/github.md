@@ -219,6 +219,7 @@ them:
 | `open` | todo | Open issue without a project binding or status labels |
 | `closed` | done, or canceled for not planned | Closed issue |
 | `unknown` | backlog | Open issue not in the project, with an unmapped option, or without exactly one status label |
+| `draft` | backlog | Projects v2 draft issue |
 | option ID | as mapped in `options` | Open issue with a mapped option |
 | label | as mapped in `statusLabels` | Open issue with that one status label |
 
@@ -271,15 +272,15 @@ sources:
 
 Item IDs name the repository, `board:acme/app#123`; a bare number is
 `invalid-id`. Relations between project issues use the same form. Pull
-requests and draft items are skipped. Items in repositories the account can't
+requests are skipped; [drafts](#drafts) load by their project item ID. Items in repositories the account can't
 read come back redacted; each load skips them with one warning naming the
 count. Status labels need one repository, so `statusLabels` without `repo`
 fails config load.
 
 Issue, label, assignee, comment and project status writes go to the item's
 repository, and each preflight rechecks your permission there (with
-[OAuth](#oauth-login), also the App's installation on it). Creates are
-refused: set `repo` for a create target.
+[OAuth](#oauth-login), also the App's installation on it). Only drafts can be
+created, and they can't be converted: set `repo` for a create target.
 
 With both `repo` and `githubProject`, the source stays repository-scoped
 (numeric IDs, issues outside the project included) and `repo` is the create
@@ -398,6 +399,34 @@ project-only source takes `OWNER/REPO` from the ID, so it and a repository
 source claim an issue under the same key. Node
 IDs are checked on every read; transfers or binding changes fail closed. Use the
 `resource` from `bl show --json`.
+
+### Drafts
+
+```sh
+bl new 'Maybe later' --source issues --status draft @alice --body 'Idea'
+bl set issues:PVTI_lADOexample title='Sharper idea'
+bl set issues:PVTI_lADOexample status=option-ready-id
+```
+
+A Projects v2 draft issue loads as an item with status `draft` (backlog, so
+never ready) and its project item ID as its ID. It has a title, description and
+assignees; labels, comments, relations, milestone and sprint aren't available,
+and writing them is `rejected`. Drafts have no issue number, so no claim key:
+`bl claim` and `bl next --claim` refuse them. Every draft write, including a
+create, needs `allowWrites`.
+
+Title, description and assignee edits send one `updateProjectV2DraftIssue`
+after the usual fresh version check. `bl new --status draft` sends one
+`addProjectV2DraftIssue` and takes only title, body and assignees; undo deletes
+the draft if it hasn't changed since.
+
+Setting any other status converts the draft into an issue in `repo` with
+`convertProjectV2DraftIssueItemToIssue`, then sets the project option or closes
+the issue. The item comes back as `issues:N` and the draft ID stops resolving.
+A failure after the conversion is sent reports `unknown-outcome` naming the
+draft ID. A project-only source has no `repo`, so it refuses conversion; a
+draft converted on GitHub disappears from `bl` and its issue appears when the
+next refresh sees it.
 
 ## This repository
 

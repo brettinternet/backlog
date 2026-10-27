@@ -131,6 +131,10 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		_, _ = s.cache.RemoteObserve(ctx, m.Ref, nil)
 		return model.Item{Ref: m.Ref}, nil
 	}
+	// A GitHub draft converted to an issue comes back under the issue's ID.
+	if m.Op != model.Create && item.Ref != m.Ref {
+		_, _ = s.cache.RemoteObserve(ctx, m.Ref, nil)
+	}
 	// An unarchive bumps no timestamp a change window could see.
 	return s.observe(ctx, item)
 }

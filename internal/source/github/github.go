@@ -156,9 +156,12 @@ func (s *Source) Info() source.Info {
 	if s.projectOnly() {
 		display = s.o.Project.Owner + " project " + strconv.Itoa(s.o.Project.Number)
 	}
-	// A project-only source has no repository to create in, so nothing to undo.
-	creatable := !s.projectOnly() && !s.readOnly.Load()
-	return source.Info{ID: s.o.ID, Kind: "github", Display: display, Capabilities: model.Capabilities{model.Create: creatable, model.Delete: !s.projectOnly(), model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
+	// A project-only source creates only drafts. Delete undoes a create.
+	creatable, deletable := !s.readOnly.Load(), true
+	if s.projectOnly() {
+		creatable, deletable = s.o.Project.AllowWrites, s.o.Project.AllowWrites
+	}
+	return source.Info{ID: s.o.ID, Kind: "github", Display: display, Capabilities: model.Capabilities{model.Create: creatable, model.Delete: deletable, model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
 	var body *bytes.Reader
@@ -389,7 +392,7 @@ func (s *Source) reconcile(ctx context.Context, c remote.Credential, sprints boo
 	if _, err := s.request(ctx, c, http.MethodGet, s.base()+"/repos/"+s.o.Repo+"/issues?state=all&sort=updated&direction=desc&per_page=1", nil); err != nil {
 		return source.Delta{}, err
 	}
-	projects, catalog, err := s.projects(ctx, c, sprints)
+	projects, drafts, catalog, err := s.projects(ctx, c, sprints)
 	if err != nil {
 		return source.Delta{}, err
 	}
@@ -436,7 +439,7 @@ func (s *Source) reconcile(ctx context.Context, c remote.Credential, sprints boo
 			return source.Delta{}, err
 		}
 		if after == "" {
-			return delta, nil
+			return s.addDrafts(delta, drafts)
 		}
 		vars["after"] = after
 	}
@@ -451,6 +454,7 @@ func (s *Source) window(ctx context.Context, c remote.Credential, since time.Tim
 	fields := issueFields
 	delta := source.Delta{Coverage: source.Complete, Incremental: true, RetainUnseen: true}
 	var changed []int
+	var drafts []projectItem
 	if s.o.Project != nil {
 		statusName, iteration, err := s.discover(ctx, c, sprints)
 		if err != nil {
@@ -466,7 +470,7 @@ func (s *Source) window(ctx context.Context, c remote.Credential, since time.Tim
 			delta.Sprints = iteration.sprints
 		}
 		fields += ` projectItems(first:100,includeArchived:false){nodes{id updatedAt project{id} ` + values + `} pageInfo{hasNextPage endCursor}}`
-		if changed, err = s.changedProjectIssues(ctx, c, since); err != nil {
+		if changed, drafts, err = s.changedProjectIssues(ctx, c, since); err != nil {
 			return source.Delta{}, err
 		}
 	}
@@ -557,7 +561,7 @@ func (s *Source) window(ctx context.Context, c remote.Credential, since time.Tim
 		}
 		delta.Items = append(delta.Items, item)
 	}
-	return delta, nil
+	return s.addDrafts(delta, drafts)
 }
 func validNumber(id string) (int, error) {
 	n, err := strconv.Atoi(id)
@@ -569,8 +573,17 @@ func validNumber(id string) (int, error) {
 
 // StatusChoices derives the writable statuses from config, as Apply checks
 // them: open and closed, plus unknown and the mapped labels, or the project
-// option IDs when the project allows writes.
-func (s *Source) StatusChoices(context.Context, model.Item) ([]model.StatusChoice, bool, error) {
+// option IDs when the project allows writes. A draft keeps draft and, with a
+// repo to convert it in, may take any of those; nothing becomes a draft again.
+func (s *Source) StatusChoices(_ context.Context, item model.Item) ([]model.StatusChoice, bool, error) {
+	if draftID(item.Ref.ID) {
+		choices := []model.StatusChoice{{Key: "draft", Category: model.Backlog, Default: true}}
+		if s.o.Project == nil || s.projectOnly() || !s.o.Project.AllowWrites {
+			return choices, true, nil
+		}
+		promote, _, _ := s.StatusChoices(context.Background(), model.Item{})
+		return append(choices, promote...), true, nil
+	}
 	// Closing is done on GitHub, even beside a project's Done option.
 	choices := []model.StatusChoice{{Key: "open", Category: model.Todo}, {Key: "closed", Category: model.Done, Default: true}}
 	mapping := s.o.StatusLabels
@@ -602,6 +615,9 @@ func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	return s.read(ctx, c, id)
 }
 func (s *Source) read(ctx context.Context, c remote.Credential, id string) (model.Item, error) {
+	if draftID(id) {
+		return s.draftRead(ctx, c, id)
+	}
 	repo, n, err := s.parseID(id)
 	if err != nil {
 		return model.Item{}, err
@@ -632,7 +648,7 @@ func (s *Source) read(ctx context.Context, c remote.Credential, id string) (mode
 	if result.Repository.Issue.Number != n {
 		return model.Item{}, source.Refuse("unavailable", "issue identity changed")
 	}
-	projects, catalog, err := s.projects(ctx, c, s.readSprints)
+	projects, _, catalog, err := s.projects(ctx, c, s.readSprints)
 	if err != nil {
 		return model.Item{}, err
 	}

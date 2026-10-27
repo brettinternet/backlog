@@ -15,15 +15,15 @@ import (
 )
 
 type projectItem struct {
-	ID        string
-	UpdatedAt time.Time
+	ID         string
+	UpdatedAt  time.Time
+	IsArchived bool
 	// Project is read only through an issue's projectItems in a change window.
 	Project *struct{ ID string }
+	// Content is an issue, or a draft decoded into the issue fields it has.
 	Content *struct {
-		TypeName   string `json:"__typename"`
-		ID         string
-		Number     int
-		Repository struct{ NameWithOwner string }
+		TypeName string `json:"__typename"`
+		issue
 	}
 	Value struct {
 		Name, OptionID string
@@ -69,7 +69,7 @@ type iterationField struct {
 }
 
 const discoveryQuery = `query($projectID:ID!,$after:String){node(id:$projectID){... on ProjectV2{id number viewerCanUpdate owner{__typename ... on User{login} ... on Organization{login}} fields(first:100,after:$after){nodes{... on ProjectV2SingleSelectField{id name options{id name}}} pageInfo{hasNextPage endCursor}}}}}`
-const projectItemsQuery = `query($projectID:ID!,$fieldName:String!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after){nodes{id updatedAt content{__typename ... on Issue{id number repository{nameWithOwner}}} fieldValueByName(name:$fieldName){... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id}}}}} pageInfo{hasNextPage endCursor}}}}}`
+const projectItemsQuery = `query($projectID:ID!,$fieldName:String!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after){nodes{id updatedAt content{__typename ... on Issue{id number repository{nameWithOwner}} ` + draftContent + `} fieldValueByName(name:$fieldName){... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id}}}}} pageInfo{hasNextPage endCursor}}}}}`
 
 // iterationFragment extends field discovery to the iteration field's
 // configuration. Requested only with sprint demand, matching Linear's
@@ -247,15 +247,17 @@ func (s *Source) classify(iterations, completed []iterationNode) ([]model.Sprint
 
 // Always enumerate independently of issue updatedAt and the REST ETag. Project
 // field changes and dependency removal need not change the issue timestamp.
-// sprints requests the iteration field and value only on demand.
-func (s *Source) projects(ctx context.Context, c remote.Credential, sprints bool) (map[string]projectItem, []model.Sprint, error) {
+// sprints requests the iteration field and value only on demand. It returns
+// this repository's issues' items by issue node ID, and the project's drafts.
+func (s *Source) projects(ctx context.Context, c remote.Credential, sprints bool) (map[string]projectItem, []projectItem, []model.Sprint, error) {
 	items := map[string]projectItem{}
+	var drafts []projectItem
 	if s.o.Project == nil {
-		return items, nil, nil
+		return items, nil, nil, nil
 	}
 	statusName, iteration, err := s.discover(ctx, c, sprints)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	q := projectItemsQuery
 	vars := map[string]any{"projectID": s.o.Project.ID, "fieldName": statusName}
@@ -277,50 +279,56 @@ func (s *Source) projects(ctx context.Context, c remote.Credential, sprints bool
 			}
 		}
 		if err = s.query(ctx, c, q, vars, &data); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if data.Node == nil {
-			return nil, nil, source.Refuse("unavailable", "project inaccessible")
+			return nil, nil, nil, source.Refuse("unavailable", "project inaccessible")
 		}
 		if err = s.projectIdentity(data.Node.ID, data.Node.Number, data.Node.Owner.Login); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, item := range data.Node.Items.Nodes {
+			if item.Content != nil && item.Content.TypeName == "DraftIssue" {
+				drafts = append(drafts, item)
+				continue
+			}
 			if item.Content == nil || item.Content.TypeName != "Issue" || !strings.EqualFold(item.Content.Repository.NameWithOwner, s.o.Repo) {
 				continue
 			}
 			if item.ID == "" || item.Content.ID == "" || item.Content.Number < 1 || item.UpdatedAt.IsZero() || item.Value.OptionID != "" && item.Value.Field.ID != s.o.Project.FieldID {
-				return nil, nil, source.Refuse("unavailable", "invalid project item binding")
+				return nil, nil, nil, source.Refuse("unavailable", "invalid project item binding")
 			}
 			if _, exists := items[item.Content.ID]; exists {
-				return nil, nil, source.Refuse("unavailable", "ambiguous project issue")
+				return nil, nil, nil, source.Refuse("unavailable", "ambiguous project issue")
 			}
 			items[item.Content.ID] = item
 		}
 		next, err := advance(data.Node.Items.PageInfo, seen)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if next == "" {
 			if iteration == nil {
-				return items, nil, nil
+				return items, drafts, nil, nil
 			}
-			return items, iteration.sprints, nil
+			return items, drafts, iteration.sprints, nil
 		}
 		vars["after"] = next
 	}
 }
 
-const projectWindowQuery = `query($projectID:ID!,$filter:String!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after,query:$filter,archivedStates:[ARCHIVED,NOT_ARCHIVED]){nodes{id updatedAt content{__typename ... on Issue{id number repository{nameWithOwner}}}} pageInfo{hasNextPage endCursor}}}}}`
+const projectWindowQuery = `query($projectID:ID!,$filter:String!,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after,query:$filter,archivedStates:[ARCHIVED,NOT_ARCHIVED]){nodes{id updatedAt isArchived content{__typename ... on Issue{id number repository{nameWithOwner}} ` + draftContent + `}} pageInfo{hasNextPage endCursor}}}}}`
 
 // changedProjectIssues returns the numbers of this repository's issues whose
-// project item changed at or after since. A field edit bumps only the item's
-// updatedAt, not the issue's. The items filter accepts only dates, so it
-// reads a day early and compares the timestamp here.
-func (s *Source) changedProjectIssues(ctx context.Context, c remote.Credential, since time.Time) ([]int, error) {
+// project item changed at or after since, and the unarchived drafts that did.
+// A field edit bumps only the item's updatedAt, not the issue's. The items
+// filter accepts only dates, so it reads a day early and compares the
+// timestamp here.
+func (s *Source) changedProjectIssues(ctx context.Context, c remote.Credential, since time.Time) ([]int, []projectItem, error) {
 	vars := map[string]any{"projectID": s.o.Project.ID, "filter": "updated:>=" + since.AddDate(0, 0, -1).Format(time.DateOnly)}
 	seen := map[string]bool{}
 	var numbers []int
+	var drafts []projectItem
 	for {
 		var data struct {
 			Node *struct {
@@ -334,20 +342,26 @@ func (s *Source) changedProjectIssues(ctx context.Context, c remote.Credential, 
 			}
 		}
 		if err := s.query(ctx, c, projectWindowQuery, vars, &data); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if data.Node == nil {
-			return nil, source.Refuse("unavailable", "project inaccessible")
+			return nil, nil, source.Refuse("unavailable", "project inaccessible")
 		}
 		if err := s.projectIdentity(data.Node.ID, data.Node.Number, data.Node.Owner.Login); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, item := range data.Node.Items.Nodes {
+			if item.Content != nil && item.Content.TypeName == "DraftIssue" {
+				if !item.IsArchived && !item.UpdatedAt.Before(since) {
+					drafts = append(drafts, item)
+				}
+				continue
+			}
 			if item.Content == nil || item.Content.TypeName != "Issue" || !strings.EqualFold(item.Content.Repository.NameWithOwner, s.o.Repo) {
 				continue
 			}
 			if item.ID == "" || item.Content.Number < 1 || item.UpdatedAt.IsZero() {
-				return nil, source.Refuse("unavailable", "invalid project item binding")
+				return nil, nil, source.Refuse("unavailable", "invalid project item binding")
 			}
 			if !item.UpdatedAt.Before(since) {
 				numbers = append(numbers, item.Content.Number)
@@ -355,10 +369,10 @@ func (s *Source) changedProjectIssues(ctx context.Context, c remote.Credential, 
 		}
 		next, err := advance(data.Node.Items.PageInfo, seen)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if next == "" {
-			return numbers, nil
+			return numbers, drafts, nil
 		}
 		vars["after"] = next
 	}
@@ -392,7 +406,7 @@ const projectStatusMutation = `mutation($projectID:ID!,$itemID:ID!,$fieldID:ID!,
 
 // projectIssuesQuery pages a project-only source's items with each issue's
 // full fields. %s takes the optional items filter and the sprint value.
-const projectIssuesQuery = `query($projectID:ID!,$fieldName:String!%s,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after%s){nodes{id type updatedAt content{__typename ... on Issue{` + issueFields + `}} fieldValueByName(name:$fieldName){... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id}}}}%s} pageInfo{hasNextPage endCursor}}}}}`
+const projectIssuesQuery = `query($projectID:ID!,$fieldName:String!%s,$after:String){node(id:$projectID){... on ProjectV2{id number owner{... on User{login} ... on Organization{login}} items(first:100,after:$after%s){nodes{id type updatedAt content{__typename ... on Issue{` + issueFields + `} ` + draftContent + `} fieldValueByName(name:$fieldName){... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id}}}}%s} pageInfo{hasNextPage endCursor}}}}}`
 
 // projectLoad reads a project-only source from its project items: all of them
 // on reconciliation, else those whose item changed at or after since. Every
@@ -400,8 +414,8 @@ const projectIssuesQuery = `query($projectID:ID!,$fieldName:String!%s,$after:Str
 // (docs/github-verification.md), so a window also reads issues updated since
 // in each repository the last scan saw, as a repository source would. Items
 // the credential can't read come back redacted and are skipped with one
-// warning; pull requests and draft issues aren't issues and are skipped
-// silently. It returns the repositories seen, for the next window.
+// warning; pull requests are skipped silently, and drafts load as drafts. It
+// returns the repositories seen, for the next window.
 func (s *Source) projectLoad(ctx context.Context, c remote.Credential, reconcile bool, since time.Time, sprints bool, repos []string) (source.Delta, []string, error) {
 	statusName, iteration, err := s.discover(ctx, c, sprints)
 	if err != nil {
@@ -427,6 +441,7 @@ func (s *Source) projectLoad(ctx context.Context, c remote.Credential, reconcile
 			sprintNames[s.Key] = s.Name
 		}
 	}
+	// A draft's entry has only its item ID in row; p holds its content.
 	type entry struct {
 		row issue
 		p   projectItem
@@ -457,11 +472,7 @@ func (s *Source) projectLoad(ctx context.Context, c remote.Credential, reconcile
 				Items  struct {
 					Nodes []struct {
 						projectItem
-						Type    string
-						Content *struct {
-							TypeName string `json:"__typename"`
-							issue
-						}
+						Type string
 					}
 					PageInfo *pageInfo
 				}
@@ -479,6 +490,12 @@ func (s *Source) projectLoad(ctx context.Context, c remote.Credential, reconcile
 		for _, node := range data.Node.Items.Nodes {
 			if node.Type == "REDACTED" || node.Type == "ISSUE" && node.Content == nil {
 				redacted++
+				continue
+			}
+			if node.Type == "DRAFT_ISSUE" && node.Content != nil && node.Content.TypeName == "DraftIssue" {
+				if reconcile || !node.UpdatedAt.Before(since) {
+					add(issue{ID: node.ID}, node.projectItem)
+				}
 				continue
 			}
 			if node.Type != "ISSUE" || node.Content == nil || node.Content.TypeName != "Issue" {
@@ -532,7 +549,12 @@ func (s *Source) projectLoad(ctx context.Context, c remote.Credential, reconcile
 		}
 	}
 	for _, id := range order {
-		item, err := s.item(ctx, c, rows[id].row, rows[id].p, sprintNames)
+		var item model.Item
+		if e := rows[id]; e.row.Number == 0 {
+			item, err = s.draft(e.p)
+		} else {
+			item, err = s.item(ctx, c, e.row, e.p, sprintNames)
+		}
 		if err != nil {
 			return source.Delta{}, nil, err
 		}
