@@ -70,7 +70,8 @@ by the configured source IDs and types for `source:` filters.
   item that is never ready.
 - `create` picks its source like `bl new`: `source`, `defaults.source`, else
   the only source that can create.
-- Comment `author` defaults to `me.default`.
+- Comment `author` defaults to `me.default`. On GitHub, Linear, and Jira it is
+  the source account's `user`, and any other `author` is `rejected`.
 - Errors are tool results with `isError: true` and JSON `reason` and `message`.
   A `create` that leaves an item behind but fails a later step also returns
   `created`, the item's `source:ID`.

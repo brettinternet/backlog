@@ -305,7 +305,9 @@ One field and one value per command. `labels=` and `assignees=` replace the
 whole list. `+=` and `-=` use GitHub's add and remove endpoints, so a label or
 assignee someone else added in the meantime stays; adding a present entry or
 removing an absent one sends nothing. Description is the only editable section.
-Comments append and can't be undone. Batches and archiving aren't available.
+Comments append and can't be undone. GitHub attributes each to the account's
+`user`, so `bl` needs no `me.default` and refuses any other `--author` with
+`rejected`. Batches and archiving aren't available.
 
 Before each write, `bl` refreshes credentials, checks the user and permission,
 and compares a fresh composite version of the issue, its relationships, and its

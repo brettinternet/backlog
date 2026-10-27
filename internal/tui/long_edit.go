@@ -74,7 +74,7 @@ func (m *Model) beginTextAppend(op model.Operation) tea.Cmd {
 		m.notice = "Disabled: " + reason
 		return nil
 	}
-	if op == model.AppendComment && m.opts.CommentAuthor == "" {
+	if op == model.AppendComment && m.opts.Me[row.Ref.Source] == "" {
 		m.notice = "Disabled: comment author is not configured."
 		return nil
 	}
@@ -185,7 +185,7 @@ func (m Model) editorFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
 	state := m.longEdit
 	validate := m.opts.ValidateItem
 	store, ctx := m.opts.Store, m.opts.Context
-	author := m.opts.CommentAuthor
+	author := m.opts.Me[state.ref.Source]
 	return m, func() tea.Msg {
 		yours, err := os.ReadFile(state.path)
 		if err != nil {
@@ -308,7 +308,7 @@ func (m *Model) updateLongEdit(key string) tea.Cmd {
 			return func() tea.Msg { _ = os.Remove(state.path); return nil }
 		case "y":
 			m.longEdit.choice = ""
-			store, ctx, author := m.opts.Store, m.opts.Context, m.opts.CommentAuthor
+			store, ctx, author := m.opts.Store, m.opts.Context, m.opts.Me[state.ref.Source]
 			return func() tea.Msg {
 				yours, err := os.ReadFile(state.path)
 				if err != nil {

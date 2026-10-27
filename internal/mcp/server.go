@@ -505,12 +505,9 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 	}
 	m := model.Mutation{Op: model.AppendNote, Text: args.Text}
 	if args.Kind == "comment" {
-		author := args.Author
-		if author == "" {
-			author = s.cfg.Me.Default
-		}
-		if author == "" {
-			return failed[any]("rejected", "comment requires author or me.default")
+		author, err := engine.CommentAuthor(s.cfg, item.Ref.Source, args.Author)
+		if err != nil {
+			return failed[any](reason(err), err.Error())
 		}
 		m = model.Mutation{Op: model.AppendComment, Comment: model.Comment{Author: author, Body: args.Text, Time: time.Now()}}
 	} else if args.Kind != "note" {
