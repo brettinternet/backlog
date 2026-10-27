@@ -430,7 +430,7 @@ func (m Model) disabledReason(a action) string {
 		if !found {
 			return "select an item"
 		}
-		if a.id == "note" && m.capability(row.Ref, model.ReplaceSection) == "" {
+		if a.id == "note" && m.capability(row.Ref, model.ReplaceSection, model.AppendNote) == "" {
 			return ""
 		}
 		if reason := m.capability(row.Ref, op); reason != "" {

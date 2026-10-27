@@ -472,7 +472,13 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: changes, Confirmed: args.Confirm})
+	m := model.Mutation{Op: model.Batch, Changes: changes}
+	// Like the CLI, one change is sent unbatched for sources without batches.
+	if len(changes) == 1 {
+		m = changes[0]
+	}
+	m.Ref, m.ExpectedVersion, m.Confirmed = item.Ref, version, args.Confirm
+	updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, m)
 	if err != nil {
 		return failedTransition(err, updated, transition)
 	}

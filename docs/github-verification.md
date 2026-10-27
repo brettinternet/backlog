@@ -1,4 +1,6 @@
-# BL-38 live verification
+# GitHub live verification
+
+## BL-38 live verification
 
 Authorized target: `brettinternet/backlog`; helper: `gh auth token` for
 `brettinternet`, refreshed with `project` scope. No token values were recorded.
@@ -51,3 +53,20 @@ Final independent cleanup checks:
 The project, issues, comments and project entries no longer exist. The null-node
 verification commands intentionally return gh exit status 1 for `NOT_FOUND`;
 these are positive cleanup evidence, not failed cleanup operations.
+
+## BL-119 live verification
+
+Same target and helper. Disposable project `bl-provider-test-BL119-20261027`:
+number **8**, ID `PVT_kwHOAT55tM4BpBM0`, status field
+`PVTSSF_lAHOAT55tM4BpBM0zhneqDY`, options as above, label `bug`.
+
+Result: **PASS**, 78.10 seconds. Adds title, description, `labels-=`/`+=` and
+`assignees-=`/`+=` to the BL-38 writes. Issue #7 `I_kwDOVS6Ow88AAAABaZYC-w`,
+project entry `PVTI_lAHOAT55tM4BpBM0zhD_wss` and comment `6451834800` were
+deleted by the test.
+
+A first run (issue #6 `I_kwDOVS6Ow88AAAABaZXWpw`, cleaned up by the test) failed
+with `conflict`: the composite version kept moving after a write's value
+appeared. The test now waits for two equal consecutive reads before the next
+write. Afterward the project was empty and deleted, and GraphQL lookups of both
+issues and the project returned `NOT_FOUND`.
