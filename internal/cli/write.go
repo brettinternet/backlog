@@ -180,12 +180,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if err != nil {
 			return writeUsage(err.Error())
 		}
-		if item.Type == "" {
-			item.Type = cfg.Defaults.Type
-		}
-		for _, c := range cfg.Defaults.DOD {
-			item.DoD = append(item.DoD, model.Criterion{Text: c})
-		}
+		engine.ApplyCreateDefaults(cfg, sourceID, &item)
 		for _, c := range cmd.StringSlice("ac") {
 			if strings.TrimSpace(c) == "" || strings.ContainsAny(c, "\r\n") {
 				return writeUsage("--ac requires nonempty single-line text")

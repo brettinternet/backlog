@@ -357,12 +357,7 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 		}
 		item.Criteria = append(item.Criteria, model.Criterion{Text: c})
 	}
-	if item.Type == "" {
-		item.Type = s.cfg.Defaults.Type
-	}
-	for _, c := range s.cfg.Defaults.DOD {
-		item.DoD = append(item.DoD, model.Criterion{Text: c})
-	}
+	engine.ApplyCreateDefaults(s.cfg, sourceID, &item)
 	if err := engine.ValidateItem(s.cfg, item); err != nil {
 		return failed[any](reason(err), err.Error())
 	}

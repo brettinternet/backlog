@@ -52,7 +52,7 @@ func TestCLIAndTUIQuickAddParity(t *testing.T) {
 	defer store.Close()
 	m := tui.New(tui.Options{Context: ctx, Store: store, CreateSource: "tasks", Statuses: statuses, ResolveRef: func(ctx context.Context, source string, ref model.Ref) (model.Ref, error) {
 		return cli.ResolveRef(ctx, cfg, source, ref)
-	}, DefaultType: "task", DefaultDoD: []string{"Run checks"}, ValidateItem: func(item model.Item) error { return engine.ValidateItem(cfg, item) }})
+	}, Workspace: &cfg, ValidateItem: func(item model.Item) error { return engine.ValidateItem(cfg, item) }})
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'n'})
 	m = updated.(tui.Model)
 	for _, r := range line {

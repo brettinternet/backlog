@@ -501,8 +501,9 @@ func TestPartialLinearReadsAndNext(t *testing.T) {
 	}
 }
 
-// Catches bl new handing Linear an unresolved sprint role, or Linear create
-// refusals reaching the user only as the remote wrapper's generic message.
+// Catches bl new handing Linear an unresolved sprint role, Linear create
+// refusals reaching the user only as the remote wrapper's generic message, or
+// defaults.type and defaults.dod failing every Linear create.
 func TestLinearCreate(t *testing.T) {
 	testkit.Isolate(t)
 	const org, team, user = "10000000-0000-0000-0000-000000000001", "20000000-0000-0000-0000-000000000001", "30000000-0000-0000-0000-000000000001"
@@ -554,11 +555,13 @@ func TestLinearCreate(t *testing.T) {
 	cfg := project.Config{Settings: project.Settings{
 		Sources:  []project.SourceConfig{{ID: "lin", Type: "linear", Site: org, Team: team, Account: "test", AllowWrites: true}, {ID: "tasks", Type: "native"}},
 		Statuses: []project.StatusConfig{{Key: state, Category: "todo"}},
+		Defaults: project.DefaultsConfig{Type: "task", DOD: []string{"Run checks"}},
 	}}
 	cfg.Accounts = map[string][]project.AccountConfig{"linear": {{Name: "test", User: user, Env: "BL_CREATE_LINEAR_TOKEN"}}}
 	cfg.Paths.CacheDir = t.TempDir()
 	create := func(item model.Item) (model.Item, error) {
 		item.Status = state
+		engine.ApplyCreateDefaults(cfg, "lin", &item)
 		return engine.ApplyWrite(context.Background(), cfg, model.Mutation{Op: model.Create, Ref: model.Ref{Source: "lin"}, Item: &item})
 	}
 	got, err := create(model.Item{Title: "New", Sprint: "current"})
@@ -581,5 +584,10 @@ func TestLinearCreate(t *testing.T) {
 		if !errors.As(err, &e) || e.Reason != "rejected" || !strings.Contains(e.Error(), c.want) || created != nil {
 			t.Errorf("%s: %v", c.want, err)
 		}
+	}
+	native := model.Item{}
+	engine.ApplyCreateDefaults(cfg, "tasks", &native)
+	if native.Type != "task" || len(native.DoD) != 1 {
+		t.Errorf("native defaults: %+v", native)
 	}
 }
