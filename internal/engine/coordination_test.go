@@ -446,3 +446,21 @@ func TestProjectionClaimExpiryWithoutPolling(t *testing.T) {
 		t.Fatalf("expiry polled provider %d times", c.lists)
 	}
 }
+
+// Regression: a GitHub project source accepts closed and a Done option, so a
+// workflow.done neither matches must take the source's default, closed (D35).
+func TestWorkflowStatusSourceDefault(t *testing.T) {
+	t.Parallel()
+	cfg := coordinationConfig()
+	cfg.Workflow = project.WorkflowConfig{Start: "doing", Done: "done"}
+	choices := []model.StatusChoice{{Key: "open", Category: model.Todo}, {Key: "closed", Category: model.Done, Default: true}, {Key: "option-active", Category: model.Active}, {Key: "option-done", Category: model.Done}}
+	store := engine.OpenStore(context.Background(), cfg, source.Registry{"tasks": choosingSource{fakeSource(t, "tasks"), choices}})
+	defer store.Close()
+	snapshot := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 })
+	item, _, _ := snapshot.Get(model.Ref{Source: "tasks", ID: "BL-1"})
+	for category, want := range map[model.StatusCategory]string{model.Done: "closed", model.Active: "option-active"} {
+		if got, err := store.WorkflowStatus(item, category); err != nil || got != want {
+			t.Errorf("%s: got %q %v want %q", category, got, err, want)
+		}
+	}
+}

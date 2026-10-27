@@ -195,7 +195,9 @@ workflow: {start: option-active-id, done: closed}
 
 Option values are categories: `backlog`, `todo`, `active`, `done`, `canceled`.
 With `allowWrites`, `bl start` and `bl done` resolve among `open`, `closed`, and
-the option IDs; without it, start is refused and done closes the issue.
+the option IDs; without it, start is refused. Unless `workflow.done` names a Done
+option, done closes the issue, and the project's built-in "Item closed" workflow
+moves the card.
 An option without a configured status name displays its project option name;
 the stored status stays the option ID.
 

@@ -91,6 +91,6 @@ bl show ID --json
 
 A successful done response has data.outcomes, a done-category status, and a new
 version. Start and done resolve per item source: the workflow key if the source
-accepts it, else its only active or done status; otherwise they are refused,
-naming the source, before any claim. Continue the loop with
+accepts it, else its only active or done status, else its default; otherwise
+they are refused, naming the source, before any claim. Continue the loop with
 `bl next --claim --start --session loop-a --json` only after completion.

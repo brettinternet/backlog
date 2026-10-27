@@ -520,7 +520,8 @@ func validNumber(id string) (int, error) {
 // them: open and closed, plus unknown and the mapped labels, or the project
 // option IDs when the project allows writes.
 func (s *Source) StatusChoices(context.Context, model.Item) ([]model.StatusChoice, bool, error) {
-	choices := []model.StatusChoice{{Key: "open", Category: model.Todo}, {Key: "closed", Category: model.Done}}
+	// Closing is done on GitHub, even beside a project's Done option.
+	choices := []model.StatusChoice{{Key: "open", Category: model.Todo}, {Key: "closed", Category: model.Done, Default: true}}
 	mapping := s.o.StatusLabels
 	if s.statusLabels != nil {
 		choices = append(choices, model.StatusChoice{Key: "unknown", Category: model.Backlog})

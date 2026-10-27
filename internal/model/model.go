@@ -18,9 +18,11 @@ const (
 )
 
 // StatusChoice is one status key a source accepts, with its category.
+// Default marks the source's own pick when start or done is ambiguous.
 type StatusChoice struct {
 	Key      string
 	Category StatusCategory
+	Default  bool
 }
 
 type Priority string

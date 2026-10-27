@@ -235,7 +235,8 @@ func statusChoices(ctx context.Context, cfg project.Config, backend source.Sourc
 // WorkflowStatus resolves workflow.start (category active) or workflow.done
 // (category done) for item's source, for every client (D35): the workflow key
 // when the source accepts it in that category, else the source's only status
-// in the category. Anything else is refused, naming the source.
+// in the category, else the source's default. Anything else is refused,
+// naming the source.
 func WorkflowStatus(ctx context.Context, cfg project.Config, item model.Item, category model.StatusCategory) (string, error) {
 	if cfg.Workspace != nil {
 		p, local := cfg.SourceProject(item.Ref.Source)
@@ -265,7 +266,7 @@ func workflowStatus(ctx context.Context, cfg project.Config, backend source.Sour
 	if category == model.Done {
 		key, name = cfg.Workflow.Done, "done"
 	}
-	candidates := []string{}
+	candidates, preferred := []string{}, ""
 	for _, choice := range choices {
 		if choice.Category != category {
 			continue
@@ -273,12 +274,17 @@ func workflowStatus(ctx context.Context, cfg project.Config, backend source.Sour
 		if choice.Key == key {
 			return key, nil
 		}
+		if choice.Default {
+			preferred = choice.Key
+		}
 		candidates = append(candidates, choice.Key)
 	}
-	switch len(candidates) {
-	case 1:
+	switch {
+	case len(candidates) == 1:
 		return candidates[0], nil
-	case 0:
+	case preferred != "":
+		return preferred, nil
+	case len(candidates) == 0:
 		return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts no %s status for workflow.%s", item.Ref.Source, category, name))
 	}
 	return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts several %s statuses (%s) but not workflow.%s; set workflow.%s to one of them", item.Ref.Source, category, strings.Join(candidates, ", "), name, name))
