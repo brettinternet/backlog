@@ -164,7 +164,7 @@ the envelope is `ok: false` with the first failure's error and exit code, and
 keeps `data.outcomes`. `--if-version` with several IDs exits 2 before writing.
 Text output prints each written item, then `ID: message` for each failure.
 
-### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--source SOURCE]`
+### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--source SOURCE] [--sprint S]`
 
 ```sh
 bl new 'Fix login redirect !h @me #bug ^BL-1 <BL-2 ~m-1 :bug' --ac 'Redirect keeps the path'
@@ -186,6 +186,8 @@ echo 'Long description' | bl new 'Write docs' --body -
   first todo-category status, else the first status.
 - `defaults.type` and `defaults.dod` from config apply.
 - `--source` is required when there are several sources.
+- `--sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
+  like `bl set sprint=`. Only Linear sources create with a sprint.
 - `--if-version` on create always conflicts.
 
 ### `bl set ID... FIELD=V FIELD+=V FIELD-=V [--yes]`

@@ -2,9 +2,11 @@ package linear
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
@@ -68,6 +70,7 @@ const updateMutation = `mutation($id:String!,$input:IssueUpdateInput!){issueUpda
 const commentMutation = `mutation($issueId:String!,$body:String!){commentCreate(input:{issueId:$issueId,body:$body}){success comment{id}}}`
 const archiveMutation = `mutation($id:String!){issueArchive(id:$id){success entity{id}}}`
 const unarchiveMutation = `mutation($id:String!){issueUnarchive(id:$id){success entity{id}}}`
+const createMutation = `mutation($input:IssueCreateInput!){issueCreate(input:$input){success issue{id identifier}}}`
 
 func stringsValue(value any) ([]string, bool) {
 	switch v := value.(type) {
@@ -228,7 +231,7 @@ func (s *Source) resolveField(ctx context.Context, c remote.Credential, m model.
 func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m.Ref.Source != s.o.ID || !s.o.AllowWrites || (m.Op != model.Set && m.Op != model.AppendComment && m.Op != model.Archive && m.Op != model.Unarchive) {
+	if m.Ref.Source != s.o.ID || !s.o.AllowWrites || (m.Op != model.Create && m.Op != model.Set && m.Op != model.AppendComment && m.Op != model.Archive && m.Op != model.Unarchive) {
 		return model.Item{}, source.Refuse("rejected", "Linear write capability unavailable")
 	}
 	text := m.Comment.Body
@@ -250,6 +253,9 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	}
 	if !s.active {
 		return model.Item{}, source.Refuse("rejected", "active Linear principal required")
+	}
+	if m.Op == model.Create {
+		return s.create(ctx, c, m.Item)
 	}
 	if m.Field == "sprint" {
 		// Versions exclude the cycle, so the preflight must read it.
@@ -329,4 +335,68 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		return model.Item{}, err
 	}
 	return s.read(ctx, c, m.Ref.ID)
+}
+
+// create has no version to preflight. Catalog checks run before the single
+// non-retried issueCreate; any failure after dispatch has an unknown outcome.
+func (s *Source) create(ctx context.Context, c remote.Credential, item *model.Item) (model.Item, error) {
+	if item == nil || strings.TrimSpace(item.Title) == "" || item.Parent != nil || len(item.BlockedBy) > 0 {
+		return model.Item{}, source.Refuse("rejected", "Linear create requires a title and supports no parent or blockers")
+	}
+	input := map[string]any{"teamId": s.o.Team, "title": item.Title}
+	if item.Description != "" {
+		input["description"] = item.Description
+	}
+	if s.o.Project != "" {
+		input["projectId"] = s.o.Project
+	}
+	fields := []model.Mutation{{Field: "assignees", Value: item.Assignees}, {Field: "priority", Value: item.Priority}}
+	if item.Status != "" {
+		fields = append(fields, model.Mutation{Field: "status", Value: item.Status})
+	}
+	if len(item.Labels) > 0 {
+		fields = append(fields, model.Mutation{Field: "labels", Value: item.Labels})
+	}
+	if item.Sprint != "" {
+		// Read the cycle back so the result carries it.
+		s.sprints.Store(true)
+		fields = append(fields, model.Mutation{Field: "sprint", Value: item.Sprint, ExpectedSprint: new("")})
+	}
+	for _, f := range fields {
+		resolved, err := s.resolveField(ctx, c, f)
+		if err != nil {
+			return model.Item{}, err
+		}
+		for k, v := range resolved {
+			if v != nil {
+				input[k] = v
+			}
+		}
+	}
+	var r struct {
+		IssueCreate *struct {
+			Success bool
+			Issue   *struct{ ID, Identifier string }
+		}
+	}
+	if err := s.query(ctx, c, createMutation, map[string]any{"input": input}, &r); err != nil {
+		// A scheduler refusal or rate limit proves nothing was sent.
+		var limited remote.ScheduleDiagnostic
+		if errors.As(err, &limited) {
+			return model.Item{}, err
+		}
+		var diagnostic *oauth.Diagnostic
+		if errors.As(err, &diagnostic) && diagnostic.Code == oauth.CodeRateLimited {
+			return model.Item{}, err
+		}
+		return model.Item{}, source.Refuse("unknown-outcome", "Linear create unconfirmed; refresh before creating again")
+	}
+	if r.IssueCreate == nil || !r.IssueCreate.Success || r.IssueCreate.Issue == nil || !uuid(r.IssueCreate.Issue.ID) || r.IssueCreate.Issue.Identifier == "" {
+		return model.Item{}, source.Refuse("unknown-outcome", "Linear create unconfirmed; refresh before creating again")
+	}
+	created, err := s.read(ctx, c, r.IssueCreate.Issue.Identifier)
+	if err != nil {
+		return model.Item{}, source.Refuse("unknown-outcome", "Linear issue "+r.IssueCreate.Issue.Identifier+" created but refresh failed")
+	}
+	return created, nil
 }

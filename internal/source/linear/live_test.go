@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -126,6 +127,33 @@ func TestLiveRoundTrip(t *testing.T) {
 		t.Fatal("Test team needs an existing label for the label round trip")
 	}
 	label := labels.IssueLabels.Nodes[0].Name
+	deleteAfter := func(created struct{ ID, Identifier string }) {
+		t.Cleanup(func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			var out struct{ IssueDelete struct{ Success bool } }
+			err := s.query(cleanupCtx, c, `mutation($id:String!){issueDelete(id:$id){success}}`, map[string]any{"id": created.ID}, &out)
+			if err != nil || !out.IssueDelete.Success {
+				t.Errorf("cleanup failed for %s uuid=%s", created.Identifier, created.ID)
+				return
+			}
+			t.Logf("deleted issue %s uuid=%s (cascades its comments/relations)", created.Identifier, created.ID)
+			var verify struct {
+				Issue *struct {
+					ID      string
+					Trashed bool
+				}
+			}
+			err = s.query(cleanupCtx, c, `query($id:String!){issue(id:$id){id trashed}}`, map[string]any{"id": created.ID}, &verify)
+			if err != nil {
+				t.Logf("post-delete detail unavailable for %s; deletion confirmed by success receipt", created.Identifier)
+			} else if verify.Issue != nil && !verify.Issue.Trashed {
+				t.Errorf("deleted issue still live: %s", created.Identifier)
+			} else {
+				t.Logf("verified issue absent or trashed: %s", created.Identifier)
+			}
+		})
+	}
 	create := func(title string) struct{ ID, Identifier string } {
 		t.Helper()
 		var r struct {
@@ -137,31 +165,7 @@ func TestLiveRoundTrip(t *testing.T) {
 		call(`mutation($input:IssueCreateInput!){issueCreate(input:$input){success issue{id identifier}}}`, map[string]any{"input": map[string]any{"teamId": team, "title": title, "stateId": todo}}, &r)
 		created := r.IssueCreate.Issue
 		if created.ID != "" {
-			t.Cleanup(func() {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				defer cancel()
-				var out struct{ IssueDelete struct{ Success bool } }
-				err := s.query(cleanupCtx, c, `mutation($id:String!){issueDelete(id:$id){success}}`, map[string]any{"id": created.ID}, &out)
-				if err != nil || !out.IssueDelete.Success {
-					t.Errorf("cleanup failed for %s uuid=%s", created.Identifier, created.ID)
-					return
-				}
-				t.Logf("deleted issue %s uuid=%s (cascades its comments/relations)", created.Identifier, created.ID)
-				var verify struct {
-					Issue *struct {
-						ID      string
-						Trashed bool
-					}
-				}
-				err = s.query(cleanupCtx, c, `query($id:String!){issue(id:$id){id trashed}}`, map[string]any{"id": created.ID}, &verify)
-				if err != nil {
-					t.Logf("post-delete detail unavailable for %s; deletion confirmed by success receipt", created.Identifier)
-				} else if verify.Issue != nil && !verify.Issue.Trashed {
-					t.Errorf("deleted issue still live: %s", created.Identifier)
-				} else {
-					t.Logf("verified issue absent or trashed: %s", created.Identifier)
-				}
-			})
+			deleteAfter(created)
 		}
 		if !r.IssueCreate.Success || !uuid(created.ID) || created.Identifier == "" {
 			t.Fatal("invalid created issue receipt")
@@ -169,12 +173,29 @@ func TestLiveRoundTrip(t *testing.T) {
 		t.Logf("created issue %s uuid=%s", created.Identifier, created.ID)
 		return created
 	}
-	first := create("bl-provider-test BL-39 roundtrip")
-	blocker := create("bl-provider-test BL-39 blocker")
-	item, err := s.Read(ctx, first.Identifier)
+	// The roundtrip issue comes from the source's own create (BL-112), with
+	// a cycle when the Test team has an open one.
+	catalog, err := s.Load(ctx, source.Cursor{Sprints: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+	template := model.Item{Title: "bl-provider-test BL-39 roundtrip", Description: "bl-provider-test body", Status: todo, Assignees: []string{identity.Viewer.ID}, Priority: model.Medium, Labels: []string{label}}
+	for _, sprint := range catalog.Sprints {
+		if sprint.State != model.SprintClosed {
+			template.Sprint = sprint.Key
+		}
+	}
+	item, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: s.o.ID}, Op: model.Create, Item: &template})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	first := struct{ ID, Identifier string }{fmt.Sprint(item.Fields["uuid"]), item.Ref.ID}
+	deleteAfter(first)
+	t.Logf("created issue %s uuid=%s through the source (cycle %q)", first.Identifier, first.ID, template.Sprint)
+	if item.Title != template.Title || item.Description != template.Description || item.Status != todo || len(item.Assignees) != 1 || item.Assignees[0] != identity.Viewer.ID || item.Priority != model.Medium || len(item.Labels) != 1 || item.Labels[0] != label || item.Sprint != template.Sprint {
+		t.Fatalf("create roundtrip failed: %+v", item)
+	}
+	blocker := create("bl-provider-test BL-39 blocker")
 	apply := func(field string, value any) {
 		t.Helper()
 		item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: field, Value: value})
