@@ -143,7 +143,8 @@ under a file lock. The tab appears at once and persists.
 | Tree | Parent/child hierarchy. `h` collapses or goes to the parent; `l` expands or goes to the first child. | All item keys |
 
 **Board:** configured statuses in workflow order, including empty ones, then
-undeclared statuses. The Board tab hides drafts, which are never ready
+undeclared statuses. Keys a status `includes` share its column, and cards keep
+their own status name (design.md D36). The Board tab hides drafts, which are never ready
 (design.md D29); `fb` shows them. A status or category filter drops empty
 columns; a negated one drops only the columns it excludes. Other group keys use
 their group order. Columns are at

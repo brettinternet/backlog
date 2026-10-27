@@ -48,6 +48,22 @@ func TestStepStatusUndeclaredKeys(t *testing.T) {
 	}
 }
 
+// An included key steps from its entry's column, so a GitHub option in the
+// To Do column moves to In Progress's option, not past the board's end (D36).
+func TestStepStatusIncludedKeys(t *testing.T) {
+	statuses := []project.StatusConfig{{Key: "todo", Includes: []string{"opt-todo"}}, {Key: "doing", Includes: []string{"opt-doing"}}, {Key: "done"}}
+	accepted := []model.StatusChoice{{Key: "opt-todo"}, {Key: "opt-doing"}, {Key: "closed"}}
+	if got := statusOrder(statuses, accepted); strings.Join(got, ",") != "opt-todo,opt-doing,closed" {
+		t.Fatalf("order %v", got)
+	}
+	if got := stepStatus(statuses, accepted, "opt-todo", 1); got != "opt-doing" {
+		t.Fatalf("> from opt-todo: %q", got)
+	}
+	if got := stepStatus(statuses, accepted, "todo", 1); got != "opt-doing" {
+		t.Fatalf("> from the todo entry: %q", got)
+	}
+}
+
 func pickerValues(choices []pickerChoice) []string {
 	values := []string{}
 	for _, choice := range choices {

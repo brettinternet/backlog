@@ -201,7 +201,7 @@ func StatusTarget(cfg project.Config, m model.Mutation) (string, model.StatusCat
 		}
 	}
 	for _, s := range cfg.Statuses {
-		if s.Key == status {
+		if s.Key == status || slices.Contains(s.Includes, status) {
 			return status, model.StatusCategory(s.Category), found
 		}
 	}
@@ -241,6 +241,82 @@ func sourceStatuses(cfg project.Config, sourceID string) []string {
 	return nil
 }
 
+// entryChoices returns the keys among status entry key and its includes that
+// choices accept; a key that isn't an entry stands for itself (D36).
+func entryChoices(cfg project.Config, choices []model.StatusChoice, key string) []string {
+	members := cfg.StatusMembers(key)
+	if members == nil {
+		members = []string{key}
+	}
+	var accepted []string
+	for _, choice := range choices {
+		if slices.Contains(members, choice.Key) && !slices.Contains(accepted, choice.Key) {
+			accepted = append(accepted, choice.Key)
+		}
+	}
+	return accepted
+}
+
+// resolveStatusWrite replaces a status entry written to an item with the one
+// key the entry covers that the item's source accepts, else refuses naming
+// the source (D36). Statuses that aren't entries with includes pass through.
+func resolveStatusWrite(ctx context.Context, cfg project.Config, backend source.Source, m model.Mutation) (model.Mutation, error) {
+	if _, ok := backend.(*workspaceSource); ok {
+		return m, nil // The project write resolves with its own statuses.
+	}
+	var choices []model.StatusChoice
+	resolve := func(key string, item func() (model.Item, error)) (string, error) {
+		members := cfg.StatusMembers(key)
+		if len(members) < 2 {
+			return key, nil
+		}
+		if choices == nil {
+			i, err := item()
+			if err != nil {
+				return "", err
+			}
+			if choices, err = statusChoices(ctx, cfg, backend, i); err != nil {
+				return "", err
+			}
+		}
+		switch accepted := entryChoices(cfg, choices, key); len(accepted) {
+		case 1:
+			return accepted[0], nil
+		case 0:
+			return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts none of status %s (%s)", m.Ref.Source, key, strings.Join(members, ", ")))
+		default:
+			return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts several of status %s (%s); set one of them", m.Ref.Source, key, strings.Join(accepted, ", ")))
+		}
+	}
+	if m.Op == model.Create && m.Item != nil {
+		created := *m.Item
+		created.Ref.Source = m.Ref.Source
+		status, err := resolve(created.Status, func() (model.Item, error) { return created, nil })
+		created.Status = status
+		m.Item = &created
+		return m, err
+	}
+	read := func() (model.Item, error) { return backend.Read(ctx, m.Ref.ID) }
+	changes := []*model.Mutation{&m}
+	if m.Op == model.Batch {
+		m.Changes = slices.Clone(m.Changes)
+		changes = changes[:0]
+		for n := range m.Changes {
+			changes = append(changes, &m.Changes[n])
+		}
+	}
+	for _, change := range changes {
+		if value, ok := change.Value.(string); ok && change.Op == model.Set && change.Field == "status" {
+			resolved, err := resolve(value, read)
+			if err != nil {
+				return m, err
+			}
+			change.Value = resolved
+		}
+	}
+	return m, nil
+}
+
 // WorkflowStatus resolves workflow.start (category active) or workflow.done
 // (category done) for item's source, for every client (D35): the workflow key
 // when the source accepts it in that category, else the source's only status
@@ -275,14 +351,21 @@ func workflowStatus(ctx context.Context, cfg project.Config, backend source.Sour
 	if category == model.Done {
 		key, name = cfg.Workflow.Done, "done"
 	}
-	candidates, preferred := []string{}, ""
+	inCategory := []model.StatusChoice{}
 	for _, choice := range choices {
-		if choice.Category != category {
-			continue
+		if choice.Category == category {
+			inCategory = append(inCategory, choice)
 		}
-		if choice.Key == key {
-			return key, nil
-		}
+	}
+	switch matched := entryChoices(cfg, inCategory, key); len(matched) {
+	case 1:
+		return matched[0], nil
+	case 0:
+	default:
+		return "", source.Refuse("rejected", fmt.Sprintf("source %s accepts several statuses of workflow.%s %s (%s); keep one", item.Ref.Source, name, key, strings.Join(matched, ", ")))
+	}
+	candidates, preferred := []string{}, ""
+	for _, choice := range inCategory {
 		if choice.Default {
 			preferred = choice.Key
 		}

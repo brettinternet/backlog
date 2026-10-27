@@ -202,6 +202,10 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	if err != nil {
 		return model.Item{}, err
 	}
+	m, err = resolveStatusWrite(ctx, cfg, backend, m)
+	if err != nil {
+		return model.Item{}, err
+	}
 	if err := validateWrite(cfg, m.Ref.Source, backend.Info().Capabilities, m); err != nil {
 		return model.Item{}, err
 	}
@@ -245,7 +249,11 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 		if m.Op == model.Create && m.Item != nil {
 			status, changes = m.Item.Status, m.Item.Status != ""
 		}
-		if changes && !slices.Contains(narrowed, status) {
+		members := cfg.StatusMembers(status)
+		if members == nil {
+			members = []string{status}
+		}
+		if changes && !slices.ContainsFunc(members, func(key string) bool { return slices.Contains(narrowed, key) }) {
 			return reject(fmt.Sprintf("source %s does not accept status %s", sourceID, status))
 		}
 	}
@@ -319,7 +327,7 @@ func validateWrite(cfg project.Config, sourceID string, caps model.Capabilities,
 				}
 				allowed = nil
 				for _, s := range cfg.Statuses {
-					allowed = append(allowed, s.Key)
+					allowed = append(append(allowed, s.Key), s.Includes...)
 				}
 			}
 			if m.Op == model.Unset && m.Field == "priority" {
@@ -460,7 +468,7 @@ func ApplyCreateDefaults(cfg project.Config, sourceID string, item *model.Item) 
 func ValidateItem(cfg project.Config, item model.Item) error {
 	allowed := []string{}
 	for _, s := range cfg.Statuses {
-		allowed = append(allowed, s.Key)
+		allowed = append(append(allowed, s.Key), s.Includes...)
 	}
 	if !slices.Contains(allowed, item.Status) {
 		return source.Refuse("rejected", "unknown status "+item.Status+"; allowed values: "+strings.Join(allowed, ", "))

@@ -570,6 +570,11 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 	if m.Op == model.Create {
 		m.Ref.ID = ""
 	}
+	m, err := resolveStatusWrite(s.ctx, s.cfg, w.backend, m)
+	if err != nil {
+		s.finishEdit(w, job, model.Item{}, err)
+		return
+	}
 	if m.Op != model.Create {
 		preparer, ok := w.backend.(source.Preparer)
 		if !ok {
@@ -587,7 +592,6 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 	var transition TransitionResult
 	ctx := WithTransitionResult(s.ctx, &transition)
 	var item model.Item
-	var err error
 	if s.cfg.Workspace != nil {
 		item, err = w.backend.Apply(ctx, m)
 	} else {

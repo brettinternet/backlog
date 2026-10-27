@@ -61,15 +61,18 @@ func boardEmpty(q query.Query, statuses []project.StatusConfig) func(project.Sta
 }
 
 // boardGroups orders status columns by workflow, followed by undeclared
-// statuses. Declared statuses without cards appear only where empty allows.
+// statuses. Included keys share their entry's column (D36). Declared statuses
+// without cards appear only where empty allows.
 func boardGroups(groups []engine.RowGroup, statuses []project.StatusConfig, status bool, empty func(project.StatusConfig) bool) []engine.RowGroup {
 	if !status {
 		return groups
 	}
+	settings := project.Settings{Statuses: statuses}
 	byValue := make(map[string][]engine.Row, len(groups))
 	for _, g := range groups {
 		for _, r := range g.Rows {
-			byValue[r.Status] = append(byValue[r.Status], r)
+			entry := settings.StatusEntry(r.Status)
+			byValue[entry] = append(byValue[entry], r)
 		}
 	}
 	result := make([]engine.RowGroup, 0, len(byValue)+len(statuses))

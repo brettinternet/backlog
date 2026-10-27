@@ -357,8 +357,9 @@ func buildPickerChoices(snapshot *engine.Snapshot, kind pickerKind, current mode
 		for _, status := range settings.statuses {
 			names[status.Key] = status.Name
 		}
+		entries := project.Settings{Statuses: settings.statuses}
 		for _, key := range statusOrder(settings.statuses, settings.accepted) {
-			label := cmp.Or(names[key], current.Names[key], key)
+			label := cmp.Or(names[entries.StatusEntry(key)], current.Names[key], key)
 			add(key, label, current.Status)
 			if index := choiceIndex(choices, key); index >= 0 && label != key {
 				choices[index].hint = key
@@ -1066,13 +1067,16 @@ func (m *Model) workflowStatus(direction int) tea.Cmd {
 	return m.editCommand(action, false)
 }
 
-// statusOrder lists the accepted keys in config order, then the source's own
-// keys config doesn't declare.
+// statusOrder lists the accepted keys in config order, an included key at its
+// entry's position (D36), then the source's own keys config doesn't declare.
 func statusOrder(statuses []project.StatusConfig, accepted []model.StatusChoice) []string {
+	settings := project.Settings{Statuses: statuses}
 	keys := []string{}
 	for _, status := range statuses {
-		if slices.ContainsFunc(accepted, func(c model.StatusChoice) bool { return c.Key == status.Key }) {
-			keys = append(keys, status.Key)
+		for _, key := range settings.StatusMembers(status.Key) {
+			if slices.ContainsFunc(accepted, func(c model.StatusChoice) bool { return c.Key == key }) && !slices.Contains(keys, key) {
+				keys = append(keys, key)
+			}
 		}
 	}
 	for _, choice := range accepted {
@@ -1083,13 +1087,15 @@ func statusOrder(statuses []project.StatusConfig, accepted []model.StatusChoice)
 	return keys
 }
 
-// stepStatus is the accepted status before (-1) or after (1) current in
-// statusOrder, skipping statuses the source doesn't accept, or "" if none. An
-// unaccepted current status keeps its config position.
+// stepStatus is the accepted status before (-1) or after (1) current's column
+// in statusOrder, skipping statuses the source doesn't accept, or "" if none.
+// An unaccepted current status keeps its config position.
 func stepStatus(statuses []project.StatusConfig, accepted []model.StatusChoice, current string, direction int) string {
+	settings := project.Settings{Statuses: statuses}
 	keys := statusOrder(statuses, accepted)
 	rank := func(key string) int {
-		if i := slices.IndexFunc(statuses, func(s project.StatusConfig) bool { return s.Key == key }); i >= 0 {
+		entry := settings.StatusEntry(key)
+		if i := slices.IndexFunc(statuses, func(s project.StatusConfig) bool { return s.Key == entry }); i >= 0 {
 			return i
 		}
 		if i := slices.Index(keys, key); i >= 0 {

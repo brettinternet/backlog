@@ -69,7 +69,7 @@ snapshot.
 | Field | Values |
 | --- | --- |
 | `id` | ID or number: `id:BL-1,BL-2`, `id:12`. A number matches the last hyphenated part, ignoring padding. `source:ID` picks a source; in a workspace use the full source key (`github.com%2Facme%2Fapp/tasks:BL-1`). |
-| `status` | Status key or name |
+| `status` | Status key or name. An entry also matches the keys it `includes` (design.md D36). |
 | `category` | `backlog`, `todo`, `active`, `done`, `canceled` |
 | `priority` | `urgent`, `high`, `medium`, `low`, `none`; ordered |
 | `assignee` | Handle, `me`, or `none` |
@@ -135,7 +135,7 @@ Views take `sort` and `group` parameters; the filter bar also accepts inline
 | `due` | Earliest first, unset last |
 | `id` | Natural |
 | `title` | Case-insensitive |
-| `status` | Workflow order |
+| `status` | Workflow order; included keys take their entry's place |
 
 Separate keys with commas; `-` reverses one key (`sort:priority,-updated`). Ties
 break by `next`, then ID, then source. Items without a `next` rank follow ranked
@@ -143,7 +143,8 @@ ones.
 
 `group:` takes one of `status`, `category`, `priority`, `assignee`, `label`,
 `milestone`, `sprint`, `type`, `parent`, `source`, or `none` (the default). Items with
-several labels or assignees appear in each group. Groups follow status order,
+several labels or assignees appear in each group. Status groups use the entry
+that includes an item's key, if any. Groups follow status order,
 category order, priority order (unset last), or milestone catalog order
 (including archived milestones); undeclared values follow, then other keys sort
 by value. An empty group value is unset. Sort order holds within each group.
