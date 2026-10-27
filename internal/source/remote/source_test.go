@@ -306,3 +306,17 @@ func TestRemoteVersionedWrite(t *testing.T) {
 		t.Fatalf("stale write reached provider: %v calls=%d", err, p.writes)
 	}
 }
+
+// ReadDetail skips a source only on not-found or invalid-id; masking either as
+// unavailable breaks unqualified lookups across sources.
+func TestRemoteReadKeepsAbsentReasons(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{"not-found", "invalid-id"} {
+		p := &provider{err: source.Refuse(want, "provider detail")}
+		_, err := New(p, remoteStore(t), &Secrets{}).Read(context.Background(), "BL-1")
+		var refusal *source.Error
+		if !errors.As(err, &refusal) || refusal.Reason != want {
+			t.Fatalf("%s: %v", want, err)
+		}
+	}
+}
