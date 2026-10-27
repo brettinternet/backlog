@@ -239,11 +239,12 @@ func (s *Source) promote(ctx context.Context, c remote.Credential, current model
 		_, err = s.request(ctx, c, http.MethodPatch, s.issuePath(s.o.Repo, n), map[string]any{"state": "closed", "state_reason": "completed"})
 	}
 	if err != nil {
-		return model.Item{}, source.Refuse("unknown-outcome", "GitHub draft "+draft+" is now issue "+id+" but its status is unconfirmed; refresh before further edits")
+		// The issue exists now: name it, since the draft ID no longer resolves.
+		return model.Item{}, &source.Error{Reason: "unknown-outcome", Message: "GitHub draft " + draft + " is now issue " + id + " but its status is unconfirmed; refresh before further edits", Created: &model.Ref{Source: s.o.ID, ID: id}}
 	}
 	item, err := s.read(ctx, c, id)
 	if err != nil {
-		return model.Item{}, source.Refuse("unknown-outcome", "GitHub draft "+draft+" is now issue "+id+" but refresh failed; refresh before further edits")
+		return model.Item{}, &source.Error{Reason: "unknown-outcome", Message: "GitHub draft " + draft + " is now issue " + id + " but refresh failed; refresh before further edits", Created: &model.Ref{Source: s.o.ID, ID: id}}
 	}
 	return item, nil
 }

@@ -840,7 +840,7 @@ func TestEntryEditsAndUnknownOutcome(t *testing.T) {
 
 // A draft loads in the draft status, reads at the same version, and takes
 // only draft edits. A status write converts it in the configured repo, then
-// sets the option; a failure after the conversion names the draft.
+// sets the option; a failure after the conversion names the new issue.
 func TestDrafts(t *testing.T) {
 	s, f := newFixture(t)
 	f.withDraft, f.draftAssignees = true, []string{"alice"}
@@ -895,7 +895,7 @@ func TestDrafts(t *testing.T) {
 	}
 	_, err = s.Apply(ctx, model.Mutation{Ref: current.Ref, ExpectedVersion: current.Version, Op: model.Set, Field: "status", Value: "active"})
 	var refusal *source.Error
-	if !errors.As(err, &refusal) || refusal.Reason != "unknown-outcome" || !strings.Contains(refusal.Message, "PVTI_draft") {
+	if !errors.As(err, &refusal) || refusal.Reason != "unknown-outcome" || !strings.Contains(refusal.Message, "PVTI_draft") || refusal.Created == nil || *refusal.Created != (model.Ref{Source: "gh", ID: "3"}) {
 		t.Fatalf("failed follow-up: %v", err)
 	}
 }

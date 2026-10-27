@@ -423,8 +423,8 @@ the draft if it hasn't changed since.
 Setting any other status converts the draft into an issue in `repo` with
 `convertProjectV2DraftIssueItemToIssue`, then sets the project option or closes
 the issue. The item comes back as `issues:N` and the draft ID stops resolving.
-A failure after the conversion is sent reports `unknown-outcome` naming the
-draft ID. A project-only source has no `repo`, so it refuses conversion; a
+If the conversion's result is lost, the write reports `unknown-outcome`; a
+failure after the issue exists also names the issue. A project-only source has no `repo`, so it refuses conversion; a
 draft converted on GitHub disappears from `bl` and its issue appears when the
 next refresh sees it.
 
