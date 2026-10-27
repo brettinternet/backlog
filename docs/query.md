@@ -73,7 +73,8 @@ snapshot.
 | `category` | `backlog`, `todo`, `active`, `done`, `canceled` |
 | `priority` | `urgent`, `high`, `medium`, `low`, `none`; ordered |
 | `assignee` | Handle, `me`, or `none` |
-| `label`, `type`, `milestone`, `source` | Exact value, or `none` |
+| `label`, `type`, `milestone` | Exact value, or `none` |
+| `source` | Source ID, or `none`. In a workspace, the full source key or the bare source ID, which matches that source in every project. |
 | `parent` | ID, or `none` |
 | `sprint` | `current` (active), `next` (earliest future), `none`, or a sprint key or name. Linear and Jira always; GitHub only with a Projects v2 source bound to an iteration field. |
 | `blocked-by`, `blocks` | ID. `blocks` is derived from the loaded target's blockers; the item's own list counts only for targets that aren't loaded. |

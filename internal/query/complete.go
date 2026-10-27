@@ -170,6 +170,9 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 			use(i.Type)
 		case "source":
 			use(i.Ref.Source)
+			if _, id, composed := strings.Cut(i.Ref.Source, "/"); composed {
+				use(id)
+			}
 		}
 	}
 	slices.Sort(used)
