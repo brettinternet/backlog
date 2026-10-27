@@ -126,7 +126,7 @@ Explicit `sort` and `group` override query directives. Columns are `id`,
 a count). Each tab keeps its query, folds, and selected item across refreshes,
 following the item into another group; if it disappears, the row taking its
 place is selected. A tab whose query, layout, or columns differ from its
-definition is marked `•` until restart; `ctrl-s` keeps the edit as a view.
+definition is marked `•`; `F` resets it, and `ctrl-s` keeps the edit as a view.
 
 `ctrl-s` saves the current view. Edit the name (`ctrl-u` clears it), press `tab`
 to switch between user and project config, then `enter`. Saving replaces a
@@ -226,8 +226,9 @@ title matches are bold and underlined.
 a value picker. `fr` toggles ready-only; `fd` toggles closed items (not archived);
 `fb` toggles drafts (`-category:backlog`). Each toggles only its own term, so
 `is:mine` and other `is:` terms stay.
-`F` or `fc` clears filters but keeps sort and group. `oo` reverses every sort
-key. `zA` groups by assignee, since `za` folds.
+`fc` clears filters but keeps sort and group. `F` resets the tab to its
+definition: query, layout, columns, and folds. `oo` reverses every sort key.
+`zA` groups by assignee, since `za` folds.
 
 ## Editing
 
@@ -446,7 +447,7 @@ keys:
 | `board` | `B` | Board layout |
 | `tree` | `T` | Tree layout |
 | `query` | `/` | Edit query / find |
-| `clear-filter` | `F` | Clear filters |
+| `reset-view` | `F` | Reset view |
 | `save-view` | `ctrl+s` | Save view |
 | `workspace` | `W` | Toggle workspace |
 | `refresh` | `R` | Resync sources |

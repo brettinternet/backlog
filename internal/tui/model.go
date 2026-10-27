@@ -1035,9 +1035,15 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			m.inputSerial++
 			return m, m.toggleLayout(map[string]string{"B": "board", "T": "tree"}[s])
 		case "F":
-			m.query = clearQuery(m.query)
+			// Reset returns the tab to its definition, clearing the • mark.
+			v := &m.views[m.view]
+			v.Config = v.Base
+			m.query = v.Base.Query
 			m.queryError = ""
 			m.queryWarning = ""
+			m.folded = nil
+			m.foldAll = false
+			m.board = boardState{}
 			m.serial++
 			m.project()
 			return m, nil

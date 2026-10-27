@@ -368,9 +368,13 @@ func TestQueryMenuKeys(t *testing.T) {
 			}
 		})
 	}
-	m := queryKey(shellFixture(3), "F")
-	if m.query != "sort:next" {
-		t.Fatal("F must clear predicates")
+	// F returns the tab to its definition after filter, layout, and fold edits.
+	m := queryKey(queryKey(shellFixture(3), "f"), "c")
+	m = queryKey(m, "B")
+	m = queryKey(queryKey(m, "z"), "M")
+	m = queryKey(m, "F")
+	if v := m.views[m.view]; m.query != v.Base.Query || v.Config.Layout != v.Base.Layout || m.foldAll || m.folded != nil {
+		t.Fatalf("F must reset the view: %q %s", m.query, v.Config.Layout)
 	}
 	// fd and fr toggle only their own term: other is: terms, such as is:mine,
 	// stay, and toggling twice restores the query.
