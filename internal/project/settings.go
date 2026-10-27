@@ -55,6 +55,7 @@ type SourceConfig struct {
 	Repo                    string               `yaml:"repo,omitempty" json:"repo,omitempty"`
 	Run                     []string             `yaml:"run,omitempty" json:"run,omitempty"`
 	GitHubProject           *GitHubProjectConfig `yaml:"githubProject,omitempty" json:"githubProject,omitempty"`
+	StatusLabels            map[string]string    `yaml:"statusLabels,omitempty" json:"statusLabels,omitempty"`
 	JQL                     string               `yaml:"jql,omitempty" json:"jql,omitempty"`
 	CloudID                 string               `yaml:"cloudId,omitempty" json:"cloudId,omitempty"`
 	HardLinkTypes           []string             `yaml:"hardLinkTypes,omitempty" json:"hardLinkTypes,omitempty"`

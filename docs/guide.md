@@ -152,6 +152,8 @@ Other settings:
 - `git: {autoCommit: true}` commits only the files `bl` writes ([details](cli.md#git-auto-commit)).
 - User-config `workspaces` browse several projects together: `W` toggles in the
   TUI, and `--workspace NAME` works with `ls` and `next`.
+- A GitHub source without Projects v2 can take statuses from labels with
+  `statusLabels` ([details](github.md#label-statuses)).
 
 Schemas: [project](schemas/project-config.json), [user](schemas/user-config.json).
 Design: [configuration and trust](design.md#5-projects-configuration-and-trust).

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -41,7 +42,7 @@ type fixture struct {
 	lastFieldsQuery, lastSprintFieldName     string
 }
 
-func newFixture(t *testing.T) (*Source, *fixture) {
+func newFixture(t *testing.T, configure ...func(*Options)) (*Source, *fixture) {
 	t.Helper()
 	testkit.Isolate(t)
 	t.Setenv("BL_GITHUB_TEST_TOKEN", "fake-secret")
@@ -56,7 +57,11 @@ func newFixture(t *testing.T) (*Source, *fixture) {
 		return transport.RoundTrip(copy)
 	})}
 	secrets := &remote.Secrets{}
-	s, err := New(Options{ID: "gh", Repo: "owner/repo", Account: project.AccountConfig{Host: "github.com", User: "alice", Env: "BL_GITHUB_TEST_TOKEN"}, Project: &project.GitHubProjectConfig{ID: "PVT_test", Owner: "alice", Number: 9, FieldID: "PVTSSF_status", Options: map[string]string{"todo": "todo", "active": "active"}, AllowWrites: true}, HTTP: client, Scheduler: remote.NewScheduler(), Secrets: secrets, Credentials: &remote.Credentials{Secrets: secrets}})
+	o := Options{ID: "gh", Repo: "owner/repo", Account: project.AccountConfig{Host: "github.com", User: "alice", Env: "BL_GITHUB_TEST_TOKEN"}, Project: &project.GitHubProjectConfig{ID: "PVT_test", Owner: "alice", Number: 9, FieldID: "PVTSSF_status", Options: map[string]string{"todo": "todo", "active": "active"}, AllowWrites: true}, HTTP: client, Scheduler: remote.NewScheduler(), Secrets: secrets, Credentials: &remote.Credentials{Secrets: secrets}}
+	for _, c := range configure {
+		c(&o)
+	}
+	s, err := New(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,6 +333,44 @@ func TestVersionedCapabilityGatedWrites(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.writes != 5 {
 		t.Fatalf("writes=%d", f.writes)
+	}
+}
+
+// Label statuses fail closed: several or no mapped labels are never ready, and
+// a status write swaps only mapped labels in one mutation.
+func TestLabelStatuses(t *testing.T) {
+	s, f := newFixture(t, func(o *Options) {
+		o.Project, o.StatusLabels = nil, map[string]string{"ready": "todo", "in-progress": "active"}
+	})
+	ctx := context.Background()
+	f.labels = []string{"Ready", "bug"}
+	current, err := s.Read(ctx, "1")
+	if err != nil || current.Status != "ready" || current.Category != model.Todo || !slices.Equal(current.Labels, []string{"Ready", "bug"}) {
+		t.Fatalf("mapped label: %+v %v", current, err)
+	}
+	apply := func(value string) (model.Item, error) {
+		return s.Apply(ctx, model.Mutation{Ref: current.Ref, Op: model.Set, Field: "status", Value: value, ExpectedVersion: current.Version})
+	}
+	if current, err = apply("in-progress"); err != nil || current.Status != "in-progress" || current.Category != model.Active || !slices.Equal(f.labels, []string{"bug", "in-progress"}) {
+		t.Fatalf("label status write: %+v %v %v", current, err, f.labels)
+	}
+	if current, err = apply("unknown"); err != nil || current.Status != "unknown" || current.Category != model.Backlog || !slices.Equal(f.labels, []string{"bug"}) {
+		t.Fatalf("unknown write: %+v %v %v", current, err, f.labels)
+	}
+	f.labels = []string{"ready", "In-Progress"}
+	delta, err := s.Load(ctx, source.Cursor{})
+	if err != nil || delta.Items[0].Status != "unknown" || delta.Items[0].Category != model.Backlog || len(delta.Findings) != 2 || !strings.Contains(delta.Findings[0].Message, "(ready, in-progress)") {
+		t.Fatalf("several mapped labels: %+v %v", delta, err)
+	}
+	f.state = "CLOSED"
+	if current, err = s.Read(ctx, "1"); err != nil || current.Status != "closed" || current.Category != model.Done {
+		t.Fatalf("closed issue: %+v %v", current, err)
+	}
+	if _, err = apply("ready"); !reason(err, "rejected") || f.writes != 2 {
+		t.Fatalf("closed label write: %v writes=%d", err, f.writes)
+	}
+	if current, err = apply("open"); err != nil || current.Status != "unknown" || f.state != "OPEN" {
+		t.Fatalf("reopen: %+v %v", current, err)
 	}
 }
 

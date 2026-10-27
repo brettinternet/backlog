@@ -90,6 +90,11 @@
           "hardLinkTypes": {"type": "array", "items": {"type": "string"}},
           "unsuccessfulResolutions": {"type": "array", "items": {"type": "string"}},
           "allowWrites": {"type": "boolean", "default": false},
+          "statusLabels": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {"enum": ["backlog", "todo", "active", "done", "canceled"]}
+          },
           "githubProject": {
             "type": "object",
             "additionalProperties": false,

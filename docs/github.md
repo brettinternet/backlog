@@ -110,6 +110,52 @@ Authorized GitHub Apps, and uninstall them to withdraw repository access.
 Fake-server tests cover the protocol and permission checks; a live login hasn't
 been recorded.
 
+## Label statuses
+
+Without Projects v2, every open issue is `open` and ready. To give issues
+statuses, map labels to categories:
+
+```yaml
+sources:
+  - id: issues
+    type: github
+    repo: acme/app
+    account: personal
+    statusLabels:
+      ready: todo
+      in-progress: active
+statuses:
+  - {key: unknown, name: Triage, category: backlog}
+  - {key: closed, name: Closed, category: done}
+  - {key: ready, name: Ready, category: todo}
+  - {key: in-progress, name: In Progress, category: active}
+workflow: {start: in-progress, done: closed}
+```
+
+| Issue | Status | Category |
+| --- | --- | --- |
+| Closed | `closed` | done, or canceled for not planned |
+| Open, one mapped label | the label | as mapped |
+| Open, no mapped label | `unknown` | backlog |
+| Open, several mapped labels | `unknown` | backlog, with a warning naming them |
+
+Label names match case-insensitively, as on GitHub, and mapped labels stay in
+`labels`. A closed issue is closed whatever its labels.
+
+| Write | Effect |
+| --- | --- |
+| `status=LABEL` | Replaces the mapped labels with this one, keeping the rest |
+| `status=unknown` | Removes the mapped labels |
+| `status=closed` | Closes the issue as completed |
+| `status=open` | Reopens it |
+
+Each is one write. A label status on a closed issue is refused; reopen it first.
+`workflow.start` can be a label, so `bl next --claim --start` works.
+
+`statusLabels` with `githubProject`, a category other than `backlog`, `todo`,
+`active`, `done`, or `canceled`, two labels differing only in case, or a label
+named `open`, `closed`, or `unknown` fails config load.
+
 ## Project status
 
 Bind one single-select field by ID. Find the IDs with:
@@ -160,14 +206,16 @@ them:
 
 | Key | Category | When |
 | --- | --- | --- |
-| `open` | todo | Open issue without a project binding |
+| `open` | todo | Open issue without a project binding or status labels |
 | `closed` | done, or canceled for not planned | Closed issue |
-| `unknown` | backlog | Open issue not in the project or with an unmapped option |
+| `unknown` | backlog | Open issue not in the project, with an unmapped option, or without exactly one status label |
 | option ID | as mapped in `options` | Open issue with a mapped option |
+| label | as mapped in `statusLabels` | Open issue with that one status label |
 
 With any GitHub source configured, a `statuses:` entry for one of these keys
 with another category fails config load (`closed` accepts done or canceled), and
-so does an option ID mapped to different categories by two GitHub sources.
+so does an option ID or label mapped to different categories by two GitHub
+sources.
 `bl doctor` reports the same error.
 
 Each refresh lists every project item and every issue, with `blockedBy` and
@@ -254,3 +302,12 @@ gh project delete NUMBER --owner OWNER
 
 The label must already exist. Logs include artifact IDs, never credentials. See
 the [recorded run](github-verification.md).
+
+`TestLiveLabelStatus` needs only the repository and user. It creates three
+uniquely named `bl-test-*` labels and one issue, moves the issue through label
+statuses, and deletes exactly those labels and the issue:
+
+```sh
+BL_PROVIDER_TESTS=1 BL_GITHUB_TEST_REPO=OWNER/REPO BL_GITHUB_TEST_USER=OWNER \
+task cli:test PKG=./internal/source/github -- -run TestLiveLabelStatus -count=1 -v
+```
