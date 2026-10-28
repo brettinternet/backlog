@@ -627,6 +627,7 @@ func TestQueuedEditsArePendingBeforeSourceIO(t *testing.T) {
 type deletingSource struct {
 	*native.Source
 	close bool
+	dir   string
 }
 
 func (s deletingSource) Info() source.Info {
@@ -651,7 +652,7 @@ func (s deletingSource) Apply(ctx context.Context, m model.Mutation) (model.Item
 	if s.close {
 		return s.Source.Apply(ctx, model.Mutation{Ref: m.Ref, ExpectedVersion: m.ExpectedVersion, Op: model.Set, Field: "status", Value: "done"})
 	}
-	return model.Item{Ref: m.Ref}, nil
+	return model.Item{Ref: m.Ref}, os.Remove(filepath.Join(s.dir, m.Ref.ID+".md"))
 }
 
 // Undoing a create on a source without archive must remove or replace the
@@ -659,9 +660,9 @@ func (s deletingSource) Apply(ctx context.Context, m model.Mutation) (model.Item
 func TestCreateUndoByDelete(t *testing.T) {
 	t.Parallel()
 	for _, closeInstead := range []bool{false, true} {
-		initial, backend, _ := nativeStore(t)
+		initial, backend, file := nativeStore(t)
 		initial.Close()
-		s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": deletingSource{backend, closeInstead}})
+		s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": deletingSource{backend, closeInstead, filepath.Dir(file)}})
 		defer s.Close()
 		awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Len() == 1 })
 		requireSuccess(t, s.Mutate(model.Mutation{Ref: model.Ref{Source: "tasks"}, Op: model.Create, Item: &model.Item{Title: "New", Status: "todo"}}))
