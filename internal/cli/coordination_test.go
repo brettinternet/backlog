@@ -236,9 +236,10 @@ func TestHeartbeatRenewsWhileCommandRuns(t *testing.T) {
 		t.Fatalf("claim: %d %s %s", code, out, stderr)
 	}
 	// Every lease is already near expiry, so renewal falls to its one-second floor.
+	// The command outlasts two floors with slack for slow fake-process spawns under -race.
 	t.Setenv("BL_FAKE_EXPIRES", "2000-01-01T00:00:00Z")
 	t.Setenv("BL_FAKE_HEARTBEATS", renewals)
-	code, out, stderr := writeRun(root, "", "heartbeat", "--", "sh", "-c", "sleep 2.5; echo finished; exit 3")
+	code, out, stderr := writeRun(root, "", "heartbeat", "--", "sh", "-c", "sleep 4.5; echo finished; exit 3")
 	if code != 3 || out != "finished\n" {
 		t.Fatalf("command status: %d %q %s", code, out, stderr)
 	}
