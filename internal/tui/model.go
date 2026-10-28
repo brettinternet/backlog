@@ -138,6 +138,7 @@ type Model struct {
 	detailExpanded           bool
 	detailPending            bool
 	detailLoading            bool
+	detailMasked             bool   // the loading placeholder covers the body
 	detailSubmitted          uint64 // the last generation sent to the worker
 	detailTruncated          bool
 	detailLines              []string // the last body, kept while the next loads
@@ -600,6 +601,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	for kind := range m.loads {
 		commands = append(commands, m.loads[kind].track(loadKind(kind), busy[kind]))
 	}
+	// Reloading the page in view keeps its body; another item's or tab's body
+	// gives way. Either choice holds while the indicator shows.
+	shown := m.loads[detailLoad].shown
+	m.detailMasked = shown && (m.detailMasked || m.detailLoading && (len(m.detailLines) == 0 || m.detailShownRef != m.detailIdentity.Ref || m.detailShownTab != m.detailTab))
 	return m, tea.Batch(commands...)
 }
 

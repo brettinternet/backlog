@@ -167,7 +167,7 @@ func (m Model) detailBodyTop() int { return 4 + len(m.detailBanner()) }
 
 // detailPlaceholder reports that the body is replaced while it loads.
 func (m Model) detailPlaceholder() bool {
-	return m.loads[detailLoad].shown || m.detailLoading && len(m.detailLines) == 0
+	return m.detailMasked || m.detailLoading && len(m.detailLines) == 0
 }
 
 // detailCurrent reports that the body on screen is the selected item's.
@@ -262,6 +262,11 @@ func (m Model) detailPane(width, rows int) []string {
 	visible := max(1, rows-m.detailBodyTop())
 	placeholder := m.detailPlaceholder()
 	var right []string
+	// A reload keeps the body and says so leftmost, so the right-aligned
+	// labels never move; it is the first dropped when the row is full.
+	if m.loads[detailLoad].shown && !placeholder {
+		right = append(right, "Loading…")
+	}
 	if n := len(m.detailLines); n > visible && !placeholder {
 		right = append(right, strconv.Itoa(min(100, (m.detailScroll+visible)*100/n))+"%")
 	}
@@ -296,7 +301,7 @@ func (m Model) detailPane(width, rows int) []string {
 	case m.detailError != "":
 		put(line, t.red.render("! "+m.detailError))
 	case placeholder:
-		if m.loads[detailLoad].shown {
+		if m.detailMasked {
 			put(line, t.muted.render("Loading…"))
 		}
 	default:

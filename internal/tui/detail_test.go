@@ -109,6 +109,36 @@ func TestDetailHeldNavigation(t *testing.T) {
 	}
 }
 
+// A slow reload of the page in view (resize, R) must keep its body, while a
+// slow load of another item must not show the previous item's body.
+func TestDetailSlowReloadKeepsBody(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 2, func(body string, _ int) (string, error) { return body, nil })
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	pane := func(m Model) string { return ansi.Strip(strings.Join(m.detailPane(m.detailWidth(), 20), "\n")) }
+	slow := func(m Model) Model {
+		next, _ := m.Update(indicatorDue{kind: detailLoad, period: m.loads[detailLoad].period})
+		return next.(Model)
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 24})
+	m = slow(next.(Model))
+	view := pane(m)
+	if !strings.Contains(view, "selected") || !strings.Contains(view, "Loading…") {
+		t.Fatalf("resize reload replaced the body:\n%s", view)
+	}
+	// The indicator only fills blank cells; the scroll percent and body stay.
+	short := func(m Model) string { return ansi.Strip(strings.Join(m.detailPane(m.detailWidth(), 6), "\n")) }
+	if unshown := strings.Replace(short(m), "Loading… · ", strings.Repeat(" ", ansi.StringWidth("Loading… · ")), 1); !strings.Contains(unshown, "%") || unshown != short(next.(Model)) {
+		t.Fatalf("indicator shifted content:\n%s\nwant:\n%s", short(m), short(next.(Model)))
+	}
+	m, _ = detailKey(m, 'h', 0)
+	m, _ = detailKey(m, 'j', 0)
+	if view := pane(m); strings.Contains(view, "selected") || !strings.Contains(view, "Loading…") {
+		t.Fatalf("another item kept the previous body:\n%s", view)
+	}
+}
+
 // Cache keys must distinguish item versions, width and tabs; stale completion cannot repaint a new selection.
 func TestDetailCacheAndStaleResults(t *testing.T) {
 	t.Parallel()
