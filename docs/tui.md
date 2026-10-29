@@ -149,7 +149,8 @@ their own status name (design.md D36). The Board tab hides drafts, which are nev
 (design.md D29); `fb` shows them. A status or category filter drops empty
 columns; a negated one drops only the columns it excludes. Other group keys use
 their group order. A card shows priority, ID, open blockers, child progress, and
-assignee above its title. Columns are at
+assignee above its title; as it narrows, assignee drops first, then children,
+then blockers. Columns are at
 least 28 cells wide, scroll horizontally, and keep their own cursor. `<`/`>`
 always change workflow status, even when grouped by something else. Quick-add
 uses the focused column's status. `l` navigates instead of opening the label

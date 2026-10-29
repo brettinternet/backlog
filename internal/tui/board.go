@@ -308,9 +308,12 @@ func (m Model) card(index, width int) (string, string) {
 		right = append(right, style.render(ansi.Truncate(textutil.Line(cmp.Or(row.Names[row.Assignees[0]], row.Assignees[0])), 12, "\u2026")))
 	}
 	inner := max(1, width-gutter-1)
-	if signals := strings.Join(right, " "); signals != "" {
+	// Drop signals from the end (assignee, children, blockers), matching the list's column drop order.
+	for ; len(right) > 0; right = right[:len(right)-1] {
+		signals := strings.Join(right, " ")
 		if gap := inner - ansi.StringWidth(left) - ansi.StringWidth(signals); gap >= 1 {
 			left += blank(gap) + signals
+			break
 		}
 	}
 	base := paint{}
