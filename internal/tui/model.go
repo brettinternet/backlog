@@ -102,7 +102,7 @@ type Model struct {
 	baseContext              context.Context
 	claimExpiry              time.Time
 	claimTimerAt             time.Time
-	mineClaims               map[model.Ref]time.Time
+	mineClaims               map[string]time.Time
 	renewTimerAt             time.Time
 	renewing                 bool
 	width, height            int
@@ -702,7 +702,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.held = nil
 			// Nothing is in flight: the last valid rows stay, without a spinner.
 			m.prepared = m.serial
-			return m, m.waitProjection()
+			expiry, renew := m.expiryCommand(), m.renewCommand()
+			return m, tea.Batch(m.waitProjection(), expiry, renew)
 		}
 		m.queryError = ""
 		m.queryWarning = ""

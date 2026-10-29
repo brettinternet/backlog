@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 )
 
@@ -13,11 +15,13 @@ type CallerContext struct {
 	PerItem bool `json:"-"`
 }
 
-// For returns the caller for one item: SESSION:SOURCE:ID when per item, so one
-// person can hold many claims and every one resumes from its item.
-func (c CallerContext) For(ref Ref) CallerContext {
+// For returns the caller for one claim resource: SESSION:HASH when per item,
+// so one person can hold many claims. Every source and key of the item finds
+// the same claim, and the name fits Worklease's 128-byte session limit.
+func (c CallerContext) For(resource string) CallerContext {
 	if c.PerItem {
-		c.Session += ":" + ref.Source + ":" + ref.ID
+		sum := sha256.Sum256([]byte(resource))
+		c.Session += ":" + hex.EncodeToString(sum[:16])
 		c.PerItem = false
 	}
 	return c

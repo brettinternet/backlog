@@ -72,27 +72,27 @@ func (m *Model) renew(at time.Time) tea.Cmd {
 	}
 	// A timer late past expiry (a sleeping laptop) must not revive a claim.
 	now := m.now()
-	var refs []model.Ref
-	for ref, expires := range m.mineClaims {
+	var sessions []string
+	for session, expires := range m.mineClaims {
 		if expires.After(now) {
-			refs = append(refs, ref)
+			sessions = append(sessions, session)
 		}
 	}
-	if len(refs) == 0 {
+	if len(sessions) == 0 {
 		return nil
 	}
 	m.renewing = true
 	ctx := m.opts.Context
 	return func() tea.Msg {
-		c, caller := engine.Coordination(ctx)
+		c, _ := engine.Coordination(ctx)
 		var failed []string
-		for _, ref := range refs {
-			if r := engine.Heartbeat(engine.WithCoordination(ctx, c, caller.For(ref))); r.Reason != "" {
-				failed = append(failed, ref.ID+": "+r.Message)
+		for _, session := range sessions {
+			r := engine.Heartbeat(engine.WithCoordination(ctx, c, model.CallerContext{Session: session}))
+			if r.Reason != "" && !slices.Contains(failed, r.Message) {
+				failed = append(failed, r.Message)
 			}
 		}
 		if len(failed) > 0 {
-			slices.Sort(failed)
 			return claimRenewed{"Claim renewal failed: " + strings.Join(failed, "; ")}
 		}
 		return claimRenewed{}

@@ -358,7 +358,7 @@ With coordination enabled, wide lists add a Claim column (`mine`, the holder's
 releases the selected item. `S` and other active transitions claim first; closing
 releases your claim. A bulk edit can't activate marked items; start each one. Without
 `--session`, `BL_SESSION`, or `WORKLEASE_SESSION_ID`, each item has its own
-session, `tui:SOURCE:ID`, so you can hold several claims and reopening the TUI
+session, `tui:` plus a hash of its claim, so you can hold several claims and reopening the TUI
 anywhere resumes them (design.md D39). An explicit session holds one claim.
 While the TUI runs, it renews your claims at half the first remaining lease; a
 failed renewal shows a notice and retries until the lease lapses. After

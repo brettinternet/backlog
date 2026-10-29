@@ -85,7 +85,6 @@ func claimItem(ctx context.Context, item model.Item) (result model.ClaimResult, 
 		}
 	}()
 	c, caller := Coordination(ctx)
-	caller = caller.For(item.Ref)
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}, false
 	}
@@ -96,6 +95,7 @@ func claimItem(ctx context.Context, item model.Item) (result model.ClaimResult, 
 	if err != nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: err.Error()}, false
 	}
+	caller = caller.For(resource)
 	if caller.Run != "" {
 		return c.VerifyRun(ctx, caller, resource), true
 	}
@@ -134,7 +134,6 @@ func ReleaseItem(ctx context.Context, item model.Item) (result model.ClaimResult
 		}
 	}()
 	c, caller := Coordination(ctx)
-	caller = caller.For(item.Ref)
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}
 	}
@@ -145,6 +144,7 @@ func ReleaseItem(ctx context.Context, item model.Item) (result model.ClaimResult
 	if err != nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: err.Error()}
 	}
+	caller = caller.For(resource)
 	if caller.Run != "" {
 		return c.VerifyRun(ctx, caller, resource)
 	}
@@ -404,7 +404,13 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, backend source.So
 	if err != nil {
 		return model.Item{}, err
 	}
-	caller = caller.For(item.Ref)
+	if caller.PerItem {
+		resource, err := c.Resource(item)
+		if err != nil {
+			return model.Item{}, err
+		}
+		caller = caller.For(resource)
+	}
 	// A provider's own categories gate claims, even when project statuses omit
 	// or misclassify the key, and a key it doesn't accept refuses before any claim.
 	if chooser, ok := backend.(source.StatusChooser); ok {
@@ -483,9 +489,17 @@ func OverlayStates(c model.Coordinator, caller model.CallerContext, items []mode
 	states, matched := ClaimOverlay(c, caller, items, claims, now)
 	labels := make(map[model.Ref]string, len(matched))
 	for ref, claim := range matched {
-		labels[ref] = claim.Label(caller.For(ref).Session, now)
+		labels[ref] = claimLabel(states[ref], claim, now)
 	}
 	return states, labels
+}
+
+// claimLabel names a claim's holder once ClaimOverlay has decided it is mine.
+func claimLabel(state Claim, claim model.ClaimInfo, now time.Time) string {
+	if state == ClaimMine {
+		return "mine"
+	}
+	return claim.Label("", now)
 }
 
 // ClaimOverlay also returns each item's claim, active or expired.
@@ -509,7 +523,7 @@ func ClaimOverlay(c model.Coordinator, caller model.CallerContext, items []model
 			matched[item.Ref] = claim
 			if claim.ExpiresAt.After(now) {
 				states[item.Ref] = ClaimOthers
-				if session := caller.For(item.Ref).Session; session != "" && claim.Session == session {
+				if session := caller.For(resource).Session; session != "" && claim.Session == session {
 					states[item.Ref] = ClaimMine
 				}
 			}

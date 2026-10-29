@@ -240,25 +240,34 @@ func TestBulkOverlayExpiryAndReadiness(t *testing.T) {
 	}
 }
 
-// A person holds many claims: each item claims under its own session, and only
-// that session's claim on the item is mine.
-func TestPerItemCallerClaimsUnderItemSession(t *testing.T) {
+// One resource per issue across sources: a repo and a project source share it.
+type issueCoordinator struct{ *coordinator }
+
+func (issueCoordinator) Resource(i model.Item) (string, error) { return "issue:" + i.Ref.ID, nil }
+
+// A person holds many claims, each under its own session derived from the
+// claim resource, so every source of the item sees the claim as mine, another
+// item's claim is not, and a long key still fits Worklease's session limit.
+func TestPerItemCallerClaimsUnderResourceSession(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(100, 0)
-	first, second := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}}, model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-2"}}
+	repo, board, other := model.Item{Ref: model.Ref{Source: "gh", ID: "12"}}, model.Item{Ref: model.Ref{Source: "roadmap", ID: "12"}}, model.Item{Ref: model.Ref{Source: "gh", ID: "13"}}
 	caller := model.CallerContext{Session: "tui", PerItem: true}
-	c := &coordinator{state: model.SessionState{State: "absent"}}
-	r := engine.ClaimItem(engine.WithCoordination(context.Background(), c, caller), first)
-	if r.Outcome != "acquired" || r.Claim.Session != "tui:tasks:BL-1" {
+	c := issueCoordinator{&coordinator{state: model.SessionState{State: "absent"}}}
+	r := engine.ClaimItem(engine.WithCoordination(context.Background(), c, caller), repo)
+	if r.Outcome != "acquired" || !strings.HasPrefix(r.Claim.Session, "tui:") {
 		t.Fatalf("claim: %+v", r)
 	}
-	c.claims = []model.ClaimInfo{
-		{Resources: []string{"tasks:BL-1"}, Session: "tui:tasks:BL-1", Agent: "me@host", ExpiresAt: now.Add(time.Hour)},
-		{Resources: []string{"tasks:BL-2"}, Session: "tui:tasks:BL-1", Agent: "me@host", ExpiresAt: now.Add(time.Hour)},
+	claims := []model.ClaimInfo{
+		{Resources: []string{"issue:12"}, Session: r.Claim.Session, Agent: "me@host", ExpiresAt: now.Add(time.Hour)},
+		{Resources: []string{"issue:13"}, Session: r.Claim.Session, Agent: "me@host", ExpiresAt: now.Add(time.Hour)},
 	}
-	states, labels := engine.OverlayStates(c, caller, []model.Item{first, second}, c.claims, now)
-	if states[first.Ref] != engine.ClaimMine || labels[first.Ref] != "mine" || states[second.Ref] != engine.ClaimOthers {
+	states, labels := engine.OverlayStates(c, caller, []model.Item{repo, board, other}, claims, now)
+	if labels[repo.Ref] != "mine" || labels[board.Ref] != "mine" || states[other.Ref] != engine.ClaimOthers {
 		t.Fatalf("overlay: %v %v", states, labels)
+	}
+	if session := caller.For(strings.Repeat("x", 300)).Session; len(session) > 128 {
+		t.Fatalf("session is %d bytes", len(session))
 	}
 }
 
