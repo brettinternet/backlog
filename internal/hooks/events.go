@@ -52,6 +52,7 @@ type Event struct {
 	Result        map[string]any    `json:"result,omitempty"`
 	Message       string            `json:"message,omitempty"`
 	Session       *Session          `json:"session,omitempty"`
+	Handoff       string            `json:"handoff,omitempty"`
 }
 
 // Session identifies the caller session behind an event, so its item's

@@ -300,6 +300,22 @@
         }
       }
     },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "handoff": {
+          "description": "Where bl handoff records: local events only, or also a comment on the item.",
+          "enum": ["local", "comment"],
+          "default": "local"
+        },
+        "commitTrailer": {
+          "description": "Git trailer key that bl instructions workflow asks agents to end each commit for an item with, as KEY: ID. Unset adds no commit guidance.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+        }
+      }
+    },
     "hooks": {
       "type": "array",
       "items": {

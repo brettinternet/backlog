@@ -1,13 +1,17 @@
 package engine
 
 import (
+	"cmp"
 	"context"
+	"crypto/rand"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 )
 
 // ItemSessions lists the sessions that worked an item: its events grouped by
@@ -67,6 +71,8 @@ func foldSessions(events []hooks.Event, claims []model.ClaimEpoch, now time.Time
 		// closed one.
 		closed := e.Changes["category"].To
 		switch {
+		case e.Type == "session.handoff":
+			s.Handoff = e.Handoff
 		case e.Type == "claim.released":
 			released[s.ID] = true
 		case closed == string(model.Done) || closed == string(model.Canceled):
@@ -103,4 +109,78 @@ func foldSessions(events []hooks.Event, claims []model.ClaimEpoch, now time.Time
 	}
 	slices.SortStableFunc(out, func(a, b model.ItemSession) int { return a.FirstSeen.Compare(b.FirstSeen) })
 	return out
+}
+
+// HandoffLimit bounds a handoff's trimmed text in bytes. Longer text is
+// refused rather than truncated (design.md D40).
+const HandoffLimit = 4 << 10
+
+// HandoffResult reports a recorded handoff. Comment is posted or unsupported
+// under history.handoff: comment and empty when the handoff stays local; Item
+// is the commented item.
+type HandoffResult struct {
+	Event   string
+	Comment string
+	Item    model.Item
+}
+
+// RecordHandoff appends a session.handoff event for item under the caller's
+// session, which needs no claim. Under history.handoff: comment it first posts
+// the text as a comment at version, naming only the agent kind and date, so a
+// refused comment records nothing. An unknown-outcome comment still records
+// the handoff and returns the comment's error.
+func RecordHandoff(ctx context.Context, cfg project.Config, item model.Item, version, text string) (HandoffResult, error) {
+	_, caller := Coordination(ctx)
+	if strings.TrimSpace(caller.Session) == "" {
+		return HandoffResult{}, source.Refuse("session-required", "handoff requires an explicit session")
+	}
+	if err := RequireSession(caller); err != nil {
+		return HandoffResult{}, err
+	}
+	if cfg.Paths.StateDir == "" {
+		return HandoffResult{}, source.Refuse("unavailable", "handoffs need a state directory for the event log")
+	}
+	result := HandoffResult{Item: item}
+	var commentErr error
+	if cfg.History.Handoff == "comment" {
+		backend, err := writeBackend(ctx, cfg, item.Ref.Source)
+		if err != nil {
+			return HandoffResult{}, err
+		}
+		result.Comment = "unsupported"
+		if backend.Info().Capabilities.Allows(model.AppendComment) {
+			author, err := CommentAuthor(cfg, item.Ref.Source, "")
+			if err != nil {
+				return HandoffResult{}, err
+			}
+			now := time.Now()
+			header := "Handoff from " + cmp.Or(caller.Agent, "an agent") + " on " + now.Format(time.DateOnly)
+			comment := model.Comment{Author: author, Body: header + "\n\n" + text, Time: now}
+			updated, err := ApplyWrite(ctx, cfg, model.Mutation{Op: model.AppendComment, Ref: item.Ref, ExpectedVersion: version, Comment: comment})
+			if err != nil && ErrorReason(err) != "unknown-outcome" {
+				return HandoffResult{}, err
+			}
+			result.Comment, commentErr = "posted", err
+			if err == nil {
+				result.Item = updated
+			}
+		}
+	}
+	origin := "cli"
+	if e, ok := ctx.Value(eventContextKey{}).(eventContext); ok {
+		origin = e.Origin
+	}
+	e := makeEvent(ctx, cfg, result.Item, "session.handoff", origin, []string{rand.Text()})
+	e.Handoff = text
+	err := hooks.New(cfg.Paths.StateDir, cfg.Project.ID).Update(ctx, func(tx *hooks.Transaction) error {
+		if _, err := tx.Append(e); err != nil {
+			return err
+		}
+		result.Event = tx.Appended()[0].ID
+		return nil
+	})
+	if err != nil {
+		return result, err
+	}
+	return result, commentErr
 }

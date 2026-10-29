@@ -58,8 +58,9 @@ func TestWriteCommandOptionParity(t *testing.T) {
 		"start": {"if-version": "update.version"}, "done": {"if-version": "update.version"},
 		"archive": {"if-version": "update.version"}, "unarchive": {"if-version": "update.version"},
 		"note": {"if-version": "append.version"}, "comment": {"if-version": "append.version", "author": "append.author"},
-		"ac":   {"if-version": "criteria.version", "evidence": "criteria.evidence", "dod": "criteria.list"},
-		"edit": {"if-version": "update.version", "section": "update.section", "text": "update.text"},
+		"handoff": {"if-version": "append.version"},
+		"ac":      {"if-version": "criteria.version", "evidence": "criteria.evidence", "dod": "criteria.list"},
+		"edit":    {"if-version": "update.version", "section": "update.section", "text": "update.text"},
 	}
 	for command, flags := range cli.WriteOptionNames() {
 		destinations, ok := mapping[command]
@@ -83,11 +84,11 @@ func TestWriteCommandOptionParity(t *testing.T) {
 		"new": {"type", "priority", "assignees", "labels", "milestone", "due", "parent", "blocked_by"},
 		"set": {"fields"}, "start": {"fields"}, "done": {"fields"},
 		"archive": {"operation"}, "unarchive": {"operation"},
-		"note": {"kind", "text"}, "comment": {"kind", "text"},
+		"note": {"kind", "text"}, "comment": {"kind", "text"}, "handoff": {"kind", "text", "session"},
 		"ac": {"operation", "index", "text"}, "edit": {"operation", "text"},
 	} {
 		for _, property := range fields {
-			if schemas[map[string]string{"new": "create", "set": "update", "start": "update", "done": "update", "archive": "update", "unarchive": "update", "note": "append", "comment": "append", "ac": "criteria", "edit": "update"}[command]][property] == nil {
+			if schemas[map[string]string{"new": "create", "set": "update", "start": "update", "done": "update", "archive": "update", "unarchive": "update", "note": "append", "comment": "append", "handoff": "append", "ac": "criteria", "edit": "update"}[command]][property] == nil {
 				t.Errorf("write command %s has no MCP equivalent property %s", command, property)
 			}
 		}

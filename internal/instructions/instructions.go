@@ -23,4 +23,17 @@ func Read(topic string) (string, bool) {
 	return "", false
 }
 
+// completion is the workflow sentence a commit trailer line follows.
+const completion = "blocked; do not mark incomplete work done."
+
+// WithCommitTrailer asks for a KEY: ID trailer on each commit for an item in
+// the workflow topic, the only commit guidance bl gives (design.md D40). An
+// empty key leaves the topic unchanged.
+func WithCommitTrailer(topic, markdown, key string) string {
+	if topic != "workflow" || key == "" {
+		return markdown
+	}
+	return strings.Replace(markdown, completion, completion+"\n\nEnd each commit for an item with a `"+key+": ID` trailer.", 1)
+}
+
 func List() string { return "Topics: " + strings.Join(Names(), ", ") }

@@ -60,6 +60,9 @@
     "coordination": {
       "$ref": "project-config.json#/properties/coordination"
     },
+    "history": {
+      "$ref": "project-config.json#/properties/history"
+    },
     "hooks": {
       "$ref": "project-config.json#/properties/hooks"
     },

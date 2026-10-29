@@ -25,7 +25,17 @@ type Settings struct {
 	Hooks        []HookConfig       `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	Actions      []ActionConfig     `yaml:"actions,omitempty" json:"actions,omitempty"`
 	// Agents is honored only from built-ins and user config (design.md D40).
-	Agents map[string]AgentConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
+	Agents  map[string]AgentConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
+	History HistoryConfig          `yaml:"history,omitempty" json:"history"`
+}
+
+// HistoryConfig chooses where handoffs go and the commit trailer that ties a
+// commit to an item (design.md D40).
+type HistoryConfig struct {
+	// Handoff is local (the default) or comment, which also posts each
+	// handoff as a comment on the item.
+	Handoff       string `yaml:"handoff,omitempty" json:"handoff,omitempty"`
+	CommitTrailer string `yaml:"commitTrailer,omitempty" json:"commitTrailer,omitempty"`
 }
 
 // AgentConfig detects an agent kind: Session names the environment variable

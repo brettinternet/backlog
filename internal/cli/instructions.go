@@ -9,7 +9,7 @@ import (
 	urfave "github.com/urfave/cli/v3"
 )
 
-func instructionsCommand(out io.Writer) *urfave.Command {
+func instructionsCommand(directory *string, out io.Writer) *urfave.Command {
 	return &urfave.Command{
 		Name: "instructions", Usage: "Print agent guidance for this version", ArgsUsage: "[TOPIC]", Category: categoryAutomation,
 		Action: func(_ context.Context, cmd *urfave.Command) error {
@@ -21,6 +21,10 @@ func instructionsCommand(out io.Writer) *urfave.Command {
 			if !ok || cmd.Args().Len() > 1 {
 				return &Error{Reason: "usage", Message: "use bl instructions [TOPIC]. " + instructions.List(),
 					Details: map[string]any{"topics": instructions.Names()}}
+			}
+			// Guidance works outside a project, so project config is optional.
+			if cfg, err := loadConfig(cmd, *directory); err == nil {
+				markdown = instructions.WithCommitTrailer(topic, markdown, cfg.History.CommitTrailer)
 			}
 			if cmd.Bool("json") {
 				return success(out, "instructions", struct {

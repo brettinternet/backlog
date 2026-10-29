@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -510,6 +511,9 @@ func validateUserAccounts(node *yaml.Node) error {
 	return nil
 }
 
+// trailerKey is a Git trailer key: letters, digits, and hyphens.
+var trailerKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
+
 func validateSettings(node *yaml.Node) error {
 	fail := func(n *yaml.Node, key, message string) error {
 		return fmt.Errorf("line %d: key %s: %s", n.Line, key, message)
@@ -523,6 +527,14 @@ func validateSettings(node *yaml.Node) error {
 	if ready := field(node, "ready"); ready != nil {
 		if n := field(ready, "sprint"); n != nil && n.Value != "current" && n.Value != "next" {
 			return fail(n, "ready.sprint", "must be current or next")
+		}
+	}
+	if history := field(node, "history"); history != nil {
+		if n := field(history, "handoff"); n != nil && n.Value != "local" && n.Value != "comment" {
+			return fail(n, "history.handoff", "must be local or comment")
+		}
+		if n := field(history, "commitTrailer"); n != nil && !trailerKey.MatchString(n.Value) {
+			return fail(n, "history.commitTrailer", "must be a Git trailer key such as Refs")
 		}
 	}
 	for _, group := range []string{"hooks", "actions", "views", "workspaces"} {

@@ -311,7 +311,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			}
 			return mcp.ServeStreams(ctx, cfg, in, out)
 		}},
-		instructionsCommand(out), adapterCommand(&directory, out), hooksCommand(&directory),
+		instructionsCommand(&directory, out), adapterCommand(&directory, out), hooksCommand(&directory),
 	)
 	root.Commands = append(root.Commands, claimCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
@@ -437,7 +437,7 @@ func terminal(stream any) bool {
 // acceptsArguments takes the full command path, since names like check repeat.
 func acceptsArguments(command string) bool {
 	switch command {
-	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
+	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "handoff", "ac", "edit", "archive", "unarchive", "renumber",
 		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth status", "auth login", "auth logout":
 		return true
 	}

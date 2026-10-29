@@ -83,7 +83,19 @@ operation; do not blindly retry. Every successful write returns a new version.
 
 Finish every acceptance criterion and delivery obligation, including commits or
 integration if required. Persist blockers and the exact next step if genuinely
-blocked; do not mark incomplete work done. Reread the final item, then finish:
+blocked; do not mark incomplete work done.
+
+Before done, before release, and at the end of any unclaimed phase on an item,
+such as PR follow-up or review, record a short handoff for the next person or
+agent: what you did and tried, the commands that reproduce your state, and the
+next step. It needs your session but no claim; the newest handoff per session
+wins.
+
+```sh
+bl handoff ID "Done: X. Reproduce: task ci. Next: Y." --session loop-a --json
+```
+
+Reread the final item, then finish:
 
 ```sh
 bl show ID --json

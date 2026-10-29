@@ -45,7 +45,7 @@ by the configured source IDs and types for `source:` filters.
 | `show` | `id` | `bl show` (adds `resource` with coordination) |
 | `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `source`, `sprint` | `bl new` |
 | `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run`, `agent`, `agentSession` | `bl set`, `bl archive`, `bl edit --section` |
-| `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
+| `append` | `id`, `version`, `kind` (`note`\|`comment`\|`handoff`), `text`, `author`; `session`, `agent`, `agentSession` | `bl note`, `bl comment`, `bl handoff` |
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`set`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
@@ -109,6 +109,12 @@ Events record the caller's session ([events.md](events.md#wire-format)). Pass
 ID; defaults to `session`) beside `session` on `next`, writes, `claim`, and
 `release`. `create`, `append`, and `criteria` also accept `session`, `agent`, and
 `agentSession` for their events.
+
+`append` with `kind: "handoff"` records the session's handoff like
+[`bl handoff`](cli.md#bl-handoff-id-text----session-s---if-version-v): it
+requires `session` but no claim, refuses text over 4 KiB with `invalid-value`,
+and returns `{event, comment?, item}`. `version` applies only under
+`history.handoff: comment`.
 
 | Problem | Result |
 | --- | --- |

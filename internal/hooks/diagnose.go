@@ -14,7 +14,7 @@ import (
 
 // EventTypes are the event types bl appends; see docs/events.md.
 var EventTypes = []string{"item.created", "item.updated", "item.archived", "item.readiness",
-	"claim.acquired", "claim.released", "hook.finished", "action.finished"}
+	"claim.acquired", "claim.released", "hook.finished", "action.finished", "session.handoff"}
 
 // Diagnostic is one static problem with a trusted hook or action, or an
 // untrusted declaration that stays inert.

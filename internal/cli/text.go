@@ -262,6 +262,9 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 		}
 		for _, s := range detail.Sessions {
 			b.WriteString(textutil.Line(sessionLine(s)) + "\n")
+			if s.Handoff != "" {
+				b.WriteString("  " + strings.ReplaceAll(textutil.Sanitize(s.Handoff), "\n", "\n  ") + "\n")
+			}
 		}
 	}
 	_, err := io.WriteString(out, b.String())

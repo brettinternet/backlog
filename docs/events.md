@@ -37,8 +37,8 @@ records a baseline without inventing history.
 
 An event from a `bl` command run with a caller session (`--session`,
 `BL_SESSION`, `WORKLEASE_SESSION_ID`, or the MCP `session` argument) adds
-`session`. Item writes, `claim.acquired`, `claim.released`, and
-`action.finished` carry it:
+`session`. Item writes, `claim.acquired`, `claim.released`,
+`action.finished`, and `session.handoff` carry it:
 
 ```json
 "session":{"id":"71e98dd4","agent":"claude","agentSession":"71e98dd4","host":"mbp","cwd":"/src/app/.worktrees/bl-140","branch":"bl-140"}
@@ -73,6 +73,7 @@ nonce. A failed mutation appends none.
 | `item.archived` | An item is archived (`changes.archived`), or a complete snapshot no longer has it (`changes.present: {from: true, to: false}`). Editing an archived item is `item.updated`. |
 | `item.readiness` | Item data changes readiness. `changes.readiness` has `from`, `to`, and `reason` (including `candidate` on becoming ready). |
 | `claim.acquired`, `claim.released` | A claim operation through `bl` succeeds |
+| `session.handoff` | [`bl handoff`](cli.md#bl-handoff-id-text----session-s---if-version-v) or MCP `append` with `kind: "handoff"` records a session's handoff. Adds `handoff`, the trimmed text (≤ 4 KiB), and always has `session`. Under `history.handoff: comment`, `item` is the item after its comment. |
 | `hook.finished`, `action.finished` | A hook or action ends. Adds `name`, `outcome` (`ok`, `failed`, `timeout`, `refused`), `exitCode`, `duration` (ns), optional `result` (≤ 8 KiB), and, unless `ok`, optional `message`: the refusal or exec error, or for a nonzero exit or timeout the last lines of stderr, ≤ 1 KiB with terminal controls stripped. `message` is display text, not a contract for parsing. |
 
 Readiness is checked for the changed item, its transitive dependents, and its old

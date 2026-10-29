@@ -66,6 +66,8 @@ type ItemSession struct {
 	LastSeen     time.Time   `json:"lastSeen"`
 	Phases       []string    `json:"phases,omitempty"`
 	Claim        *ClaimEpoch `json:"claim,omitempty"`
+	// Handoff is the session's newest handoff text.
+	Handoff string `json:"handoff,omitempty"`
 	// Ended is done, released, or lapsed; empty while the session is open.
 	Ended string `json:"ended,omitempty"`
 }

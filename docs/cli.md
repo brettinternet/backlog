@@ -249,6 +249,52 @@ and Jira attribute a comment to the source account's `user` instead, so neither
 is needed, and any other `--author` is `rejected`. Comments can't be edited
 through the CLI.
 
+### `bl handoff ID TEXT|- --session S [--if-version V]`
+
+Records what this session did, tried, and left for the next person or agent as
+a `session.handoff` [event](events.md) with the session's identity. It needs a
+session (exit 2, `session-required`) but no claim, so PR and review sessions
+can record one. Text is trimmed; over 4 KiB is `invalid-value` (exit 5), never
+truncated. `bl show` lists each session's newest handoff under its Sessions
+line, with terminal controls stripped.
+
+By default nothing is written to the item, and `--if-version` is ignored. With
+`history.handoff: comment` in any config layer, the handoff is also a comment,
+as `bl comment` writes, checked against `--if-version` or the version read:
+
+```text
+Handoff from claude on 2026-10-29
+
+TEXT
+```
+
+The comment names only the agent kind and date, never the host, checkout,
+branch, or session IDs. A refused comment records nothing. An
+`unknown-outcome` comment still records the handoff, and the error's `data`
+names the event. A source that can't comment records locally.
+
+```json
+{"id":"12","event":"01M64Z3BHTVDFPPBF7YNE5VHV5","comment":"posted","item":{"source":"tasks","id":"BL-012","title":"Ready","status":"todo","category":"todo","priority":"high","version":"new-hash"}}
+```
+
+`comment` is `posted` or `unsupported` under `history.handoff: comment`, and
+absent otherwise.
+
+A skill or hook that works an item without claiming it, such as PR follow-up
+or review, can record a handoff for the item its branch names
+(`bl-12-fix-login` is `BL-12`). It does nothing outside a `bl` project:
+
+```sh
+top=$(git rev-parse --show-toplevel) || exit 0
+id=$(git branch --show-current | sed -nE 's/^([A-Za-z]+-[0-9]+).*/\1/p' | tr '[:lower:]' '[:upper:]')
+if [ -f "$top/backlog.yaml" ] && [ -n "$id" ]; then
+  printf '%s\n' "Reviewed PR 41; asked for a retry test. Next: rerun task ci after the fix." |
+    bl handoff "$id" - --session "${CLAUDE_CODE_SESSION_ID:?}"
+fi
+```
+
+Pass your harness's own session ID, as for a claimed loop.
+
 ### `bl ac ID ...`
 
 ```sh
@@ -612,9 +658,14 @@ uses reason `adapter-check`. It doesn't trust configured sources. See the
 
 ### `bl instructions [TOPIC]`
 
-Prints Markdown guidance matching the installed version, without loading
-project config. Topics: `overview` (default), `workflow`, `query`, `format`,
-`json`. Unknown topics exit 2. JSON `data` has `topic`, `topics`, and `markdown`.
+Prints Markdown guidance matching the installed version. Topics: `overview`
+(default), `workflow`, `query`, `format`, `json`. Unknown topics exit 2. JSON
+`data` has `topic`, `topics`, and `markdown`.
+
+Guidance never needs a project. In one whose config sets
+`history.commitTrailer: KEY` (for example `Refs`), `workflow` adds one line
+asking agents to end each commit for an item with `KEY: ID`. Unset, it says
+nothing about commits. A config that fails to load is ignored here.
 
 ### `bl auth status [PROVIDER [ACCOUNT]]` and `bl auth login|logout PROVIDER ACCOUNT`
 

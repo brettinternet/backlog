@@ -28,6 +28,15 @@ type writeOutcome struct {
 	Error      *Error                   `json:"error,omitempty"`
 	Transition *engine.TransitionResult `json:"transition,omitempty"`
 }
+
+// handoffData reports a recorded handoff: its event and, under
+// history.handoff: comment, whether the comment was posted or unsupported.
+type handoffData struct {
+	ID      string    `json:"id"`
+	Event   string    `json:"event"`
+	Comment string    `json:"comment,omitempty"`
+	Item    *readItem `json:"item,omitempty"`
+}
 type writeData struct {
 	Outcomes []writeOutcome `json:"outcomes"`
 }
@@ -352,6 +361,59 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return batch(ctx, cmd, cfg, args[:1], []model.Mutation{m})
 		}})
 	}
+	commands = append(commands, &urfave.Command{Name: "handoff", Usage: "Record this session's handoff for an item", ArgsUsage: "ID TEXT|-", Flags: flag(), Action: func(ctx context.Context, cmd *urfave.Command) error {
+		args := cmd.Args().Slice()
+		if len(args) < 2 {
+			return writeUsage("handoff requires ID and TEXT or -")
+		}
+		if cmd.IsSet("if-version") && cmd.String("if-version") == "" {
+			return writeUsage("--if-version must not be empty")
+		}
+		text, err := body(strings.Join(args[1:], " "))
+		if err != nil {
+			return err
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			return writeUsage("text must not be empty")
+		}
+		if len(text) > engine.HandoffLimit {
+			return &Error{Reason: "invalid-value", Message: fmt.Sprintf("handoff exceeds %d bytes", engine.HandoffLimit)}
+		}
+		cfg, err := loadConfig(cmd, *directory)
+		if err != nil {
+			return err
+		}
+		item, err := writeItem(ctx, cfg, args[0])
+		if err != nil {
+			return err
+		}
+		version := item.Version
+		if cmd.IsSet("if-version") {
+			version = cmd.String("if-version")
+		}
+		result, err := engine.RecordHandoff(ctx, cfg, item, version, text)
+		data := handoffData{ID: args[0], Event: result.Event, Comment: result.Comment}
+		if result.Event != "" {
+			summary := itemjson.NewSummary(result.Item)
+			data.Item = &summary
+		}
+		if err != nil {
+			failure := writeError(err)
+			// An unknown-outcome comment still recorded the handoff.
+			if result.Event != "" {
+				failure.Data = data
+			}
+			return failure
+		}
+		if cmd.Bool("json") {
+			return success(out, cmd.Name, data)
+		}
+		line := refsFor(cfg).ref(item.Ref, item.Ref.Source) + " handoff recorded"
+		if result.Comment != "" {
+			line += "; comment " + result.Comment
+		}
+		return writeLine(out, line)
+	}})
 	commands = append(commands, &urfave.Command{Name: "ac", Usage: "Check, uncheck, add, reword, or remove acceptance criteria or definition of done", ArgsUsage: "ID (check|uncheck N... | add TEXT | set N TEXT | rm N)", Description: acHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "evidence", Aliases: []string{"e"}, Usage: "Record `TEXT` as evidence when checking one criterion"}, &urfave.BoolFlag{Name: "dod", Usage: "Change definition-of-done items instead of acceptance criteria"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		args := cmd.Args().Slice()
 		if len(args) < 3 {

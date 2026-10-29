@@ -2,6 +2,7 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -176,7 +177,7 @@ type UpdateArgs struct {
 type AppendArgs struct {
 	WriteArgs
 	ID     string `json:"id"`
-	Kind   string `json:"kind" jsonschema:"note or comment"`
+	Kind   string `json:"kind" jsonschema:"note, comment, or handoff (needs session; records this session's handoff)"`
 	Text   string `json:"text"`
 	Author string `json:"author,omitempty"`
 }
@@ -526,6 +527,9 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 	if args.ID == "" || strings.TrimSpace(args.Text) == "" {
 		return failed[any]("usage", "id and nonempty text are required")
 	}
+	if args.Kind == "handoff" {
+		return s.handoff(ctx, args)
+	}
 	item, err := readItem(ctx, s.cfg, args.ID)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
@@ -542,13 +546,40 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 		}
 		m = model.Mutation{Op: model.AppendComment, Comment: model.Comment{Author: author, Body: args.Text, Time: time.Now()}}
 	} else if args.Kind != "note" {
-		return failed[any]("rejected", "kind must be note or comment")
+		return failed[any]("rejected", "kind must be note, comment, or handoff")
 	}
 	updated, err := engine.ApplyWrite(ctx, s.cfg, model.Mutation{Op: model.Batch, Ref: item.Ref, ExpectedVersion: version, Changes: []model.Mutation{m}})
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
 	return nil, ItemResult{Item: itemjson.NewSummary(updated)}, nil
+}
+
+// HandoffResult mirrors bl handoff --json.
+type HandoffResult struct {
+	Event   string           `json:"event"`
+	Comment string           `json:"comment,omitempty"`
+	Item    itemjson.Summary `json:"item"`
+}
+
+func (s *Server) handoff(ctx context.Context, args AppendArgs) (*mcp.CallToolResult, any, error) {
+	text := strings.TrimSpace(args.Text)
+	if len(text) > engine.HandoffLimit {
+		return failed[any]("invalid-value", fmt.Sprintf("handoff exceeds %d bytes", engine.HandoffLimit))
+	}
+	item, err := readItem(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	result, err := engine.RecordHandoff(ctx, s.cfg, item, cmp.Or(args.Version, item.Version), text)
+	if err != nil {
+		message := engine.ErrorMessage(err)
+		if result.Event != "" {
+			message += "; the handoff was recorded locally as event " + result.Event
+		}
+		return failed[any](reason(err), message)
+	}
+	return nil, HandoffResult{Event: result.Event, Comment: result.Comment, Item: itemjson.NewSummary(result.Item)}, nil
 }
 func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args CriteriaArgs) (*mcp.CallToolResult, any, error) {
 	ctx = s.withCaller(ctx, args.WriteArgs)

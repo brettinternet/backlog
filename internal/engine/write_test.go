@@ -2,9 +2,13 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -63,5 +67,69 @@ func TestEventSessionOmitsAgentOutsideAgentCallers(t *testing.T) {
 	}
 	if s := event(agent, "sync"); s != nil {
 		t.Fatalf("sync session: %+v", s)
+	}
+}
+
+// A handoff needs a session but no claim, stays out of the item unless
+// published, and a published comment must never carry the host, checkout,
+// branch, or session IDs. A stale comment records nothing, and a source that
+// can't comment still keeps the handoff locally.
+func TestRecordHandoff(t *testing.T) {
+	root := t.TempDir()
+	cfg := project.Config{Settings: project.Settings{Project: project.ProjectConfig{ID: "p"}, Sources: []project.SourceConfig{{ID: "tasks", Type: "native", Path: filepath.Join(root, "items"), Prefix: "BL"},
+		{ID: "lin", Type: "linear", Site: "11111111-1111-4111-8111-111111111111", Team: "22222222-2222-4222-8222-222222222222", Account: "test"}}, Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}}}
+	cfg.Accounts = map[string][]project.AccountConfig{"linear": {{Name: "test", User: "33333333-3333-4333-8333-333333333333", Env: "BL_HANDOFF_LINEAR_TOKEN"}}}
+	cfg.Paths = project.Paths{StateDir: filepath.Join(root, "state")}
+	cfg.Discovery = project.Discovery{ControlRoot: root, CheckoutRoot: "/secret/checkout"}
+	cfg.Me.Default = "@me"
+	t.Setenv("BL_HANDOFF_LINEAR_TOKEN", "unused")
+	data, err := format.Serialize(model.Item{Ref: model.Ref{ID: "BL-1"}, Title: "One", Status: "todo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "items"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "items", "BL-1.md"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, err := ReadDetail(context.Background(), cfg, "tasks:BL-1")
+	if err != nil || len(items) != 1 {
+		t.Fatal(items, err)
+	}
+	item := items[0]
+	caller := model.CallerContext{Session: "secret-session", Agent: "claude", AgentSession: "secret-harness"}
+	ctx := WithCoordination(context.Background(), nil, caller)
+	if _, err := RecordHandoff(context.Background(), cfg, item, item.Version, "x"); ErrorReason(err) != "session-required" {
+		t.Fatalf("no session: %v", err)
+	}
+	local, err := RecordHandoff(ctx, cfg, item, "ignored", "first")
+	if err != nil || local.Event == "" || local.Comment != "" || local.Item.Version != item.Version {
+		t.Fatalf("local: %+v %v", local, err)
+	}
+	cfg.History.Handoff = "comment"
+	if _, err := RecordHandoff(ctx, cfg, item, "stale", "refused"); ErrorReason(err) != "conflict" {
+		t.Fatalf("stale: %v", err)
+	}
+	posted, err := RecordHandoff(ctx, cfg, item, item.Version, "second")
+	if err != nil || posted.Comment != "posted" || len(posted.Item.Comments) != 1 {
+		t.Fatalf("posted: %+v %v", posted, err)
+	}
+	body := posted.Item.Comments[0].Body
+	if !strings.HasPrefix(body, "Handoff from claude on ") || !strings.HasSuffix(body, "\n\nsecond") || strings.Contains(body, "secret") {
+		t.Fatalf("comment body: %q", body)
+	}
+	remote := model.Item{Ref: model.Ref{Source: "lin", ID: "TEAM-1"}, Version: "v"}
+	unsupported, err := RecordHandoff(ctx, cfg, remote, remote.Version, "third")
+	if err != nil || unsupported.Comment != "unsupported" || unsupported.Event == "" {
+		t.Fatalf("unsupported: %+v %v", unsupported, err)
+	}
+	events, err := hooks.New(cfg.Paths.StateDir, "p").ItemEvents(context.Background(), refString(item.Ref))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := foldSessions(events, nil, time.Now())
+	if len(sessions) != 1 || sessions[0].Handoff != "second" || sessions[0].CWD != "/secret/checkout" {
+		t.Fatalf("sessions: %+v", sessions)
 	}
 }
