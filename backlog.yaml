@@ -14,6 +14,8 @@ sources:
       type: github
       repo: brettinternet/backlog
       account: personal
+      statusLabels:
+          in-progress: active
 statuses:
     - key: draft
       name: Draft
@@ -21,18 +23,14 @@ statuses:
     - key: todo
       name: To Do
       category: todo
+      includes: [open]
     - key: in-progress
       name: In Progress
       category: active
     - key: done
       name: Done
       category: done
-    - key: open
-      name: Open
-      category: todo
-    - key: closed
-      name: Closed
-      category: done
+      includes: [closed]
 workflow:
     start: in-progress
     done: done
