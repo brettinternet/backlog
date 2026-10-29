@@ -354,7 +354,9 @@ Bind one with `key:` in its declaration or `action:NAME` in user `keys`. See
 With coordination enabled, wide lists add a Claim column (`mine`, the holder's
 `agent@host`, or `expired`), also available as a view column. `C` claims or
 releases the selected item. `S` and other active transitions claim first; closing
-releases your claim. Several items can't be activated at once. Claims refresh
+releases your claim. Several items can't be activated at once. Without
+`--session`, `BL_SESSION`, or `WORKLEASE_SESSION_ID`, every TUI shares the
+session `tui`, so reopening it resumes your claim (design.md D39). Claims refresh
 every five seconds and after each operation. If a newer UI request cancels a
 poll, it uses the last completed claim list so external status changes reach
 lists and boards without waiting for another provider call. Claims retry on the

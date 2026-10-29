@@ -140,6 +140,12 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err := tui.ValidateKeys(cfg.Keys, cfg.Actions...); err != nil {
 			return &Error{Reason: "invalid-config", Message: err.Error()}
 		}
+		// A person needs no session setup: every TUI shares one stable session,
+		// so reopening anywhere resumes its claim (design.md D39).
+		if c, caller := engine.Coordination(ctx); caller.Session == "" {
+			caller.Session = "tui"
+			ctx = engine.WithCoordination(ctx, c, caller)
+		}
 		defer tui.ConfigureRuntime()()
 		// While the TUI owns the terminal, warnings go to its status line; the quit
 		// flush runs after it exits and prints to stderr.
