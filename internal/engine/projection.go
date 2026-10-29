@@ -70,8 +70,8 @@ type RowGroup struct {
 }
 type Projection struct {
 	NextClaimExpiry time.Time
-	// MineClaimExpiry is when this session's active claim lapses, zero if none.
-	MineClaimExpiry     time.Time
+	// MineClaims is when each of the caller's active claims lapses.
+	MineClaims          map[model.Ref]time.Time
 	Request, Generation uint64
 	Groups              []RowGroup
 	Error               error
@@ -356,7 +356,8 @@ func (p *Projector) run() {
 	var workspaceScope string
 	var claims []model.ClaimInfo
 	var claimsLoaded bool
-	var claimExpiry, mineExpiry time.Time
+	var claimExpiry time.Time
+	var mineClaims map[model.Ref]time.Time
 	var claimRows map[model.Ref]rowClaim
 	var claimErr error
 	var base query.Snapshot
@@ -437,14 +438,14 @@ func (p *Projector) run() {
 				base.Coordination = coordination
 				claimStates := map[model.Ref]Claim{}
 				claimRows = map[model.Ref]rowClaim{}
-				claimExpiry, mineExpiry = time.Time{}, time.Time{}
+				claimExpiry, mineClaims = time.Time{}, map[model.Ref]time.Time{}
 				if coordination && claimErr == nil && coordinator != nil {
 					var matched map[model.Ref]model.ClaimInfo
 					claimStates, matched = ClaimOverlay(coordinator, caller, base.Items, claims, now)
 					for ref, claim := range matched {
-						claimRows[ref] = rowClaim{claim.Label(caller.Session, now), claim.ExpiresAt}
+						claimRows[ref] = rowClaim{claim.Label(caller.For(ref).Session, now), claim.ExpiresAt}
 						if claimStates[ref] == ClaimMine {
-							mineExpiry = claim.ExpiresAt
+							mineClaims[ref] = claim.ExpiresAt
 						}
 					}
 					for _, claim := range claims {
@@ -504,7 +505,7 @@ func (p *Projector) run() {
 			}
 			result.Catalog = catalog
 			base.Now = now
-			result.NextClaimExpiry, result.MineClaimExpiry = claimExpiry, mineExpiry
+			result.NextClaimExpiry, result.MineClaims = claimExpiry, mineClaims
 			if claimErr != nil {
 				result.Warning = claimErr
 			}

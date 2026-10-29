@@ -240,6 +240,28 @@ func TestBulkOverlayExpiryAndReadiness(t *testing.T) {
 	}
 }
 
+// A person holds many claims: each item claims under its own session, and only
+// that session's claim on the item is mine.
+func TestPerItemCallerClaimsUnderItemSession(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(100, 0)
+	first, second := model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}}, model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-2"}}
+	caller := model.CallerContext{Session: "tui", PerItem: true}
+	c := &coordinator{state: model.SessionState{State: "absent"}}
+	r := engine.ClaimItem(engine.WithCoordination(context.Background(), c, caller), first)
+	if r.Outcome != "acquired" || r.Claim.Session != "tui:tasks:BL-1" {
+		t.Fatalf("claim: %+v", r)
+	}
+	c.claims = []model.ClaimInfo{
+		{Resources: []string{"tasks:BL-1"}, Session: "tui:tasks:BL-1", Agent: "me@host", ExpiresAt: now.Add(time.Hour)},
+		{Resources: []string{"tasks:BL-2"}, Session: "tui:tasks:BL-1", Agent: "me@host", ExpiresAt: now.Add(time.Hour)},
+	}
+	states, labels := engine.OverlayStates(c, caller, []model.Item{first, second}, c.claims, now)
+	if states[first.Ref] != engine.ClaimMine || labels[first.Ref] != "mine" || states[second.Ref] != engine.ClaimOthers {
+		t.Fatalf("overlay: %v %v", states, labels)
+	}
+}
+
 // A superseding projection must recover from a canceled startup lookup or
 // refresh without retaining an unavailable warning or losing the claim overlay.
 type canceledListCoordinator struct {

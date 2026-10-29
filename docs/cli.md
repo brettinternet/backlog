@@ -303,7 +303,7 @@ bl done BL-012 --session loop-a --if-version VERSION --json
 ```
 
 The session comes from `--session`, then `BL_SESSION`, then
-`WORKLEASE_SESSION_ID`; without one, the TUI uses `tui`. `WORKLEASE_RUN_ID` requests run verification. MCP
+`WORKLEASE_SESSION_ID`; without one, the TUI uses `tui:SOURCE:ID` for each item, so a person can hold several claims. `WORKLEASE_RUN_ID` requests run verification. MCP
 instead takes `session` and `run` on each call. Use one stable session per loop,
 distinct from every other loop.
 

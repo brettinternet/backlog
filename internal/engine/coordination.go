@@ -85,6 +85,7 @@ func claimItem(ctx context.Context, item model.Item) (result model.ClaimResult, 
 		}
 	}()
 	c, caller := Coordination(ctx)
+	caller = caller.For(item.Ref)
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}, false
 	}
@@ -133,6 +134,7 @@ func ReleaseItem(ctx context.Context, item model.Item) (result model.ClaimResult
 		}
 	}()
 	c, caller := Coordination(ctx)
+	caller = caller.For(item.Ref)
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}
 	}
@@ -402,6 +404,7 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, backend source.So
 	if err != nil {
 		return model.Item{}, err
 	}
+	caller = caller.For(item.Ref)
 	// A provider's own categories gate claims, even when project statuses omit
 	// or misclassify the key, and a key it doesn't accept refuses before any claim.
 	if chooser, ok := backend.(source.StatusChooser); ok {
@@ -480,7 +483,7 @@ func OverlayStates(c model.Coordinator, caller model.CallerContext, items []mode
 	states, matched := ClaimOverlay(c, caller, items, claims, now)
 	labels := make(map[model.Ref]string, len(matched))
 	for ref, claim := range matched {
-		labels[ref] = claim.Label(caller.Session, now)
+		labels[ref] = claim.Label(caller.For(ref).Session, now)
 	}
 	return states, labels
 }
@@ -506,7 +509,7 @@ func ClaimOverlay(c model.Coordinator, caller model.CallerContext, items []model
 			matched[item.Ref] = claim
 			if claim.ExpiresAt.After(now) {
 				states[item.Ref] = ClaimOthers
-				if caller.Session != "" && claim.Session == caller.Session {
+				if session := caller.For(item.Ref).Session; session != "" && claim.Session == session {
 					states[item.Ref] = ClaimMine
 				}
 			}

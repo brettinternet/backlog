@@ -356,12 +356,13 @@ Bind one with `key:` in its declaration or `action:NAME` in user `keys`. See
 With coordination enabled, wide lists add a Claim column (`mine`, the holder's
 `agent@host`, or `expired`), also available as a view column. `C` claims or
 releases the selected item. `S` and other active transitions claim first; closing
-releases your claim. Several items can't be activated at once. Without
-`--session`, `BL_SESSION`, or `WORKLEASE_SESSION_ID`, every TUI shares the
-session `tui`, so reopening it resumes your claim (design.md D39). While the
-TUI runs, it renews your claim at half its remaining lease; a failed renewal
-shows a notice and retries until the lease lapses. After quitting, the claim
-lapses within one lease. Claims refresh
+releases your claim. A bulk edit can't activate marked items; start each one. Without
+`--session`, `BL_SESSION`, or `WORKLEASE_SESSION_ID`, each item has its own
+session, `tui:SOURCE:ID`, so you can hold several claims and reopening the TUI
+anywhere resumes them (design.md D39). An explicit session holds one claim.
+While the TUI runs, it renews your claims at half the first remaining lease; a
+failed renewal shows a notice and retries until the lease lapses. After
+quitting, your claims lapse within one lease. Claims refresh
 every five seconds and after each operation. If a newer UI request cancels a
 poll, it uses the last completed claim list so external status changes reach
 lists and boards without waiting for another provider call. Claims retry on the

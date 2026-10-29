@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -79,45 +80,48 @@ func TestClaimExpiryTimerIsCoalesced(t *testing.T) {
 
 type renewingCoordinator struct {
 	contendedCoordinator
-	renewals *int
+	renewed *[]string
 }
 
 func (c renewingCoordinator) InspectSession(context.Context, model.CallerContext) model.SessionState {
 	return model.SessionState{State: "held", Claim: &model.ClaimInfo{ID: "claim"}}
 }
-func (c renewingCoordinator) Heartbeat(context.Context, model.CallerContext) model.ClaimResult {
-	*c.renewals++
+func (c renewingCoordinator) Heartbeat(_ context.Context, caller model.CallerContext) model.ClaimResult {
+	*c.renewed = append(*c.renewed, caller.Session)
 	return model.ClaimResult{Outcome: "renewed"}
 }
 
-// A claim taken in the TUI must outlive its first lease: one renewal per lease,
-// none while one is in flight, and never for a claim a run renews itself.
-func TestHeldClaimRenewsOncePerLease(t *testing.T) {
+// Claims taken in the TUI must outlive their first lease: each under its own
+// item's session, once per lease, none while a renewal is in flight, and never
+// for a claim a run renews itself.
+func TestHeldClaimsRenewOncePerLease(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(100, 0)
-	renewals := 0
-	coordinator := renewingCoordinator{renewals: &renewals}
+	var renewed []string
+	coordinator := renewingCoordinator{renewed: &renewed}
+	claims := map[model.Ref]time.Time{{Source: "tasks", ID: "BL-1"}: now.Add(15 * time.Minute), {Source: "tasks", ID: "BL-2"}: now.Add(10 * time.Minute)}
 	run := New(Options{Now: func() time.Time { return now }, Context: engine.WithCoordination(context.Background(), coordinator, model.CallerContext{Session: "tui", Run: "run"})})
-	run.mineExpiry = now.Add(15 * time.Minute)
+	run.mineClaims = claims
 	if run.renewCommand() != nil {
 		t.Fatal("renewed a run-managed claim")
 	}
-	m := New(Options{Now: func() time.Time { return now }, Context: engine.WithCoordination(context.Background(), coordinator, model.CallerContext{Session: "tui"})})
-	m.mineExpiry = now.Add(15 * time.Minute)
+	m := New(Options{Now: func() time.Time { return now }, Context: engine.WithCoordination(context.Background(), coordinator, model.CallerContext{Session: "tui", PerItem: true})})
+	m.mineClaims = claims
 	if m.renewCommand() == nil || m.renewCommand() != nil {
 		t.Fatal("renewal was not scheduled exactly once")
 	}
-	next, cmd := m.Update(claimsRenew(m.mineExpiry))
+	next, cmd := m.Update(claimsRenew(now.Add(10 * time.Minute)))
 	m = next.(Model)
 	if cmd == nil || m.renewCommand() != nil {
 		t.Fatal("renewal did not start, or another was scheduled while it ran")
 	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if renewals != 1 || m.renewing {
-		t.Fatalf("renewals = %d, renewing = %v", renewals, m.renewing)
+	slices.Sort(renewed)
+	if !slices.Equal(renewed, []string{"tui:tasks:BL-1", "tui:tasks:BL-2"}) || m.renewing {
+		t.Fatalf("renewed = %v, renewing = %v", renewed, m.renewing)
 	}
-	m.mineExpiry = now.Add(15 * time.Minute).Add(time.Minute)
+	m.mineClaims = map[model.Ref]time.Time{{Source: "tasks", ID: "BL-1"}: now.Add(16 * time.Minute)}
 	if m.renewCommand() == nil {
 		t.Fatal("renewed lease was not rescheduled")
 	}

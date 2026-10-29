@@ -140,10 +140,11 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err := tui.ValidateKeys(cfg.Keys, cfg.Actions...); err != nil {
 			return &Error{Reason: "invalid-config", Message: err.Error()}
 		}
-		// A person needs no session setup: every TUI shares one stable session,
-		// so reopening anywhere resumes its claim (design.md D39).
+		// A person needs no session setup and may hold many claims: each item
+		// has its own stable session, so reopening anywhere resumes every claim
+		// (design.md D39).
 		if c, caller := engine.Coordination(ctx); caller.Session == "" {
-			caller.Session = "tui"
+			caller.Session, caller.PerItem = "tui", true
 			ctx = engine.WithCoordination(ctx, c, caller)
 		}
 		defer tui.ConfigureRuntime()()

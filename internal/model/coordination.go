@@ -9,7 +9,20 @@ import (
 type CallerContext struct {
 	Session string `json:"session"`
 	Run     string `json:"run,omitempty"`
+	// PerItem coordinates each item under its own session (design.md D39).
+	PerItem bool `json:"-"`
 }
+
+// For returns the caller for one item: SESSION:SOURCE:ID when per item, so one
+// person can hold many claims and every one resumes from its item.
+func (c CallerContext) For(ref Ref) CallerContext {
+	if c.PerItem {
+		c.Session += ":" + ref.Source + ":" + ref.ID
+		c.PerItem = false
+	}
+	return c
+}
+
 type ClaimInfo struct {
 	ID        string    `json:"claimId"`
 	Resources []string  `json:"resources"`

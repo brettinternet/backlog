@@ -102,7 +102,8 @@ type Model struct {
 	baseContext              context.Context
 	claimExpiry              time.Time
 	claimTimerAt             time.Time
-	mineExpiry, renewTimerAt time.Time
+	mineClaims               map[model.Ref]time.Time
+	renewTimerAt             time.Time
 	renewing                 bool
 	width, height            int
 	opts                     Options
@@ -683,7 +684,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitProjection()
 		}
 		m.applied = msg.Request
-		m.claimExpiry, m.mineExpiry = msg.NextClaimExpiry, msg.MineClaimExpiry
+		m.claimExpiry, m.mineClaims = msg.NextClaimExpiry, msg.MineClaims
 		// While candidates guide the word being typed, its error or unknown
 		// value would only flash; enter reports it.
 		guided := func(error) bool { return false }
