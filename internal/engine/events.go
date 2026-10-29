@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
@@ -824,8 +826,32 @@ func makeEvent(ctx context.Context, cfg project.Config, item model.Item, kind, o
 			e.Cause = c.Cause
 			e.Depth = c.Depth
 		}
+		e.Session = eventSession(ctx, cfg, e.Resource)
 	}
 	return e
+}
+
+var hostname = sync.OnceValue(func() string { host, _ := os.Hostname(); return host })
+
+// eventSession identifies the caller session behind an event (design.md D40).
+// A TUI session isn't an agent session, so it records only its ID and can
+// never look resumable.
+func eventSession(ctx context.Context, cfg project.Config, resource string) *hooks.Session {
+	_, caller := Coordination(ctx)
+	if caller.Session == "" {
+		return nil
+	}
+	if c, _ := ctx.Value(eventContextKey{}).(eventContext); caller.PerItem || c.Origin == "tui" {
+		if caller.PerItem {
+			if resource == "" {
+				return nil
+			}
+			caller = caller.For(resource)
+		}
+		return hooks.Session{ID: caller.Session}.Checked()
+	}
+	return hooks.Session{ID: caller.Session, Agent: caller.Agent, AgentSession: cmp.Or(caller.AgentSession, caller.Session),
+		Host: hostname(), CWD: cfg.Discovery.CheckoutRoot, Branch: cfg.Discovery.Branch()}.Checked()
 }
 func eventItemData(item model.Item) map[string]any {
 	out := map[string]any{}

@@ -358,6 +358,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 						if caller.Session == "" {
 							caller.Session = os.Getenv("WORKLEASE_SESSION_ID")
 						}
+						caller.Agent, caller.AgentSession = cfg.DetectAgent(os.Getenv)
 						ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, engine.NewCoordinator(cfg), caller), cfg)
 					}
 				}

@@ -3,6 +3,7 @@ package hooks_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -116,6 +117,29 @@ func TestEventInterruptedAppend(t *testing.T) {
 	events, err := log.Read(ctx, "")
 	if err != nil || len(events) != 2 {
 		t.Fatalf("interrupted append: %d %v", len(events), err)
+	}
+	// An index from before the per-item ref column records every file as
+	// indexed, so keeping its file rows would leave per-item reads empty.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err = os.Remove(filepath.Join(log.Dir, "index.sqlite") + suffix); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(log.Dir, "index.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE events(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, data BLOB NOT NULL); CREATE TABLE files(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL); INSERT INTO files VALUES(?,?,?)`, path, info.Size(), info.ModTime().UnixNano())
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events, err = log.ItemEvents(ctx, "tasks:BL-1"); err != nil || len(events) != 2 {
+		t.Fatalf("old index: %d %v", len(events), err)
 	}
 }
 

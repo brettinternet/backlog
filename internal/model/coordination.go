@@ -13,6 +13,10 @@ type CallerContext struct {
 	Run     string `json:"run,omitempty"`
 	// PerItem coordinates each item under its own session (design.md D39).
 	PerItem bool `json:"-"`
+	// Agent is the detected agent kind, and AgentSession its harness's own
+	// session ID. Events record them; coordination ignores them (D40).
+	Agent        string `json:"-"`
+	AgentSession string `json:"-"`
 }
 
 // For returns the caller for one claim resource: SESSION:HASH when per item,
@@ -46,6 +50,24 @@ type ClaimEpoch struct {
 	EndedAt    time.Time `json:"endedAt,omitzero"`
 	EndReason  string    `json:"endReason,omitempty"`
 	ExpiresAt  time.Time `json:"expiresAt,omitzero"`
+}
+
+// ItemSession is one caller session that worked an item, folded from its
+// events and claim history (design.md D40). A claim-only session, such as one
+// from another host, has only its ID and Claim.
+type ItemSession struct {
+	ID           string      `json:"id"`
+	Agent        string      `json:"agent,omitempty"`
+	AgentSession string      `json:"agentSession,omitempty"`
+	Host         string      `json:"host,omitempty"`
+	CWD          string      `json:"cwd,omitempty"`
+	Branch       string      `json:"branch,omitempty"`
+	FirstSeen    time.Time   `json:"firstSeen"`
+	LastSeen     time.Time   `json:"lastSeen"`
+	Phases       []string    `json:"phases,omitempty"`
+	Claim        *ClaimEpoch `json:"claim,omitempty"`
+	// Ended is done, released, or lapsed; empty while the session is open.
+	Ended string `json:"ended,omitempty"`
 }
 type ClaimOutcome string
 

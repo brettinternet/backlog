@@ -214,12 +214,6 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 		}
 		return strings.Join(out, ", ")
 	}
-	timestamp := func(t time.Time) string {
-		if t.IsZero() {
-			return ""
-		}
-		return t.Format(time.RFC3339)
-	}
 	assignees := make([]string, len(i.Assignees))
 	for n, v := range i.Assignees {
 		assignees[n] = cmp.Or(i.Names[v], v)
@@ -259,23 +253,60 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 			b.WriteString("\n" + p.paint("1", "## "+s[1]) + "\n" + textutil.Sanitize(text) + "\n")
 		}
 	}
-	if len(detail.Claims) > 0 || detail.ClaimsError != "" {
-		b.WriteString("\n" + p.paint("1", "## Claims") + "\n")
-		if detail.ClaimsError != "" {
-			b.WriteString(textutil.Line(detail.ClaimsError) + "\n")
-		}
-		for _, c := range detail.Claims {
-			end := "open"
-			if !c.EndedAt.IsZero() {
-				end = c.EndReason + " " + timestamp(c.EndedAt)
-			} else if !c.ExpiresAt.IsZero() {
-				end = "expires " + timestamp(c.ExpiresAt)
+	if len(detail.Sessions) > 0 || detail.ClaimsError != "" || detail.SessionsError != "" {
+		b.WriteString("\n" + p.paint("1", "## Sessions") + "\n")
+		for _, message := range []string{detail.ClaimsError, detail.SessionsError} {
+			if message != "" {
+				b.WriteString(textutil.Line(message) + "\n")
 			}
-			b.WriteString(textutil.Line(c.Session+"  "+c.Agent+"  "+timestamp(c.AcquiredAt)+"  "+strings.TrimSpace(end)) + "\n")
+		}
+		for _, s := range detail.Sessions {
+			b.WriteString(textutil.Line(sessionLine(s)) + "\n")
 		}
 	}
 	_, err := io.WriteString(out, b.String())
 	return err
+}
+
+func timestamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
+// sessionLine reads: session, agent, where it ran, when, phases, and how it
+// ended or when its claim expires. A claim-only session shows its claim holder.
+func sessionLine(s model.ItemSession) string {
+	fields := []string{s.ID}
+	if s.Agent != "" {
+		fields = append(fields, s.Agent)
+	} else if s.Claim != nil && s.Claim.Agent != "" {
+		fields = append(fields, s.Claim.Agent)
+	}
+	where := s.Host
+	if s.CWD != "" {
+		where = strings.TrimPrefix(where+":"+s.CWD, ":")
+	}
+	if s.Branch != "" {
+		where += " (" + s.Branch + ")"
+	}
+	if where != "" {
+		fields = append(fields, where)
+	}
+	fields = append(fields, timestamp(s.FirstSeen))
+	if len(s.Phases) > 0 {
+		fields = append(fields, strings.Join(s.Phases, ","))
+	}
+	switch {
+	case s.Ended != "":
+		fields = append(fields, s.Ended+" "+timestamp(s.LastSeen))
+	case s.Claim != nil && !s.Claim.ExpiresAt.IsZero():
+		fields = append(fields, "expires "+timestamp(s.Claim.ExpiresAt))
+	default:
+		fields = append(fields, "open")
+	}
+	return strings.Join(fields, "  ")
 }
 
 // writeDoctor prints one aligned line per check; a fix follows only the

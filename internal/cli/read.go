@@ -212,6 +212,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			detail := itemjson.Detail{Resource: resource, Item: itemjson.NewSummary(i), Metadata: itemjson.Metadata(i), Sections: sections, Criteria: i.Criteria, DoD: i.DoD}
 			if section == "" {
 				detail.Claims, detail.ClaimsError = engine.ClaimHistory(ctx, c, resource)
+				detail.Sessions, detail.SessionsError = engine.ItemSessions(ctx, cfg, i, detail.Claims)
 			}
 			if cmd.Bool("json") {
 				return success(out, "show", detail)

@@ -32,7 +32,29 @@ records a baseline without inventing history.
 | `actor` | Configured default identity, if any. Not authenticated. |
 | `origin` | `cli`, `tui`, `mcp`, `hook`, `action`, or `sync` |
 | `cause`, `depth` | Causing event ID (or `null`) and chain depth |
+| `session` | Optional caller session, below |
 | `versions` | The identity used for [deduplication](#deduplication) |
+
+An event from a `bl` command run with a caller session (`--session`,
+`BL_SESSION`, `WORKLEASE_SESSION_ID`, or the MCP `session` argument) adds
+`session`. Item writes, `claim.acquired`, `claim.released`, and
+`action.finished` carry it:
+
+```json
+"session":{"id":"71e98dd4","agent":"claude","agentSession":"71e98dd4","host":"mbp","cwd":"/src/app/.worktrees/bl-140","branch":"bl-140"}
+```
+
+| Field | Contract |
+| --- | --- |
+| `id` | The caller session |
+| `agent` | Detected agent kind ([CLI](cli.md#coordination)) or the MCP `agent` argument; omitted if none |
+| `agentSession` | The harness's own session ID; defaults to `id` |
+| `host` | Host name |
+| `cwd`, `branch` | Top level and branch of the checkout `bl` ran in, not the control root; no branch when detached |
+
+A value with control characters, a leading `-`, or over 1 KiB is dropped
+without failing the write. TUI per-item `tui:` sessions record only `id`, and
+`sync` events have no `session`.
 
 `changes` uses native names (`blocked_by`, `duplicate_of`) and covers body
 sections, evidence inside `criteria`/`dod`, `updated`, and raw frontmatter under

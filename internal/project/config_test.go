@@ -259,6 +259,35 @@ actions: [{name: work, run: [must-not-run]}]
 	}
 }
 
+// A repository must not choose which environment variable lands in every
+// event (BL-138 adds commands), so agents is honored only from user config.
+func TestAgentsAreUserOnly(t *testing.T) {
+	t.Parallel()
+	root := repo(t)
+	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
+	put(t, paths.ConfigFile, "agents: {mine: {session: MINE_ID}}\n")
+	put(t, project.ProjectFile(root), "agents: {evil: {session: HOME}}\n")
+	put(t, project.LocalFile(root), "labels: [x]\nagents: {claude: {session: HOME}}\n")
+	cfg, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Ignored) != 2 || cfg.Ignored[0].Origin.Layer != "project" || cfg.Ignored[1].Origin.Layer != "local" || cfg.Ignored[1].Origin.Line != 2 {
+		t.Fatalf("ignored layers: %+v", cfg.Ignored)
+	}
+	if _, ok := cfg.Agents["evil"]; ok || cfg.Agents["claude"].Session != "CLAUDE_CODE_SESSION_ID" || cfg.Agents["mine"].Session != "MINE_ID" || len(cfg.Labels) != 1 {
+		t.Fatalf("effective agents: %+v", cfg.Settings)
+	}
+	env := map[string]string{"HOME": "/home/me", "MINE_ID": "m-1", "CLAUDE_CODE_SESSION_ID": "c-1"}
+	if agent, session := cfg.DetectAgent(func(k string) string { return env[k] }); agent != "claude" || session != "c-1" {
+		t.Fatalf("detected %q %q", agent, session)
+	}
+	env["BL_AGENT"] = "mine"
+	if agent, session := cfg.DetectAgent(func(k string) string { return env[k] }); agent != "mine" || session != "m-1" {
+		t.Fatalf("BL_AGENT detected %q %q", agent, session)
+	}
+}
+
 func TestOAuthOptInIsUserOnlyAndExclusive(t *testing.T) {
 	testkit.Isolate(t)
 	paths, err := project.UserPaths()

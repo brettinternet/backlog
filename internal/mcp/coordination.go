@@ -14,6 +14,7 @@ type ClaimArgs struct {
 	ID      string `json:"id"`
 	Session string `json:"session"`
 	Run     string `json:"run,omitempty"`
+	AgentArgs
 }
 type HeartbeatArgs struct {
 	Session string `json:"session"`
@@ -27,7 +28,7 @@ func (s *Server) release(ctx context.Context, _ *sdk.CallToolRequest, args Claim
 	return s.coordinate(ctx, args, true)
 }
 func (s *Server) coordinate(ctx context.Context, args ClaimArgs, release bool) (*sdk.CallToolResult, any, error) {
-	caller := model.CallerContext{Session: args.Session, Run: args.Run}
+	caller := callerContext(args.Session, args.Run, args.AgentArgs)
 	if err := engine.RequireSession(caller); err != nil {
 		return failed[any](reason(err), err.Error())
 	}

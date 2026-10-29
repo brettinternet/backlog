@@ -35,13 +35,15 @@ to bypass uncertainty. Inside a verified run, selection returns only the run's
 item; bl never acquires, renews, or releases a run-managed claim.
 
 MCP callers pass ownership explicitly on every call; server environment is not
-caller ownership. The equivalent loop uses these tool arguments:
+caller ownership. Also pass agent (your kind: claude, codex, or pi) so events
+record which agent ran the session; agentSession defaults to session. The
+equivalent loop uses these tool arguments:
 
 ```json
-{"tool":"next","arguments":{"claim":true,"start":true,"session":"loop-a"}}
+{"tool":"next","arguments":{"claim":true,"start":true,"session":"loop-a","agent":"claude"}}
 {"tool":"show","arguments":{"id":"ID"}}
 {"tool":"heartbeat","arguments":{"session":"loop-a"}}
-{"tool":"update","arguments":{"id":"ID","version":"VERSION","operation":"done","session":"loop-a"}}
+{"tool":"update","arguments":{"id":"ID","version":"VERSION","operation":"done","session":"loop-a","agent":"claude"}}
 ```
 
 For supervised MCP calls, also pass run explicitly. Inspect the claim result and

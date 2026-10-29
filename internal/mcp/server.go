@@ -102,6 +102,7 @@ type NextArgs struct {
 	Explain bool   `json:"explain,omitempty"`
 	Session string `json:"session,omitempty" jsonschema:"Required for claim; keep one stable session for the whole work loop."`
 	Run     string `json:"run,omitempty"`
+	AgentArgs
 }
 type QueryArgs struct {
 	Query string `json:"query" jsonschema:"bl query-language expression."`
@@ -123,9 +124,27 @@ const defaultEventLimit = 100
 type ShowArgs struct {
 	ID string `json:"id"`
 }
+
+// AgentArgs identify the agent behind a session on the events a call records.
+// MCP never reads them from the server's environment (design.md D40).
+type AgentArgs struct {
+	Agent        string `json:"agent,omitempty" jsonschema:"Agent kind running this session, such as claude, codex, or pi."`
+	AgentSession string `json:"agentSession,omitempty" jsonschema:"The agent harness's own session ID; defaults to session."`
+}
+
+func callerContext(session, run string, agent AgentArgs) model.CallerContext {
+	return model.CallerContext{Session: session, Run: run, Agent: agent.Agent, AgentSession: agent.AgentSession}
+}
+
+// withCaller binds a write's caller so its claim rules and events see it.
+func (s *Server) withCaller(ctx context.Context, args WriteArgs) context.Context {
+	return engine.WithClaimEvents(engine.WithCoordination(ctx, s.coordinator, callerContext(args.Session, args.Run, args.AgentArgs)), s.cfg)
+}
+
 type WriteArgs struct {
 	Session string `json:"session,omitempty"`
 	Run     string `json:"run,omitempty"`
+	AgentArgs
 	Version string `json:"version,omitempty" jsonschema:"Expected current item version; stale values are rejected without writing."`
 }
 type CreateArgs struct {
@@ -178,7 +197,7 @@ func (s *Server) next(ctx context.Context, _ *mcp.CallToolRequest, args NextArgs
 	if args.Start && !args.Claim {
 		return failed[any]("usage", "start requires claim")
 	}
-	ctx = engine.WithClaimEvents(engine.WithEventOrigin(engine.WithCoordination(ctx, s.coordinator, model.CallerContext{Session: args.Session, Run: args.Run}), "mcp"), s.cfg)
+	ctx = engine.WithClaimEvents(engine.WithEventOrigin(engine.WithCoordination(ctx, s.coordinator, callerContext(args.Session, args.Run, args.AgentArgs)), "mcp"), s.cfg)
 	if args.Claim {
 		s.writes.Lock()
 		claimed, err := engine.NextClaim(ctx, s.cfg, engine.NextClaimOptions{Query: args.Query, Start: args.Start, Explain: args.Explain})
@@ -315,9 +334,11 @@ func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs
 	}
 	detail := itemjson.NewDetail(items[0], resource)
 	detail.Claims, detail.ClaimsError = engine.ClaimHistory(ctx, s.coordinator, resource)
+	detail.Sessions, detail.SessionsError = engine.ItemSessions(ctx, s.cfg, items[0], detail.Claims)
 	return nil, detail, nil
 }
 func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
+	ctx = s.withCaller(ctx, args.WriteArgs)
 	if args.Title == "" {
 		return failed[any]("usage", "title is required")
 	}
@@ -378,7 +399,7 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args UpdateArgs) (*mcp.CallToolResult, any, error) {
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	ctx = engine.WithClaimEvents(engine.WithCoordination(ctx, s.coordinator, model.CallerContext{Session: args.Session, Run: args.Run}), s.cfg)
+	ctx = s.withCaller(ctx, args.WriteArgs)
 	var transition engine.TransitionResult
 	ctx = engine.WithTransitionResult(ctx, &transition)
 	if args.ID == "" || (len(args.Fields) == 0 && args.Operation == "") {
@@ -498,6 +519,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	return nil, result, nil
 }
 func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args AppendArgs) (*mcp.CallToolResult, any, error) {
+	ctx = s.withCaller(ctx, args.WriteArgs)
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	ctx = engine.WithEventOrigin(ctx, "mcp")
@@ -529,6 +551,7 @@ func (s *Server) append(ctx context.Context, _ *mcp.CallToolRequest, args Append
 	return nil, ItemResult{Item: itemjson.NewSummary(updated)}, nil
 }
 func (s *Server) criteria(ctx context.Context, _ *mcp.CallToolRequest, args CriteriaArgs) (*mcp.CallToolResult, any, error) {
+	ctx = s.withCaller(ctx, args.WriteArgs)
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	ctx = engine.WithEventOrigin(ctx, "mcp")

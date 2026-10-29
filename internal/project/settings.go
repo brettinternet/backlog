@@ -1,6 +1,9 @@
 package project
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
 
 // Settings is the shared, non-secret project configuration vocabulary. Loading
 // these declarations never executes a program or contacts a source.
@@ -21,6 +24,14 @@ type Settings struct {
 	Coordination CoordinationConfig `yaml:"coordination,omitempty" json:"coordination"`
 	Hooks        []HookConfig       `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	Actions      []ActionConfig     `yaml:"actions,omitempty" json:"actions,omitempty"`
+	// Agents is honored only from built-ins and user config (design.md D40).
+	Agents map[string]AgentConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
+}
+
+// AgentConfig detects an agent kind: Session names the environment variable
+// whose presence detects it and holds its harness session ID.
+type AgentConfig struct {
+	Session string `yaml:"session,omitempty" json:"session,omitempty"`
 }
 
 // SprintCapable reports whether any configured source can supply sprints.
@@ -211,4 +222,29 @@ type Privileged struct {
 	Key     string     `json:"key"`
 	Trusted bool       `json:"trusted"`
 	Origin  Provenance `json:"origin"`
+}
+
+// Ignored is a key a configuration layer may not set, kept out of the
+// effective configuration and reported by bl doctor.
+type Ignored struct {
+	Key    string     `json:"key"`
+	Origin Provenance `json:"origin"`
+}
+
+// DetectAgent names the agent running bl and its harness session ID:
+// BL_AGENT if set, else the first agent, in key order, whose session variable
+// is set. An empty session means the caller's own session (design.md D40).
+func (s Settings) DetectAgent(getenv func(string) string) (agent, session string) {
+	if kind := getenv("BL_AGENT"); kind != "" {
+		if variable := s.Agents[kind].Session; variable != "" {
+			session = getenv(variable)
+		}
+		return kind, session
+	}
+	for _, kind := range slices.Sorted(maps.Keys(s.Agents)) {
+		if variable := s.Agents[kind].Session; variable != "" && getenv(variable) != "" {
+			return kind, getenv(variable)
+		}
+	}
+	return "", ""
 }

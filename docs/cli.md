@@ -105,8 +105,15 @@ metadata and only that section key. A missing section is `""`.
   `data.claims` lists the item's past and current claims from Worklease
   history, oldest first: `{claimId, session, agent, acquiredAt, endedAt?,
   endReason?, expiresAt?}`. An open claim has no `endedAt`. If history can't be
-  read, `data.claimsError` says why and `show` still succeeds. Text output adds
-  a Claims section.
+  read, `data.claimsError` says why and `show` still succeeds.
+- `data.sessions` folds the item's [events](events.md) and claims by session,
+  oldest first: `{id, agent?, agentSession?, host?, cwd?, branch?, firstSeen,
+  lastSeen, phases?, claim?, ended?}`. `phases` are the status categories the
+  session's events saw. `ended` is `done` (the session closed the item),
+  `released`, or `lapsed`; open sessions omit it. A claim-only session, such as
+  one from another host, has only `claim`. If events can't be read,
+  `data.sessionsError` says why and `show` still succeeds. Text output adds a
+  Sessions section, one line per session.
 
 `item.version` is the source's opaque version: a content hash for files, a
 composite fingerprint for GitHub. Pass it unchanged to `--if-version`.
@@ -306,6 +313,18 @@ The session comes from `--session`, then `BL_SESSION`, then
 `WORKLEASE_SESSION_ID`; without one, the TUI uses a session per item, `tui:` plus a hash of its claim, so a person can hold several claims. `WORKLEASE_RUN_ID` requests run verification. MCP
 instead takes `session` and `run` on each call. Use one stable session per loop,
 distinct from every other loop.
+
+Events record the agent running the session. `BL_AGENT=KIND` names it;
+otherwise the first `agents:` entry, in key order, whose `session` variable is
+set wins, and that variable's value is the agent's own session ID. Built-ins
+detect `claude` (`CLAUDE_CODE_SESSION_ID`), `codex` (`CODEX_THREAD_ID`), and
+`pi` (`PI_SESSION_ID`). Add kinds in user config; `backlog.yaml` and
+`backlog.local.yaml` can't set `agents:`, and `bl doctor` warns if they try.
+
+```yaml
+agents:
+  mine: {session: MINE_SESSION_ID}
+```
 
 Every Worklease call runs from the control root, even from a linked worktree.
 `WORKLEASE_HOME` and `WORKLEASE_PROFILE` pass through; inherited

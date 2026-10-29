@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/fixtures"
+	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
@@ -58,8 +60,14 @@ func BenchmarkCLI(b *testing.B) {
 				}
 				return rss
 			}
-			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write"} {
+			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write", "show-history"} {
 				b.Run(op, func(b *testing.B) {
+					if op == "show-history" {
+						if count != 10000 {
+							b.Skip("the history budget is set at 10k")
+						}
+						seedEvents(b, base, root, count)
+					}
 					opts := native.Options{ID: "tasks", Path: filepath.Join(root, "backlog"), Prefix: "BL", CommonDir: filepath.Join(root, ".git")}
 					if op == "warm-load" {
 						opts.CacheDir = filepath.Join(base, "load-cache")
@@ -80,7 +88,7 @@ func BenchmarkCLI(b *testing.B) {
 							return run("ls")
 						case "next":
 							return run("next")
-						case "show":
+						case "show", "show-history":
 							return run("show", "BL-1")
 						case "write":
 							return run("set", "BL-1", fmt.Sprintf("title=Measured title %d", n))
@@ -107,5 +115,38 @@ func BenchmarkCLI(b *testing.B) {
 				})
 			}
 		})
+	}
+}
+
+// seedEvents appends 100k events, 1% of them for BL-1 across 100 sessions, so
+// show reads one item's history from rotated logs through the ref index.
+func seedEvents(b *testing.B, base, root string, count int) {
+	b.Helper()
+	cfg, err := project.Resolve(project.Paths{StateDir: filepath.Join(base, "state", "backlog")}, root, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	log := hooks.New(cfg.Paths.StateDir, cfg.Project.ID)
+	err = log.Update(context.Background(), func(tx *hooks.Transaction) error {
+		for n := range 100000 {
+			id := n%count + 1
+			if n%100 == 0 {
+				id = 1
+			}
+			session := fmt.Sprintf("session-%d", n%100)
+			e := hooks.Event{Type: "item.updated", Ref: fmt.Sprintf("tasks:BL-%d", id), Versions: []string{fmt.Sprint(n)}, Origin: "cli",
+				Item:    map[string]any{"id": fmt.Sprintf("BL-%d", id), "title": "Seeded event", "category": "active"},
+				Session: &hooks.Session{ID: session, Agent: "claude", AgentSession: session, Host: "bench", CWD: root, Branch: "main"}}
+			if _, err := tx.Append(e); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if paths, _ := filepath.Glob(filepath.Join(log.Dir, "*.jsonl")); len(paths) < 2 {
+		b.Fatalf("seeded log did not rotate: %v", paths)
 	}
 }

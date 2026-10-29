@@ -69,6 +69,7 @@ type Config struct {
 	HostLocal        bool                       `yaml:"-" json:"hostLocal"`
 	Provenance       map[string]Provenance      `yaml:"-" json:"provenance"`
 	Privileged       []Privileged               `yaml:"-" json:"privileged,omitempty"`
+	Ignored          []Ignored                  `yaml:"-" json:"ignored,omitempty"`
 	Me               MeConfig                   `yaml:"-" json:"me"`
 	Accounts         map[string][]AccountConfig `yaml:"-" json:"-"`
 	Workspaces       []WorkspaceConfig          `yaml:"-" json:"workspaces,omitempty"`
@@ -87,7 +88,7 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 	cfg := Config{Paths: paths, Provenance: map[string]Provenance{}}
 	effective := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	var defaults yaml.Node
-	_ = yaml.Unmarshal([]byte("version: 1\nroot: primary\ngit: {autoCommit: false}\nui: {highContrast: false}\nready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}\n"), &defaults)
+	_ = yaml.Unmarshal([]byte("version: 1\nroot: primary\ngit: {autoCommit: false}\nui: {highContrast: false}\nready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}\nagents: {claude: {session: CLAUDE_CODE_SESSION_ID}, codex: {session: CODEX_THREAD_ID}, pi: {session: PI_SESSION_ID}}\n"), &defaults)
 	overlay(effective, defaults.Content[0], "", Provenance{Layer: "built-in"}, cfg.Provenance)
 	userNode, err := readConfig(paths.ConfigFile, reflect.TypeFor[UserConfig]())
 	if err != nil {
@@ -154,7 +155,14 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 					}
 					cfg.SavedViews = appendViews(cfg.SavedViews, entry.layer, entries)
 				}
-				overlay(effective, entry.node, "", Provenance{Layer: entry.layer, File: entry.file}, cfg.Provenance)
+				node := entry.node
+				// Agent entries will carry commands (BL-138), so a repository
+				// can't set them.
+				if agents := field(node, "agents"); agents != nil {
+					cfg.Ignored = append(cfg.Ignored, Ignored{Key: "agents", Origin: Provenance{Layer: entry.layer, File: entry.file, Line: agents.Line}})
+					node = withoutField(node, "agents")
+				}
+				overlay(effective, node, "", Provenance{Layer: entry.layer, File: entry.file}, cfg.Provenance)
 			}
 			replaceField(effective, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "root"}, cloneNode(root))
 			cfg.Provenance["root"] = rootOrigin
@@ -260,6 +268,16 @@ func overlaySettings(dst, src *yaml.Node, origin Provenance, provenance map[stri
 		}
 	}
 	overlay(dst, filtered, "", origin, provenance)
+}
+
+func withoutField(node *yaml.Node, key string) *yaml.Node {
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for i := 0; i < len(node.Content); i += 2 {
+		if node.Content[i].Value != key {
+			out.Content = append(out.Content, node.Content[i], node.Content[i+1])
+		}
+	}
+	return out
 }
 
 // Copy nodes before merging so earlier layers remain reusable for checkout opt-out.

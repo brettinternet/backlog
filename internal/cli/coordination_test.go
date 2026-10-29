@@ -271,6 +271,7 @@ func testClaimHeartbeatDoneUseControlRoot(t *testing.T, replace bool) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("WORKLEASE_HANDLE", "foreign")
 	t.Setenv("WORKLEASE_SESSION_ID", "foreign")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "harness-1")
 	for _, operation := range []struct {
 		root string
 		args []string
@@ -314,10 +315,18 @@ func testClaimHeartbeatDoneUseControlRoot(t *testing.T, replace bool) {
 			if !replace && event.Resource != final.Resources[0] {
 				t.Fatalf("claim event identity drift: %+v", event)
 			}
+			// Each event names the invoking checkout and its branch, read
+			// without starting git.
+			checkout, branch := root, ""
 			if event.Type == "claim.acquired" {
 				acquired++
 			} else {
 				released++
+				checkout, branch = linked, "linked"
+			}
+			checkout, _ = filepath.EvalSymlinks(checkout)
+			if s := event.Session; s == nil || s.ID != "loop" || s.Agent != "claude" || s.AgentSession != "harness-1" || s.Host == "" || s.CWD != checkout || s.Branch != branch {
+				t.Fatalf("claim event session: %+v", s)
 			}
 		}
 	}

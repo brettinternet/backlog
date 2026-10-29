@@ -51,6 +51,33 @@ type Event struct {
 	Duration      time.Duration     `json:"duration,omitempty"`
 	Result        map[string]any    `json:"result,omitempty"`
 	Message       string            `json:"message,omitempty"`
+	Session       *Session          `json:"session,omitempty"`
+}
+
+// Session identifies the caller session behind an event, so its item's
+// history can say which agent worked it and where (design.md D40). Only ID is
+// set for sessions that aren't agent sessions, such as the TUI's.
+type Session struct {
+	ID           string `json:"id"`
+	Agent        string `json:"agent,omitempty"`
+	AgentSession string `json:"agentSession,omitempty"`
+	Host         string `json:"host,omitempty"`
+	CWD          string `json:"cwd,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+}
+
+// Checked drops each value that fails the D21 checks rather than failing the
+// event that carries it. Without a valid ID there is no session.
+func (s Session) Checked() *Session {
+	for _, value := range []*string{&s.ID, &s.Agent, &s.AgentSession, &s.Host, &s.CWD, &s.Branch} {
+		if *value != "" && validateValue(*value) != nil {
+			*value = ""
+		}
+	}
+	if s.ID == "" {
+		return nil
+	}
+	return &s
 }
 
 // Log retains rotated segments: cursors and dedupe identities never silently
@@ -141,6 +168,8 @@ func identity(e Event) string {
 // The SQLite index is disposable. JSONL remains the authority: under the log
 // lock every transaction first indexes new complete lines, including appends
 // whose producer died before publishing its index/cache transaction.
+const indexVersion = 1
+
 func (l Log) openIndex(ctx context.Context) (*sql.DB, error) {
 	path := filepath.Join(l.Dir, "index.sqlite")
 	for attempt := 0; attempt < 2; attempt++ {
@@ -149,7 +178,19 @@ func (l Log) openIndex(ctx context.Context) (*sql.DB, error) {
 			return nil, err
 		}
 		db.SetMaxOpenConns(1)
-		_, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, data BLOB NOT NULL); CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL);`)
+		_, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`)
+		var version int
+		if err == nil {
+			err = db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version)
+		}
+		// Version 1 adds the per-item ref index. An older index is rebuilt
+		// from the log, like a deleted one.
+		if err == nil && version < indexVersion {
+			_, err = db.ExecContext(ctx, `DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS files;`)
+		}
+		if err == nil {
+			_, err = db.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, ref TEXT NOT NULL, data BLOB NOT NULL); CREATE INDEX IF NOT EXISTS events_ref ON events(ref, id); CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL); PRAGMA user_version=%d;`, indexVersion))
+		}
 		if err == nil {
 			return db, nil
 		}
@@ -246,7 +287,7 @@ func (tx *Transaction) syncIndex() error {
 				f.Close()
 				return fmt.Errorf("event log %s: %w", path, e)
 			}
-			if _, e = tx.db.ExecContext(tx.ctx, `INSERT OR IGNORE INTO events(id,identity,data) VALUES(?,?,?)`, event.ID, identity(event), data); e != nil {
+			if _, e = tx.db.ExecContext(tx.ctx, `INSERT OR IGNORE INTO events(id,identity,ref,data) VALUES(?,?,?,?)`, event.ID, identity(event), event.Ref, data); e != nil {
 				f.Close()
 				return e
 			}
@@ -324,7 +365,7 @@ func (tx *Transaction) Append(e Event) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err = tx.db.ExecContext(tx.ctx, `INSERT INTO events(id,identity,data) VALUES(?,?,?)`, e.ID, key, data); err != nil {
+	if _, err = tx.db.ExecContext(tx.ctx, `INSERT INTO events(id,identity,ref,data) VALUES(?,?,?,?)`, e.ID, key, e.Ref, data); err != nil {
 		return false, err
 	}
 	info, err := os.Stat(path)
@@ -352,6 +393,35 @@ func (l Log) Event(ctx context.Context, id string) (Event, error) {
 		return json.Unmarshal(data, &event)
 	})
 	return event, err
+}
+
+// ItemEvents reads one item's events in log order through the ref index, so
+// an item's history costs the same however long the log grows.
+func (l Log) ItemEvents(ctx context.Context, ref string) ([]Event, error) {
+	var result []Event
+	err := l.Update(ctx, func(tx *Transaction) error {
+		if err := tx.ensureIndex(); err != nil {
+			return err
+		}
+		rows, err := tx.db.QueryContext(ctx, `SELECT data FROM events WHERE ref=? ORDER BY id`, ref)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var data []byte
+			if err = rows.Scan(&data); err != nil {
+				return err
+			}
+			var e Event
+			if err = json.Unmarshal(data, &e); err != nil {
+				return err
+			}
+			result = append(result, e)
+		}
+		return rows.Err()
+	})
+	return result, err
 }
 
 // ErrUnknownCursor reports a since ID the log does not hold.

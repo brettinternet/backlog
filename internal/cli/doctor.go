@@ -96,6 +96,13 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 					checks = append(checks, doctorCheck{name, "skip", "Configuration could not be loaded", "Fix configuration and rerun bl doctor"})
 				}
 			} else {
+				if len(cfg.Ignored) > 0 {
+					messages := make([]string, len(cfg.Ignored))
+					for n, ignored := range cfg.Ignored {
+						messages[n] = fmt.Sprintf("%s: line %d: key %s is ignored in %s config", ignored.Origin.File, ignored.Origin.Line, ignored.Key, ignored.Origin.Layer)
+					}
+					checks[0] = doctorCheck{"config", "warn", strings.Join(messages, "; "), "Move " + cfg.Ignored[0].Key + " to your user config (" + cfg.Paths.ConfigFile + ")"}
+				}
 				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), claimsCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")), accountsCheck(cfg))
 			}
 			data := doctorData{Checks: checks}

@@ -13,6 +13,7 @@ isolated-host guarantees.
 | Budget (p95) | Result | Run |
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms | 10k 12.29 ms; 50k 15.15 ms | BL-48 |
+| `bl show ID` with 100k events, 10k ≤ 30 ms | 20.07 ms (15.20 ms without events, same run) | BL-136 |
 | Warm `bl ls` / `bl next`, 10k ≤ 150 ms | 132.6 / 107.7 ms | BL-48 |
 | Native single-field write ≤ 50 ms | 10k 26.10 ms; 50k 38.66 ms | BL-50 |
 | CLI peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | 116.6 / 383.8 MiB (`ls`) | BL-48 |
@@ -65,6 +66,7 @@ task bench -- -bench 'BenchmarkCLI/10000/show$'      # one measurement
 | `bl ls` | 132.6 ms | 815.0 ms | 116.6 MiB | 383.8 MiB |
 | `bl next` | 107.7 ms | 736.4 ms | 113.1 MiB | 340.8 MiB |
 | `bl show BL-1` | 12.29 ms | 15.15 ms | 22.48 MiB | 22.84 MiB |
+| `bl show BL-1`, 100k events | 20.07 ms | — | 37.36 MiB | — |
 | Single-field write | 26.10 ms | 38.66 ms | 23.56 MiB | 26.84 MiB |
 
 What each row measures:
@@ -75,6 +77,10 @@ What each row measures:
 - **`ls`, `next`, `show`, write:** a production `bl` subprocess, including
   launch, discovery, config, and output. `show` reads BL-1. Write runs
   `bl set BL-1 title=...` with hooks and Git off.
+- **100k events:** `show` after seeding 100k events across rotated logs, 1,000
+  of them for BL-1 from 100 sessions, so it reads the item's sessions through
+  the event index's `ref` column (BL-136, 2026-10-29). The warm-up builds the
+  index. Measured at 10k only.
 - **p95:** nearest rank over 20 samples (the 19th), after one unmeasured
   warm-up. Not Go's mean `ns/op`.
 - **RSS:** the highest child-process high-water mark across samples.

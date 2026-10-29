@@ -4,6 +4,7 @@ package testkit
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,7 +16,8 @@ func Isolate(t testing.TB) string {
 	home := t.TempDir()
 	for _, pair := range os.Environ() {
 		name, _, _ := strings.Cut(pair, "=")
-		if strings.HasPrefix(name, "BL_") || strings.HasPrefix(name, "WORKLEASE_") {
+		// Harness session variables name the agent behind each event.
+		if strings.HasPrefix(name, "BL_") || strings.HasPrefix(name, "WORKLEASE_") || slices.Contains([]string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "PI_SESSION_ID"}, name) {
 			t.Setenv(name, "")
 		}
 	}

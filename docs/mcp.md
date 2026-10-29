@@ -40,16 +40,16 @@ by the configured source IDs and types for `source:` filters.
 
 | Tool | Arguments | CLI equivalent |
 | --- | --- | --- |
-| `next` | `limit` (0 or omitted: all), `claim`, `start`, `session`, `run` | `bl next`, `bl next --claim --start` |
+| `next` | `limit` (0 or omitted: all), `claim`, `start`, `session`, `run`, `agent`, `agentSession` | `bl next`, `bl next --claim --start` |
 | `query` | `query` | `bl ls` |
 | `show` | `id` | `bl show` (adds `resource` with coordination) |
 | `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `source`, `sprint` | `bl new` |
-| `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run` | `bl set`, `bl archive`, `bl edit --section` |
+| `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run`, `agent`, `agentSession` | `bl set`, `bl archive`, `bl edit --section` |
 | `append` | `id`, `version`, `kind` (`note`\|`comment`), `text`, `author` | `bl note`, `bl comment` |
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`set`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
-| `claim`, `release` | `id`, `session`, `run` | `bl claim`, `bl release` |
+| `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
 ```json
@@ -103,6 +103,12 @@ earlier call, because one server can outlive the agent loop that started it.
 Pass `session` (required) and `run` (optional) on every call that can claim,
 renew, or release: `next` with `claim`, `claim`, `release`, `heartbeat`, and a
 status `update` while coordination is on.
+
+Events record the caller's session ([events.md](events.md#wire-format)). Pass
+`agent` (your kind, such as `claude`) and `agentSession` (your harness session
+ID; defaults to `session`) beside `session` on `next`, writes, `claim`, and
+`release`. `create`, `append`, and `criteria` also accept `session`, `agent`, and
+`agentSession` for their events.
 
 | Problem | Result |
 | --- | --- |

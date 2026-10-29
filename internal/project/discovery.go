@@ -301,3 +301,20 @@ func gitConfigString(raw string) (string, error) {
 	}
 	return strings.TrimSpace(out.String()), nil
 }
+
+// Branch reads the checkout's current branch from HEAD without starting git.
+// A detached HEAD has none.
+func (d Discovery) Branch() string {
+	if d.GitDir == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(d.GitDir, "HEAD"))
+	if err != nil {
+		return ""
+	}
+	ref, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "ref: refs/heads/")
+	if !ok {
+		return ""
+	}
+	return ref
+}

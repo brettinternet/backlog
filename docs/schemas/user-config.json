@@ -18,6 +18,21 @@
     "ui": {
       "$ref": "project-config.json#/properties/ui"
     },
+    "agents": {
+      "description": "Agent kinds recorded on event sessions, merged by key over the built-in claude, codex, and pi. Ignored in backlog.yaml and backlog.local.yaml.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "Environment variable whose non-empty value detects this agent and is its harness session ID.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
     "sources": {
       "$ref": "project-config.json#/properties/sources"
     },

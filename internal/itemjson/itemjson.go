@@ -42,6 +42,10 @@ type Detail struct {
 	// Claims and ClaimsError report the resource's Worklease history.
 	Claims      []model.ClaimEpoch `json:"claims,omitempty"`
 	ClaimsError string             `json:"claimsError,omitempty"`
+	// Sessions folds the item's events with its claims; SessionsError reports
+	// an event log that couldn't be read.
+	Sessions      []model.ItemSession `json:"sessions,omitempty"`
+	SessionsError string              `json:"sessionsError,omitempty"`
 }
 
 func NewDetail(i model.Item, resource string) Detail {
