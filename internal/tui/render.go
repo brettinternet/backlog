@@ -209,6 +209,13 @@ func (m Model) layout(width int) listLayout {
 	if c, _ := engine.Coordination(m.opts.Context); c != nil {
 		coordination = true
 	}
+	// The context follows the selected row, so a workspace scope must not hide
+	// every project's claims while an uncoordinated project's row is selected.
+	if m.hasWorkspace() && m.opts.WorkspaceScope {
+		for _, p := range m.opts.Workspace.Workspace.Projects {
+			coordination = coordination || p.Coordination.Enabled()
+		}
+	}
 	statusGrouped := m.shown.Group == "status" && !m.ungrouped && !m.isTree()
 	type spec struct {
 		kind        columnKind

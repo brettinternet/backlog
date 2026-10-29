@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/model"
 )
 
 type claimsPoll struct{}
@@ -71,10 +72,12 @@ func (m *Model) renew(at time.Time) tea.Cmd {
 	}
 	// A timer late past expiry (a sleeping laptop) must not revive a claim.
 	now := m.now()
-	var held []engine.ClaimKey
+	// Projects sharing an authority can list one claim, but only the project
+	// that acquired it holds its handle; renew each session once.
+	held := map[string][]engine.ClaimKey{}
 	for key, expires := range m.mineClaims {
 		if expires.After(now) {
-			held = append(held, key)
+			held[key.Session] = append(held[key.Session], key)
 		}
 	}
 	if len(held) == 0 {
@@ -84,8 +87,13 @@ func (m *Model) renew(at time.Time) tea.Cmd {
 	ctx, workspace := m.opts.Context, m.opts.Workspace
 	return func() tea.Msg {
 		var failed []string
-		for _, key := range held {
-			r := engine.HeartbeatClaim(ctx, workspace, key)
+		for _, keys := range held {
+			var r model.ClaimResult
+			for _, key := range keys {
+				if r = engine.HeartbeatClaim(ctx, workspace, key); r.Reason == "" {
+					break
+				}
+			}
 			if r.Reason != "" && !slices.Contains(failed, r.Message) {
 				failed = append(failed, r.Message)
 			}

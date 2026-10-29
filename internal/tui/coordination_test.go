@@ -92,14 +92,14 @@ func (c renewingCoordinator) Heartbeat(_ context.Context, caller model.CallerCon
 }
 
 // Claims taken in the TUI must outlive their first lease: each under its own
-// session, once per lease, none while a renewal is in flight, and never for a
-// claim a run renews itself.
+// session, once per lease even when two workspace projects list it, none while
+// a renewal is in flight, and never for a claim a run renews itself.
 func TestHeldClaimsRenewOncePerLease(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(100, 0)
 	var renewed []string
 	coordinator := renewingCoordinator{renewed: &renewed}
-	claims := map[engine.ClaimKey]time.Time{{Session: "tui:a"}: now.Add(15 * time.Minute), {Session: "tui:b"}: now.Add(10 * time.Minute)}
+	claims := map[engine.ClaimKey]time.Time{{Project: "x", Session: "tui:a"}: now.Add(15 * time.Minute), {Project: "y", Session: "tui:a"}: now.Add(15 * time.Minute), {Session: "tui:b"}: now.Add(10 * time.Minute)}
 	run := New(Options{Now: func() time.Time { return now }, Context: engine.WithCoordination(context.Background(), coordinator, model.CallerContext{Session: "tui", Run: "run"})})
 	run.mineClaims = claims
 	if run.renewCommand() != nil {
