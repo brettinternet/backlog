@@ -658,7 +658,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshClaims()
 		return m, nil
 	case claimsRenew:
-		return m, m.renew(time.Time(msg))
+		renew := m.renew(time.Time(msg))
+		return m, renew
 	case claimRenewed:
 		// The refreshed claim list reschedules; a failure retries while the
 		// lease is live.

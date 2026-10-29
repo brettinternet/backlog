@@ -56,6 +56,10 @@ func (m *Model) renew(at time.Time) tea.Cmd {
 	if !at.Equal(m.mineExpiry) {
 		return m.renewCommand()
 	}
+	// A timer late past expiry (a sleeping laptop) must not revive the claim.
+	if !at.After(m.now()) {
+		return nil
+	}
 	m.renewing = true
 	ctx := m.opts.Context
 	return func() tea.Msg {
