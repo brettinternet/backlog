@@ -49,6 +49,7 @@ by the configured source IDs and types for `source:` filters.
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`set`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
+| `history` | `id`, `limit` (0 or omitted: all), `cursor` | `bl history` |
 | `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
@@ -91,6 +92,10 @@ and write tools return `item`, each an item summary:
 `events` returns `events` like `bl events --json`, plus `cursor` and `more`.
 Pass `cursor` back as `since` to continue: `more` means another page is ready,
 otherwise poll later. An unknown `since` returns `not-found`.
+
+`history` returns `entries`, `providers`, `cursor`, and `more`, like `bl
+history --json`; read it to pick up earlier sessions' handoffs before starting.
+An unknown `cursor` returns `not-found`.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
 coordination, `resource`, `claims`, and `claimsError`, plus `sessions` with

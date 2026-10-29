@@ -13,6 +13,7 @@ import (
 	urfave "github.com/urfave/cli/v3"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -176,27 +177,10 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			if err != nil {
 				return err
 			}
-			matches, err := engine.ReadDetail(ctx, cfg, cmd.Args().First())
-			if e := duplicateFiles(err); e != nil {
-				return e
-			}
+			i, err := readOne(ctx, cfg, cmd.Args().First())
 			if err != nil {
-				if auth := oauthCLIError(err); auth != nil {
-					return auth
-				}
-				return &Error{Reason: "unavailable", Message: err.Error()}
+				return err
 			}
-			if len(matches) == 0 {
-				return &Error{Reason: "not-found", Message: "item not found: " + cmd.Args().First()}
-			}
-			if len(matches) > 1 {
-				names := []string{}
-				for _, i := range matches {
-					names = append(names, i.Ref.Source+":"+i.Ref.ID)
-				}
-				return &Error{Reason: "usage", Message: "ambiguous ID; matches: " + strings.Join(names, ", "), Details: map[string]any{"matches": names}}
-			}
-			i := matches[0]
 			sections := itemjson.Sections(i)
 			if section != "" {
 				sections = map[string]string{section: sections[section]}
@@ -221,6 +205,31 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				return writeLine(out, sections[section])
 			}
 			return writeShow(out, cfg, i, detail)
+		}},
+		{Name: "history", Usage: "Show an item's history", ArgsUsage: "ID", Flags: []urfave.Flag{
+			&urfave.IntFlag{Name: "limit", Aliases: []string{"n"}, Usage: "Print at most `N` entries; 0 prints all"},
+			&urfave.StringFlag{Name: "cursor", Usage: "Start after entry `ID`"},
+		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+			if cmd.Args().Len() != 1 {
+				return &Error{Reason: "usage", Message: "history requires exactly one ID"}
+			}
+			cfg, err := loadConfig(cmd, *directory)
+			if err != nil {
+				return err
+			}
+			i, err := readOne(ctx, cfg, cmd.Args().First())
+			if err != nil {
+				return err
+			}
+			c, _ := engine.Coordination(ctx)
+			page, err := history.Load(ctx, cfg, c, i).Page(cmd.String("cursor"), cmd.Int("limit"))
+			if err != nil {
+				return &Error{Reason: "not-found", Message: err.Error()}
+			}
+			if cmd.Bool("json") {
+				return success(out, "history", page)
+			}
+			return writeHistory(out, page)
 		}},
 		{Name: "next", Usage: "Rank ready items", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Explain every included and excluded item"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim the top ready item for --session, resuming its claim first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
@@ -333,4 +342,29 @@ func groupName(field string, g query.Group) string {
 		}
 	}
 	return ""
+}
+
+// readOne reads the one item that id names, in full.
+func readOne(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
+	matches, err := engine.ReadDetail(ctx, cfg, id)
+	if e := duplicateFiles(err); e != nil {
+		return model.Item{}, e
+	}
+	if err != nil {
+		if auth := oauthCLIError(err); auth != nil {
+			return model.Item{}, auth
+		}
+		return model.Item{}, &Error{Reason: "unavailable", Message: err.Error()}
+	}
+	if len(matches) == 0 {
+		return model.Item{}, &Error{Reason: "not-found", Message: "item not found: " + id}
+	}
+	if len(matches) > 1 {
+		names := []string{}
+		for _, i := range matches {
+			names = append(names, i.Ref.Source+":"+i.Ref.ID)
+		}
+		return model.Item{}, &Error{Reason: "usage", Message: "ambiguous ID; matches: " + strings.Join(names, ", "), Details: map[string]any{"matches": names}}
+	}
+	return matches[0], nil
 }

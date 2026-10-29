@@ -35,6 +35,17 @@ type ResumeChoice struct {
 // against code that moved on. TUI sessions are never listed. Callers run this
 // on a worker, never on the TUI update loop.
 func ResumeChoices(ctx context.Context, cfg project.Config, id, command string) ([]ResumeChoice, error) {
+	return resumeChoices(ctx, cfg, id, "", command)
+}
+
+// SessionChoices offers both resume and fork for one of the item's recorded
+// sessions, as History's session rows do. Like ResumeChoices, it runs on a
+// worker.
+func SessionChoices(ctx context.Context, cfg project.Config, id, session string) ([]ResumeChoice, error) {
+	return resumeChoices(ctx, cfg, id, session, "resume", "fork")
+}
+
+func resumeChoices(ctx context.Context, cfg project.Config, id, session string, commands ...string) ([]ResumeChoice, error) {
 	items, err := ReadDetail(ctx, cfg, id)
 	if err != nil {
 		return nil, err
@@ -57,54 +68,55 @@ func ResumeChoices(ctx context.Context, cfg project.Config, id, command string) 
 	now := time.Now()
 	var choices []ResumeChoice
 	for _, s := range sessions {
-		if strings.HasPrefix(s.ID, "tui:") || s.Agent == "" && s.AgentSession == "" {
+		if strings.HasPrefix(s.ID, "tui:") || s.Agent == "" && s.AgentSession == "" || session != "" && s.ID != session {
 			continue
 		}
 		agent := cfg.Agents[s.Agent]
-		name := command
-		if name == "" {
-			name = "resume"
-			if closed && len(agent.Fork) > 0 {
-				name = "fork"
-			}
-		}
-		choice := ResumeChoice{Session: s, Command: name, Detach: agent.Detach}
-		run := agent.Resume
-		if name == "fork" {
-			run = agent.Fork
-		}
-		switch {
-		case s.Agent == "" || s.AgentSession == "" || len(run) == 0:
-			choice.Reason, choice.Disabled = "no-agent-config", fmt.Sprintf("no %s command for agent %q", name, cmp.Or(s.Agent, "unknown"))
-		case s.Host != hostname():
-			choice.Reason, choice.Disabled = "other-host", "session ran on "+cmp.Or(s.Host, "an unknown host")
-		case !isDir(s.CWD):
-			choice.Reason, choice.Disabled = "checkout-removed", "checkout no longer exists: "+cmp.Or(s.CWD, "unknown")
-		case live(s, now):
-			choice.Reason, choice.Disabled = "live", "session still holds its claim; message it instead"+channels(s)
-		case channels(s) != "":
-			choice.Reason, choice.Disabled = "live", "agent is still running; message it instead"+channels(s)
-		case claimsErr != "":
-			// Without claim state, the session may still be running.
-			choice.Reason, choice.Disabled = "live", "claim state unavailable: "+claimsErr
-		}
-		event := makeEvent(ctx, cfg, item, "", "action", []string{rand.Text()})
-		event.ID = rand.Text()
-		event.SchemaVersion = 1
-		event.Time = now.UTC()
-		event.Name = name
-		recorded := hooks.Session{ID: s.ID, Agent: s.Agent, AgentSession: s.AgentSession, Host: s.Host, CWD: s.CWD, Branch: s.Branch}
-		event.Session = &recorded
-		choice.Invocation = hooks.ActionInvocation{Name: name, Event: event, CWD: s.CWD, Agent: &recorded}
-		if choice.Reason == "" {
-			if err := hooks.CheckAction(cfg, choice.Invocation); err != nil {
-				choice.Reason, choice.Disabled = "rejected", err.Error()
-				if refusal, ok := err.(*source.Error); ok {
-					choice.Reason, choice.Disabled = refusal.Reason, refusal.Message
+		for _, name := range commands {
+			if name == "" {
+				name = "resume"
+				if closed && len(agent.Fork) > 0 {
+					name = "fork"
 				}
 			}
+			choice := ResumeChoice{Session: s, Command: name, Detach: agent.Detach}
+			run := agent.Resume
+			if name == "fork" {
+				run = agent.Fork
+			}
+			switch {
+			case s.Agent == "" || s.AgentSession == "" || len(run) == 0:
+				choice.Reason, choice.Disabled = "no-agent-config", fmt.Sprintf("no %s command for agent %q", name, cmp.Or(s.Agent, "unknown"))
+			case s.Host != hostname():
+				choice.Reason, choice.Disabled = "other-host", "session ran on "+cmp.Or(s.Host, "an unknown host")
+			case !isDir(s.CWD):
+				choice.Reason, choice.Disabled = "checkout-removed", "checkout no longer exists: "+cmp.Or(s.CWD, "unknown")
+			case live(s, now):
+				choice.Reason, choice.Disabled = "live", "session still holds its claim; message it instead"+channels(s)
+			case channels(s) != "":
+				choice.Reason, choice.Disabled = "live", "agent is still running; message it instead"+channels(s)
+			case claimsErr != "":
+				// Without claim state, the session may still be running.
+				choice.Reason, choice.Disabled = "live", "claim state unavailable: "+claimsErr
+			}
+			event := makeEvent(ctx, cfg, item, "", "action", []string{rand.Text()})
+			event.ID = rand.Text()
+			event.SchemaVersion = 1
+			event.Time = now.UTC()
+			event.Name = name
+			recorded := hooks.Session{ID: s.ID, Agent: s.Agent, AgentSession: s.AgentSession, Host: s.Host, CWD: s.CWD, Branch: s.Branch}
+			event.Session = &recorded
+			choice.Invocation = hooks.ActionInvocation{Name: name, Event: event, CWD: s.CWD, Agent: &recorded}
+			if choice.Reason == "" {
+				if err := hooks.CheckAction(cfg, choice.Invocation); err != nil {
+					choice.Reason, choice.Disabled = "rejected", err.Error()
+					if refusal, ok := err.(*source.Error); ok {
+						choice.Reason, choice.Disabled = refusal.Reason, refusal.Message
+					}
+				}
+			}
+			choices = append(choices, choice)
 		}
-		choices = append(choices, choice)
 	}
 	slices.SortStableFunc(choices, func(a, b ResumeChoice) int { return b.Session.LastSeen.Compare(a.Session.LastSeen) })
 	return choices, nil

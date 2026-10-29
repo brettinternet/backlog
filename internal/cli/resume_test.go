@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 )
 
 // Catches an agent command that runs through a shell, outside the recorded
@@ -140,5 +143,28 @@ esac
 	}
 	if got := strings.Join(finished, " "); got != "resume:fail:failed resume:ok:ok fork:ok:ok fork:ok:ok resume:ok:ok" {
 		t.Fatalf("finished events: %s", got)
+	}
+
+	// History's session rows show live channels, and ! on one offers both
+	// commands for that session alone.
+	if code, out, _ := writeRun(root, "", "history", "12"); code != 0 || !strings.Contains(out, "via pane p1") {
+		t.Fatalf("history contact: %d %s", code, out)
+	}
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := project.Resolve(paths, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := engine.WithCoordination(context.Background(), engine.NewCoordinator(full), model.CallerContext{})
+	choices, err := engine.SessionChoices(ctx, full, "tasks:BL-012", "ok")
+	var offered []string
+	for _, c := range choices {
+		offered = append(offered, c.Command+":"+c.Session.ID+":"+c.Reason)
+	}
+	if err != nil || strings.Join(offered, " ") != "resume:ok: fork:ok:" {
+		t.Fatalf("session choices: %v %v", offered, err)
 	}
 }

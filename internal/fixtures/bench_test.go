@@ -60,13 +60,21 @@ func BenchmarkCLI(b *testing.B) {
 				}
 				return rss
 			}
-			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write", "show-history"} {
+			seeded, committed := false, false
+			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write", "show-history", "history"} {
 				b.Run(op, func(b *testing.B) {
-					if op == "show-history" {
+					if op == "show-history" || op == "history" {
 						if count != 10000 {
 							b.Skip("the history budget is set at 10k")
 						}
-						seedEvents(b, base, root, count)
+						if !seeded {
+							seedEvents(b, base, root, count)
+							seeded = true
+						}
+					}
+					if op == "history" && !committed {
+						commitFixture(b, root)
+						committed = true
 					}
 					opts := native.Options{ID: "tasks", Path: filepath.Join(root, "backlog"), Prefix: "BL", CommonDir: filepath.Join(root, ".git")}
 					if op == "warm-load" {
@@ -90,6 +98,8 @@ func BenchmarkCLI(b *testing.B) {
 							return run("next")
 						case "show", "show-history":
 							return run("show", "BL-1")
+						case "history":
+							return run("history", "BL-1")
 						case "write":
 							return run("set", "BL-1", fmt.Sprintf("title=Measured title %d", n))
 						}
@@ -115,6 +125,37 @@ func BenchmarkCLI(b *testing.B) {
 				})
 			}
 		})
+	}
+}
+
+// commitFixture makes the fixture a real repository whose BL-1 file has 20
+// commits, so bl history reads Git history and its cache.
+func commitFixture(b *testing.B, root string) {
+	b.Helper()
+	git := func(args ...string) {
+		b.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.name=Bench", "-c", "user.email=bench@example.com", "-c", "commit.gpgSign=false", "-c", "gc.auto=0"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			b.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	path := filepath.Join(root, "backlog", "BL-1.md")
+	git("init", "-q")
+	git("add", ".")
+	git("commit", "-q", "-m", "fixture")
+	for n := range 20 {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = fmt.Fprintf(f, "\nEdit %d.\n", n)
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			b.Fatal(err)
+		}
+		git("commit", "-q", "-am", fmt.Sprintf("edit BL-1 %d", n))
 	}
 }
 

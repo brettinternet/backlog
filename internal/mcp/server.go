@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/instructions"
 	"github.com/brettinternet/backlog/internal/itemjson"
@@ -44,6 +45,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "next", Description: "Return ready backlog items in readiness order."}, s.next)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "query", Description: "Search backlog items using the bl query language."}, s.query)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, and Git commits, oldest first, with each provider's status."}, s.history)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
@@ -124,6 +126,12 @@ const defaultEventLimit = 100
 
 type ShowArgs struct {
 	ID string `json:"id"`
+}
+
+type HistoryArgs struct {
+	ID     string `json:"id"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum entries to return (0 or omitted: all)."`
+	Cursor string `json:"cursor,omitempty" jsonschema:"Exclusive entry ID; pass the previous cursor to continue."`
 }
 
 // AgentArgs identify the agent behind a session on the events a call records.
@@ -316,27 +324,35 @@ func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs
 	if args.ID == "" {
 		return failed[any]("usage", "id is required")
 	}
-	items, err := engine.ReadDetail(ctx, s.cfg, args.ID)
+	item, err := readItem(ctx, s.cfg, args.ID)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	if len(items) == 0 {
-		return failed[any]("not-found", "item not found: "+args.ID)
-	}
-	if len(items) > 1 {
-		return failed[any]("rejected", "ambiguous item ID: "+args.ID)
-	}
 	resource := ""
 	if s.coordinator != nil {
-		resource, err = s.coordinator.Resource(items[0])
+		resource, err = s.coordinator.Resource(item)
 		if err != nil {
 			return failed[any](reason(err), err.Error())
 		}
 	}
-	detail := itemjson.NewDetail(items[0], resource)
+	detail := itemjson.NewDetail(item, resource)
 	detail.Claims, detail.ClaimsError = engine.ClaimHistory(ctx, s.coordinator, resource)
-	detail.Sessions, detail.SessionsError = engine.ItemSessions(ctx, s.cfg, items[0], detail.Claims)
+	detail.Sessions, detail.SessionsError = engine.ItemSessions(ctx, s.cfg, item, detail.Claims)
 	return nil, detail, nil
+}
+func (s *Server) history(ctx context.Context, _ *mcp.CallToolRequest, args HistoryArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" {
+		return failed[any]("usage", "id is required")
+	}
+	item, err := readItem(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	page, err := history.Load(ctx, s.cfg, s.coordinator, item).Page(args.Cursor, args.Limit)
+	if err != nil {
+		return failed[any]("not-found", err.Error())
+	}
+	return nil, page, nil
 }
 func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
 	ctx = s.withCaller(ctx, args.WriteArgs)

@@ -302,6 +302,12 @@ func (s *Source) locate(ctx context.Context, id string) (sourceCandidate, error)
 	return *found, nil
 }
 
+// ItemFile is the file that stores id, in any partition.
+func (s *Source) ItemFile(ctx context.Context, id string) (string, error) {
+	candidate, err := s.locate(ctx, id)
+	return candidate.absolute, err
+}
+
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	item, _, err := s.ReadState(ctx, id)
 	return item, err

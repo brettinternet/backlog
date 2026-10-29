@@ -27,10 +27,16 @@ func ItemSessions(ctx context.Context, cfg project.Config, item model.Item, clai
 			message = "event history unavailable: " + err.Error()
 		}
 	}
+	return SessionsFrom(ctx, cfg, events, claims), message
+}
+
+// SessionsFrom folds an item's events, as read by hooks.Log.ItemEvents, and
+// claim history into sessions, with live contact channels resolved.
+func SessionsFrom(ctx context.Context, cfg project.Config, events []hooks.Event, claims []model.ClaimEpoch) []model.ItemSession {
 	now := time.Now()
 	sessions := foldSessions(events, claims, now)
 	withContact(ctx, cfg, sessions, now)
-	return sessions, message
+	return sessions
 }
 
 // contactWindow is how long after its last event a session without a held

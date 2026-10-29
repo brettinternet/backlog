@@ -394,6 +394,9 @@ func (s *Source) locate(ctx context.Context, id string) (string, error) {
 	}
 	return find(paths)
 }
+
+// ItemFile is the active or archived file that stores id.
+func (s *Source) ItemFile(ctx context.Context, id string) (string, error) { return s.locate(ctx, id) }
 func (s *Source) Read(ctx context.Context, id string) (model.Item, error) {
 	item, _, err := s.ReadState(ctx, id)
 	return item, err

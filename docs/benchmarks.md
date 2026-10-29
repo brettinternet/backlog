@@ -15,12 +15,14 @@ isolated-host guarantees.
 | `bl show ID` ≤ 30 ms | 10k 12.29 ms; 50k 15.15 ms | BL-48 |
 | `bl show ID` with 100k events, 10k ≤ 30 ms | 20.07 ms (15.20 ms without events, same run) | BL-136 |
 | `bl show ID` with a held session's contact ≤ 30 ms | 25.0 ms with Herdr and Claude peers vs 25.9 ms before contact: median of 25 on the live repository, `worklease` on PATH directly rather than through the mise shim, which adds ~470 ms to both | BL-142 |
+| Warm `bl history ID` with 100k events and 20 commits, 10k ≤ 30 ms | 21.78 ms (`show` with events 24.16 ms, same run) | BL-139 |
 | Warm `bl ls` / `bl next`, 10k ≤ 150 ms | 132.6 / 107.7 ms | BL-48 |
 | Native single-field write ≤ 50 ms | 10k 26.10 ms; 50k 38.66 ms | BL-50 |
 | CLI peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | 116.6 / 383.8 MiB (`ls`) | BL-48 |
 | TUI warm first content, 10k ≤ 100 ms | 37.60 ms | BL-58 |
 | TUI cold first content, 10k ≤ 400 ms | 54.50 ms, before the load completes | BL-58 |
 | Navigation Update+View, 50k ≤ 4 ms | 0.081 ms | BL-58 |
+| Warm History open Update+View, 1,120 entries ≤ 4 ms | 0.138 ms | BL-139 |
 | Navigation key-to-PTY, 50k ≤ 16 ms | 10.13 ms | BL-58 |
 | Held `j`, 40 Hz × 5 s, 10k: stop within one frame (8.33 ms) | 6.61 ms after release, all 200 keys | BL-58 |
 | Filter keystroke, 10k ≤ 30 ms; 50k ≤ 80 ms | 9.38 / 17.13 ms | BL-58 |
@@ -68,6 +70,7 @@ task bench -- -bench 'BenchmarkCLI/10000/show$'      # one measurement
 | `bl next` | 107.7 ms | 736.4 ms | 113.1 MiB | 340.8 MiB |
 | `bl show BL-1` | 12.29 ms | 15.15 ms | 22.48 MiB | 22.84 MiB |
 | `bl show BL-1`, 100k events | 20.07 ms | — | 37.36 MiB | — |
+| `bl history BL-1`, 100k events, 20 commits | 21.78 ms | — | 39.86 MiB | — |
 | Single-field write | 26.10 ms | 38.66 ms | 23.56 MiB | 26.84 MiB |
 
 What each row measures:
@@ -82,6 +85,11 @@ What each row measures:
   of them for BL-1 from 100 sessions, so it reads the item's sessions through
   the event index's `ref` column (BL-136, 2026-10-29). The warm-up builds the
   index. Measured at 10k only.
+- **History:** `bl history BL-1` on the same seeded fixture, after committing
+  the fixture to Git and then committing 20 edits to BL-1, so it reads events,
+  the session fold, comments, and Git history (BL-139, 2026-10-29). The warm-up
+  fills the Git history cache. `show` with events measured 24.16 ms in the same
+  run.
 - **p95:** nearest rank over 20 samples (the 19th), after one unmeasured
   warm-up. Not Go's mean `ns/op`.
 - **RSS:** the highest child-process high-water mark across samples.
@@ -113,7 +121,15 @@ cursor state without changing input or rendering.
 | Filter key-to-completed-PTY (n=20) | 9.38 ms | 17.13 ms |
 | External rename-to-visible (n=20) | 91.45 ms | — |
 
-Update+View over 50,001 prepared rows: 0.081 ms (n=2,000). Held `j`: 200 keys in
+Update+View over 50,001 prepared rows: 0.081 ms (n=2,000).
+
+A warm History open (BL-139) does no loading on the loop: the worker composes
+history off it and caches it by item version and event-log position. On the
+loop, the tab switch with its View, then applying the worker's page with its
+View, measured 0.138 ms p95 (n=200) for BL-1's history in the 100k-event fixture
+(1,000 events across 100 sessions, plus 20 commits: 120 rows collapsed).
+Run it with `BL_TUI_MEASURE=1 task cli:test PKG=./internal/tui -- -run
+'^TestHistoryMeasurement$' -v -count=1`. Held `j`: 200 keys in
 5.002 s, final cursor 6.61 ms after release. An independent rerun measured peak
 RSS of 131.48 / 379.34 MiB.
 

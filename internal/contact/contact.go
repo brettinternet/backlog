@@ -321,3 +321,19 @@ func (l *limitWriter) Write(p []byte) (int, error) {
 	l.n -= len(p)
 	return l.w.Write(p)
 }
+
+// Line lists a session's channels as "channel handle status" and each
+// unavailable resolver with its reason; an ok resolver with no channel adds
+// nothing.
+func Line(results []model.ContactResult) string {
+	var parts []string
+	for _, r := range results {
+		if r.Status != "ok" {
+			parts = append(parts, r.Resolver+" unavailable: "+r.Reason)
+		}
+		for _, c := range r.Channels {
+			parts = append(parts, c.Channel+" "+c.Handle+" "+c.Status)
+		}
+	}
+	return strings.Join(parts, "; ")
+}

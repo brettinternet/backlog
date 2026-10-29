@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
@@ -25,9 +26,10 @@ const (
 	tabNotes
 	tabComments
 	tabRelations
+	tabHistory
 )
 
-var detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations"}
+var detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "History"}
 
 type detailIdentity struct {
 	Ref              model.Ref
@@ -54,6 +56,7 @@ type detailRequest struct {
 	width      int
 	tab        detailTab
 	expanded   bool
+	open       string // history entries expanded, one ID per line
 	milestones []project.Milestone
 	sprints    []model.Sprint
 	statuses   []project.StatusConfig
@@ -67,6 +70,7 @@ type detailResult struct {
 	lines      []string
 	entries    []int             // line index of each criterion or relation, for the tab's cursor
 	targets    []engine.Relation // the relation each Relations entry opens
+	ids        []string          // the history entry each History entry is
 	truncated  bool
 	err        string
 }
@@ -96,6 +100,7 @@ type renderKey struct {
 	Theme      string
 	Tab        detailTab
 	Expanded   bool
+	Open       string
 	Dependency string
 }
 type itemKey struct {
@@ -106,6 +111,7 @@ type rendered struct {
 	lines     []string
 	entries   []int
 	targets   []engine.Relation
+	ids       []string
 	truncated bool
 	size      int
 }
@@ -237,10 +243,18 @@ func itemSize(item model.Item) int {
 	return size
 }
 
+type historyCache struct {
+	key    renderKey
+	result history.Result
+}
+
 type detailWorker struct {
 	ctx      context.Context
 	read     func(context.Context, model.Ref) (model.Item, error)
 	render   func(body string, width int, theme string) (string, error)
+	history  func(context.Context, model.Item) history.Result
+	position func(model.Ref) string // the event log's position, so new events redraw History
+	recent   historyCache
 	requests chan detailRequest
 	results  chan detailResult
 	mu       sync.Mutex
@@ -318,9 +332,15 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	result := detailResult{generation: request.generation, identity: identity}
 	version := request.row.Version
 	dependency := detailDependency(request.row, request.tab)
+	if request.tab == tabHistory && worker.position != nil {
+		dependency = worker.position(request.row.Ref)
+	}
 	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: request.theme.key(), Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
+	if request.tab == tabHistory {
+		key.Open = request.open
+	}
 	if value, ok := worker.cache.render(key); ok && !request.fresh {
-		result.lines, result.entries, result.targets, result.truncated = value.lines, value.entries, value.targets, value.truncated
+		result.lines, result.entries, result.targets, result.ids, result.truncated = value.lines, value.entries, value.targets, value.ids, value.truncated
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
@@ -352,10 +372,19 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	key.Version = version
 	if value, ok := worker.cache.render(key); ok && !request.fresh {
 		result.identity.Version = version
-		result.lines, result.entries, result.targets, result.truncated = value.lines, value.entries, value.targets, value.truncated
+		result.lines, result.entries, result.targets, result.ids, result.truncated = value.lines, value.entries, value.targets, value.ids, value.truncated
 		return result
 	}
-	page, err := detailPage(ctx, item, request, worker.render)
+	var page rendered
+	var err error
+	if request.tab == tabHistory {
+		page = historyLines(worker.loadHistory(ctx, item, key, request.fresh), request, max(1, request.width))
+	} else {
+		page, err = detailPage(ctx, item, request, worker.render)
+	}
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		result.err = textutil.Line(err.Error())
 		return result
@@ -364,9 +393,106 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		page.lines = []string{request.theme.muted.render("Nothing here yet.")}
 	}
 	result.identity.Version = version
-	result.lines, result.entries, result.targets, result.truncated = page.lines, page.entries, page.targets, page.truncated
+	result.lines, result.entries, result.targets, result.ids, result.truncated = page.lines, page.entries, page.targets, page.ids, page.truncated
 	worker.cache.putRender(key, page)
 	return result
+}
+
+// loadHistory composes an item's history once per version and log position,
+// so expanding a row or resizing only redraws it.
+func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, key renderKey, fresh bool) history.Result {
+	key.Width, key.Theme, key.Expanded, key.Open = 0, "", false, ""
+	if worker.recent.key == key && !fresh {
+		return worker.recent.result
+	}
+	if worker.history == nil {
+		return history.Result{Providers: []history.Status{{Provider: "history", State: history.Unavailable, Reason: "not configured"}}}
+	}
+	result := worker.history(ctx, item)
+	if ctx.Err() == nil {
+		worker.recent = historyCache{key, result}
+	}
+	return result
+}
+
+const (
+	historyLimit     = 200
+	historyMoreLimit = 2000
+)
+
+// historyLines draws non-ok providers first, then one row per entry, newest
+// last. Rows that head a group or carry detail expand in place; any group
+// kind renders the same way.
+func historyLines(r history.Result, request detailRequest, width int) rendered {
+	t := request.theme
+	open := map[string]bool{}
+	for id := range strings.SplitSeq(request.open, "\n") {
+		open[id] = id != ""
+	}
+	var page rendered
+	for _, s := range r.Providers {
+		if s.State != history.OK {
+			page.lines = append(page.lines, t.muted.render(ansi.Truncate(textutil.Line(s.Provider+": "+s.State+" ("+s.Reason+")"), width, "…")))
+		}
+	}
+	members := map[string]int{}
+	var shown []history.Entry
+	for _, e := range r.Entries {
+		if e.Group != "" {
+			members[e.Group]++
+		}
+		if e.Group == "" || open[e.Group] {
+			shown = append(shown, e)
+		}
+	}
+	if len(shown) == 0 {
+		page.lines = append(page.lines, t.muted.render("No history."))
+	}
+	limit := historyLimit
+	if request.expanded {
+		limit = historyMoreLimit
+	}
+	if len(shown) > limit {
+		page.lines = append(page.lines, t.muted.render("… "+strconv.Itoa(len(shown)-limit)+" earlier entries"))
+		shown, page.truncated = shown[len(shown)-limit:], true
+	}
+	for _, e := range shown {
+		indent := ""
+		if e.Group != "" {
+			indent = "  "
+		}
+		marker := " "
+		if members[e.ID] > 0 || e.Detail != "" {
+			marker = "▸"
+			if open[e.ID] {
+				marker = "▾"
+			}
+		}
+		head := indent + t.faint.render(marker) + " " + t.muted.render(e.Time.Local().Format("2006-01-02 15:04")) + "  "
+		tail := ""
+		if members[e.ID] > 0 {
+			tail = "  " + strconv.Itoa(members[e.ID])
+		}
+		if e.Actor != "" && e.Span == nil {
+			tail += "  " + textutil.Line(e.Actor)
+		}
+		room := max(1, width-ansi.StringWidth(ansi.Strip(head))-ansi.StringWidth(tail))
+		summary := ansi.Truncate(textutil.Line(e.Summary), room, "…")
+		if e.Span != nil {
+			summary = t.bold.render(summary)
+		}
+		page.entries, page.ids = append(page.entries, len(page.lines)), append(page.ids, e.ID)
+		page.lines = append(page.lines, head+summary+t.muted.render(tail))
+		if open[e.ID] && e.Detail != "" {
+			for _, line := range strings.Split(ansi.Wrap(textutil.Sanitize(e.Detail), max(1, width-len(indent)-4), ""), "\n") {
+				page.lines = append(page.lines, indent+"    "+t.muted.render(textutil.Line(line)))
+			}
+		}
+	}
+	for _, line := range page.lines {
+		page.size += len(line) + 1
+	}
+	return page
 }
 func detailDependency(row engine.Row, tab detailTab) string {
 	switch tab {

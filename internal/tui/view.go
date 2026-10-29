@@ -326,7 +326,7 @@ func (m Model) detailPane(width, rows int) []string {
 		}
 	default:
 		cursor := -1
-		if m.detailCurrent() && (m.detailTab == tabCriteria || m.detailTab == tabRelations) && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
+		if m.detailCurrent() && (m.detailTab == tabCriteria || m.detailTab == tabRelations || m.detailTab == tabHistory) && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
 			cursor = m.detailEntries[m.entryCursor]
 		}
 		for i := m.detailScroll; i < len(m.detailLines) && line < rows; i++ {

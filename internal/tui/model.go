@@ -4,11 +4,14 @@ package tui
 import (
 	"context"
 	"image/color"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -38,6 +41,8 @@ type Options struct {
 	EditorDir                  string
 	OpenURL                    func(context.Context, string) error
 	Read                       func(context.Context, model.Ref) (model.Item, error)
+	History                    func(context.Context, model.Item) history.Result
+	HistoryPosition            func(model.Ref) string // changes when the item's event log grows
 	Render                     func(string, int) (string, error)
 	Views                      []project.SavedView
 	Filter                     string // ANDed with every tab's declared query
@@ -147,6 +152,10 @@ type Model struct {
 	detailLines              []string // the last body, kept while the next loads
 	detailEntries            []int    // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
+	detailIDs                []string        // the history entry of each History entry
+	historyOpen              map[string]bool // expanded History entries of historyRef
+	historyRef               model.Ref
+	actionSession            string // the History session row ! opened the actions menu on
 	detailShownRef           model.Ref
 	detailShownTab           detailTab
 	detailError              string
@@ -212,6 +221,7 @@ func New(opts Options) Model {
 			render = func(body string, width int, _ string) (string, error) { return custom(body, width) }
 		}
 		model.detailWorker = newDetailWorker(opts.Context, opts.Read, render)
+		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
 	}
 	model.initViews()
 	model.shown, _ = query.Parse(model.query, query.Options{})
@@ -381,9 +391,36 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 	}
 	return detailRequest{
 		generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
-		tab: m.detailTab, expanded: m.detailExpanded, milestones: m.opts.Milestones,
+		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
 		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
 	}
+}
+
+func (m Model) historyOpenIDs(ref model.Ref) string {
+	if ref != m.historyRef {
+		return ""
+	}
+	ids := make([]string, 0, len(m.historyOpen))
+	for id, open := range m.historyOpen {
+		if open {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return strings.Join(ids, "\n")
+}
+
+// toggleHistoryEntry expands or collapses the History entry under the cursor.
+func (m *Model) toggleHistoryEntry() tea.Cmd {
+	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailIDs) {
+		return nil
+	}
+	if m.historyRef != m.detailIdentity.Ref {
+		m.historyRef, m.historyOpen = m.detailIdentity.Ref, map[string]bool{}
+	}
+	id := m.detailIDs[m.entryCursor]
+	m.historyOpen[id] = !m.historyOpen[id]
+	return m.showDetail()
 }
 
 // Flattening and folding are commands: even a single giant group cannot put
@@ -790,14 +827,24 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.detailOpen && result.generation == m.detailGeneration && result.identity.Ref == m.detailIdentity.Ref {
 			// A new version or length of the page in view keeps its scroll.
 			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab
+			// History read at its end stays there as entries expand or arrive.
+			pinned := same && m.detailTab == tabHistory && m.detailScroll >= len(m.detailLines)-m.detailVisible()
 			m.detailLoading = false
 			m.detailError = result.err
 			m.detailLines = result.lines
-			m.detailEntries, m.detailTargets = result.entries, result.targets
+			m.detailEntries, m.detailTargets, m.detailIDs = result.entries, result.targets, result.ids
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
 			if !same {
 				m.detailScroll = 0
+				// History opens on its newest entry, at the bottom.
+				if m.detailTab == tabHistory {
+					m.entryCursor = max(0, len(m.detailIDs)-1)
+					m.detailScroll = len(m.detailLines)
+				}
+			}
+			if pinned {
+				m.detailScroll = len(m.detailLines)
 			}
 			m.scrollDetail(0)
 			m.keepEntryVisible()
@@ -1112,6 +1159,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			if m.detailTab == tabRelations && len(m.detailTargets) > 0 {
 				return m, m.followRelation()
 			}
+			if m.detailTab == tabHistory && len(m.detailIDs) > 0 {
+				return m, m.toggleHistoryEntry()
+			}
 			m.closeDetail()
 			return m, nil
 		case "q":
@@ -1365,7 +1415,8 @@ func (m *Model) closeDetail() {
 	m.detailGeneration++
 	m.detailLoading = false
 	m.detailLines = nil
-	m.detailEntries, m.detailTargets = nil, nil
+	m.detailEntries, m.detailTargets, m.detailIDs = nil, nil, nil
+	m.historyOpen = nil
 	m.detailHistory = nil
 	m.detailTruncated = false
 	m.find = findState{}

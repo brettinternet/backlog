@@ -320,6 +320,27 @@ func ReadItem(ctx context.Context, cfg project.Config, ref model.Ref) (model.Ite
 	return items[0], nil
 }
 
+// ItemFile is the file that stores a native or Backlog.md item. ok is false
+// for a source whose items aren't files.
+func ItemFile(ctx context.Context, cfg project.Config, ref model.Ref) (path string, ok bool, err error) {
+	for _, c := range cfg.Sources {
+		if c.ID != ref.Source {
+			continue
+		}
+		backend, err := rawSource(cfg, c)
+		if err != nil {
+			return "", false, err
+		}
+		filer, ok := backend.(source.ItemFiler)
+		if !ok {
+			return "", false, nil
+		}
+		path, err = filer.ItemFile(ctx, ref.ID)
+		return path, true, err
+	}
+	return "", false, source.Refuse("not-found", "unknown source "+ref.Source)
+}
+
 // ReadDetail resolves shorthand without parsing or ranking the entire backlog.
 // It returns every match instead of guessing and includes explicitly named archives.
 func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.Item, error) {

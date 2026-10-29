@@ -11,7 +11,9 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/brettinternet/backlog/internal/contact"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/itemjson"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -262,13 +264,41 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 		}
 		for _, s := range detail.Sessions {
 			b.WriteString(textutil.Line(sessionLine(s)) + "\n")
-			if line := contactLine(s.Contact); line != "" {
+			if line := contact.Line(s.Contact); line != "" {
 				b.WriteString("  contact: " + textutil.Line(line) + "\n")
 			}
 			if s.Handoff != "" {
 				b.WriteString("  " + strings.ReplaceAll(textutil.Sanitize(s.Handoff), "\n", "\n  ") + "\n")
 			}
 		}
+	}
+	_, err := io.WriteString(out, b.String())
+	return err
+}
+
+// writeHistory prints non-ok providers first, then one line per entry, with
+// group members indented under their head.
+func writeHistory(out io.Writer, page history.Page) error {
+	p := paletteFor(out)
+	var b strings.Builder
+	for _, s := range page.Providers {
+		if s.State != history.OK {
+			b.WriteString(p.paint("2", textutil.Line(fmt.Sprintf("%s: %s (%s)", s.Provider, s.State, s.Reason))) + "\n")
+		}
+	}
+	for _, e := range page.Entries {
+		indent := ""
+		if e.Group != "" {
+			indent = "  "
+		}
+		line := indent + timestamp(e.Time) + "  " + e.Summary
+		if e.Actor != "" && e.Span == nil {
+			line += "  " + e.Actor
+		}
+		b.WriteString(textutil.Line(line) + "\n")
+	}
+	if page.More {
+		b.WriteString(p.paint("2", "more: --cursor "+textutil.Line(page.Cursor)) + "\n")
 	}
 	_, err := io.WriteString(out, b.String())
 	return err
@@ -313,22 +343,6 @@ func sessionLine(s model.ItemSession) string {
 		fields = append(fields, "open")
 	}
 	return strings.Join(fields, "  ")
-}
-
-// contactLine lists a session's channels as "channel handle status" and each
-// unavailable resolver with its reason; an ok resolver with no channel adds
-// nothing.
-func contactLine(results []model.ContactResult) string {
-	var parts []string
-	for _, r := range results {
-		if r.Status != "ok" {
-			parts = append(parts, r.Resolver+" unavailable: "+r.Reason)
-		}
-		for _, c := range r.Channels {
-			parts = append(parts, c.Channel+" "+c.Handle+" "+c.Status)
-		}
-	}
-	return strings.Join(parts, "; ")
 }
 
 // writeDoctor prints one aligned line per check; a fix follows only the

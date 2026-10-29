@@ -572,6 +572,23 @@ Refusals exit 4 and list the candidates in `error.details.candidates`:
 A command that fails exits 5 with its exit status and, under `--json`, its
 stderr tail. See [Automation](automation.md#agent-sessions).
 
+### `bl history ID [--limit N] [--cursor C]`
+
+Prints the item's history, oldest first: its events, claims (from Worklease,
+including other hosts), sessions folded from both, comments, and the commits
+that touched its file (native and Backlog.md sources, following renames). A
+session's entries follow it, indented, and its row names live contact
+channels, looked up when read. A provider that can't answer is a dim
+line, never a failure. JSON returns `data.entries`, each with `id`, `time`,
+`kind`, `summary`, `provider`, and optional `actor`, `session`, `group` (the
+`id` of the entry it nests under), `span` (`start`, `end`, `state`, on group
+heads), and `detail`; `data.providers` lists each provider's `state` (`ok`,
+`partial`, or `unavailable`) and `reason`. `--limit` pages; pass `data.cursor`
+back as `--cursor` while `data.more` is true. An unknown cursor is `not-found`.
+Commits come from `git log --follow` with external diff, textconv, and
+fsmonitor off, in the minimal hook environment, cached by item version and HEAD
+(at most the newest 1,000, reported as `partial`).
+
 ### `bl events [--follow|-f] [--since ID] [QUERY]`
 
 Reads the project event log. JSON returns `data.events`; `--follow` prints one

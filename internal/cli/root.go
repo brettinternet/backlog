@@ -23,6 +23,8 @@ import (
 
 	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/oauth"
@@ -236,6 +238,17 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				store.Observe(ref, item, err)
 				return item, err
 			},
+			History: func(ctx context.Context, item model.Item) history.Result {
+				c, _ := engine.Coordination(ctx)
+				return history.Load(ctx, cfg, c, item)
+			},
+			HistoryPosition: func(ref model.Ref) string {
+				p, _ := cfg.SourceProject(ref.Source)
+				if p.Paths.StateDir == "" {
+					return ""
+				}
+				return hooks.New(p.Paths.StateDir, p.Project.ID).Position()
+			},
 			HighContrast: cfg.UI.HighContrast,
 			NoColor:      os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb",
 		})
@@ -437,7 +450,7 @@ func terminal(stream any) bool {
 // acceptsArguments takes the full command path, since names like check repeat.
 func acceptsArguments(command string) bool {
 	switch command {
-	case "help", "claim", "release", "heartbeat", "events", "action", "resume", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "handoff", "ac", "edit", "archive", "unarchive", "renumber",
+	case "help", "claim", "release", "heartbeat", "events", "action", "resume", "instructions", "tui", "ls", "show", "history", "next", "new", "set", "start", "done", "note", "comment", "handoff", "ac", "edit", "archive", "unarchive", "renumber",
 		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth status", "auth login", "auth logout":
 		return true
 	}

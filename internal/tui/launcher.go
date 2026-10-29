@@ -159,6 +159,7 @@ func (m Model) receiveGoTo(r goToResult) (tea.Model, tea.Cmd) {
 }
 func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	m.keyPrefix = ""
+	m.actionSession = ""
 	m.count = 0
 	m.inputSerial++
 	rows := make([]launcherRow, 0, len(m.keymap))

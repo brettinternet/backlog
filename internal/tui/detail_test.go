@@ -2,7 +2,10 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
@@ -265,7 +269,7 @@ func TestDetailTabGoldens(t *testing.T) {
 		m.data.rows[0].row.Relations = []engine.Relation{{Kind: "blocked by", Ref: model.Ref{Source: "tasks", ID: "BL-2"}, Status: "active", Category: model.Active, Title: "Dependency"}, {Kind: "children", Ref: model.Ref{Source: "tasks", ID: "BL-3"}, Status: "done", Category: model.Done, Title: "Child"}}
 		m, _ = detailKey(m, tea.KeyEnter, 0)
 		var transcript strings.Builder
-		for tab := tabOverview; tab <= tabRelations; tab++ {
+		for tab := tabOverview; tab <= tabHistory; tab++ {
 			m.detailTab = tab
 			_ = m.scheduleDetail()
 			m = settleDetail(t, m)
@@ -555,4 +559,124 @@ func TestDetailListKeysAndFind(t *testing.T) {
 	if m = queryKey(m, "esc"); m.detailOpen {
 		t.Fatal("second esc closes detail")
 	}
+}
+
+// Catches a History tab that needs renderer changes for a new group kind,
+// hides a failed provider, opens away from the newest entry, or can't expand
+// a group in place.
+func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	at := func(minute int) time.Time { return time.Date(2026, 1, 1, 0, minute, 0, 0, time.UTC) }
+	m.detailWorker.history = func(ctx context.Context, _ model.Item) history.Result {
+		return history.Compose(ctx,
+			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
+				var entries []history.Entry
+				for i := range 40 {
+					entries = append(entries, history.Entry{ID: fmt.Sprintf("event:%d", i), Time: at(i), Kind: "item.updated", Summary: fmt.Sprintf("edit %d", i)})
+				}
+				return entries, nil
+			}},
+			history.Provider{Name: "ci", Load: func(context.Context) ([]history.Entry, error) {
+				return []history.Entry{
+					{ID: "ci:run", Time: at(50), Kind: "ci.run", Span: &history.Span{Start: at(50), State: "running"}, Summary: "build 7"},
+					{ID: "ci:run:1", Time: at(51), Kind: "ci.step", Group: "ci:run", Summary: "lint passed"},
+				}, nil
+			}},
+			history.Provider{Name: "claims", Load: func(context.Context) ([]history.Entry, error) { return nil, errors.New("worklease not found") }},
+			history.Provider{Name: "sessions", Load: func(context.Context) ([]history.Entry, error) {
+				return []history.Entry{{ID: "session:s1", Time: at(45), Kind: "session", Session: "s1", Span: &history.Span{Start: at(45), State: "open"}, Summary: "claude"}}, nil
+			}},
+		)
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabHistory)
+	m = settleDetail(t, m)
+	if !strings.Contains(m.detailLines[0], "claims: unavailable (worklease not found)") {
+		t.Fatalf("first line %q", m.detailLines[0])
+	}
+	content := m.View().Content
+	if m.detailIDs[m.entryCursor] != "ci:run" || !strings.Contains(content, "build 7") || strings.Contains(content, "edit 0") || strings.Contains(content, "lint passed") {
+		t.Fatalf("cursor %d of %v\n%s", m.entryCursor, m.detailIDs, content)
+	}
+	// ! scopes the actions menu's sessions to a session row, and only there.
+	actions := func(m Model) string {
+		next, _ := m.Update(tea.KeyPressMsg{Code: '!', Text: "!"})
+		return next.(Model).actionSession
+	}
+	if got := actions(m); got != "" {
+		t.Fatalf("! on %s scoped to session %q", m.detailIDs[m.entryCursor], got)
+	}
+	onSession := m
+	onSession.entryCursor = slices.Index(m.detailIDs, "session:s1")
+	if got := actions(onSession); got != "s1" {
+		t.Fatalf("! on the session row scoped to %q", got)
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if content := m.View().Content; !m.detailOpen || !strings.Contains(content, "▾") || !strings.Contains(content, "lint passed") {
+		t.Fatalf("group did not expand\n%s", content)
+	}
+}
+
+// TestHistoryMeasurement times a warm History open on the loop: the tab switch
+// and its View, then applying the worker's cached page and its View. The
+// history is BL-1's in the 100k-event bench fixture: 1,000 events across 100
+// sessions, plus 20 commits.
+func TestHistoryMeasurement(t *testing.T) {
+	if os.Getenv("BL_TUI_MEASURE") != "1" {
+		return
+	}
+	m := detailFixture(t, 1, RenderMarkdown)
+	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
+	m.detailWorker.history = func(ctx context.Context, _ model.Item) history.Result {
+		return history.Compose(ctx,
+			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
+				var entries []history.Entry
+				for n := range 1000 {
+					entries = append(entries, history.Entry{ID: fmt.Sprintf("event:%d", n), Time: at(n), Kind: "item.updated", Session: fmt.Sprintf("s%d", n%100), Summary: "title changed"})
+				}
+				return entries, nil
+			}},
+			history.Provider{Name: "sessions", Load: func(context.Context) ([]history.Entry, error) {
+				var entries []history.Entry
+				for n := range 100 {
+					entries = append(entries, history.Entry{ID: fmt.Sprintf("session:s%d", n), Time: at(n), Kind: "session", Session: fmt.Sprintf("s%d", n), Span: &history.Span{Start: at(n), State: "open"}, Summary: "claude · active · open · resumable"})
+				}
+				return entries, nil
+			}},
+			history.Provider{Name: "git", Load: func(context.Context) ([]history.Entry, error) {
+				var entries []history.Entry
+				for n := range 20 {
+					entries = append(entries, history.Entry{ID: fmt.Sprintf("git:%d", n), Time: at(n * 50), Kind: "commit", Actor: "Bench", Summary: fmt.Sprintf("edit BL-1 %d", n)})
+				}
+				return entries, nil
+			}},
+		)
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabRelations)
+	m = settleDetail(t, m)
+	samples := make([]time.Duration, 0, 200)
+	for range 200 {
+		start := time.Now()
+		_ = m.switchDetailTab(tabHistory)
+		_ = m.View()
+		loop := time.Since(start)
+		result := <-m.detailWorker.results
+		start = time.Now()
+		next, _ := m.Update(detailResultMsg(result))
+		m = next.(Model)
+		_ = m.View()
+		samples = append(samples, loop+time.Since(start))
+		if m.detailTab != tabHistory || len(m.detailIDs) != 120 {
+			t.Fatalf("tab %d entries %d", m.detailTab, len(m.detailIDs))
+		}
+		_ = m.switchDetailTab(tabRelations)
+		m = settleDetail(t, m)
+	}
+	slices.Sort(samples)
+	t.Logf("warm History open Update+View n=%d p95=%s", len(samples), samples[(len(samples)*95-1)/100])
 }

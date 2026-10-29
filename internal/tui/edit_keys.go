@@ -181,6 +181,8 @@ func (m Model) entryCount() (int, bool) {
 		return m.criterionCount(), true
 	case tabRelations:
 		return len(m.detailTargets), true
+	case tabHistory:
+		return len(m.detailIDs), true
 	}
 	return 0, false
 }

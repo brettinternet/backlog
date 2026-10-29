@@ -2,7 +2,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                  
   BL-1  ○ todo  ▲ high                                                          
   Item 1                                                                        
-  [Overview] Criteria 1/2  Notes  Comments 1  Relations 2                       
+  [Overview] Criteria 1/2  Notes  Comments 1  Relations 2  History              
                                                                                 
   Milestone  m-1 — TUI                                                          
   Readiness  ✓ ready                                                            
@@ -27,7 +27,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                  
   BL-1  ○ todo  ▲ high                                                          
   Item 1                                                                        
-   Overview [Criteria 1/2] Notes  Comments 1  Relations 2                       
+   Overview [Criteria 1/2] Notes  Comments 1  Relations 2  History              
                                                                                 
   Acceptance criteria  1/1  ▰▰▰▰▰▰▰▰▰▰                                          
 ▌   ✓ Keep input responsive                                                     
@@ -52,7 +52,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                  
   BL-1  ○ todo  ▲ high                                                          
   Item 1                                                                        
-   Overview  Criteria 1/2 [Notes] Comments 1  Relations 2                       
+   Overview  Criteria 1/2 [Notes] Comments 1  Relations 2  History              
                                                                                 
   ## Plan                                                                       
                                                                                 
@@ -77,7 +77,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                  
   BL-1  ○ todo  ▲ high                                                          
   Item 1                                                                        
-   Overview  Criteria 1/2  Notes [Comments 1] Relations 2                       
+   Overview  Criteria 1/2  Notes [Comments 1] Relations 2  History              
                                                                                 
   ### brett                                                                     
                                                                                 
@@ -102,7 +102,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                  
   BL-1  ○ todo  ▲ high                                                          
   Item 1                                                                        
-   Overview  Criteria 1/2  Notes  Comments 1 [Relations 2]                      
+   Overview  Criteria 1/2  Notes  Comments 1 [Relations 2] History              
                                                                                 
   Blocked by  1 open                                                            
 ▌ └─ ◐ BL-2  Dependency  active                                                 
@@ -112,6 +112,31 @@
                                                                                 
   Children  1/1  ▰▰▰▰▰▰▰▰▰▰                                                     
   └─ ✓ BL-3  Child  done                                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ is:ready sort:next                                                         1/2 
+== History ==
+ fixture  [Next]  Active   Mine   Open   Board                                  
+  BL-1  ○ todo  ▲ high                                                          
+  Item 1                                                                        
+   Overview  Criteria 1/2  Notes  Comments 1  Relations 2 [History]             
+                                                                                
+  history: unavailable (not configured)                                         
+  No history.                                                                   
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
                                                                                 
                                                                                 
                                                                                 

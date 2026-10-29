@@ -396,6 +396,16 @@ func (l Log) Event(ctx context.Context, id string) (Event, error) {
 	return event, err
 }
 
+// Position identifies the end of the log without reading it, so a view built
+// from the log can tell when events were appended.
+func (l Log) Position() string {
+	info, err := os.Stat(filepath.Join(l.Dir, "current.jsonl"))
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+}
+
 // ItemEvents reads one item's events in log order through the ref index, so
 // an item's history costs the same however long the log grows.
 func (l Log) ItemEvents(ctx context.Context, ref string) ([]Event, error) {

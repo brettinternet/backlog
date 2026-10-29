@@ -103,6 +103,12 @@ type Watcher interface {
 	Watch(context.Context, func()) error
 }
 
+// ItemFiler is a source whose items are files, so their Git history is the
+// item's history.
+type ItemFiler interface {
+	ItemFile(context.Context, string) (string, error)
+}
+
 // Error carries a stable machine-readable refusal reason. Created names the
 // item a create left behind when a later step failed: callers must report it
 // and never repeat the create.

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 
@@ -304,6 +305,12 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 	}
 	switch a.id {
 	case "actions":
+		m.actionSession = ""
+		if m.detailOpen && m.detailTab == tabHistory && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
+			if session, ok := history.SessionOf(m.detailIDs[m.entryCursor]); ok {
+				m.actionSession = session
+			}
+		}
 		return m.openConfiguredActions()
 	case "go-to":
 		return m.openGoTo()

@@ -39,7 +39,7 @@ func (m Model) openConfiguredActions() (tea.Model, tea.Cmd) {
 
 func (m Model) loadConfiguredActions() tea.Cmd {
 	row, ok := m.selectedRow()
-	cfg, ctx, serial := m.opts.Automation, m.opts.Context, m.actionCatalogSerial
+	cfg, ctx, serial, session := m.opts.Automation, m.opts.Context, m.actionCatalogSerial, m.actionSession
 	if m.hasWorkspace() {
 		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
 	}
@@ -56,7 +56,13 @@ func (m Model) loadConfiguredActions() tea.Cmd {
 		if len(cfg.Actions) > 0 {
 			choices, err = engine.ActionChoices(ctx, *cfg, id)
 		}
-		resumes, resumeErr := engine.ResumeChoices(ctx, *cfg, id, "")
+		var resumes []engine.ResumeChoice
+		var resumeErr error
+		if session != "" {
+			resumes, resumeErr = engine.SessionChoices(ctx, *cfg, id, session)
+		} else {
+			resumes, resumeErr = engine.ResumeChoices(ctx, *cfg, id, "")
+		}
 		return actionChoicesMsg{serial: serial, choices: choices, resumes: resumes, err: cmp.Or(err, resumeErr)}
 	}
 }

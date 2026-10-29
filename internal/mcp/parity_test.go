@@ -217,4 +217,46 @@ func TestEventsMatchCLI(t *testing.T) {
 	if code, out := run("events", "--since", unknown); code != 3 || !strings.Contains(out, `"reason":"not-found"`) {
 		t.Fatalf("CLI unknown since: %d %s", code, out)
 	}
+
+	// bl history and the MCP history tool return the same entries and provider
+	// statuses, and paging neither skips nor repeats entries.
+	code, out := run("history", "1")
+	var cliHistory struct {
+		Data struct {
+			Entries   []json.RawMessage `json:"entries"`
+			Providers json.RawMessage   `json:"providers"`
+		} `json:"data"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &cliHistory) != nil || len(cliHistory.Data.Entries) < 3 {
+		t.Fatalf("bl history: %d %s", code, out)
+	}
+	var mcpEntries []json.RawMessage
+	var providers json.RawMessage
+	for cursor, pages := "", 0; ; pages++ {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "history", Arguments: map[string]any{"id": "1", "limit": 2, "cursor": cursor}})
+		if err != nil || result.IsError {
+			t.Fatalf("history: %v %+v", err, result)
+		}
+		var page struct {
+			Entries   []json.RawMessage `json:"entries"`
+			Providers json.RawMessage   `json:"providers"`
+			Cursor    string            `json:"cursor"`
+			More      bool              `json:"more"`
+		}
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &page); err != nil {
+			t.Fatal(err)
+		}
+		mcpEntries, providers, cursor = append(mcpEntries, page.Entries...), page.Providers, page.Cursor
+		if !page.More {
+			break
+		}
+	}
+	a, _ := json.Marshal(mcpEntries)
+	b, _ := json.Marshal(cliHistory.Data.Entries)
+	if !bytes.Equal(a, b) || !bytes.Equal(providers, cliHistory.Data.Providers) {
+		t.Fatalf("history differs\nMCP %s %s\nCLI %s %s", a, providers, b, cliHistory.Data.Providers)
+	}
+	if code, out := run("history", "1", "--cursor", "event:missing"); code != 3 || !strings.Contains(out, `"reason":"not-found"`) {
+		t.Fatalf("CLI unknown history cursor: %d %s", code, out)
+	}
 }
