@@ -29,6 +29,7 @@ with `oauth-provider-unavailable` before contacting anything.
 bl auth login linear work          # read
 bl auth login linear work --write  # read, then a separate write grant
 bl auth logout linear work
+bl auth status linear work         # offline: grant, scopes, expiry
 ```
 
 - **Login** needs a terminal. It always gets read access first and verifies it;

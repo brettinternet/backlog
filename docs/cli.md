@@ -522,9 +522,10 @@ pass  worklease     Worklease 1.10.1 (schema v2)
 warn  claims        Active without a live claim: BL-7
                     Fix: Resume each with bl claim ID, or move it to todo, done, or canceled
 pass  sources       Sources are configured; no network checks requested
+pass  accounts      Provider source accounts are ready; reads verify them
 ```
 
-Nine checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`.
+Ten checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`, `accounts`.
 Each has a `status` (`pass`, `warn`, `fail`, `skip`), `message`, and `fix`. JSON
 `data.checks` lists all of them. Any failure exits 5 (`rejected`); warnings
 alone exit 0. Invalid config fails `config` and skips the checks that need it.
@@ -551,6 +552,10 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
   without coordination or when the claim list is unavailable.
 - `sources` checks native and Backlog.md directories and prefixes. Remote
   sources are checked on read, not here; credential helpers never run.
+- `accounts` fails when a GitHub, Linear, or Jira source's account is missing
+  from user config or can't authenticate, by the same offline rules as
+  [`bl auth status`](#bl-auth-status-provider-account-and-bl-auth-loginlogout-provider-account).
+  It skips untrusted sources, which are inert.
 - `--online` allows network probes after trust. None are defined yet.
 
 ### `bl check [--fix]`
@@ -592,9 +597,10 @@ Prints Markdown guidance matching the installed version, without loading
 project config. Topics: `overview` (default), `workflow`, `query`, `format`,
 `json`. Unknown topics exit 2. JSON `data` has `topic`, `topics`, and `markdown`.
 
-### `bl auth login|logout PROVIDER ACCOUNT`
+### `bl auth status [PROVIDER [ACCOUNT]]` and `bl auth login|logout PROVIDER ACCOUNT`
 
 ```sh
+bl auth status                     # every account in user config
 bl auth login linear work          # read access
 bl auth login linear work --write  # read, then a separate write grant
 bl auth logout linear work         # delete local tokens and cache; revoke if supported
@@ -606,7 +612,16 @@ Login needs a terminal; MCP, claims, hooks, and actions never start it. Logout
 says when you must revoke access manually in provider settings. Tokens live in
 owner-only XDG state. See [OAuth](oauth.md).
 
-JSON returns `provider`, `account`, write-consent state, and for logout whether
+`status` lists each account's provider, name, user, method (`credential`,
+`env`, `oauth`), and state, offline: a helper must be on `PATH` but never runs,
+an environment variable must be set, and an OAuth account needs a stored grant
+for its configured user that is refreshable or unexpired. It shows `read` or
+`read+write` and when a non-refreshable grant expires. Reads still verify the
+principal. Any account that can't authenticate exits 5 (`rejected`) and prints
+a fix; an unmatched filter exits 3. JSON `data.accounts` has `provider`,
+`account`, `user`, `method`, `ready`, `state`, `writes`, `expiresAt`, and `fix`.
+
+For login and logout, JSON returns `provider`, `account`, write-consent state, and for logout whether
 revocation was remote or manual. Failures use the [OAuth reason codes](oauth.md#errors)
 and never include provider bodies or tokens.
 

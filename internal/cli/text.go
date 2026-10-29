@@ -280,6 +280,39 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 
 // writeDoctor prints one aligned line per check; a fix follows only the
 // checks that need action.
+func writeAccountStatus(out io.Writer, accounts []accountStatus) error {
+	if len(accounts) == 0 {
+		_, err := io.WriteString(out, "No accounts configured\n")
+		return err
+	}
+	p := paletteFor(out)
+	widths := [4]int{len("PROVIDER"), len("ACCOUNT"), len("USER"), len("METHOD")}
+	for _, a := range accounts {
+		for i, v := range []string{a.Provider, a.Account, a.User, a.Method} {
+			widths[i] = max(widths[i], len(textutil.Line(v)))
+		}
+	}
+	var b strings.Builder
+	row := func(provider, account, user, method, state string) {
+		b.WriteString(fmt.Sprintf("%-*s  %-*s  %-*s  %-*s  %s\n", widths[0], provider, widths[1], account, widths[2], user, widths[3], method, state))
+	}
+	row("PROVIDER", "ACCOUNT", "USER", "METHOD", "STATE")
+	for _, a := range accounts {
+		state := textutil.Line(a.State)
+		if !a.Ready {
+			state = p.paint("31", state)
+		}
+		row(textutil.Line(a.Provider), textutil.Line(a.Account), textutil.Line(a.User), a.Method, state)
+	}
+	for _, a := range accounts {
+		if a.Fix != "" {
+			b.WriteString(fmt.Sprintf("Fix %s %s: %s\n", textutil.Line(a.Provider), textutil.Line(a.Account), textutil.Line(a.Fix)))
+		}
+	}
+	_, err := io.WriteString(out, b.String())
+	return err
+}
+
 func writeDoctor(out io.Writer, checks []doctorCheck) error {
 	p, name := paletteFor(out), 0
 	for _, c := range checks {

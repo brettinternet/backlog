@@ -184,7 +184,7 @@ func assertDoctor(t *testing.T, code int, out string, failed bool) {
 	if result.OK == failed || (failed && code != 5) || (!failed && code != 0) {
 		t.Fatalf("doctor status: %d %s", code, out)
 	}
-	want := []string{"config", "trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources"}
+	want := []string{"config", "trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources", "accounts"}
 	if len(result.Data.Checks) != len(want) {
 		t.Fatalf("missing checks: %s", out)
 	}

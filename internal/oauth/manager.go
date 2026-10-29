@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
@@ -245,6 +246,46 @@ func (m *Manager) Resolve(ctx context.Context, account Account, verify func(cont
 		return Tokens{}, storageOrDiagnostic(err)
 	}
 	return result, nil
+}
+
+// Status is an account's stored grant as last recorded. Problem is set when the
+// account can't authenticate until the user runs bl auth login. Expires is when
+// that happens on its own: zero for a refreshable or non-expiring grant.
+type Status struct {
+	Writes  bool
+	Expires time.Time
+	Problem *Diagnostic
+}
+
+// Status reads the stored record without locking, refreshing, creating the
+// store, or network I/O. Records are replaced by rename, so a read never sees a
+// partial write.
+func (m *Manager) Status(account Account) Status {
+	provider, diagnostic := m.provider(account)
+	if diagnostic != nil {
+		return Status{Problem: diagnostic}
+	}
+	if !filepath.IsAbs(m.store.StateDir) {
+		return Status{Problem: Failure(CodeStorageUnavailable, time.Time{})}
+	}
+	record, err := readRecord(filepath.Join(m.store.StateDir, "oauth", fileID(tokenKey(account))+".json"))
+	switch {
+	case err != nil:
+		return Status{Problem: Failure(CodeStorageUnavailable, time.Time{})}
+	case record == nil:
+		return Status{Problem: Failure(CodeAuthenticationRequired, time.Time{})}
+	case !recordMatches(account, record):
+		return Status{Problem: Failure(CodePrincipalMismatch, time.Time{})}
+	}
+	write := ScopeSet(provider.WriteScopes(account))
+	status := Status{Writes: len(write) > 0 && hasScopes(record.Scopes, write)}
+	if record.RefreshToken == "" && !record.ExpiresAt.IsZero() {
+		if !record.ExpiresAt.After(m.now().Add(expirySkew)) {
+			status.Problem = Failure(CodeTokenExpired, time.Time{})
+		}
+		status.Expires = record.ExpiresAt
+	}
+	return status
 }
 
 // Logout revokes where the registered provider offers a public-client endpoint,

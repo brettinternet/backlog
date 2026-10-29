@@ -795,3 +795,43 @@ func waitForFile(t *testing.T, path string) {
 		}
 	}
 }
+
+func TestOAuthStatusReportsWhenLoginIsNeeded(t *testing.T) {
+	fixture := newFakeAuthServer(t)
+	state := filepath.Join(t.TempDir(), "state")
+	manager, account, _ := fixtureManager(t, fixture, state, "")
+	if got := manager.Status(account); got.Problem == nil || got.Problem.Code != CodeAuthenticationRequired {
+		t.Fatalf("before login: %+v", got)
+	}
+	if _, err := os.Stat(state); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("status created the store: %v", err)
+	}
+	interaction := Interaction{In: strings.NewReader("consent"), Out: io.Discard}
+	if err := manager.Login(context.Background(), account, interaction); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Status(account); got.Problem != nil || got.Writes || !got.Expires.IsZero() {
+		t.Fatalf("read grant: %+v", got)
+	}
+	if err := manager.EnableWrites(context.Background(), account, interaction); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Status(account); got.Problem != nil || !got.Writes {
+		t.Fatalf("write grant: %+v", got)
+	}
+	err := manager.store.withRecord(context.Background(), tokenKey(account), func(record *storedRecord, _ func(*storedRecord) error) (*storedRecord, bool, error) {
+		record.RefreshToken, record.ExpiresAt = "", time.Now().Add(-time.Minute)
+		return record, true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Status(account); got.Problem == nil || got.Problem.Code != CodeTokenExpired {
+		t.Fatalf("expired without refresh: %+v", got)
+	}
+	other := account
+	other.User = "mallory"
+	if got := manager.Status(other); got.Problem == nil || got.Problem.Code != CodePrincipalMismatch {
+		t.Fatalf("changed configured user: %+v", got)
+	}
+}

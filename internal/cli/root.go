@@ -436,7 +436,7 @@ func terminal(stream any) bool {
 func acceptsArguments(command string) bool {
 	switch command {
 	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "ac", "edit", "archive", "unarchive", "renumber",
-		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth login", "auth logout":
+		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth status", "auth login", "auth logout":
 		return true
 	}
 	return false

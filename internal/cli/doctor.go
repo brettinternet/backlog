@@ -87,16 +87,16 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, and sources", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, sources, and accounts", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, configErr := loadConfig(cmd, *directory)
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
 			if configErr != nil {
 				checks[0] = doctorCheck{"config", "fail", configErr.Error(), "Correct the reported configuration key or YAML syntax"}
-				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources"} {
+				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources", "accounts"} {
 					checks = append(checks, doctorCheck{name, "skip", "Configuration could not be loaded", "Fix configuration and rerun bl doctor"})
 				}
 			} else {
-				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), claimsCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")))
+				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), claimsCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")), accountsCheck(cfg))
 			}
 			data := doctorData{Checks: checks}
 			failed := false
@@ -361,6 +361,36 @@ func claimsCheck(ctx context.Context, cfg project.Config) doctorCheck {
 		c.Fix = "Resume each with bl claim ID, or move it to todo, done, or canceled"
 	}
 	return c
+}
+
+// accountsCheck reports, offline, whether each provider source's account can
+// authenticate. It shares bl auth status's evaluation and never runs helpers.
+func accountsCheck(cfg project.Config) doctorCheck {
+	manager := oauthManager(cfg)
+	ready := 0
+	for i, s := range cfg.Sources {
+		// An untrusted source is inert; the trust check reports it.
+		if s.Type != "github" && s.Type != "linear" && s.Type != "jira" || cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)) != nil {
+			continue
+		}
+		account, err := cfg.SourceAccount(s)
+		if err != nil {
+			return doctorCheck{"accounts", "fail", "Source " + s.ID + ": " + err.Error(), "Add the source's account to user config; see bl auth status"}
+		}
+		provider := account.Provider
+		if provider == "" {
+			provider = s.Type
+		}
+		status := accountStatusFor(manager, provider, account)
+		if !status.Ready {
+			return doctorCheck{"accounts", "fail", "Source " + s.ID + " account " + status.Account + ": " + status.State, status.Fix}
+		}
+		ready++
+	}
+	if ready == 0 {
+		return doctorCheck{"accounts", "skip", "No trusted provider sources", "No action needed"}
+	}
+	return doctorCheck{"accounts", "pass", "Provider source accounts are ready; reads verify them", "No action needed"}
 }
 
 func sourceCheck(cfg project.Config, online bool) doctorCheck {
