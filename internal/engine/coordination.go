@@ -477,8 +477,18 @@ func ClaimStates(ctx context.Context, items []model.Item, now time.Time) (map[mo
 	return states, labels, nil
 }
 func OverlayStates(c model.Coordinator, caller model.CallerContext, items []model.Item, claims []model.ClaimInfo, now time.Time) (map[model.Ref]Claim, map[model.Ref]string) {
+	states, matched := ClaimOverlay(c, caller, items, claims, now)
+	labels := make(map[model.Ref]string, len(matched))
+	for ref, claim := range matched {
+		labels[ref] = claim.Label(caller.Session, now)
+	}
+	return states, labels
+}
+
+// ClaimOverlay also returns each item's claim, active or expired.
+func ClaimOverlay(c model.Coordinator, caller model.CallerContext, items []model.Item, claims []model.ClaimInfo, now time.Time) (map[model.Ref]Claim, map[model.Ref]model.ClaimInfo) {
 	states := map[model.Ref]Claim{}
-	labels := map[model.Ref]string{}
+	matched := map[model.Ref]model.ClaimInfo{}
 	byResource := map[string]model.ClaimInfo{}
 	for _, claim := range claims {
 		for _, resource := range claim.Resources {
@@ -493,7 +503,7 @@ func OverlayStates(c model.Coordinator, caller model.CallerContext, items []mode
 		}
 		states[item.Ref] = ClaimNone
 		if claim, ok := byResource[resource]; ok {
-			labels[item.Ref] = claim.Label(caller.Session, now)
+			matched[item.Ref] = claim
 			if claim.ExpiresAt.After(now) {
 				states[item.Ref] = ClaimOthers
 				if caller.Session != "" && claim.Session == caller.Session {
@@ -502,5 +512,5 @@ func OverlayStates(c model.Coordinator, caller model.CallerContext, items []mode
 			}
 		}
 	}
-	return states, labels
+	return states, matched
 }

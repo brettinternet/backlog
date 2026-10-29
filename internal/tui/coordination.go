@@ -11,6 +11,8 @@ import (
 type claimsPoll struct{}
 type claimsExpiry time.Time
 type claimOperationMsg struct{ message string }
+type claimsRenew time.Time
+type claimRenewed struct{ message string }
 
 func (m Model) claimPoll() tea.Cmd {
 	c, _ := engine.Coordination(m.opts.Context)
@@ -27,13 +29,41 @@ func (m *Model) expiryCommand() tea.Cmd {
 	if m.claimExpiry.IsZero() {
 		return nil
 	}
-	now := time.Now()
-	if m.opts.Now != nil {
-		now = m.opts.Now()
-	}
 	at := m.claimExpiry
 	m.claimTimerAt = at
-	return tea.Tick(max(time.Duration(0), at.Sub(now)), func(time.Time) tea.Msg { return claimsExpiry(at) })
+	return tea.Tick(max(time.Duration(0), at.Sub(m.now())), func(time.Time) tea.Msg { return claimsExpiry(at) })
+}
+
+// renewCommand renews this session's claim at half its remaining lease, as
+// bl heartbeat -- COMMAND does, so a claim lasts while the TUI runs. A run
+// renews its own claim, and a lapsed claim is no longer mine, so neither is.
+func (m *Model) renewCommand() tea.Cmd {
+	if m.mineExpiry.IsZero() || m.renewing || m.mineExpiry.Equal(m.renewTimerAt) {
+		return nil
+	}
+	if _, caller := engine.Coordination(m.opts.Context); caller.Run != "" {
+		return nil
+	}
+	at := m.mineExpiry
+	m.renewTimerAt = at
+	return tea.Tick(max(at.Sub(m.now())/2, time.Second), func(time.Time) tea.Msg { return claimsRenew(at) })
+}
+func (m *Model) renew(at time.Time) tea.Cmd {
+	if at.Equal(m.renewTimerAt) {
+		m.renewTimerAt = time.Time{}
+	}
+	// The claim changed while the timer ran; schedule for the current one.
+	if !at.Equal(m.mineExpiry) {
+		return m.renewCommand()
+	}
+	m.renewing = true
+	ctx := m.opts.Context
+	return func() tea.Msg {
+		if r := engine.Heartbeat(ctx); r.Reason != "" {
+			return claimRenewed{"Claim renewal failed: " + r.Message}
+		}
+		return claimRenewed{}
+	}
 }
 func (m Model) claimCommand() tea.Cmd {
 	row, ok := m.selectedRow()

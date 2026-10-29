@@ -102,6 +102,8 @@ type Model struct {
 	baseContext              context.Context
 	claimExpiry              time.Time
 	claimTimerAt             time.Time
+	mineExpiry, renewTimerAt time.Time
+	renewing                 bool
 	width, height            int
 	opts                     Options
 	theme                    theme
@@ -655,6 +657,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = textutil.Line(msg.message)
 		m.refreshClaims()
 		return m, nil
+	case claimsRenew:
+		return m, m.renew(time.Time(msg))
+	case claimRenewed:
+		// The refreshed claim list reschedules; a failure retries while the
+		// lease is live.
+		m.renewing = false
+		if msg.message != "" {
+			m.notice = textutil.Line(msg.message)
+		}
+		m.refreshClaims()
+		return m, nil
 	case snapshotMsg:
 		// Nothing matched before the sync finished, which proves nothing; the
 		// synced rows are loading.
@@ -669,7 +682,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitProjection()
 		}
 		m.applied = msg.Request
-		m.claimExpiry = msg.NextClaimExpiry
+		m.claimExpiry, m.mineExpiry = msg.NextClaimExpiry, msg.MineClaimExpiry
 		// While candidates guide the word being typed, its error or unknown
 		// value would only flash; enter reports it.
 		guided := func(error) bool { return false }
@@ -714,8 +727,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.groups = msg.Groups
 		m.ungrouped = msg.Ungrouped
 		m.serial++
-		expiry := m.expiryCommand()
-		return m, tea.Batch(m.prepare(), m.waitProjection(), expiry)
+		expiry, renew := m.expiryCommand(), m.renewCommand()
+		return m, tea.Batch(m.prepare(), m.waitProjection(), expiry, renew)
 	case viewSaved:
 		m.saved(msg)
 		return m, nil
