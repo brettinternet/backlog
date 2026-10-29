@@ -220,9 +220,10 @@ func workspaceItems(cfg project.Config, items []model.Item) []model.Item {
 	return out
 }
 
-func workspaceRanking(ctx context.Context, cfg project.Config, items []model.Item, archived, stale map[model.Ref]bool, sprints []model.Sprint) (Result, map[model.Ref]Claim, []string) {
+func workspaceRanking(ctx context.Context, cfg project.Config, items []model.Item, archived, stale map[model.Ref]bool, sprints []model.Sprint, now time.Time) (Result, map[model.Ref]Claim, map[model.Ref]model.ClaimInfo, []string) {
 	configs := make(map[string]project.Config, len(cfg.Workspace.Projects))
 	claims := map[model.Ref]Claim{}
+	matched := map[model.Ref]model.ClaimInfo{}
 	var warnings []string
 	for _, p := range cfg.Workspace.Projects {
 		configs[p.Project.ID] = p
@@ -239,15 +240,22 @@ func workspaceRanking(ctx context.Context, cfg project.Config, items []model.Ite
 				local = append(local, i)
 			}
 		}
-		states, _, err := ClaimStates(ProjectContext(ctx, p), local, time.Now())
+		pctx := ProjectContext(ctx, p)
+		c, caller := Coordination(pctx)
+		list, err := c.List(pctx)
 		if err != nil {
 			warnings = append(warnings, p.Project.ID+": "+err.Error())
+			continue
 		}
+		states, held := ClaimOverlay(c, caller, local, list, now)
 		for ref, state := range states {
 			claims[aliases[ref]] = state
 		}
+		for ref, claim := range held {
+			matched[aliases[ref]] = claim
+		}
 	}
-	return Evaluate(Input{Items: items, Me: cfg.Identities(), Archived: archived, Stale: stale, Projects: configs, Claims: claims, Sprints: sprints, Sources: cfg.Sources}), claims, warnings
+	return Evaluate(Input{Items: items, Me: cfg.Identities(), Archived: archived, Stale: stale, Projects: configs, Claims: claims, Sprints: sprints, Sources: cfg.Sources}), claims, matched, warnings
 }
 
 func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived, sprints bool) (ReadSnapshot, error) {
@@ -288,7 +296,7 @@ func loadWorkspaceReads(ctx context.Context, cfg project.Config, archived, sprin
 	}
 	s.Query.Items = workspaceItems(cfg, s.Query.Items)
 	var warnings []string
-	s.Ranking, _, warnings = workspaceRanking(ctx, cfg, s.Query.Items, archives, stale, s.Query.Sprints)
+	s.Ranking, _, _, warnings = workspaceRanking(ctx, cfg, s.Query.Items, archives, stale, s.Query.Sprints, s.Query.Now)
 	s.Warnings = append(s.Warnings, warnings...)
 	for _, e := range s.Ranking.Items {
 		s.Query.Next = append(s.Query.Next, e.Ref)

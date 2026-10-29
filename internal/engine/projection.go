@@ -70,8 +70,8 @@ type RowGroup struct {
 }
 type Projection struct {
 	NextClaimExpiry time.Time
-	// MineClaims is when each of the caller's active claims lapses, by session.
-	MineClaims          map[string]time.Time
+	// MineClaims is when each of the caller's active claims lapses.
+	MineClaims          map[ClaimKey]time.Time
 	Request, Generation uint64
 	Groups              []RowGroup
 	Error               error
@@ -357,7 +357,7 @@ func (p *Projector) run() {
 	var claims []model.ClaimInfo
 	var claimsLoaded bool
 	var claimExpiry time.Time
-	var mineClaims map[string]time.Time
+	var mineClaims map[ClaimKey]time.Time
 	var claimRows map[model.Ref]rowClaim
 	var claimErr error
 	var base query.Snapshot
@@ -437,21 +437,21 @@ func (p *Projector) run() {
 				}
 				base.Coordination = coordination
 				claimStates := map[model.Ref]Claim{}
-				claimRows = map[model.Ref]rowClaim{}
-				claimExpiry, mineClaims = time.Time{}, map[string]time.Time{}
+				matched := map[model.Ref]model.ClaimInfo{}
 				if coordination && claimErr == nil && coordinator != nil {
-					var matched map[model.Ref]model.ClaimInfo
 					claimStates, matched = ClaimOverlay(coordinator, caller, base.Items, claims, now)
-					for ref, claim := range matched {
-						claimRows[ref] = rowClaim{claimLabel(claimStates[ref], claim, now), claim.ExpiresAt}
-						if claimStates[ref] == ClaimMine {
-							mineClaims[claim.Session] = claim.ExpiresAt
-						}
+				}
+				var ranking Result
+				if p.cfg.Workspace == nil {
+					ranking = Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates, Sprints: base.Sprints, Sources: p.cfg.Sources})
+				} else {
+					var warnings []string
+					ranking, claimStates, matched, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs, base.Sprints, now)
+					for _, project := range p.cfg.Workspace.Projects {
+						base.Coordination = base.Coordination || project.Coordination.Enabled()
 					}
-					for _, claim := range claims {
-						if claim.ExpiresAt.After(now) && (claimExpiry.IsZero() || claim.ExpiresAt.Before(claimExpiry)) {
-							claimExpiry = claim.ExpiresAt
-						}
+					if len(warnings) > 0 {
+						result.Warning = fmt.Errorf("%s", strings.Join(warnings, "; "))
 					}
 				}
 				for ref, claim := range claimStates {
@@ -462,23 +462,19 @@ func (p *Projector) run() {
 					}
 					base.States[ref] = state
 				}
-				ranking := Evaluate(Input{Items: base.Items, Config: p.cfg.Ready, Me: base.Me, Archived: archivedRefs, Stale: staleRefs, Coordination: coordination, Claims: claimStates, Sprints: base.Sprints, Sources: p.cfg.Sources})
-				if p.cfg.Workspace != nil {
-					var warnings []string
-					ranking, claimStates, warnings = workspaceRanking(req.ctx, p.cfg, base.Items, archivedRefs, staleRefs, base.Sprints)
-					for _, project := range p.cfg.Workspace.Projects {
-						base.Coordination = base.Coordination || project.Coordination.Enabled()
+				claimRows = map[model.Ref]rowClaim{}
+				claimExpiry, mineClaims = time.Time{}, map[ClaimKey]time.Time{}
+				for _, i := range base.Items {
+					claim, ok := matched[i.Ref]
+					if !ok {
+						continue
 					}
-					if len(warnings) > 0 {
-						result.Warning = fmt.Errorf("%s", strings.Join(warnings, "; "))
+					claimRows[i.Ref] = rowClaim{claimLabel(claimStates[i.Ref], claim, now), claim.ExpiresAt}
+					if claimStates[i.Ref] == ClaimMine {
+						mineClaims[ClaimKey{Project: i.Project, Session: claim.Session}] = claim.ExpiresAt
 					}
-					for ref, claim := range claimStates {
-						state := base.States[ref]
-						state.Claim = string(claim)
-						if claim == ClaimMine {
-							state.Claim = "me"
-						}
-						base.States[ref] = state
+					if claim.ExpiresAt.After(now) && (claimExpiry.IsZero() || claim.ExpiresAt.Before(claimExpiry)) {
+						claimExpiry = claim.ExpiresAt
 					}
 				}
 				if req.ctx.Err() != nil {

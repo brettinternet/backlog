@@ -385,8 +385,9 @@ starts in workspace scope. Outside any repository, `defaultWorkspace` opens.
 
 Each project keeps its own sources, statuses, trust, and write and claim
 context. Wide workspace lists add Project (`project.name`, or the last part of
-the project ID) and Source columns. Relations and readiness use only the loaded
-scope; [workspace references](format.md#frontmatter-keys) disambiguate projects.
+the project ID) and Source columns. Each item's claim, its lease, and renewal
+come from its own project's coordination, as in [Coordination](#coordination).
+Relations and readiness use only the loaded scope; [workspace references](format.md#frontmatter-keys) disambiguate projects.
 
 ## Mouse
 

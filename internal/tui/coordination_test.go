@@ -99,7 +99,7 @@ func TestHeldClaimsRenewOncePerLease(t *testing.T) {
 	now := time.Unix(100, 0)
 	var renewed []string
 	coordinator := renewingCoordinator{renewed: &renewed}
-	claims := map[string]time.Time{"tui:a": now.Add(15 * time.Minute), "tui:b": now.Add(10 * time.Minute)}
+	claims := map[engine.ClaimKey]time.Time{{Session: "tui:a"}: now.Add(15 * time.Minute), {Session: "tui:b"}: now.Add(10 * time.Minute)}
 	run := New(Options{Now: func() time.Time { return now }, Context: engine.WithCoordination(context.Background(), coordinator, model.CallerContext{Session: "tui", Run: "run"})})
 	run.mineClaims = claims
 	if run.renewCommand() != nil {
@@ -121,7 +121,7 @@ func TestHeldClaimsRenewOncePerLease(t *testing.T) {
 	if !slices.Equal(renewed, []string{"tui:a", "tui:b"}) || m.renewing {
 		t.Fatalf("renewed = %v, renewing = %v", renewed, m.renewing)
 	}
-	m.mineClaims = map[string]time.Time{"tui:a": now.Add(16 * time.Minute)}
+	m.mineClaims = map[engine.ClaimKey]time.Time{{Session: "tui:a"}: now.Add(16 * time.Minute)}
 	if m.renewCommand() == nil {
 		t.Fatal("renewed lease was not rescheduled")
 	}

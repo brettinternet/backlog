@@ -181,6 +181,22 @@ func Heartbeat(ctx context.Context) model.ClaimResult {
 	return c.Heartbeat(ctx, caller)
 }
 
+// ClaimKey names a held claim: its session, and its project in a workspace.
+type ClaimKey struct{ Project, Session string }
+
+// HeartbeatClaim renews a held claim through its own project's coordinator.
+func HeartbeatClaim(ctx context.Context, cfg *project.Config, key ClaimKey) model.ClaimResult {
+	if cfg != nil && cfg.Workspace != nil {
+		for _, p := range cfg.Workspace.Projects {
+			if p.Project.ID == key.Project {
+				ctx = ProjectContext(ctx, p)
+			}
+		}
+	}
+	c, _ := Coordination(ctx)
+	return Heartbeat(WithCoordination(ctx, c, model.CallerContext{Session: key.Session}))
+}
+
 // StatusTarget recognizes all engine paths, including editor restores and undo.
 func StatusTarget(cfg project.Config, m model.Mutation) (string, model.StatusCategory, bool) {
 	status := ""

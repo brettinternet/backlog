@@ -102,7 +102,7 @@ type Model struct {
 	baseContext              context.Context
 	claimExpiry              time.Time
 	claimTimerAt             time.Time
-	mineClaims               map[string]time.Time
+	mineClaims               map[engine.ClaimKey]time.Time
 	renewTimerAt             time.Time
 	renewing                 bool
 	width, height            int
