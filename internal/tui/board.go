@@ -293,6 +293,13 @@ func (m Model) card(index, width int) (string, string) {
 	if row.OpenBlockers > 0 {
 		right = append(right, t.red.render("\u2298 "+strconv.Itoa(row.OpenBlockers)))
 	}
+	if row.ChildrenTotal > 0 {
+		style := t.muted
+		if row.ChildrenDone == row.ChildrenTotal {
+			style = t.green
+		}
+		right = append(right, style.render("\u25a3 "+strconv.Itoa(row.ChildrenDone)+"/"+strconv.Itoa(row.ChildrenTotal)))
+	}
 	if len(row.Assignees) > 0 {
 		style := t.muted
 		if m.isMe(row.Ref.Source, row.Assignees[0]) {
