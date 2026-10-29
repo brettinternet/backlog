@@ -150,7 +150,7 @@ The triggering event is JSON on stdin.
 ## Agent loops
 
 ```sh
-export BL_SESSION=agent-loop-a
+export BL_SESSION="$CLAUDE_CODE_SESSION_ID"
 bl next --claim --start --json
 bl show 12 --json
 bl heartbeat --json
@@ -158,7 +158,8 @@ bl done 12 --json
 ```
 
 - Use one stable session across all checkouts, preferably the harness's own
-  session or run ID so claim history leads back to its transcript. `bl` calls Worklease from the
+  session or run ID unchanged, with no prefix or suffix, so claim history leads
+  back to its transcript. `bl` calls Worklease from the
   control root, so manage claims through `bl`, not by calling Worklease from a
   linked worktree.
 - Heartbeat at least every half TTL.

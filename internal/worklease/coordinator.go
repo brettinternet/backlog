@@ -308,7 +308,13 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 	if refused := c.refuseHostLocal(ctx, item); refused != nil {
 		return *refused
 	}
-	v, err := c.call(ctx, caller, "acquire", "--resource", key, "--wait", "0s", "--work-key", workKey(c.Config.Project.ID, item.Ref.ID, key))
+	args := []string{"acquire", "--resource", key, "--wait", "0s", "--work-key", workKey(c.Config.Project.ID, item.Ref.ID, key)}
+	// The agent kind names the holder for Worklease readers; without a usable
+	// one Worklease records its default, the login user.
+	if agent := caller.Agent; agent != "" && len(agent) <= 128 && printable(agent) == agent {
+		args = append(args, "--agent="+agent)
+	}
+	v, err := c.call(ctx, caller, args...)
 	if err != nil || !v.OK {
 		return mutationFailure(v, err)
 	}
@@ -326,14 +332,6 @@ func (c *Coordinator) Acquire(ctx context.Context, caller model.CallerContext, i
 // limits and drops what a remote authority would redact, cutting the project
 // ID first; the resource key stands in if nothing printable remains.
 func workKey(projectID, itemID, resource string) string {
-	printable := func(s string) string {
-		return strings.TrimSpace(strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
-				return -1
-			}
-			return r
-		}, strings.ToValidUTF8(s, "")))
-	}
 	truncate := func(s string, n int) string {
 		for len(s) > max(n, 0) {
 			_, size := utf8.DecodeLastRuneInString(s)
@@ -349,6 +347,17 @@ func workKey(projectID, itemID, resource string) string {
 		label = prefix + " " + label
 	}
 	return label
+}
+
+// printable drops what Worklease's public-text checks or a remote authority
+// would refuse or redact.
+func printable(s string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(s, "")))
 }
 
 // refuseHostLocal stops a host-local project key from reaching a remote

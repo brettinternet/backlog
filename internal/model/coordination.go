@@ -14,7 +14,8 @@ type CallerContext struct {
 	// PerItem coordinates each item under its own session (design.md D39).
 	PerItem bool `json:"-"`
 	// Agent is the detected agent kind, and AgentSession its harness's own
-	// session ID. Events record them; coordination ignores them (D40).
+	// session ID. Events record them (D40), and an acquire names Agent as the
+	// Worklease agent (§9).
 	Agent        string `json:"-"`
 	AgentSession string `json:"-"`
 }

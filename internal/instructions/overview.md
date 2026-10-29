@@ -17,7 +17,7 @@ Logging in (`bl auth login`) and trusting a project (`bl trust`) need a person:
 stop and ask instead.
 
 With coordination configured, use
-`bl next --claim --start --session loop-a --json` to select and start work;
+`bl next --claim --start --session SESSION --json` to select and start work;
 plain next remains read-only. Follow the project's coordination policy. Unknown
 or unverifiable ownership refuses side effects; do not bypass this with a new
 session.

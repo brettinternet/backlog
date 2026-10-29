@@ -267,6 +267,22 @@ func TestAcquireLostOrMalformedResponseIsUncertain(t *testing.T) {
 	}
 }
 
+// The agent kind names the claim's holder, but an agent Worklease would
+// refuse falls back to its default instead of failing the acquire.
+func TestAcquireNamesAgentKind(t *testing.T) {
+	key, _ := Key("generic", "test", "BL-1")
+	grant := successFixture(map[string]any{"claimId": "claim", "resources": []string{key}, "expiresAt": "2030-01-01T00:00:00Z"})
+	for agent, extra := range map[string][]string{"claude": {"--agent=claude"}, "": nil, "bad\x00agent": nil, "-x": {"--agent=-x"}} {
+		t.Run(agent, func(t *testing.T) {
+			argv := append([]string{"--json", "acquire", "--resource", key, "--wait", "0s", "--work-key", "test BL-1"}, extra...)
+			c := cliFixture(t, []step{{append(argv, "--session", "loop"), grant}})
+			if r := c.Acquire(context.Background(), model.CallerContext{Session: "loop", Agent: agent}, model.Item{Ref: model.Ref{Source: "tasks", ID: "BL-1"}}); r.Outcome != "acquired" {
+				t.Fatalf("agent %q: %+v", agent, r)
+			}
+		})
+	}
+}
+
 func TestSessionAloneCannotMutateSupervisorClaim(t *testing.T) {
 	claim := map[string]any{"claimId": "claim", "authorityId": "authority", "resources": []string{"resource"}, "sessionId": "loop", "active": true, "expiresAt": "2030-01-01T00:00:00Z", "state": "held"}
 	status := successFixture(map[string]any{"claim": claim})
