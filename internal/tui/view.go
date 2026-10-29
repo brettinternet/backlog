@@ -3,6 +3,7 @@ package tui
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
@@ -185,6 +186,9 @@ func (m Model) detailMeta(row engine.Row) string {
 	if row.Priority != "" {
 		parts = append(parts, t.priority(row.Priority).render(priorityGlyph(row.Priority)+" "+textutil.Line(string(row.Priority))))
 	}
+	if label, remaining := claimLease(row, m.now()); label != "" {
+		parts = append(parts, t.claim(label).render(strings.TrimSpace(textutil.Line(label)+" "+remaining)))
+	}
 	if row.Pending {
 		parts = append(parts, t.pending.render("● saving"))
 	}
@@ -192,6 +196,22 @@ func (m Model) detailMeta(row engine.Row) string {
 		parts = append(parts, t.failed.render("! failed"))
 	}
 	return strings.Join(parts, "  ")
+}
+
+// claimLease is the holder and remaining lease, such as "mine" and "12m". It
+// reads the clock, not the overlay, so a lapse shows before the next rebuild.
+func claimLease(row engine.Row, now time.Time) (label, remaining string) {
+	if row.Claim == "" {
+		return "", ""
+	}
+	if !row.ClaimExpires.After(now) {
+		return "expired", ""
+	}
+	remaining = age(now, row.ClaimExpires)
+	if remaining == "now" {
+		remaining = "<1m"
+	}
+	return row.Claim, remaining
 }
 
 // detailTabBar renders the tabs with counts and their spans relative to the

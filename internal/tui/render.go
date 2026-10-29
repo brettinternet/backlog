@@ -476,13 +476,7 @@ func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool)
 		if row.Claim == "" {
 			return strings.Repeat(" ", c.width)
 		}
-		style := t.muted
-		if row.Claim == "mine" {
-			style = t.accent
-		} else if row.Claim == "expired" {
-			style = t.yellow
-		}
-		return style.render(cell(row.Claim, c.width))
+		return t.claim(row.Claim).render(cell(row.Claim, c.width))
 	case colAssignee:
 		if len(row.Assignees) == 0 {
 			return strings.Repeat(" ", c.width)

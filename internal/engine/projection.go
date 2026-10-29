@@ -20,6 +20,7 @@ import (
 type Row struct {
 	Project, Source                           string
 	Claim                                     string
+	ClaimExpires                              time.Time
 	Ref                                       model.Ref
 	Version, Title, Status, Type, Milestone   string
 	Due, URL                                  string
@@ -269,6 +270,13 @@ type Catalog struct {
 	snapshot     *Snapshot
 	reverse      Reverse
 	explanations map[model.Ref]Explanation
+	claims       map[model.Ref]rowClaim
+}
+
+// rowClaim is an item's claim as rows show it, labeled when the overlay was built.
+type rowClaim struct {
+	label   string
+	expires time.Time
 }
 
 func (c *Catalog) Row(ref model.Ref) (Row, bool) {
@@ -276,7 +284,9 @@ func (c *Catalog) Row(ref model.Ref) (Row, bool) {
 	if r == nil {
 		return Row{}, false
 	}
-	return newRow(*r.item, r, c.explanations[ref], RelationRows(*r.item, c.snapshot, c.reverse)), true
+	row := newRow(*r.item, r, c.explanations[ref], RelationRows(*r.item, c.snapshot, c.reverse))
+	row.Claim, row.ClaimExpires = c.claims[ref].label, c.claims[ref].expires
+	return row, true
 }
 
 // newRow sets the fields every row has; projections add project, claim and
@@ -347,7 +357,7 @@ func (p *Projector) run() {
 	var claims []model.ClaimInfo
 	var claimsLoaded bool
 	var claimExpiry, mineExpiry time.Time
-	var claimLabels map[model.Ref]string
+	var claimRows map[model.Ref]rowClaim
 	var claimErr error
 	var base query.Snapshot
 	var explanations map[model.Ref]Explanation
@@ -426,13 +436,13 @@ func (p *Projector) run() {
 				}
 				base.Coordination = coordination
 				claimStates := map[model.Ref]Claim{}
-				claimLabels = map[model.Ref]string{}
+				claimRows = map[model.Ref]rowClaim{}
 				claimExpiry, mineExpiry = time.Time{}, time.Time{}
 				if coordination && claimErr == nil && coordinator != nil {
 					var matched map[model.Ref]model.ClaimInfo
 					claimStates, matched = ClaimOverlay(coordinator, caller, base.Items, claims, now)
 					for ref, claim := range matched {
-						claimLabels[ref] = claim.Label(caller.Session, now)
+						claimRows[ref] = rowClaim{claim.Label(caller.Session, now), claim.ExpiresAt}
 						if claimStates[ref] == ClaimMine {
 							mineExpiry = claim.ExpiresAt
 						}
@@ -490,7 +500,7 @@ func (p *Projector) run() {
 					explanations[e.Ref] = e
 				}
 				cached = req.snapshot
-				catalog = &Catalog{snapshot: req.snapshot, reverse: reverse, explanations: explanations}
+				catalog = &Catalog{snapshot: req.snapshot, reverse: reverse, explanations: explanations, claims: claimRows}
 			}
 			result.Catalog = catalog
 			base.Now = now
@@ -545,7 +555,8 @@ func (p *Projector) run() {
 								}
 							}
 							row := newRow(i, r, explanations[i.Ref], relations)
-							row.Project, row.Source, row.Claim = projectName, localSource, claimLabels[i.Ref]
+							row.Project, row.Source = projectName, localSource
+							row.Claim, row.ClaimExpires = claimRows[i.Ref].label, claimRows[i.Ref].expires
 							closed := func(ref model.Ref) bool {
 								r := req.snapshot.records[normalizedRef(ref, i.Ref)]
 								return r != nil && !r.stale && (r.item.Category == model.Done || r.item.Category == model.Canceled)

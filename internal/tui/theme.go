@@ -199,6 +199,17 @@ func priorityGlyph(p model.Priority) string {
 	}
 	return "·"
 }
+
+// claim colors a claim label: your own, a lapsed one, or another holder's.
+func (t theme) claim(label string) paint {
+	switch label {
+	case "mine":
+		return t.accent
+	case "expired":
+		return t.yellow
+	}
+	return t.muted
+}
 func (t theme) priority(p model.Priority) paint {
 	switch p {
 	case model.Urgent:

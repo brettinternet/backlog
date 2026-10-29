@@ -194,8 +194,10 @@ is. `?` opens the same list as read-only help. Both are searchable.
 
 ## Detail
 
-The header (ID, status, priority, title) and tab counts follow the selection
-immediately. The body loads once the selection rests for 50 ms; switching tabs
+The header (ID, status, priority, claim, title) and tab counts follow the
+selection immediately. The claim shows its holder (`mine` or `agent@host`) and
+remaining lease, such as `mine 12m` or `agent@host <1m`, or `expired`, from the
+polled claim list. The body loads once the selection rests for 50 ms; switching tabs
 or `m` renders at once. Another item's or tab's body stays until the new one is
 ready, or loading replaces it. A reload of the page in view (resize, `m`, `R`, a
 new version) keeps its body and shows loading on the header row.
