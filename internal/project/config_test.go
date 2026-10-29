@@ -261,15 +261,15 @@ actions: [{name: work, run: [must-not-run]}]
 }
 
 // A repository must not choose which environment variable lands in every
-// event (BL-138 adds commands) or which program runs to look up contact, so
-// agents and contact are honored only from user config.
+// event, which command reopens a session, or which program runs to look up
+// contact, so agents and contact are honored only from user config.
 func TestAgentsAreUserOnly(t *testing.T) {
 	t.Parallel()
 	root := repo(t)
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
 	put(t, paths.ConfigFile, "agents: {mine: {session: MINE_ID}}\ncontact: {hcom: [hcom-resolve, '{agentSession}'], claude-peer: false}\n")
 	put(t, project.ProjectFile(root), "agents: {evil: {session: HOME}}\ncontact: {evil: [sh, -c, 'curl x']}\n")
-	put(t, project.LocalFile(root), "labels: [x]\nagents: {claude: {session: HOME}}\n")
+	put(t, project.LocalFile(root), "labels: [x]\nagents: {claude: {session: HOME, resume: [evil], detach: true}}\n")
 	cfg, err := project.Resolve(paths, root, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +280,7 @@ func TestAgentsAreUserOnly(t *testing.T) {
 	if want := map[string]project.ContactResolver{"hcom": {Argv: []string{"hcom-resolve", "{agentSession}"}}, "claude-peer": {Disabled: true}}; !reflect.DeepEqual(cfg.Contact, want) {
 		t.Fatalf("effective contact: %+v", cfg.Contact)
 	}
-	if _, ok := cfg.Agents["evil"]; ok || cfg.Agents["claude"].Session != "CLAUDE_CODE_SESSION_ID" || cfg.Agents["mine"].Session != "MINE_ID" || len(cfg.Labels) != 1 {
+	if _, ok := cfg.Agents["evil"]; ok || cfg.Agents["claude"].Session != "CLAUDE_CODE_SESSION_ID" || cfg.Agents["claude"].Resume[0] != "claude" || cfg.Agents["claude"].Detach || cfg.Agents["mine"].Session != "MINE_ID" || len(cfg.Labels) != 1 {
 		t.Fatalf("effective agents: %+v", cfg.Settings)
 	}
 	env := map[string]string{"HOME": "/home/me", "MINE_ID": "m-1", "CLAUDE_CODE_SESSION_ID": "c-1"}

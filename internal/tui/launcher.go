@@ -19,6 +19,7 @@ type launcherRow struct {
 	actionRef              string
 	action                 action
 	item                   *GoToItem
+	resume                 *engine.ResumeChoice
 }
 type launcherState struct {
 	open, help, goTo, loading bool
@@ -172,7 +173,8 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 		rows = append(rows, launcherRow{label: a.label, binding: a.id + " " + strings.Join(a.bindings, " "), reason: m.disabledReason(a), action: a, group: group})
 	}
 	m.launcher = launcherState{open: true, help: help, rows: rows, all: rows}
-	if m.opts.Automation != nil && len(m.opts.Automation.Actions) > 0 {
+	// Configured actions and resumable sessions both come from the selected item.
+	if _, selected := m.selectedRow(); m.opts.Automation != nil && (len(m.opts.Automation.Actions) > 0 || selected) {
 		m.launcherSerial++
 		m.actionCatalogSerial++
 		m.launcher.loading = true
@@ -253,6 +255,9 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 			m.detailOpen = true
 			m.detailFocus = true
 			return m, m.scheduleDetail()
+		}
+		if row.resume != nil {
+			return m, m.runResume(*row.resume)
 		}
 		if row.actionRef != "" {
 			return m.prepareConfiguredActionForID(strings.TrimPrefix(row.action.id, "action:"), row.actionRef)

@@ -83,13 +83,35 @@ func Load(paths Paths, highContrast *bool) (Config, error) {
 	return Resolve(paths, "", highContrast)
 }
 
+// builtinConfig is the lowest layer. Built-in agent commands were checked
+// against claude 2.1.312, codex 0.165.0, and pi 1.4.0 (BL-138).
+const builtinConfig = `version: 1
+root: primary
+git: {autoCommit: false}
+ui: {highContrast: false}
+ready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}
+agents:
+  claude:
+    session: CLAUDE_CODE_SESSION_ID
+    resume: [claude, --resume, "{agentSession}"]
+    fork: [claude, --resume, "{agentSession}", --fork-session]
+  codex:
+    session: CODEX_THREAD_ID
+    resume: [codex, resume, "{agentSession}"]
+    fork: [codex, fork, "{agentSession}"]
+  pi:
+    session: PI_SESSION_ID
+    resume: [pi, --session, "{agentSession}"]
+    fork: [pi, --fork, "{agentSession}"]
+`
+
 // Resolve applies D16 layers without changing cwd or writing any files. A nil
 // flag is absent; false is an explicit override. Lists replace rather than append.
 func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) {
 	cfg := Config{Paths: paths, Provenance: map[string]Provenance{}}
 	effective := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	var defaults yaml.Node
-	_ = yaml.Unmarshal([]byte("version: 1\nroot: primary\ngit: {autoCommit: false}\nui: {highContrast: false}\nready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}\nagents: {claude: {session: CLAUDE_CODE_SESSION_ID}, codex: {session: CODEX_THREAD_ID}, pi: {session: PI_SESSION_ID}}\n"), &defaults)
+	_ = yaml.Unmarshal([]byte(builtinConfig), &defaults)
 	overlay(effective, defaults.Content[0], "", Provenance{Layer: "built-in"}, cfg.Provenance)
 	userNode, err := readConfig(paths.ConfigFile, reflect.TypeFor[UserConfig]())
 	if err != nil {
@@ -157,7 +179,7 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 					cfg.SavedViews = appendViews(cfg.SavedViews, entry.layer, entries)
 				}
 				node := entry.node
-				// Agent entries will carry commands (BL-138) and contact
+				// Agent entries carry resume and fork commands and contact
 				// resolvers run programs, so a repository can't set them.
 				for _, key := range []string{"agents", "contact"} {
 					if value := field(node, key); value != nil {

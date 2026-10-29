@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/textutil"
 )
 
 func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfave.Command {
@@ -81,4 +83,85 @@ func quoteArgv(argv []string) string {
 		}
 	}
 	return strings.Join(quoted, " ")
+}
+
+func resumeCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfave.Command {
+	return &urfave.Command{Name: "resume", Usage: "Resume or fork an agent session that worked an item", ArgsUsage: "ID [SESSION]", Category: categoryAutomation, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "fork", Usage: "Fork the session into a new one"}, &urfave.BoolFlag{Name: "resume", Usage: "Resume the session itself, even for a closed item"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		if n := cmd.Args().Len(); n < 1 || n > 2 {
+			return writeUsage("resume requires ID [SESSION]")
+		}
+		command := ""
+		switch {
+		case cmd.Bool("fork") && cmd.Bool("resume"):
+			return writeUsage("--fork and --resume are exclusive")
+		case cmd.Bool("fork"):
+			command = "fork"
+		case cmd.Bool("resume"):
+			command = "resume"
+		}
+		cfg, err := loadConfig(cmd, *directory)
+		if err != nil {
+			return err
+		}
+		ctx = engine.WithEventCWD(ctx, *directory)
+		choices, err := engine.ResumeChoices(ctx, cfg, cmd.Args().Get(0), command)
+		if err != nil {
+			return writeError(err)
+		}
+		choice, err := engine.SelectResume(choices, cmd.Args().Get(1))
+		if err != nil {
+			e := writeError(err)
+			if len(choices) > 0 {
+				lines := []string{e.Message}
+				for _, c := range choices {
+					lines = append(lines, "  "+resumeLine(c))
+				}
+				e.Message = strings.Join(lines, "\n")
+				if e.Details == nil {
+					e.Details = map[string]any{}
+				}
+				e.Details["candidates"] = choices
+			}
+			return e
+		}
+		var result hooks.ActionResult
+		if choice.Detach {
+			result, err = hooks.StartAction(cfg, choice.Invocation)
+		} else {
+			// The agent owns the terminal; JSON output keeps stdout clean.
+			terminalOut := out
+			if cmd.Bool("json") {
+				terminalOut = errOut
+			}
+			result, err = hooks.RunAgent(ctx, cfg, choice.Invocation, in, terminalOut, errOut)
+		}
+		if err != nil {
+			return writeError(err)
+		}
+		if !result.Detached && result.Event.Outcome != "ok" {
+			message := choice.Command + " " + result.Event.Outcome
+			exited := result.Event.ExitCode != nil && *result.Event.ExitCode > 0
+			if exited {
+				message += fmt.Sprintf(" (exit %d)", *result.Event.ExitCode)
+			}
+			// The terminal already showed an exited command's stderr.
+			if result.Event.Message != "" && (cmd.Bool("json") || !exited) {
+				message += ": " + result.Event.Message
+			}
+			return &Error{Reason: "rejected", Message: message}
+		}
+		if cmd.Bool("json") {
+			return success(out, "resume", result)
+		}
+		return nil
+	}}
+}
+
+// resumeLine reads: session, agent, age, command, and any refusal.
+func resumeLine(c engine.ResumeChoice) string {
+	fields := []string{c.Session.ID, cmp.Or(c.Session.Agent, "-"), timestamp(c.Session.LastSeen), c.Command}
+	if c.Reason != "" {
+		fields = append(fields, c.Reason+": "+c.Disabled)
+	}
+	return textutil.Line(strings.Join(fields, "  "))
 }

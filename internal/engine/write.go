@@ -156,7 +156,7 @@ func ErrorReason(err error) string {
 	var refusal *source.Error
 	if errors.As(err, &refusal) {
 		switch refusal.Reason {
-		case "conflict", "not-found", "unavailable", "rejected", "contention", "claim-held", "run-mismatch", "session-required", "unknown-outcome", "usage":
+		case "conflict", "not-found", "unavailable", "rejected", "contention", "claim-held", "run-mismatch", "session-required", "unknown-outcome", "usage", "other-host", "checkout-removed", "live", "no-agent-config":
 			return refusal.Reason
 		}
 	}

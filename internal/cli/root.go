@@ -303,7 +303,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		}, Action: openTUI},
 		&urfave.Command{Name: "version", Usage: "Print the version", Hidden: true, Action: version},
 		helpCommand(),
-		eventsCommand(&directory, out), actionCommand(&directory, in, out, errOut),
+		eventsCommand(&directory, out), actionCommand(&directory, in, out, errOut), resumeCommand(&directory, in, out, errOut),
 		&urfave.Command{Name: "mcp", Usage: "Serve MCP tools over stdio", Category: categoryAutomation, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, err := loadConfig(cmd, directory)
 			if err != nil {
@@ -437,7 +437,7 @@ func terminal(stream any) bool {
 // acceptsArguments takes the full command path, since names like check repeat.
 func acceptsArguments(command string) bool {
 	switch command {
-	case "help", "claim", "release", "heartbeat", "events", "action", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "handoff", "ac", "edit", "archive", "unarchive", "renumber",
+	case "help", "claim", "release", "heartbeat", "events", "action", "resume", "instructions", "tui", "ls", "show", "next", "new", "set", "start", "done", "note", "comment", "handoff", "ac", "edit", "archive", "unarchive", "renumber",
 		"adapter check", "hooks run", "hooks action", "import backlog-md", "auth status", "auth login", "auth logout":
 		return true
 	}

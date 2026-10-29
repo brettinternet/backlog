@@ -39,7 +39,7 @@ func (e *Error) ExitCode() int {
 		return 2
 	case "not-found":
 		return 3
-	case "conflict", "claim-held", "run-mismatch":
+	case "conflict", "claim-held", "run-mismatch", "other-host", "checkout-removed", "live", "no-agent-config":
 		return 4
 	case "rejected", "invalid-config", "invalid-value", "oauth-not-opted-in":
 		return 5

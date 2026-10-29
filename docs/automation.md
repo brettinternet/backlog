@@ -147,6 +147,48 @@ The process gets only `PATH`, `HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
 `BL_HOOK_DEPTH`, and `BL_RESULT`. No credentials, session, or other variables.
 The triggering event is JSON on stdin.
 
+## Agent sessions
+
+`bl resume ID [SESSION]` and the TUI `!` menu reopen an agent session recorded
+on the item's events, with the agent's command from user config, in the
+session's recorded checkout. Repository config can't set these commands.
+
+| Field | Meaning |
+| --- | --- |
+| `resume` | Argv that continues the session |
+| `fork` | Argv that starts a new session from its transcript; a closed item uses it when set |
+| `detach` | Run in the background like a detached action, with the 30-second timeout |
+
+They take the placeholders above plus `{agentSession}`, `{session}`, `{agent}`,
+`{cwd}`, and `{host}`, with the same checks. An attached command gets the
+terminal, `TERM`, `COLORTERM`, and `LANG`, and no timeout. Built-ins:
+
+| Agent | `resume` | `fork` |
+| --- | --- | --- |
+| `claude` | `claude --resume {agentSession}` | `claude --resume {agentSession} --fork-session` |
+| `codex` | `codex resume {agentSession}` | `codex fork {agentSession}` |
+| `pi` | `pi --session {agentSession}` | `pi --fork {agentSession}` |
+
+A session isn't offered when it ran on another host, its checkout is gone, it
+still holds its claim or a contact channel reports its agent running (the
+reason lists the channels), or its agent has no command; the TUI shows why. Every
+run ends in `action.finished` named `resume` or `fork` with the session.
+
+To open the agent in a new Herdr pane beside the focused one (the `bl` pane
+when started from the TUI):
+
+```yaml
+agents:
+  claude:
+    detach: true
+    resume: [sh, -c, 'p=$(herdr pane split --direction right --cwd "$1" | jq -r .result.pane.pane_id) && herdr pane run "$p" claude --resume "$2"', sh, "{cwd}", "{agentSession}"]
+    fork: [sh, -c, 'p=$(herdr pane split --direction right --cwd "$1" | jq -r .result.pane.pane_id) && herdr pane run "$p" claude --resume "$2" --fork-session', sh, "{cwd}", "{agentSession}"]
+```
+
+The values reach `sh` as arguments, never as script text. The minimal
+environment drops `HERDR_PANE_ID`, so `herdr pane split` targets the focused
+pane.
+
 ## Agent loops
 
 ```sh

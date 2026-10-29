@@ -25,7 +25,8 @@ Exit codes and reasons:
 - 1: internal/unclassified failure.
 - 2: usage (including invalid query, command, or flag).
 - 3: not-found.
-- 4: conflict (stale version or occupied target).
+- 4: conflict (stale version or occupied target); resume refusals other-host,
+  checkout-removed, live, and no-agent-config.
 - 5: rejected, invalid-config, or oauth-not-opted-in.
 - 6: unavailable (unsupported source or incomplete load), unknown-outcome (a
   write that may have applied), and provider reasons such as

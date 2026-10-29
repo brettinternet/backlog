@@ -73,9 +73,13 @@ type HistoryConfig struct {
 }
 
 // AgentConfig detects an agent kind: Session names the environment variable
-// whose presence detects it and holds its harness session ID.
+// whose presence detects it and holds its harness session ID. Resume and Fork
+// reopen a recorded session; Detach runs them in the background (BL-138).
 type AgentConfig struct {
-	Session string `yaml:"session,omitempty" json:"session,omitempty"`
+	Session string   `yaml:"session,omitempty" json:"session,omitempty"`
+	Resume  []string `yaml:"resume,omitempty" json:"resume,omitempty"`
+	Fork    []string `yaml:"fork,omitempty" json:"fork,omitempty"`
+	Detach  bool     `yaml:"detach,omitempty" json:"detach,omitempty"`
 }
 
 // SprintCapable reports whether any configured source can supply sprints.

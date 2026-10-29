@@ -44,6 +44,22 @@
             "description": "Environment variable whose non-empty value detects this agent and is its harness session ID.",
             "type": "string",
             "minLength": 1
+          },
+          "resume": {
+            "description": "Argv that continues a recorded session, run without a shell in its checkout. Placeholders include {agentSession}, {session}, {agent}, {cwd}, and {host}.",
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1
+          },
+          "fork": {
+            "description": "Argv that starts a new session from a recorded one; closed items use it when set.",
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1
+          },
+          "detach": {
+            "description": "Run resume and fork in the background instead of attached to the terminal.",
+            "type": "boolean"
           }
         }
       }

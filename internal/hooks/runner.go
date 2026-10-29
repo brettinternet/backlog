@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -237,7 +238,17 @@ type execution struct {
 }
 
 func execute(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool) execution {
-	return executeWithOutput(ctx, cfg, hook, event, cwd, captureResult, nil, nil)
+	return executeWithOutput(ctx, cfg, hook, event, cwd, captureResult, runOptions{})
+}
+
+// runOptions are a run's inputs beyond its hook config.
+type runOptions struct {
+	out, errOut io.Writer
+	// terminal, when set, replaces the JSON event on stdin and gives the
+	// command the caller's terminal with no timeout: an interactive agent.
+	terminal io.Reader
+	// extra holds agent placeholders, accepted only for agent commands (D21).
+	extra map[string]string
 }
 
 // prepared is everything a run decides before starting a process. Dry runs
@@ -245,16 +256,16 @@ func execute(ctx context.Context, cfg project.Config, hook project.HookConfig, e
 type prepared struct {
 	argv    []string
 	cwd     string
-	timeout time.Duration
+	timeout time.Duration // zero for none
 }
 
-func prepare(cfg project.Config, hook project.HookConfig, event Event, cwd string) (prepared, execution) {
+func prepare(cfg project.Config, hook project.HookConfig, event Event, cwd string, opts runOptions) (prepared, execution) {
 	refused := func(message string) (prepared, execution) {
 		return prepared{}, execution{outcome: "refused", exitCode: -1, message: message}
 	}
 	argv := make([]string, len(hook.Run))
 	for i, arg := range hook.Run {
-		expanded, err := expand(arg, cfg, event)
+		expanded, err := expand(arg, cfg, event, opts.extra)
 		if err != nil {
 			return refused(err.Error())
 		}
@@ -272,7 +283,7 @@ func prepare(cfg project.Config, hook project.HookConfig, event Event, cwd strin
 		}
 	}
 	if hook.CWD != "" {
-		expanded, err := expand(hook.CWD, cfg, event)
+		expanded, err := expand(hook.CWD, cfg, event, opts.extra)
 		if err != nil {
 			return refused(err.Error())
 		}
@@ -284,6 +295,9 @@ func prepare(cfg project.Config, hook project.HookConfig, event Event, cwd strin
 	timeout, err := hookTimeout(hook)
 	if err != nil {
 		return refused(err.Error())
+	}
+	if opts.terminal != nil {
+		timeout = 0
 	}
 	return prepared{argv: argv, cwd: runCWD, timeout: timeout}, execution{}
 }
@@ -299,8 +313,9 @@ func hookTimeout(hook project.HookConfig) (time.Duration, error) {
 	return timeout, nil
 }
 
-func executeWithOutput(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool, out, errOut io.Writer) execution {
-	run, failure := prepare(cfg, hook, event, cwd)
+func executeWithOutput(ctx context.Context, cfg project.Config, hook project.HookConfig, event Event, cwd string, captureResult bool, opts runOptions) execution {
+	out, errOut := opts.out, opts.errOut
+	run, failure := prepare(cfg, hook, event, cwd, opts)
 	if failure.outcome != "" {
 		return failure
 	}
@@ -316,8 +331,12 @@ func executeWithOutput(ctx context.Context, cfg project.Config, hook project.Hoo
 	}
 	defer os.Remove(resultPath)
 
-	hookCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	hookCtx := ctx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		hookCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		return execution{outcome: "failed", exitCode: -1, message: err.Error()}
@@ -343,6 +362,15 @@ func executeWithOutput(ctx context.Context, cfg project.Config, hook project.Hoo
 		cmd.Stderr = io.MultiWriter(stderr, errOut)
 	}
 	cmd.Env = hookEnvironment(cfg, event, resultPath)
+	if opts.terminal != nil {
+		// An interactive agent needs the terminal itself, not a pipe, and a
+		// terminal type to draw with. Stderr stays teed for the failure tail.
+		cmd.Stdin = opts.terminal
+		if file, ok := out.(*os.File); ok {
+			cmd.Stdout = file
+		}
+		cmd.Env = terminalEnvironment(cmd.Env)
+	}
 	// A backgrounded grandchild can hold the output pipes open after the hook
 	// exits or is killed; bound that wait so a hook cannot outlive its timeout.
 	cmd.WaitDelay = time.Second
@@ -421,6 +449,18 @@ func MinimalEnvironment() []string {
 	return env
 }
 
+// terminalEnvironment adds the terminal description an attached agent draws
+// with. None of these carry credentials.
+func terminalEnvironment(env []string) []string {
+	for _, key := range []string{"TERM", "COLORTERM", "LANG"} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	sort.Strings(env)
+	return env
+}
+
 // ExpandArgv expands {NAME} placeholders in each argv element from values. An
 // unknown name or a value failing D21's checks refuses the whole argv.
 func ExpandArgv(argv []string, values map[string]string) ([]string, error) {
@@ -444,11 +484,12 @@ func ExpandArgv(argv []string, values map[string]string) ([]string, error) {
 	return out, nil
 }
 
-func expand(input string, cfg project.Config, event Event) (string, error) {
+func expand(input string, cfg project.Config, event Event, extra map[string]string) (string, error) {
 	item := eventItem(event)
 	values := map[string]string{"id": item.Ref.ID, "ref": event.Ref, "source": event.Source,
 		"url": item.URL, "root": cfg.Discovery.ControlRoot, "branch": model.BranchName(item),
 		"resource": event.Resource}
+	maps.Copy(values, extra)
 	return scanPlaceholders(input, func(key string) (string, error) {
 		var value string
 		var ok bool

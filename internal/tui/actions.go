@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 type actionChoicesMsg struct {
 	serial  uint64
 	choices []engine.ActionChoice
+	resumes []engine.ResumeChoice
 	err     error
 }
 type actionPreparedMsg struct {
@@ -48,8 +50,14 @@ func (m Model) loadConfiguredActions() tea.Cmd {
 		if !ok {
 			return actionChoicesMsg{serial: serial, err: fmt.Errorf("select an item")}
 		}
-		choices, err := engine.ActionChoices(engine.WithEventCWD(ctx, m.opts.EditorDir), *cfg, row.Ref.Source+":"+row.Ref.ID)
-		return actionChoicesMsg{serial: serial, choices: choices, err: err}
+		ctx, id := engine.WithEventCWD(ctx, m.opts.EditorDir), row.Ref.Source+":"+row.Ref.ID
+		var choices []engine.ActionChoice
+		var err error
+		if len(cfg.Actions) > 0 {
+			choices, err = engine.ActionChoices(ctx, *cfg, id)
+		}
+		resumes, resumeErr := engine.ResumeChoices(ctx, *cfg, id, "")
+		return actionChoicesMsg{serial: serial, choices: choices, resumes: resumes, err: cmp.Or(err, resumeErr)}
 	}
 }
 
@@ -60,7 +68,6 @@ func (m Model) receiveActionChoices(msg actionChoicesMsg) (tea.Model, tea.Cmd) {
 	m.launcher.loading = false
 	if msg.err != nil {
 		m.launcher.err = boundedLine(msg.err.Error())
-		return m, nil
 	}
 	for _, choice := range msg.choices {
 		for _, a := range m.keymap {
@@ -69,6 +76,10 @@ func (m Model) receiveActionChoices(msg actionChoicesMsg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
+	}
+	for _, choice := range msg.resumes {
+		label := strings.ToUpper(choice.Command[:1]) + choice.Command[1:] + " " + cmp.Or(choice.Session.Agent, "agent") + " · " + age(choice.Session.LastSeen, m.now())
+		m.launcher.all = append(m.launcher.all, launcherRow{label: textutil.Line(label), reason: textutil.Line(choice.Disabled), resume: &choice, group: "Sessions"})
 	}
 	m.launcher.rows = m.launcher.all
 	return m, m.filterLauncher()
@@ -132,21 +143,60 @@ func (m Model) runConfiguredAction(choice engine.ActionChoice) tea.Cmd {
 	return tea.Exec(command, func(err error) tea.Msg { return actionMessage(command.result, err) })
 }
 
+// runResume reopens a recorded agent session: in the background when its
+// agent detaches, otherwise attached to the terminal like $EDITOR.
+func (m Model) runResume(choice engine.ResumeChoice) tea.Cmd {
+	cfg, ctx := *m.opts.Automation, m.opts.Context
+	if choice.Detach {
+		return func() tea.Msg {
+			result, err := hooks.StartAction(cfg, choice.Invocation)
+			return resumeMessage(choice, result, err)
+		}
+	}
+	command := &attachedAction{ctx: ctx, cfg: cfg, invocation: choice.Invocation, agent: true}
+	return tea.Exec(command, func(err error) tea.Msg { return resumeMessage(choice, command.result, err) })
+}
+
+// resumeMessage reports a failed agent command's exit status and stderr tail.
+func resumeMessage(choice engine.ResumeChoice, result hooks.ActionResult, err error) tea.Msg {
+	label := strings.ToUpper(choice.Command[:1]) + choice.Command[1:]
+	switch {
+	case err != nil:
+		return actionFinishedMsg{err: err}
+	case result.Detached:
+		return actionFinishedMsg{message: label + " started."}
+	case result.Event.Outcome == "ok":
+		return actionFinishedMsg{message: label + " finished."}
+	}
+	message := label + " " + result.Event.Outcome
+	if code := result.Event.ExitCode; code != nil && *code > 0 {
+		message += fmt.Sprintf(" (exit %d)", *code)
+	}
+	return actionFinishedMsg{message: message + ". " + boundedLine(cmp.Or(result.Event.Message, result.Message))}
+}
+
 // Bubble Tea releases the terminal around Run and restores it before the callback.
-// SetStdin deliberately ignores the terminal: all actions receive JSON stdin.
+// SetStdin ignores the terminal for actions, which receive JSON stdin; an
+// agent session gets the terminal.
 type attachedAction struct {
 	ctx         context.Context
 	cfg         project.Config
 	invocation  hooks.ActionInvocation
+	agent       bool
+	in          io.Reader
 	out, errOut io.Writer
 	result      hooks.ActionResult
 }
 
-func (a *attachedAction) SetStdin(io.Reader)    {}
+func (a *attachedAction) SetStdin(r io.Reader)  { a.in = r }
 func (a *attachedAction) SetStdout(w io.Writer) { a.out = w }
 func (a *attachedAction) SetStderr(w io.Writer) { a.errOut = w }
 func (a *attachedAction) Run() error {
 	var err error
+	if a.agent {
+		a.result, err = hooks.RunAgent(a.ctx, a.cfg, a.invocation, a.in, a.out, a.errOut)
+		return err
+	}
 	a.result, err = hooks.RunAction(a.ctx, a.cfg, a.invocation, a.out, a.errOut)
 	return err
 }

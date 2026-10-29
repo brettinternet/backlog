@@ -353,6 +353,12 @@ Attached actions suspend the TUI like `$EDITOR`; detached ones return at once.
 Bind one with `key:` in its declaration or `action:NAME` in user `keys`. See
 [Automation](automation.md).
 
+Below them, `Sessions` lists the item's recorded agent sessions, newest first,
+as `Resume claude · 2h` or `Fork claude · 2h` for a closed item. A refused
+session shows its reason. Enter runs it like an action; a failure reports its
+exit status and stderr tail, and the session stays listed. See
+[Agent sessions](automation.md#agent-sessions).
+
 ## Coordination
 
 With coordination enabled, wide lists add a Claim column (`mine`, the holder's

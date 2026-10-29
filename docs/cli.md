@@ -372,10 +372,13 @@ set wins, and that variable's value is the agent's own session ID. Built-ins
 detect `claude` (`CLAUDE_CODE_SESSION_ID`), `codex` (`CODEX_THREAD_ID`), and
 `pi` (`PI_SESSION_ID`). Add kinds in user config; `backlog.yaml` and
 `backlog.local.yaml` can't set `agents:`, and `bl doctor` warns if they try.
+`resume` and `fork` reopen a recorded session ([`bl resume`](#bl-resume-id-session---fork--resume)).
 
 ```yaml
 agents:
-  mine: {session: MINE_SESSION_ID}
+  mine:
+    session: MINE_SESSION_ID
+    resume: [mine, --resume, "{agentSession}"]
 ```
 
 ### Contact
@@ -546,6 +549,28 @@ argv: wt switch --create bl-12-debounce-detail-rendering
 cwd:  /home/me/project
 env:  BL_BRANCH BL_EVENT_ID BL_EVENT_ORIGIN BL_HOOK_DEPTH BL_ITEM_ID BL_ITEM_REF BL_PROJECT_ID BL_RESULT BL_ROOT BL_SOURCE HOME PATH
 ```
+
+### `bl resume ID [SESSION] [--fork|--resume]`
+
+Reopens an agent session that worked the item, with its agent's `resume` or
+`fork` command from user config, in the session's recorded checkout. SESSION is
+a session ID or the agent's own session ID; without it, the only resumable
+session is used, and several fail with `usage` listing the candidates. A closed
+item forks when `fork` is configured; `--fork` and `--resume` choose. The agent
+gets the terminal, so `--json` writes its output to stderr. JSON `data` has
+`event` (the `action.finished` event) and `detached`.
+
+Refusals exit 4 and list the candidates in `error.details.candidates`:
+
+| Reason | Meaning |
+| --- | --- |
+| `other-host` | The session ran on another host |
+| `checkout-removed` | The recorded checkout no longer exists |
+| `live` | The session still holds its claim, or a [contact](#contact) channel reports its agent running; the message lists the channels |
+| `no-agent-config` | The agent has no `resume` or `fork` command |
+
+A command that fails exits 5 with its exit status and, under `--json`, its
+stderr tail. See [Automation](automation.md#agent-sessions).
 
 ### `bl events [--follow|-f] [--since ID] [QUERY]`
 
