@@ -12,11 +12,10 @@ import (
 // index and a column inside the padded pane. Mouse capture hides the
 // terminal's own textDrag, so the drag is drawn here and copied on release.
 type textDrag struct {
-	active       bool
-	moved        bool
-	line0, col0  int
-	line1, col1  int
-	copied, text string
+	active      bool
+	moved       bool
+	line0, col0 int
+	line1, col1 int
 }
 
 func (m *Model) beginSelection(col, line int) {
