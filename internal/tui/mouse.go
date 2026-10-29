@@ -16,6 +16,7 @@ type mouseState struct {
 	lastClick    time.Time
 	lastX, lastY int
 	lastSwipe    time.Time
+	sel          textDrag
 }
 
 // Mouse routing reuses the renderer's geometry (tab spans, column layout,
@@ -28,8 +29,12 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case tea.MouseReleaseMsg:
 		m.mouse.dragging = false
-		return m, nil
+		return m, m.finishSelection()
 	case tea.MouseMotionMsg:
+		if m.mouse.sel.active {
+			m.extendSelection(p.X, p.Y)
+			return m, nil
+		}
 		if m.mouse.dragging && m.split() {
 			m.splitWidth = max(30, min(p.X, m.width-31))
 			return m, m.scheduleDetail()
@@ -130,6 +135,9 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		x, width := p.X-detailPad, m.width
 		if split {
 			x, width = x-m.listWidth()-1, m.detailWidth()
+		}
+		if y >= m.detailBodyTop() {
+			m.beginSelection(x, m.detailScroll+y-m.detailBodyTop())
 		}
 		switch {
 		case y == 2: // meta, title, then the tab bar

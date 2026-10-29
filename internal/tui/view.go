@@ -315,9 +315,9 @@ func (m Model) detailPane(width, rows int) []string {
 				if m.detailFocus {
 					bar = t.accent.render("▌")
 				}
-				out[line] = t.selected(fit(bar+blank(detailPad-1)+m.highlightFind(m.detailLines[i]), width))
+				out[line] = t.selected(fit(bar+blank(detailPad-1)+m.highlightSelection(i, m.highlightFind(m.detailLines[i])), width))
 			} else {
-				put(line, m.highlightFind(m.detailLines[i]))
+				put(line, m.highlightSelection(i, m.highlightFind(m.detailLines[i])))
 			}
 			line++
 		}
