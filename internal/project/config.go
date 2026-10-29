@@ -157,11 +157,13 @@ func Resolve(paths Paths, directory string, highContrast *bool) (Config, error) 
 					cfg.SavedViews = appendViews(cfg.SavedViews, entry.layer, entries)
 				}
 				node := entry.node
-				// Agent entries will carry commands (BL-138), so a repository
-				// can't set them.
-				if agents := field(node, "agents"); agents != nil {
-					cfg.Ignored = append(cfg.Ignored, Ignored{Key: "agents", Origin: Provenance{Layer: entry.layer, File: entry.file, Line: agents.Line}})
-					node = withoutField(node, "agents")
+				// Agent entries will carry commands (BL-138) and contact
+				// resolvers run programs, so a repository can't set them.
+				for _, key := range []string{"agents", "contact"} {
+					if value := field(node, key); value != nil {
+						cfg.Ignored = append(cfg.Ignored, Ignored{Key: key, Origin: Provenance{Layer: entry.layer, File: entry.file, Line: value.Line}})
+						node = withoutField(node, key)
+					}
 				}
 				overlay(effective, node, "", Provenance{Layer: entry.layer, File: entry.file}, cfg.Provenance)
 			}
@@ -420,6 +422,15 @@ func validateNode(node *yaml.Node, typ reflect.Type, key string) error {
 	}
 	if typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
+	}
+	if typ == reflect.TypeFor[ContactResolver]() {
+		if node.Kind == yaml.ScalarNode && node.Tag == "!!bool" && node.Value == "false" {
+			return nil
+		}
+		if node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
+			return fail("expected a nonempty argv or false")
+		}
+		return validateNode(node, reflect.TypeFor[[]string](), key)
 	}
 	switch typ.Kind() {
 	case reflect.Struct, reflect.Map:

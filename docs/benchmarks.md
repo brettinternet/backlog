@@ -14,6 +14,7 @@ isolated-host guarantees.
 | --- | --- | --- |
 | `bl show ID` ≤ 30 ms | 10k 12.29 ms; 50k 15.15 ms | BL-48 |
 | `bl show ID` with 100k events, 10k ≤ 30 ms | 20.07 ms (15.20 ms without events, same run) | BL-136 |
+| `bl show ID` with a held session's contact ≤ 30 ms | 25.0 ms with Herdr and Claude peers vs 25.9 ms before contact: median of 25 on the live repository, `worklease` on PATH directly rather than through the mise shim, which adds ~470 ms to both | BL-142 |
 | Warm `bl ls` / `bl next`, 10k ≤ 150 ms | 132.6 / 107.7 ms | BL-48 |
 | Native single-field write ≤ 50 ms | 10k 26.10 ms; 50k 38.66 ms | BL-50 |
 | CLI peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | 116.6 / 383.8 MiB (`ls`) | BL-48 |

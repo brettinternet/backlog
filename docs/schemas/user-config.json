@@ -18,6 +18,21 @@
     "ui": {
       "$ref": "project-config.json#/properties/ui"
     },
+    "contact": {
+      "description": "Contact resolvers looked up for held or recent sessions by bl show. An argv adds a resolver or replaces the built-in herdr or claude-peer of that name; false disables one. Ignored in backlog.yaml and backlog.local.yaml.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {"const": false},
+          {
+            "description": "Argv run without a shell; placeholders {agent}, {agentSession}, {session}, {host}, and {cwd}. Prints a JSON array of {channel, handle, status, detail?}.",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          }
+        ]
+      }
+    },
     "agents": {
       "description": "Agent kinds recorded on event sessions, merged by key over the built-in claude, codex, and pi. Ignored in backlog.yaml and backlog.local.yaml.",
       "type": "object",

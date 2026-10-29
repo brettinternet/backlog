@@ -401,18 +401,47 @@ func hookEnvironment(cfg project.Config, event Event, resultPath string) []strin
 	if event.Resource != "" {
 		values["BL_RESOURCE"] = event.Resource
 	}
-	keys := []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"}
-	env := make([]string, 0, len(values)+len(keys))
-	for _, key := range keys {
-		if value, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+value)
-		}
-	}
+	env := MinimalEnvironment()
 	for key, value := range values {
 		env = append(env, key+"="+value)
 	}
 	sort.Strings(env)
 	return env
+}
+
+// MinimalEnvironment is the credential-free environment a configured process
+// starts from (D17, D21): only PATH, HOME, and the XDG base directories.
+func MinimalEnvironment() []string {
+	var env []string
+	for _, key := range []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
+// ExpandArgv expands {NAME} placeholders in each argv element from values. An
+// unknown name or a value failing D21's checks refuses the whole argv.
+func ExpandArgv(argv []string, values map[string]string) ([]string, error) {
+	out := make([]string, len(argv))
+	for i, arg := range argv {
+		expanded, err := scanPlaceholders(arg, func(key string) (string, error) {
+			value, ok := values[key]
+			if !ok {
+				return "", fmt.Errorf("unknown placeholder {%s}", key)
+			}
+			if err := validateValue(value); err != nil {
+				return "", fmt.Errorf("refused placeholder {%s}: %w", key, err)
+			}
+			return value, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		out[i] = expanded
+	}
+	return out, nil
 }
 
 func expand(input string, cfg project.Config, event Event) (string, error) {

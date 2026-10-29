@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/contact"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -26,7 +27,36 @@ func ItemSessions(ctx context.Context, cfg project.Config, item model.Item, clai
 			message = "event history unavailable: " + err.Error()
 		}
 	}
-	return foldSessions(events, claims, time.Now()), message
+	now := time.Now()
+	sessions := foldSessions(events, claims, now)
+	withContact(ctx, cfg, sessions, now)
+	return sessions, message
+}
+
+// contactWindow is how long after its last event a session without a held
+// claim still gets contact lookup.
+const contactWindow = 24 * time.Hour
+
+// withContact resolves live contact channels for sessions that hold their
+// claim or were seen recently, under contact.Budget (design.md D40).
+func withContact(ctx context.Context, cfg project.Config, sessions []model.ItemSession, now time.Time) {
+	var live []int
+	for i, s := range sessions {
+		held := s.Claim != nil && s.Claim.EndedAt.IsZero() && s.Claim.ExpiresAt.After(now)
+		if s.AgentSession != "" && (held || now.Sub(s.LastSeen) < contactWindow) {
+			live = append(live, i)
+		}
+	}
+	if len(live) == 0 {
+		return
+	}
+	targets := make([]model.ItemSession, len(live))
+	for n, i := range live {
+		targets[n] = sessions[i]
+	}
+	for n, results := range contact.Resolve(ctx, cfg.Contact, targets) {
+		sessions[live[n]].Contact = results
+	}
 }
 
 func foldSessions(events []hooks.Event, claims []model.ClaimEpoch, now time.Time) []model.ItemSession {

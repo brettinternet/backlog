@@ -1,8 +1,12 @@
 package project
 
 import (
+	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Settings is the shared, non-secret project configuration vocabulary. Loading
@@ -27,6 +31,36 @@ type Settings struct {
 	// Agents is honored only from built-ins and user config (design.md D40).
 	Agents  map[string]AgentConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 	History HistoryConfig          `yaml:"history,omitempty" json:"history"`
+	// Contact adds or disables contact resolvers by name; like Agents, it is
+	// honored only from user config (design.md D40).
+	Contact map[string]ContactResolver `yaml:"contact,omitempty" json:"contact,omitempty"`
+}
+
+// ContactResolver is a user contact resolver's argv, or Disabled for false,
+// which turns off the built-in resolver of that name.
+type ContactResolver struct {
+	Argv     []string
+	Disabled bool
+}
+
+func (r *ContactResolver) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!bool" && node.Value == "false" {
+		*r = ContactResolver{Disabled: true}
+		return nil
+	}
+	var argv []string
+	if err := node.Decode(&argv); err != nil || len(argv) == 0 {
+		return fmt.Errorf("line %d: contact resolver must be a nonempty argv or false", node.Line)
+	}
+	*r = ContactResolver{Argv: argv}
+	return nil
+}
+
+func (r ContactResolver) MarshalJSON() ([]byte, error) {
+	if r.Disabled {
+		return []byte("false"), nil
+	}
+	return json.Marshal(r.Argv)
 }
 
 // HistoryConfig chooses where handoffs go and the commit trailer that ties a

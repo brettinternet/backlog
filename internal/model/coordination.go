@@ -71,6 +71,26 @@ type ItemSession struct {
 	Handoff string `json:"handoff,omitempty"`
 	// Ended is done, released, or lapsed; empty while the session is open.
 	Ended string `json:"ended,omitempty"`
+	// Contact is looked up when the session is read, never recorded.
+	Contact []ContactResult `json:"contact,omitempty"`
+}
+
+// ContactResult is one contact resolver's answer for a session: ok with zero
+// or more channels, or unavailable with a reason (design.md D40).
+type ContactResult struct {
+	Resolver string           `json:"resolver"`
+	Status   string           `json:"status"`
+	Reason   string           `json:"reason,omitempty"`
+	Channels []ContactChannel `json:"channels,omitempty"`
+}
+
+// ContactChannel is a live way to reach a session. Status is working, idle,
+// waiting, or unknown.
+type ContactChannel struct {
+	Channel string `json:"channel"`
+	Handle  string `json:"handle"`
+	Status  string `json:"status"`
+	Detail  string `json:"detail,omitempty"`
 }
 type ClaimOutcome string
 

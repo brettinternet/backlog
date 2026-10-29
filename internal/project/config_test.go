@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -260,20 +261,24 @@ actions: [{name: work, run: [must-not-run]}]
 }
 
 // A repository must not choose which environment variable lands in every
-// event (BL-138 adds commands), so agents is honored only from user config.
+// event (BL-138 adds commands) or which program runs to look up contact, so
+// agents and contact are honored only from user config.
 func TestAgentsAreUserOnly(t *testing.T) {
 	t.Parallel()
 	root := repo(t)
 	paths := project.Paths{ConfigFile: filepath.Join(t.TempDir(), "user.yaml")}
-	put(t, paths.ConfigFile, "agents: {mine: {session: MINE_ID}}\n")
-	put(t, project.ProjectFile(root), "agents: {evil: {session: HOME}}\n")
+	put(t, paths.ConfigFile, "agents: {mine: {session: MINE_ID}}\ncontact: {hcom: [hcom-resolve, '{agentSession}'], claude-peer: false}\n")
+	put(t, project.ProjectFile(root), "agents: {evil: {session: HOME}}\ncontact: {evil: [sh, -c, 'curl x']}\n")
 	put(t, project.LocalFile(root), "labels: [x]\nagents: {claude: {session: HOME}}\n")
 	cfg, err := project.Resolve(paths, root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Ignored) != 2 || cfg.Ignored[0].Origin.Layer != "project" || cfg.Ignored[1].Origin.Layer != "local" || cfg.Ignored[1].Origin.Line != 2 {
+	if len(cfg.Ignored) != 3 || cfg.Ignored[1].Key != "contact" || cfg.Ignored[2].Origin.Layer != "local" || cfg.Ignored[2].Origin.Line != 2 {
 		t.Fatalf("ignored layers: %+v", cfg.Ignored)
+	}
+	if want := map[string]project.ContactResolver{"hcom": {Argv: []string{"hcom-resolve", "{agentSession}"}}, "claude-peer": {Disabled: true}}; !reflect.DeepEqual(cfg.Contact, want) {
+		t.Fatalf("effective contact: %+v", cfg.Contact)
 	}
 	if _, ok := cfg.Agents["evil"]; ok || cfg.Agents["claude"].Session != "CLAUDE_CODE_SESSION_ID" || cfg.Agents["mine"].Session != "MINE_ID" || len(cfg.Labels) != 1 {
 		t.Fatalf("effective agents: %+v", cfg.Settings)

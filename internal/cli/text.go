@@ -262,6 +262,9 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 		}
 		for _, s := range detail.Sessions {
 			b.WriteString(textutil.Line(sessionLine(s)) + "\n")
+			if line := contactLine(s.Contact); line != "" {
+				b.WriteString("  contact: " + textutil.Line(line) + "\n")
+			}
 			if s.Handoff != "" {
 				b.WriteString("  " + strings.ReplaceAll(textutil.Sanitize(s.Handoff), "\n", "\n  ") + "\n")
 			}
@@ -310,6 +313,22 @@ func sessionLine(s model.ItemSession) string {
 		fields = append(fields, "open")
 	}
 	return strings.Join(fields, "  ")
+}
+
+// contactLine lists a session's channels as "channel handle status" and each
+// unavailable resolver with its reason; an ok resolver with no channel adds
+// nothing.
+func contactLine(results []model.ContactResult) string {
+	var parts []string
+	for _, r := range results {
+		if r.Status != "ok" {
+			parts = append(parts, r.Resolver+" unavailable: "+r.Reason)
+		}
+		for _, c := range r.Channels {
+			parts = append(parts, c.Channel+" "+c.Handle+" "+c.Status)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // writeDoctor prints one aligned line per check; a fix follows only the

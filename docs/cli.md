@@ -108,12 +108,18 @@ metadata and only that section key. A missing section is `""`.
   read, `data.claimsError` says why and `show` still succeeds.
 - `data.sessions` folds the item's [events](events.md) and claims by session,
   oldest first: `{id, agent?, agentSession?, host?, cwd?, branch?, firstSeen,
-  lastSeen, phases?, claim?, ended?}`. `phases` are the status categories the
-  session's events saw. `ended` is `done` (the session closed the item),
-  `released`, or `lapsed`; open sessions omit it. A claim-only session, such as
-  one from another host, has only `claim`. If events can't be read,
-  `data.sessionsError` says why and `show` still succeeds. Text output adds a
-  Sessions section, one line per session.
+  lastSeen, phases?, claim?, handoff?, ended?, contact?}`. `phases` are the
+  status categories the session's events saw. `ended` is `done` (the session
+  closed the item), `released`, or `lapsed`; open sessions omit it. A
+  claim-only session, such as one from another host, has only `claim`. If
+  events can't be read, `data.sessionsError` says why and `show` still
+  succeeds. Text output adds a Sessions section, one line per session.
+- `contact` lists how to reach a session that holds its claim or was seen in
+  the last 24 hours, looked up now and never stored (see
+  [Contact](#contact)): one `{resolver, status, reason?, channels?}` per
+  resolver, where `status` is `ok` or `unavailable` and each channel is
+  `{channel, handle, status, detail?}` with a live `status` of `working`,
+  `idle`, `waiting`, or `unknown`.
 
 `item.version` is the source's opaque version: a content hash for files, a
 composite fingerprint for GitHub. Pass it unchanged to `--if-version`.
@@ -370,6 +376,35 @@ detect `claude` (`CLAUDE_CODE_SESSION_ID`), `codex` (`CODEX_THREAD_ID`), and
 ```yaml
 agents:
   mine: {session: MINE_SESSION_ID}
+```
+
+### Contact
+
+`bl show` looks up live ways to reach each held or recent session from its
+recorded agent, agent session, and host. `bl` never sends a message; use the
+channel's own tool.
+
+| Resolver | Source | Handle |
+| --- | --- | --- |
+| `herdr` | `herdr agent list`, matching the pane's agent session | pane ID, for `herdr agent prompt` |
+| `claude-peer` | Claude Code's `sessions/*.json` under `CLAUDE_CONFIG_DIR` or `~/.claude`, for `claude` sessions | peer name, for `SendMessage` |
+
+Built-ins report `unavailable: other host` for a session recorded on another
+host. All resolvers share a 100 ms budget, and a slow one reports
+`unavailable: timeout` without hiding the others. Text output adds a
+`contact:` line under the session.
+
+User config can add resolvers, replace a built-in by name, or disable one with
+`false`; `backlog.yaml` and `backlog.local.yaml` can't set `contact:`. A
+resolver is an argv run without a shell in the hook environment (PATH, HOME,
+and the XDG directories only), with `{agent}`, `{agentSession}`, `{session}`,
+`{host}`, and `{cwd}` checked like hook placeholders. It prints a JSON array of
+channels on stdout:
+
+```yaml
+contact:
+  hcom: [hcom-resolve, "{agentSession}"]   # prints [{"channel":"hcom","handle":"…","status":"idle"}]
+  claude-peer: false
 ```
 
 Every Worklease call runs from the control root, even from a linked worktree.
