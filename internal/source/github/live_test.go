@@ -360,11 +360,11 @@ func TestLiveLabelStatus(t *testing.T) {
 	await(func(i model.Item) bool {
 		return i.Status == active && i.Category == model.Active && labels(active, other)(i)
 	})
-	if err = setStatus("unknown"); err != nil {
+	if err = setStatus("open"); err != nil {
 		t.Fatal(err)
 	}
 	await(func(i model.Item) bool {
-		return i.Status == "unknown" && i.Category == model.Backlog && labels(other)(i)
+		return i.Status == "open" && i.Category == model.Todo && labels(other)(i)
 	})
 	if err = setStatus("closed"); err != nil {
 		t.Fatal(err)

@@ -728,8 +728,8 @@ func TestVersionedCapabilityGatedWrites(t *testing.T) {
 	}
 }
 
-// Label statuses fail closed: several or no mapped labels are never ready, and
-// a status write swaps only mapped labels in one mutation.
+// Label statuses: no mapped label stays open, several fail closed and are never
+// ready, and a status write swaps only mapped labels in one mutation.
 func TestLabelStatuses(t *testing.T) {
 	s, f := newFixture(t, func(o *Options) {
 		o.Project, o.StatusLabels = nil, map[string]string{"ready": "todo", "in-progress": "active"}
@@ -746,8 +746,11 @@ func TestLabelStatuses(t *testing.T) {
 	if current, err = apply("in-progress"); err != nil || current.Status != "in-progress" || current.Category != model.Active || !slices.Equal(f.labels, []string{"bug", "in-progress"}) {
 		t.Fatalf("label status write: %+v %v %v", current, err, f.labels)
 	}
-	if current, err = apply("unknown"); err != nil || current.Status != "unknown" || current.Category != model.Backlog || !slices.Equal(f.labels, []string{"bug"}) {
-		t.Fatalf("unknown write: %+v %v %v", current, err, f.labels)
+	if current, err = apply("open"); err != nil || current.Status != "open" || current.Category != model.Todo || !slices.Equal(f.labels, []string{"bug"}) {
+		t.Fatalf("open write: %+v %v %v", current, err, f.labels)
+	}
+	if current, err = apply("open"); err != nil || current.Status != "open" || f.writes != 2 {
+		t.Fatalf("open write without mapped labels: %+v %v writes=%d", current, err, f.writes)
 	}
 	f.labels = []string{"ready", "In-Progress"}
 	delta, err := s.Load(ctx, source.Cursor{})

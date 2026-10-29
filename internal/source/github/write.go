@@ -84,12 +84,14 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			if !ok {
 				return model.Item{}, source.Refuse("rejected", "status must be a string")
 			}
-			if s.statusLabels != nil && v != "open" && v != "closed" {
-				if labelStatus = s.statusLabels[strings.ToLower(v)]; v == "unknown" {
+			if s.statusLabels != nil && v != "closed" {
+				// Open reopens a closed issue, else removes the mapped labels,
+				// which is decided against the fresh read below.
+				if labelStatus = s.statusLabels[strings.ToLower(v)]; v == "open" {
 					labelStatus = v
 				}
 				if labelStatus == "" {
-					return model.Item{}, source.Refuse("rejected", "open, closed, unknown or a configured status label required")
+					return model.Item{}, source.Refuse("rejected", "open, closed or a configured status label required")
 				}
 				break
 			}
@@ -138,10 +140,14 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !projectWrite && !s.issueWrite) {
 		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
 	}
-	if labelStatus != "" {
+	if closed := current.Category == model.Done || current.Category == model.Canceled; labelStatus == "open" && closed {
+		payload = map[string]any{"state": "open", "state_reason": "reopened"}
+	} else if labelStatus == "open" && current.Status == "open" {
+		return current, nil
+	} else if labelStatus != "" {
 		// Replace the mapped labels in the same write that keeps the rest, so
 		// a status change is still one mutation.
-		if current.Category == model.Done || current.Category == model.Canceled {
+		if closed {
 			return model.Item{}, source.Refuse("rejected", "issue is closed; set status=open first")
 		}
 		labels := []string{}
@@ -150,7 +156,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 				labels = append(labels, label)
 			}
 		}
-		if labelStatus != "unknown" {
+		if labelStatus != "open" {
 			labels = append(labels, labelStatus)
 		}
 		payload = map[string]any{"labels": labels}

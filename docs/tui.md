@@ -22,7 +22,7 @@ exact name instead of the last one used. Every key is remappable, and the
    `NO_COLOR` and `--high-contrast`.
 
 Status edits offer only the statuses the item's source accepts (design.md
-D35): GitHub's `open`, `closed`, `unknown`, and mapped labels or project
+D35): GitHub's `open`, `closed`, and mapped labels or project
 options; Linear's team states; Jira's transitions discovered for the issue,
 omitting unsupported required-field transitions; and for other sources the
 configured statuses, narrowed by `sources[].statuses`. Replace a

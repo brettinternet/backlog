@@ -112,7 +112,7 @@ been recorded.
 
 ## Label statuses
 
-Without Projects v2, every open issue is `open` and ready. To give issues
+Without Projects v2, every open issue is `open` and ready. To give issues more
 statuses, map labels to categories:
 
 ```yaml
@@ -122,21 +122,24 @@ sources:
     repo: acme/app
     account: personal
     statusLabels:
-      ready: todo
       in-progress: active
 statuses:
-  - {key: unknown, name: Triage, category: backlog}
-  - {key: closed, name: Closed, category: done}
-  - {key: ready, name: Ready, category: todo}
+  - {key: open, name: Open, category: todo}
   - {key: in-progress, name: In Progress, category: active}
+  - {key: closed, name: Closed, category: done}
 workflow: {start: in-progress, done: closed}
 ```
+
+A label named like a native status shares its key, so native tasks and issues
+share a column. Fold `open` and `closed` into native statuses with `includes`
+([format](format.md)). To keep unlabeled issues from being ready, map a todo
+label such as `ready: todo` and leave `open` out of `ready.statuses`.
 
 | Issue | Status | Category |
 | --- | --- | --- |
 | Closed | `closed` | done, or canceled for not planned |
 | Open, one mapped label | the label | as mapped |
-| Open, no mapped label | `unknown` | backlog |
+| Open, no mapped label | `open` | todo |
 | Open, several mapped labels | `unknown` | backlog, with a warning naming them |
 
 Label names match case-insensitively, as on GitHub, and mapped labels stay in
@@ -145,14 +148,14 @@ Label names match case-insensitively, as on GitHub, and mapped labels stay in
 | Write | Effect |
 | --- | --- |
 | `status=LABEL` | Replaces the mapped labels with this one, keeping the rest |
-| `status=unknown` | Removes the mapped labels |
+| `status=open` | Reopens a closed issue, else removes the mapped labels |
 | `status=closed` | Closes the issue as completed |
-| `status=open` | Reopens it |
 
 Each is one write. A label status on a closed issue is refused; reopen it first.
+A reopened issue keeps its labels, so one mapped label becomes its status.
 
 `bl start` and `bl done` resolve per source ([format](format.md#frontmatter-keys)).
-A label source accepts `open`, `closed`, `unknown`, and its mapped labels, so
+A label source accepts `open`, `closed`, and its mapped labels, so
 `done` closes the issue whatever `workflow.done` says, and `start` takes
 `workflow.start` when it is a mapped active label, or the only one. A project
 mixing native tasks with `workflow: {start: in-progress, done: done}` works for
@@ -216,9 +219,9 @@ them:
 
 | Key | Category | When |
 | --- | --- | --- |
-| `open` | todo | Open issue without a project binding or status labels |
+| `open` | todo | Open issue without a project binding or a status label |
 | `closed` | done, or canceled for not planned | Closed issue |
-| `unknown` | backlog | Open issue not in the project, with an unmapped option, or without exactly one status label |
+| `unknown` | backlog | Open issue not in the project, with an unmapped option, or with several status labels |
 | `draft` | backlog | Projects v2 draft issue |
 | option ID | as mapped in `options` | Open issue with a mapped option |
 | label | as mapped in `statusLabels` | Open issue with that one status label |

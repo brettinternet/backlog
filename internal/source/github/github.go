@@ -572,8 +572,8 @@ func validNumber(id string) (int, error) {
 }
 
 // StatusChoices derives the writable statuses from config, as Apply checks
-// them: open and closed, plus unknown and the mapped labels, or the project
-// option IDs when the project allows writes. A draft keeps draft and, with a
+// them: open and closed, plus the mapped labels, or the project option IDs
+// when the project allows writes. A draft keeps draft and, with a
 // repo to convert it in, may take any of those; nothing becomes a draft again.
 func (s *Source) StatusChoices(_ context.Context, item model.Item) ([]model.StatusChoice, bool, error) {
 	if draftID(item.Ref.ID) {
@@ -587,9 +587,7 @@ func (s *Source) StatusChoices(_ context.Context, item model.Item) ([]model.Stat
 	// Closing is done on GitHub, even beside a project's Done option.
 	choices := []model.StatusChoice{{Key: "open", Category: model.Todo}, {Key: "closed", Category: model.Done, Default: true}}
 	mapping := s.o.StatusLabels
-	if s.statusLabels != nil {
-		choices = append(choices, model.StatusChoice{Key: "unknown", Category: model.Backlog})
-	} else if s.o.Project != nil && s.o.Project.AllowWrites {
+	if s.statusLabels == nil && s.o.Project != nil && s.o.Project.AllowWrites {
 		mapping = s.o.Project.Options
 	}
 	for _, key := range slices.Sorted(maps.Keys(mapping)) {
@@ -703,10 +701,13 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue, p pro
 		item.Labels = append(item.Labels, v.Name)
 	}
 	if s.statusLabels != nil && row.State == "OPEN" {
-		// Several mapped labels fail closed rather than guess one.
-		item.Status, item.Category = "unknown", model.Backlog
-		if mapped := s.mappedLabels(item.Labels); len(mapped) == 1 {
+		// No mapped label stays open; several fail closed rather than guess one.
+		switch mapped := s.mappedLabels(item.Labels); len(mapped) {
+		case 0:
+		case 1:
 			item.Status, item.Category = mapped[0], model.StatusCategory(s.o.StatusLabels[mapped[0]])
+		default:
+			item.Status, item.Category = "unknown", model.Backlog
 		}
 	}
 	for _, edge := range []struct {
