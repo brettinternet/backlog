@@ -389,8 +389,8 @@ or update time, and again to reverse. Click a criterion to select it, or its box
 to toggle it. Click a relation to select it; double-click to open it. Click the
 query in the status bar to edit it there. The wheel moves three rows, or scrolls
 detail under the pointer; a sideways swipe moves one board column. Drag the
-divider to resize. Drag across detail text to select it; release copies it
-(OSC 52).
+divider to resize. Drag across detail text to select it, moving past an edge to scroll;
+release copies it (OSC 52).
 
 In the palette, pickers, and completion, the wheel moves the highlight and a
 click picks a row, or toggles it in a multi-select. Clicking the query being

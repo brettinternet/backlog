@@ -29,7 +29,16 @@ func (m *Model) extendSelection(x, y int) {
 	if m.split() {
 		col -= m.listWidth() + 1
 	}
-	row := max(0, min(y-m.bodyY()-m.detailBodyTop(), m.detailVisible()-1))
+	row := y - m.bodyY() - m.detailBodyTop()
+	// Each motion event past an edge scrolls a line, so a drag reaches text
+	// beyond the visible rows.
+	switch {
+	case row < 0:
+		m.scrollDetail(-1)
+	case row >= m.detailVisible():
+		m.scrollDetail(1)
+	}
+	row = max(0, min(row, m.detailVisible()-1))
 	s.line1 = max(0, min(m.detailScroll+row, len(m.detailLines)-1))
 	s.col1 = max(0, col)
 	s.moved = true
