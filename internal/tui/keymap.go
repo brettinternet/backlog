@@ -20,7 +20,10 @@ import (
 type action struct {
 	id, label, canonical, unavailable string
 	group                             string // starts a help section
-	bindings                          []string
+	// follows names an action whose binding this one's may extend: that
+	// action runs at once, and the next key replaces it with this one.
+	follows  string
+	bindings []string
 }
 
 // searchAliases are words the palette and help also match an action by, so
@@ -79,8 +82,12 @@ func defaultKeymap() []action {
 		{id: "half-up", label: "Half page up", canonical: "ctrl+u", bindings: []string{"ctrl+u", "pageup"}},
 		{id: "page-down", label: "Page down", canonical: "ctrl+f", bindings: []string{"ctrl+f", "ctrl+v"}},
 		{id: "page-up", label: "Page up", canonical: "ctrl+b", bindings: []string{"ctrl+b", "alt+v"}},
-		{id: "previous-group", label: "Previous group", canonical: "[", bindings: []string{"["}},
-		{id: "next-group", label: "Next group", canonical: "]", bindings: []string{"]"}},
+		{id: "previous-group", label: "Previous group / file", canonical: "[", bindings: []string{"["}},
+		{id: "next-group", label: "Next group / file", canonical: "]", bindings: []string{"]"}},
+		{id: "previous-hunk", label: "Previous hunk", canonical: "[ c", follows: "previous-group", bindings: []string{"[ c"}},
+		{id: "next-hunk", label: "Next hunk", canonical: "] c", follows: "next-group", bindings: []string{"] c"}},
+		{id: "previous-tour-step", label: "Previous tour step", canonical: "[ t", follows: "previous-group", bindings: []string{"[ t"}},
+		{id: "next-tour-step", label: "Next tour step", canonical: "] t", follows: "next-group", bindings: []string{"] t"}},
 		{id: "left", label: "Back / parent / left", canonical: "h", bindings: []string{"h", "left"}},
 		{id: "right", label: "Open / child / right", canonical: "l", bindings: []string{"l", "right"}},
 		{id: "go-to", label: "Go to item", bindings: []string{"ctrl+p"}},
@@ -213,6 +220,10 @@ func buildKeymap(overrides map[string]string, configured ...project.ActionConfig
 			return nil, fmt.Errorf("keys: unknown action %q", id)
 		}
 	}
+	follows := map[string]string{}
+	for _, a := range actions {
+		follows[a.id] = a.follows
+	}
 	type bound struct{ key, id string }
 	var bindings []bound
 	for _, a := range actions {
@@ -226,7 +237,8 @@ func buildKeymap(overrides map[string]string, configured ...project.ActionConfig
 				}
 			}
 			for _, b := range bindings {
-				if key == b.key || strings.HasPrefix(key, b.key+" ") || strings.HasPrefix(b.key, key+" ") {
+				extends := strings.HasPrefix(key, b.key+" ") && follows[a.id] == b.id || strings.HasPrefix(b.key, key+" ") && follows[b.id] == a.id
+				if !extends && (key == b.key || strings.HasPrefix(key, b.key+" ") || strings.HasPrefix(b.key, key+" ")) {
 					return nil, fmt.Errorf("keys: conflicting bindings %q (%s) and %q (%s)", key, a.id, b.key, b.id)
 				}
 			}
@@ -288,12 +300,19 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 		m.inputSerial++
 		return m, nil
 	}
-	// On the Diff tab [ and ] jump files, and c after one jumps hunks
-	// instead, t tour steps.
-	if prefix := m.prefix; prefix == "[" || prefix == "]" {
-		if (key == "c" || key == "t") && m.detailFocus && m.detailTab == tabChangeDiff {
-			return m.canonicalKey(key)
+	// An action that follows the one just run replaces it with its last
+	// canonical key, while that action's first keys are still armed: on the
+	// Diff tab ] jumps a file, and c after it jumps a hunk from where ] began.
+	if previous := m.follows; previous != "" {
+		m.follows = ""
+		for _, a := range m.keymap {
+			keys := strings.Fields(a.canonical)
+			if a.follows != "" && slices.Contains(a.bindings, previous+" "+key) && m.prefix == strings.Join(keys[:len(keys)-1], " ") {
+				return m.canonicalKey(keys[len(keys)-1])
+			}
 		}
+	}
+	if m.prefix == "[" || m.prefix == "]" {
 		m.prefix = ""
 	}
 	sequence := key
@@ -303,6 +322,11 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 	for _, a := range m.keymap {
 		if slices.Contains(a.bindings, sequence) {
 			m.keyPrefix = ""
+			for _, b := range m.keymap {
+				if b.follows == a.id {
+					m.follows = sequence
+				}
+			}
 			return m.executeAction(a)
 		}
 	}
@@ -348,9 +372,9 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// A list action's later keys would otherwise reach detail as item keys:
-	// f s would open the status picker.
-	if m.disabledReason(a) == focusList {
-		m.notice = "Disabled: " + focusList
+	// f s would open the status picker. A Diff jump's would act on the list.
+	if reason := m.disabledReason(a); reason == focusList || reason == focusDiff {
+		m.notice = "Disabled: " + reason
 		return m, nil
 	}
 	switch a.id {
@@ -381,7 +405,15 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-const focusList = "focus the list first"
+const (
+	focusList = "focus the list first"
+	focusDiff = "focus a change's Diff first"
+)
+
+// onDiff reports focus on a change view's Diff tab, where [ and ] jump files.
+func (m Model) onDiff() bool {
+	return m.detailOpen && m.detailFocus && m.detailTab == tabChangeDiff
+}
 
 // listViewAction reports a filter, sort, group, fold or layout action, which
 // changes the list without acting on an item.
@@ -399,6 +431,12 @@ func (m Model) disabledReason(a action) string {
 	}
 	if a.id == "go-to" && m.goToWorker == nil {
 		return "go-to search is unavailable"
+	}
+	if a.follows != "" {
+		if !m.onDiff() {
+			return focusDiff
+		}
+		return ""
 	}
 	if a.id == "save-view" && m.opts.SaveView == nil {
 		return "view saving is unavailable"

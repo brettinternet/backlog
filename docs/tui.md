@@ -584,7 +584,7 @@ to show the hidden tab beside them. In detail, click `⌫ back` or
 header focuses it, and its edge `‹`/`›` focus the hidden column beside them; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
 to toggle it. Click a relation to select it; double-click to open it. Click a
-change to select it. Click a
+change, or a change's commit, to select it; double-click to open it. Click a
 History entry, or any line of its expansion, to select it; click its `▸` or
 double-click to expand or collapse it, and click `! resume` to run it. Click the
 query in the status bar to edit it there. The wheel moves three rows, or scrolls
@@ -617,7 +617,9 @@ fzf. Alt keys need a terminal that sends Option/Alt as Meta.
 Remap in user config by action ID. An override replaces every default binding;
 an empty value unbinds. `ctrl+` takes a letter or arrow; `alt+` takes any
 character except a capital letter. Unknown actions, invalid keys, collisions,
-and prefix conflicts stop the TUI at startup and name both bindings. To swap
+and prefix conflicts stop the TUI at startup and name both bindings, except
+that a hunk or tour step jump may extend its file jump's binding: the file
+jump runs at once and the next key replaces it. To swap
 two actions, override both:
 
 ```yaml
@@ -646,8 +648,12 @@ keys:
 | `half-up` | `ctrl+u`, `pageup` | Half page up |
 | `page-down` | `ctrl+f`, `ctrl+v` | Page down |
 | `page-up` | `ctrl+b`, `alt+v` | Page up |
-| `previous-group` | `[` | Previous group |
-| `next-group` | `]` | Next group |
+| `previous-group` | `[` | Previous group / file |
+| `next-group` | `]` | Next group / file |
+| `previous-hunk` | `[ c` | Previous hunk |
+| `next-hunk` | `] c` | Next hunk |
+| `previous-tour-step` | `[ t` | Previous tour step |
+| `next-tour-step` | `] t` | Next tour step |
 | `left` | `h`, `left` | Back / parent / left |
 | `right` | `l`, `right` | Open / child / right |
 | `go-to` | `ctrl+p` | Go to item |

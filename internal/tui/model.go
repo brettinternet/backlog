@@ -206,6 +206,7 @@ type Model struct {
 	keymap                   []action
 	keyError                 error
 	keyPrefix                string
+	follows                  string // the sequence just run that a following action may replace
 	launcher                 launcherState
 	launcherSerial           uint64
 	goToSession              uint64
