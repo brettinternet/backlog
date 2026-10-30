@@ -62,6 +62,9 @@ Only pull requests in `origin`'s repository join a local branch by head or a
 `Merge pull request #N` subject by number; another forge's pull requests link
 by their head branch name, title, and body alone.
 
+A [`github-pulls` source](github.md#pull-requests-as-items) lists the pull
+requests these rules link to no item as items of their own (D44).
+
 ## Configuration
 
 ```yaml

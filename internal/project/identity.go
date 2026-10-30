@@ -2,6 +2,7 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -73,9 +74,59 @@ func (cfg Config) Identities() map[string]string {
 				continue
 			}
 			me = account.User
+		case "github-pulls":
+			account, err := cfg.ForgeAccount(c.PullsForge())
+			if err != nil {
+				continue
+			}
+			me = account.User
 		}
 		if me != "" {
 			out[c.ID] = me
+		}
+	}
+	return out
+}
+
+// ForgeAccount is the account a forge reads through, as does a github-pulls
+// source: the named account, else that of a GitHub source reading the same
+// repository, else the only account of the forge's type for its host.
+func (cfg Config) ForgeAccount(f ForgeConfig) (AccountConfig, error) {
+	if f.Account != "" {
+		return cfg.SourceAccount(SourceConfig{ID: "forge", Type: f.Type, Host: f.Host, Account: f.Account})
+	}
+	for _, s := range cfg.Sources {
+		host := s.Host
+		if host == "" {
+			host = "github.com"
+		}
+		if f.Type == "github" && s.Type == "github" && host == f.Host && strings.EqualFold(s.Repo, f.Repo) {
+			return cfg.SourceAccount(s)
+		}
+	}
+	found := cfg.HostAccounts(f.Type, f.Host)
+	if len(found) != 1 {
+		return AccountConfig{}, fmt.Errorf("name one of the %s accounts for %s", map[string]string{"github": "GitHub", "gitlab": "GitLab"}[f.Type], f.Host)
+	}
+	found[0].Provider = f.Type
+	return found[0], nil
+}
+
+// PullsForge is the forge a github-pulls source reads.
+func (c SourceConfig) PullsForge() ForgeConfig {
+	host := c.Host
+	if host == "" {
+		host = "github.com"
+	}
+	return ForgeConfig{Type: "github", Host: host, Repo: c.Repo, Account: c.Account}
+}
+
+// HostAccounts are cfg's accounts of kind for host.
+func (cfg Config) HostAccounts(kind, host string) []AccountConfig {
+	var out []AccountConfig
+	for _, a := range cfg.Accounts[kind] {
+		if a.Host == host {
+			out = append(out, a)
 		}
 	}
 	return out

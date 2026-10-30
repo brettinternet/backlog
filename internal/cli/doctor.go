@@ -363,10 +363,13 @@ func accountsCheck(cfg project.Config) doctorCheck {
 	ready := 0
 	for i, s := range cfg.Sources {
 		// An untrusted source is inert; the trust check reports it.
-		if s.Type != "github" && s.Type != "linear" && s.Type != "jira" || cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)) != nil {
+		if s.Type != "github" && s.Type != "linear" && s.Type != "jira" && s.Type != "github-pulls" || cfg.RequireTrusted(fmt.Sprintf("sources[%d]", i)) != nil {
 			continue
 		}
 		account, err := cfg.SourceAccount(s)
+		if s.Type == "github-pulls" {
+			account, err = cfg.ForgeAccount(s.PullsForge())
+		}
 		if err != nil {
 			return doctorCheck{"accounts", "fail", "Source " + s.ID + ": " + err.Error(), "Add the source's account to user config; see bl auth status"}
 		}
@@ -411,6 +414,10 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 		}
 		if s.Type == "github" {
 			c.Message = "GitHub configured; reads verify credentials, repository and project bindings"
+			continue
+		}
+		if s.Type == "github-pulls" {
+			c.Message = "GitHub pull requests configured; reads verify credentials and repository"
 			continue
 		}
 		if s.Type == "external" {

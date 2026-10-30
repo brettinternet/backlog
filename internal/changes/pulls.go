@@ -18,19 +18,26 @@ const MaxPulls = 1000
 type pullCache struct {
 	Repo   string
 	Cursor time.Time
-	Pulls  []PullRequest
+	// Fetched is when the last successful refresh began.
+	Fetched time.Time
+	Pulls   []PullRequest
 }
 
 // RefreshPulls merges a forge's newest reads into its cache at path and
 // returns the merged list, redacted before anything is kept or shown, as
 // provider activity is. fetch reads every open pull request, whose checks
 // change without touching its update time, and every other one updated since
-// the cached cursor. On failure it returns the cached list with the error, so
-// its entries read as stale.
-func RefreshPulls(path, repo string, redact func(string) string, fetch func(since time.Time) (open, updated []PullRequest, cursor time.Time, err error)) ([]PullRequest, error) {
+// the cached cursor. A cache refreshed within fresh is returned without a
+// fetch, so readers sharing it add no request. On failure it returns the
+// cached list with the error, so its entries read as stale.
+func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) string, fetch func(since time.Time) (open, updated []PullRequest, cursor time.Time, err error)) ([]PullRequest, error) {
 	var cached pullCache
 	if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &cached) == nil && cached.Repo != repo {
 		cached = pullCache{}
+	}
+	started := time.Now()
+	if cached.Repo == repo && started.Sub(cached.Fetched) < fresh {
+		return redactPulls(cached, redact)
 	}
 	open, updated, cursor, err := fetch(cached.Cursor)
 	if err != nil {
@@ -50,7 +57,7 @@ func RefreshPulls(path, repo string, redact func(string) string, fetch func(sinc
 	}
 	slices.SortStableFunc(merged, func(a, b PullRequest) int { return b.Updated.Compare(a.Updated) })
 	merged = merged[:min(len(merged), MaxPulls)]
-	data, err := json.Marshal(pullCache{Repo: repo, Cursor: cursor, Pulls: merged})
+	data, err := json.Marshal(pullCache{Repo: repo, Cursor: cursor, Fetched: started, Pulls: merged})
 	var redacted pullCache
 	if err == nil {
 		data = []byte(redact(string(data)))
@@ -63,6 +70,20 @@ func RefreshPulls(path, repo string, redact func(string) string, fetch func(sinc
 		cache.WriteFile(path, data)
 	}
 	return redacted.Pulls, nil
+}
+
+// redactPulls redacts a cached list again, for secrets registered since it
+// was written.
+func redactPulls(cached pullCache, redact func(string) string) ([]PullRequest, error) {
+	data, err := json.Marshal(cached.Pulls)
+	var pulls []PullRequest
+	if err == nil {
+		err = json.Unmarshal([]byte(redact(string(data))), &pulls)
+	}
+	if err != nil {
+		return nil, errors.New("invalid pull request data")
+	}
+	return pulls, nil
 }
 
 const (

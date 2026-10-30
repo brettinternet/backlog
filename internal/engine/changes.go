@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/model"
@@ -46,7 +47,7 @@ func forges(p project.Config) []changes.Forge {
 			return nil
 		}
 		for _, kind := range []string{"github", "gitlab"} {
-			if len(hostAccounts(p, kind, host)) == 1 {
+			if len(p.HostAccounts(kind, host)) == 1 {
 				configs = append(configs, project.ForgeConfig{Type: kind, Host: host, Repo: repo})
 			}
 		}
@@ -77,58 +78,54 @@ func forges(p project.Config) []changes.Forge {
 }
 
 func newForge(p project.Config, f project.ForgeConfig) (changes.Forge, error) {
-	account, err := forgeAccount(p, f)
+	if f.Type == "gitlab" {
+		account, err := p.ForgeAccount(f)
+		if err != nil {
+			return nil, err
+		}
+		return gitlab.NewForge(gitlab.Options{Host: f.Host, Repo: f.Repo, Account: account, Secrets: providerSecrets, Credentials: providerCredentialsFor(p)}, forgePath(p, f, account))
+	}
+	return githubForge(p, f)
+}
+
+// githubForges share one forge per cache file in the process, so the changes
+// tracker and a github-pulls source refresh it under one lock (design.md D44).
+var githubForges sync.Map
+
+func githubForge(p project.Config, f project.ForgeConfig) (*github.Forge, error) {
+	account, err := p.ForgeAccount(f)
 	if err != nil {
 		return nil, err
 	}
-	id := "forge:" + f.Host + "/" + f.Repo
+	path := forgePath(p, f, account)
+	if forge, ok := githubForges.Load(path); ok && path != "" {
+		return forge.(*github.Forge), nil
+	}
+	forge, err := github.NewForge(github.Options{ID: "forge:" + f.Host + "/" + f.Repo, Host: f.Host, Repo: f.Repo, Account: account, Secrets: providerSecrets, Credentials: providerCredentialsFor(p)}, path)
+	if err != nil || path == "" {
+		return forge, err
+	}
+	shared, _ := githubForges.LoadOrStore(path, forge)
+	return shared.(*github.Forge), nil
+}
+
+// forgePath is f's pull request cache, the same for every account name that
+// resolves to one user.
+func forgePath(p project.Config, f project.ForgeConfig, account project.AccountConfig) string {
+	if p.Paths.CacheDir == "" {
+		return ""
+	}
+	// GitHub repository names ignore case, so a source and origin spelled
+	// differently share one cache.
+	f.Account = ""
+	if f.Type == "github" {
+		f.Repo = strings.ToLower(f.Repo)
+	}
 	identity, _ := json.Marshal(struct {
 		Forge project.ForgeConfig
 		User  string
 	}{f, account.User})
-	path := ""
-	if p.Paths.CacheDir != "" {
-		path = strings.TrimSuffix(providerCache(p, id, string(identity), account).Path, ".sqlite") + ".pulls.json"
-	}
-	if f.Type == "gitlab" {
-		return gitlab.NewForge(gitlab.Options{Host: f.Host, Repo: f.Repo, Account: account, Secrets: providerSecrets, Credentials: providerCredentialsFor(p)}, path)
-	}
-	return github.NewForge(github.Options{ID: id, Host: f.Host, Repo: f.Repo, Account: account, Secrets: providerSecrets, Credentials: providerCredentialsFor(p)}, path)
-}
-
-// forgeAccount is the named account, else that of a GitHub source reading
-// the same repository, else the only account of the forge's type for its
-// host.
-func forgeAccount(p project.Config, f project.ForgeConfig) (project.AccountConfig, error) {
-	if f.Account != "" {
-		return p.SourceAccount(project.SourceConfig{ID: "forge", Type: f.Type, Host: f.Host, Account: f.Account})
-	}
-	for _, s := range p.Sources {
-		host := s.Host
-		if host == "" {
-			host = "github.com"
-		}
-		if f.Type == "github" && s.Type == "github" && host == f.Host && strings.EqualFold(s.Repo, f.Repo) {
-			return p.SourceAccount(s)
-		}
-	}
-	found := hostAccounts(p, f.Type, f.Host)
-	if len(found) != 1 {
-		return project.AccountConfig{}, fmt.Errorf("name one of the %s accounts for %s", map[string]string{"github": "GitHub", "gitlab": "GitLab"}[f.Type], f.Host)
-	}
-	found[0].Provider = f.Type
-	return found[0], nil
-}
-
-// hostAccounts are p's accounts of kind for host.
-func hostAccounts(p project.Config, kind, host string) []project.AccountConfig {
-	var out []project.AccountConfig
-	for _, a := range p.Accounts[kind] {
-		if a.Host == host {
-			out = append(out, a)
-		}
-	}
-	return out
+	return strings.TrimSuffix(providerCache(p, "forge:"+f.Host+"/"+f.Repo, string(identity), account).Path, ".sqlite") + ".pulls.json"
 }
 
 // failedForge reports why a forge couldn't be built as its refresh failure.

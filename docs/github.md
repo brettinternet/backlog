@@ -474,6 +474,51 @@ needs `repo` (or `public_repo`). Device login needs `--write` and `bl-cli`'s
 Pull requests read/write permission, an owner step (BL-155): the owner grants
 it on the app and each installation approves it. Until then `c` and `r` are disabled, naming the missing permission.
 
+## Pull requests as items
+
+A `github-pulls` source makes each open pull request that nothing else in the
+project links to an item, so work started straight from a branch shows up
+beside planned work:
+
+```yaml
+sources:
+  - id: prs
+    type: github-pulls
+    repo: acme/app      # required
+    host: github.com    # optional, default github.com
+    account: personal   # optional; resolves like a changes forge
+```
+
+Without `account`, it uses the account of a GitHub source on the same
+repository, else the only GitHub account for the host. Other source keys are
+refused at load, naming the key. A project-declared source needs `bl trust`.
+
+Each pull request is item `#N` (`prs:#N`): its title and body, its author as
+the assignee, and its URL in `refs`, so its own linked change shows its checks
+and review. Its status is `pr-draft` (backlog) or `pr-open` (active), fixed by
+the adapter; a `statuses` entry giving either key another category fails
+config load, and `includes` folds them into a column. Pull requests opened by
+a GitHub App, such as dependabot or renovate, are skipped.
+
+It reads through the forge [linked changes](#linked-changes) use, sharing its
+`.pulls.json`, and refreshes at most once a minute, so the TUI's changes
+tracker doesn't fetch the repository twice. A failed refresh keeps the cached
+pull requests, marked stale.
+
+An item from any other source in the same project that links a pull request,
+by any [linking rule](changes.md#links) (branch, title, closing keyword,
+GitHub's closing reference, `refs` URL, or an ID naming several items), hides
+its pull request item from `bl ls`, `bl next`, `bl show`, the TUI, and MCP.
+Links from other pull requests, or from another workspace project, don't. A
+link added with `bl set BL-12 refs+=URL` hides it on the next snapshot,
+without a forge refresh.
+
+The source is read-only: writes are refused, but `bl claim` and `bl release`
+work, keyed like the repository's issues. Once an item links a claimed pull
+request, `bl show prs:#45` fails `not-found` naming the linker
+(`prs:#45 is linked to tasks:BL-12`), and `bl release prs:#45` still releases
+it.
+
 ## This repository
 
 The `issues` source uses Projects v2 board

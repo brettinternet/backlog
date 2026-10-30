@@ -433,6 +433,14 @@ func (p *Projector) run() {
 				if req.ctx.Err() != nil {
 					continue
 				}
+				hidden := linkedPulls(p.cfg, base.Items)
+				base.Items = slices.DeleteFunc(base.Items, func(i model.Item) bool {
+					if hidden[i.Ref] == nil {
+						return false
+					}
+					delete(base.States, i.Ref)
+					return true
+				})
 				staleRefs := map[model.Ref]bool{}
 				for ref, r := range req.snapshot.records {
 					if r.stale {

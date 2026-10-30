@@ -58,7 +58,8 @@
               "github",
               "linear",
               "jira",
-              "external"
+              "external",
+              "github-pulls"
             ]
           },
           "path": {
@@ -124,7 +125,13 @@
         "required": [
           "id",
           "type"
-        ]
+        ],
+        "if": {"properties": {"type": {"const": "github-pulls"}}},
+        "then": {
+          "required": ["repo"],
+          "propertyNames": {"enum": ["id", "type", "repo", "host", "account"]},
+          "properties": {"repo": {"pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"}}
+        }
       }
     },
     "statuses": {
