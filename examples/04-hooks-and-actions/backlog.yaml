@@ -13,6 +13,9 @@ actions:
     run: [git, switch, --create, "{branch}"]
   - name: history
     run: [git, log, --oneline, --, "backlog/{id}.md"]
+  - name: tour
+    cwd: "{root}"
+    run: [sh, hooks/write-tour.sh, "{change.head}"]
 hooks:
   - name: require-criteria
     on: item.updated

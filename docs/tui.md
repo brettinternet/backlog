@@ -284,7 +284,8 @@ or wider. Code is highlighted by file type, changed lines are tinted green and
 red, and the changed words of a paired line are marked; high contrast marks
 them in reverse and no color leaves them plain. A cursor marks one line: `j`
 and `k` move it, scrolling keeps it on screen, and `]`/`[` move it to the next
-or previous file, `]c`/`[c` to the next or previous hunk, and `/` to each match.
+or previous file, `]c`/`[c` to the next or previous hunk, `]t`/`[t` to the next
+or previous step of the change's tour, and `/` to each match.
 Each line is a file and line number on the old or new side at the change's
 head: a context line on both, a split row on each half, and a file or hunk
 header names only its file. The cursor stays on its line when a file expands or
@@ -296,6 +297,12 @@ diffs its merges against their first parents; a pull request without a local
 head shows the forge's per-file patches and says which files the forge left
 out. Git runs on the detail worker with external diff and textconv drivers
 off, and each file renders there, cached by head, file, width, and theme.
+A tour stored with [`bl tour`](cli.md#bl-tour-id-file) puts each step's number,
+title, cited criterion, and Markdown narrative above its line, on the step's
+side when split. A step on a line outside every hunk brings that line in with
+three lines of context; one on a line the file lacks says so under the file's
+header. A tour written for another head, or whose step is on a file with uncommitted
+changes, shows only that it is stale.
 
 A pull request's change view drafts a pending review. `c` opens `$EDITOR` on
 the comment for the Diff line under the cursor, on a reply to the

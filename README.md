@@ -66,7 +66,7 @@ Using `bl`:
 - [Events](docs/events.md)
 - [Linked changes](docs/changes.md)
 - [Worklease coordination](docs/cli.md#coordination)
-- Config schemas: [project](docs/schemas/project-config.json), [user](docs/schemas/user-config.json)
+- Schemas: [project config](docs/schemas/project-config.json), [user config](docs/schemas/user-config.json), [tour](docs/schemas/tour.json)
 
 Sources:
 

@@ -260,7 +260,7 @@ func TestMCPUsesRunStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed, err := session.ListTools(ctx, &sdk.ListToolsParams{})
-	if err != nil || len(listed.Tools) != 14 {
+	if err != nil || len(listed.Tools) != 15 {
 		t.Fatalf("list tools: count=%d err=%v", len(listed.Tools), err)
 	}
 	called, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "next", Arguments: map[string]any{}})

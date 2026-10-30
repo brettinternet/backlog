@@ -27,6 +27,9 @@ const (
 	FileRenamed     = "renamed"
 	FileBinary      = "binary"
 	FileUncommitted = "uncommitted"
+	// FileUnchanged is a file the change doesn't touch, which the Diff
+	// shows for a tour step on it.
+	FileUnchanged = "unchanged"
 )
 
 // File is one file a change touches, with From the old path of a rename.
@@ -363,4 +366,50 @@ func gitCommits(ctx context.Context, dir, revisions string) ([]Commit, error) {
 		commits = append(commits, Commit{SHA: fields[0], Time: at.UTC(), Author: fields[2], Subject: fields[3]})
 	}
 	return commits, nil
+}
+
+// FileAt reads path as a change's Diff shows its new side, so a tour step
+// outside every hunk can show its line: from the worktree, without leaving
+// it, or else the head commit's blob, as when repository config defines a
+// filter, at most maxUntrackedBytes either way.
+func FileAt(ctx context.Context, c Change, path string) ([]byte, error) {
+	if c.Worktree != "" && len(c.Commits) == 0 {
+		if filtered, err := git.RepoFilter(ctx, c.Worktree); err == nil && !filtered {
+			return worktreeFile(c.Worktree, path)
+		}
+	}
+	if c.dir == "" || c.Head == "" {
+		return nil, errors.New("no local copy of " + path)
+	}
+	object := c.Head + ":" + path
+	size, err := git.Run(ctx, c.dir, "cat-file", "-s", object)
+	if err != nil {
+		return nil, err
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > maxUntrackedBytes {
+		return nil, errors.New(path + " is too large to show")
+	}
+	return git.Run(ctx, c.dir, "cat-file", "blob", object)
+}
+
+func worktreeFile(worktree, path string) ([]byte, error) {
+	root, err := os.OpenRoot(worktree)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	// Stat first: opening a FIFO would block the worker.
+	if info, err := root.Lstat(filepath.FromSlash(path)); err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New(path + " is not a regular file")
+	}
+	file, err := root.Open(filepath.FromSlash(path))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxUntrackedBytes+1))
+	if err == nil && len(data) > maxUntrackedBytes {
+		err = errors.New(path + " is too large to show")
+	}
+	return data, err
 }

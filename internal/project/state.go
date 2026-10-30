@@ -28,3 +28,6 @@ func ReadUIState(cfg Config) ([]byte, error) {
 	return data, nil
 }
 func WriteUIState(cfg Config, data []byte) error { return writeAtomic(UIStatePath(cfg), data, 0600) }
+
+// WriteStateFile replaces a private file in the state directory atomically.
+func WriteStateFile(path string, data []byte) error { return writeAtomic(path, data, 0600) }
