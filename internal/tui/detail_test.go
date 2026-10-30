@@ -637,6 +637,29 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	if m.detailIDs[m.entryCursor] != "ci:run" {
 		t.Fatalf("cursor moved to %s after expanding", m.detailIDs[m.entryCursor])
 	}
+	// Clicks act on the entry drawn under the pointer: its row selects it,
+	// its marker folds it, and the selected row's hint runs.
+	click := func(text, at string) {
+		t.Helper()
+		y := drawnRow(t, m, text)
+		next, _ := m.Update(tea.MouseClickMsg{X: drawnAt(t, m, y, at), Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+	}
+	click("lint passed", "lint passed")
+	if m.detailIDs[m.entryCursor] != "ci:run:1" {
+		t.Fatalf("click selected %s", m.detailIDs[m.entryCursor])
+	}
+	click("build 7", "▾")
+	m = settleDetail(t, m)
+	if strings.Contains(m.View().Content, "lint passed") || m.detailIDs[m.entryCursor] != "ci:run" {
+		t.Fatalf("marker click did not fold the group under it\n%s", m.View().Content)
+	}
+	click("claude", "claude")
+	click("! resume", "! resume")
+	if !m.launcher.open || m.actionSession != "s1" {
+		t.Fatalf("hint click opened %v scoped to %q", m.launcher.open, m.actionSession)
+	}
+	m = send(m, "esc")
 	// Reopening the same item after close must not toggle into a nil map.
 	m.closeDetail()
 	m, _ = detailKey(m, tea.KeyEnter, 0)

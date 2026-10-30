@@ -436,7 +436,9 @@ Click a row to select it; double-click (within 400 ms) to open it. Clicking a
 group header folds or unfolds it. Click tabs to switch. Clicking a board column
 header focuses it; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
-to toggle it. Click a relation to select it; double-click to open it. Click the
+to toggle it. Click a relation to select it; double-click to open it. Click a
+History entry, or any line of its expansion, to select it; click its `▸` or
+double-click to expand or collapse it, and click `! resume` to run it. Click the
 query in the status bar to edit it there. The wheel moves three rows, or scrolls
 detail under the pointer; a sideways swipe moves one board column. Drag the
 divider to resize. Drag across detail text to select it, moving past an edge to scroll;

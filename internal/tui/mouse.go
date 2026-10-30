@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +14,7 @@ import (
 type mouseState struct {
 	dragging     bool
 	lastRef      model.Ref
+	lastEntry    string // the History entry last clicked
 	lastClick    time.Time
 	lastX, lastY int
 	lastSwipe    time.Time
@@ -131,6 +133,8 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if detail {
+		// A row's hint shows only while detail has focus.
+		hinted := m.detailFocus
 		m.detailFocus = true
 		x, width := p.X-detailPad, m.width
 		if split {
@@ -151,6 +155,8 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.clickCriterion(x, m.detailScroll+y-m.detailBodyTop())
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
 			return m, m.clickRelation(p.X, p.Y, m.detailScroll+y-m.detailBodyTop())
+		case m.detailTab == tabHistory && y >= m.detailBodyTop():
+			return m.clickHistory(x, p.X, p.Y, m.detailScroll+y-m.detailBodyTop(), max(1, width-2*detailPad), hinted)
 		}
 		return m, nil
 	}
@@ -380,6 +386,48 @@ func (m *Model) clickRelation(x, y, line int) tea.Cmd {
 		return m.followRelation()
 	}
 	return nil
+}
+
+// clickHistory selects the History entry drawn on a detail line, including
+// its wrapped summary and detail. A click on its marker, or a double-click,
+// expands or collapses it as enter does; a click on the selected row's hint
+// runs it. x is relative to the text's left edge, sx and sy are the screen
+// cell, inner is the text width, and hinted says the hint was drawn.
+func (m Model) clickHistory(x, sx, sy, line, inner int, hinted bool) (tea.Model, tea.Cmd) {
+	if !m.detailCurrent() {
+		return m, nil
+	}
+	found := -1
+	for i, start := range m.detailEntries {
+		if start <= line {
+			found = i
+		}
+	}
+	if found < 0 || found >= len(m.detailIDs) {
+		return m, nil
+	}
+	start := m.detailEntries[found]
+	if hinted && found == m.entryCursor && line == start && found < len(m.detailHints) && m.detailHints[found] != "" && x >= inner-ansi.StringWidth(m.detailHints[found]) {
+		for _, a := range m.keymap {
+			if a.id == "actions" {
+				return m.executeAction(a)
+			}
+		}
+	}
+	m.entryCursor = found
+	id, now := m.detailIDs[found], m.now()
+	double := id == m.mouse.lastEntry && sx == m.mouse.lastX && sy == m.mouse.lastY && now.Sub(m.mouse.lastClick) >= 0 && now.Sub(m.mouse.lastClick) <= 400*time.Millisecond
+	m.mouse.lastClick, m.mouse.lastEntry, m.mouse.lastX, m.mouse.lastY = now, id, sx, sy
+	// The marker follows the row's indent, at x 0 or 2; a cell beside it counts.
+	text := ansi.Strip(m.detailLines[start])
+	body := strings.TrimLeft(text, " ")
+	marker := len(text) - len(body)
+	onMarker := line == start && (strings.HasPrefix(body, "▸") || strings.HasPrefix(body, "▾")) && x >= marker-1 && x <= marker+1
+	if onMarker || double {
+		m.mouse.lastEntry = ""
+		return m, m.toggleHistoryEntry()
+	}
+	return m, nil
 }
 
 // offsetAt is the byte offset of the character at screen column col of
