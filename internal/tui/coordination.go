@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -128,6 +127,10 @@ func (m Model) claimCommand() tea.Cmd {
 		if result.Outcome == "held" {
 			result = engine.ReleaseItem(ctx, item)
 		}
-		return claimOperationMsg{fmt.Sprintf("%s: %s", result.Outcome, result.Message)}
+		text := item.Ref.ID + " " + string(result.Outcome)
+		if result.Message != "" {
+			text += ": " + result.Message
+		}
+		return claimOperationMsg{text}
 	}
 }
