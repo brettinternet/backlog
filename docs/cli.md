@@ -601,6 +601,8 @@ heads), `detail`, and `resumable` (on a session row `bl resume` can reopen);
 `data.providers` lists each provider's `state` (`ok`,
 `partial`, or `unavailable`) and `reason`. `--limit` pages; pass `data.cursor`
 back as `--cursor` while `data.more` is true. An unknown cursor is `not-found`.
+A cursor is `conflict` when entries before it changed, such as one added to an
+earlier session; page again from the start.
 Commits come from `git log --follow` with external diff, textconv, and
 fsmonitor off, in the minimal hook environment, cached by item version and HEAD
 (at most the newest 1,000, reported as `partial`).

@@ -6,12 +6,16 @@ package history
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/brettinternet/backlog/internal/source"
 )
 
 // Entry is one row of an item's history. ID is stable across loads, so it can
@@ -173,9 +177,6 @@ func sessionID(id string) string { return "session:" + id }
 // SessionOf returns the session an entry ID heads, if it is a session row.
 func SessionOf(id string) (string, bool) { return strings.CutPrefix(id, "session:") }
 
-// ErrCursor is returned by Page for a cursor that names no entry.
-var ErrCursor = errors.New("unknown history cursor")
-
 // Page is one page of a Result, as bl history and the MCP history tool return
 // it.
 type Page struct {
@@ -186,20 +187,31 @@ type Page struct {
 }
 
 // Page returns up to limit entries after the entry named by cursor. A limit of
-// 0 returns every remaining entry.
+// 0 returns every remaining entry. The cursor also fingerprints the entries up
+// to it: a session's entries follow its row, so one added to an earlier
+// session lands before the cursor, and paging on would skip it. Page then
+// refuses with conflict, and the caller pages again from the start.
 func (r Result) Page(cursor string, limit int) (Page, error) {
 	start := 0
 	if cursor != "" {
-		i := slices.IndexFunc(r.Entries, func(e Entry) bool { return e.ID == cursor })
+		raw, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil || len(raw) <= fingerprintSize {
+			return Page{}, source.Refuse("not-found", "unknown history cursor")
+		}
+		id := string(raw[fingerprintSize:])
+		i := slices.IndexFunc(r.Entries, func(e Entry) bool { return e.ID == id })
 		if i < 0 {
-			return Page{}, ErrCursor
+			return Page{}, source.Refuse("not-found", "unknown history cursor")
+		}
+		if string(raw[:fingerprintSize]) != fingerprint(r.Entries[:i+1]) {
+			return Page{}, source.Refuse("conflict", "history changed before the cursor; page again from the start")
 		}
 		start = i + 1
 	}
 	page := Page{Entries: r.Entries[start:], Providers: r.Providers}
 	if limit > 0 && len(page.Entries) > limit {
 		page.Entries, page.More = page.Entries[:limit], true
-		page.Cursor = page.Entries[limit-1].ID
+		page.Cursor = base64.RawURLEncoding.EncodeToString([]byte(fingerprint(r.Entries[:start+limit]) + page.Entries[limit-1].ID))
 	}
 	if page.Entries == nil {
 		page.Entries = []Entry{}
@@ -230,3 +242,15 @@ func Label(e Entry) string {
 
 // LabelWidth is the widest built-in Label, which a label column pads to.
 const LabelWidth = 7
+
+const fingerprintSize = 12
+
+// fingerprint identifies the IDs of entries, in order.
+func fingerprint(entries []Entry) string {
+	h := sha256.New()
+	for _, e := range entries {
+		h.Write([]byte(e.ID))
+		h.Write([]byte{0})
+	}
+	return string(h.Sum(nil)[:fingerprintSize])
+}

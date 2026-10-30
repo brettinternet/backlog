@@ -350,7 +350,7 @@ func (s *Server) history(ctx context.Context, _ *mcp.CallToolRequest, args Histo
 	}
 	page, err := history.Load(ctx, s.cfg, s.coordinator, item).Page(args.Cursor, args.Limit)
 	if err != nil {
-		return failed[any]("not-found", err.Error())
+		return failed[any](reason(err), engine.ErrorMessage(err))
 	}
 	return nil, page, nil
 }

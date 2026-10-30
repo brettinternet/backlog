@@ -15,6 +15,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/source"
 )
 
 // Catches one failing or panicking provider hiding the others, duplicate claim
@@ -59,6 +60,36 @@ func TestComposeIsolatesProvidersAndGroupsSessions(t *testing.T) {
 	}
 	if states["events"] != OK || states["git"] != Unavailable || states["comments"] != Unavailable || states["partial"] != Partial {
 		t.Fatalf("statuses %+v", result.Providers)
+	}
+}
+
+// Catches paging that silently skips an entry added to a session on an earlier
+// page: it sorts before the cursor, so the next page must refuse instead.
+func TestPageRefusesChangesBeforeCursor(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 1, 1, 0, m, 0, 0, time.UTC) }
+	entries := []Entry{
+		{ID: "session:s1", Time: at(1), Kind: "session", Session: "s1", Span: &Span{Start: at(1)}},
+		{ID: "event:2", Time: at(2), Kind: "item.updated", Session: "s1"},
+		{ID: "event:3", Time: at(3), Kind: "item.updated"},
+		{ID: "event:4", Time: at(4), Kind: "item.updated"},
+	}
+	compose := func(entries []Entry) Result {
+		return Compose(context.Background(), Provider{Name: "events", Load: func(context.Context) ([]Entry, error) { return slices.Clone(entries), nil }})
+	}
+	first, err := compose(entries).Page("", 3)
+	if err != nil || !first.More || first.Cursor == "" {
+		t.Fatalf("first page %+v %v", first, err)
+	}
+	if next, err := compose(append(entries, Entry{ID: "event:5", Time: at(5), Kind: "item.updated"})).Page(first.Cursor, 3); err != nil || len(next.Entries) != 2 || next.Entries[0].ID != "event:4" {
+		t.Fatalf("an entry after the cursor broke paging: %+v %v", next, err)
+	}
+	changed := compose(append(entries, Entry{ID: "event:5", Time: at(5), Kind: "item.updated", Session: "s1"}))
+	if changed.Entries[2].ID != "event:5" {
+		t.Fatalf("fixture: %v", changed.Entries)
+	}
+	var refusal *source.Error
+	if _, err := changed.Page(first.Cursor, 3); !errors.As(err, &refusal) || refusal.Reason != "conflict" {
+		t.Fatalf("skipped an entry before the cursor: %v", err)
 	}
 }
 

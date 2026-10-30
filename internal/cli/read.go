@@ -224,7 +224,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			c, _ := engine.Coordination(ctx)
 			page, err := history.Load(ctx, cfg, c, i).Page(cmd.String("cursor"), cmd.Int("limit"))
 			if err != nil {
-				return &Error{Reason: "not-found", Message: err.Error()}
+				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 			}
 			if cmd.Bool("json") {
 				return success(out, "history", page)
