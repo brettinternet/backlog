@@ -300,10 +300,12 @@ head shows the forge's per-file patches and says which files the forge left
 out. Git runs on the detail worker with external diff and textconv drivers
 off, and each file renders there, cached by head, file, width, and theme.
 A tour stored with [`bl tour`](cli.md#bl-tour-id-file) puts each step's number,
-title, cited criterion, and Markdown narrative above its line, on the step's
-side when split. A step on a line outside every hunk brings that line in with
-three lines of context; one on a line the file lacks says so under the file's
-header. A tour written for another head, or whose step is on a file with uncommitted
+title, cited criterion, and Markdown narrative above its line, or its range's
+first line, on the step's side when split, and marks each line it covers with
+`▎` after that side's line number. A step's lines outside every hunk come in
+with three lines of context; lines the file lacks are noted under the file's
+header. `]t`/`[t` put the cursor on a step's first line and keep as much of
+its range in view as fits. A tour written for another head, or whose step is on a file with uncommitted
 changes, shows only that it is stale.
 
 A pull request's change view drafts a pending review. `c` opens `$EDITOR` on

@@ -156,16 +156,16 @@ type Model struct {
 	detailMasked             bool   // the loading placeholder covers the body
 	detailSubmitted          uint64 // the last generation sent to the worker
 	detailTruncated          bool
-	detailFiles, detailHunks []int     // the Diff tab's file and hunk header lines
-	detailRows               []diffRow // what each Diff entry shows
-	detailHead               string    // the commit the Diff shows
-	detailSteps              []int     // the Diff line of each tour step's callout
-	detailTour               string    // why the change's tour is hidden
-	tourStep                 int       // the tour step ]t and [t last went to
-	detailDirty              []string  // the Diff's uncommitted files
-	diffOrigin, diffCursor   int       // the scroll and cursor before [ or ], which [c and ]c restore
-	detailLines              []string  // the last body, kept while the next loads
-	detailEntries            []int     // detailLines index of each criterion or relation
+	detailFiles, detailHunks []int      // the Diff tab's file and hunk header lines
+	detailRows               []diffRow  // what each Diff entry shows
+	detailHead               string     // the commit the Diff shows
+	detailSteps              []stepSpan // where the Diff shows each tour step
+	detailTour               string     // why the change's tour is hidden
+	tourStep                 int        // the tour step ]t and [t last went to
+	detailDirty              []string   // the Diff's uncommitted files
+	diffOrigin, diffCursor   int        // the scroll and cursor before [ or ], which [c and ]c restore
+	detailLines              []string   // the last body, kept while the next loads
+	detailEntries            []int      // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
 	detailChanges            []changes.Change
 	detailCommits            []changes.Commit

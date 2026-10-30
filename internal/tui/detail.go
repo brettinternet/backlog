@@ -92,11 +92,11 @@ type detailResult struct {
 	hints      []string          // a key to show on each History entry when selected
 	files      []int             // the Diff tab's line of each file and hunk header
 	hunks      []int
-	rows       []diffRow // what each Diff entry shows
-	head       string    // the commit the Diff shows
-	steps      []int     // the Diff's line of each tour step, in tour order
-	tour       string    // why the Diff shows no tour steps, when it has a tour
-	dirty      []string  // the change's uncommitted files, which aren't at head
+	rows       []diffRow  // what each Diff entry shows
+	head       string     // the commit the Diff shows
+	steps      []stepSpan // where the Diff shows each tour step, in tour order
+	tour       string     // why the Diff shows no tour steps, when it has a tour
+	dirty      []string   // the change's uncommitted files, which aren't at head
 	review     *changes.Review
 	draft      *changes.Draft // the pull request's pending review
 	draftErr   string         // why the draft can't be read
@@ -148,9 +148,9 @@ type rendered struct {
 	hints     []string // a key worth showing on each entry when it is selected
 	files     []int    // the Diff tab's line of each file and hunk header
 	hunks     []int
-	rows      []diffRow // what each Diff entry, or each line of a file's diff, shows
-	steps     []int     // the line of each tour step's callout, in tour order
-	tour      string    // why a change's tour shows no steps
+	rows      []diffRow  // what each Diff entry, or each line of a file's diff, shows
+	steps     []stepSpan // where each tour step shows, in tour order
+	tour      string     // why a change's tour shows no steps
 	truncated bool
 	size      int
 }

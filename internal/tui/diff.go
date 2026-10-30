@@ -45,14 +45,14 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 		view = nil
 	}
 	if view != nil {
-		page.steps = make([]int, len(view.steps))
+		page.steps = make([]stepSpan, len(view.steps))
 	}
 	if len(d.Files) == 0 && d.Reason == "" {
 		page.lines = append(page.lines, t.muted.render("No changed files."))
 	}
 	left := (width - 1) / 2
 	callouts := func(i int, note string, whole bool) {
-		page.steps[i] = len(page.lines)
+		page.steps[i] = stepSpan{callout: len(page.lines), last: len(page.lines)}
 		indent, room := 0, width
 		if width >= splitDiffWidth && !whole {
 			if view.steps[i].Side == tour.SideOld {
@@ -76,33 +76,88 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 		page.entries = append(page.entries, len(page.lines))
 		page.rows = append(page.rows, diffRow{file: f.Path})
 		page.lines = append(page.lines, fileLine(t, f, width))
-		large := len(f.Patch) > bodyLimit
-		key := renderKey{Version: c.Head, Width: width, Theme: t.key(), Tab: tabChangeDiff, Expanded: large && request.expanded, Dependency: f.Path + "\x00" + patchDigest(f.Patch)}
-		body, ok := worker.diffs.render(key)
-		if !ok {
-			body = fileDiff(f, t, width, key.Expanded)
-			worker.diffs.putRender(key, body)
-		}
-		// Each step sits above the row showing its line, or under the file's
-		// header saying why none does.
-		at := map[int][]int{}
+		var steps []int
+		var marks lineMarks
+		ranges := ""
 		if view != nil {
 			for n, s := range view.steps {
-				if s.File != f.Path && (s.File != f.From || f.From == "" || s.Side != tour.SideOld) {
-					continue
+				if s.File == f.Path || s.File == f.From && f.From != "" && s.Side == tour.SideOld {
+					steps = append(steps, n)
+					side := stepAnchor("", s).side
+					if marks[side] == nil {
+						marks[side] = map[int]bool{}
+					}
+					for k := s.Line; k <= s.End(); k++ {
+						marks[side][k] = true
+					}
+					ranges += "\x00" + strconv.Itoa(int(side)) + ":" + strconv.Itoa(s.Line) + "-" + strconv.Itoa(s.End())
 				}
-				if row := diffRowOf(body.rows, stepAnchor(f.Path, s)); row >= 0 {
-					at[row] = append(at[row], n)
-					continue
+			}
+		}
+		large := len(f.Patch) > bodyLimit
+		key := renderKey{Version: c.Head, Width: width, Theme: t.key(), Tab: tabChangeDiff, Expanded: large && request.expanded, Dependency: f.Path + "\x00" + patchDigest(f.Patch) + ranges}
+		body, ok := worker.diffs.render(key)
+		if !ok {
+			body = fileDiff(f, t, width, key.Expanded, marks)
+			worker.diffs.putRender(key, body)
+		}
+		// Each step sits above the row showing its first line, or under the
+		// file's header saying why none does; lines of its range the diff
+		// lacks are noted there too.
+		at, last := map[int][]int{}, map[int][]int{}
+		if len(steps) > 0 {
+			rowOf := map[lineAnchor]int{}
+			for j, r := range body.rows {
+				for _, a := range r.anchors("") {
+					if _, ok := rowOf[a]; !ok {
+						rowOf[a] = j
+					}
 				}
-				note := cmp.Or(view.unread[s.File], "line "+strconv.Itoa(s.Line)+" isn't in this diff")
-				callouts(n, note, true)
+			}
+			var notes []string
+			for _, n := range steps {
+				s := view.steps[n]
+				first, end := -1, -1
+				var missing []int
+				for k := s.Line; k <= s.End(); k++ {
+					a := stepAnchor(f.Path, s)
+					a.line = k
+					if row, ok := rowOf[a]; ok {
+						end = max(end, row)
+						if k == s.Line {
+							first = row
+						}
+					} else {
+						missing = append(missing, k)
+					}
+				}
+				verb := " isn't in this diff"
+				if len(missing) > 1 {
+					verb = " aren't in this diff"
+				}
+				note := cmp.Or(view.unread[s.File], lineRuns(missing)+verb)
+				switch {
+				case first < 0:
+					callouts(n, note, true)
+				case len(missing) > 0:
+					notes = append(notes, "Step "+strconv.Itoa(n+1)+": "+note)
+					fallthrough
+				default:
+					at[first] = append(at[first], n)
+					last[end] = append(last[end], n)
+				}
+			}
+			for _, note := range notes {
+				page.lines = append(page.lines, t.yellow.render(ansi.Truncate(note, width, "…")))
 			}
 		}
 		hunks := body.hunks
 		for j, line := range body.lines {
 			for _, n := range at[j] {
 				callouts(n, "", false)
+			}
+			for _, n := range last[j] {
+				page.steps[n].last = len(page.lines)
 			}
 			if len(hunks) > 0 && hunks[0] == j {
 				page.hunks, hunks = append(page.hunks, len(page.lines)), hunks[1:]
@@ -279,7 +334,7 @@ func hunkStart(header string) (int, int) {
 
 // fileDiff renders one file's hunks; hunks holds each header's line. A patch
 // over the body limit waits for m, up to the 128 KiB a patch is cut to.
-func fileDiff(f changes.File, t theme, width int, expanded bool) rendered {
+func fileDiff(f changes.File, t theme, width int, expanded bool, marks lineMarks) rendered {
 	var out rendered
 	note := func(p paint, text string) {
 		out.lines = append(out.lines, p.render(ansi.Truncate(text, width, "…")))
@@ -309,7 +364,7 @@ func fileDiff(f changes.File, t theme, width int, expanded bool) rendered {
 	for _, h := range hunks {
 		out.hunks = append(out.hunks, len(out.lines))
 		note(t.cyan, textutil.Line(h.header))
-		lines, rows := hunkLines(h, lexer, t, width, digits, split)
+		lines, rows := hunkLines(h, lexer, t, width, digits, split, marks)
 		out.lines = append(out.lines, lines...)
 		for _, r := range rows {
 			r.file = f.Path
@@ -341,8 +396,8 @@ type codeSpan struct {
 
 // hunkLines highlights each side of a hunk as one text, so a construct that
 // spans lines colors correctly, then lays the lines out, with each line's
-// old and new line numbers.
-func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split bool) ([]string, []diffRow) {
+// old and new line numbers, marking the gutter of lines in marks.
+func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split bool, marks lineMarks) ([]string, []diffRow) {
 	lines := make([]codeLine, len(h.lines))
 	var oldSide, newSide []int
 	for i, l := range h.lines {
@@ -398,7 +453,7 @@ func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split
 	if !split {
 		code := max(1, width-2*digits-3)
 		unified := func(l codeLine) {
-			out = append(out, unifiedLine(t, l, digits, code))
+			out = append(out, unifiedLine(t, l, digits, code, marks))
 			numbers = append(numbers, diffRow{old: l.line.old, new: l.line.new})
 		}
 		for _, row := range rows {
@@ -423,26 +478,26 @@ func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split
 			if i := row.(int); l.line.kind == '\\' {
 				// It notes the line before it, on that line's side.
 				if i > 0 && lines[i-1].line.kind == '+' {
-					out = append(out, blank(left)+divider+sideLine(t, l, digits, right, true))
+					out = append(out, blank(left)+divider+sideLine(t, l, digits, right, true, marks))
 				} else {
-					out = append(out, sideLine(t, l, digits, left, false)+divider+blank(right))
+					out = append(out, sideLine(t, l, digits, left, false, marks)+divider+blank(right))
 				}
 				numbers = append(numbers, diffRow{})
 				continue
 			}
-			out = append(out, sideLine(t, l, digits, left, false)+divider+sideLine(t, l, digits, right, true))
+			out = append(out, sideLine(t, l, digits, left, false, marks)+divider+sideLine(t, l, digits, right, true, marks))
 			numbers = append(numbers, diffRow{old: l.line.old, new: l.line.new})
 			continue
 		}
 		for j := range max(len(b.removed), len(b.added)) {
 			text, number := blank(left), diffRow{}
 			if j < len(b.removed) {
-				text = sideLine(t, lines[b.removed[j]], digits, left, false)
+				text = sideLine(t, lines[b.removed[j]], digits, left, false, marks)
 				number.old = lines[b.removed[j]].line.old
 			}
 			text += divider
 			if j < len(b.added) {
-				text += sideLine(t, lines[b.added[j]], digits, right, true)
+				text += sideLine(t, lines[b.added[j]], digits, right, true, marks)
 				number.new = lines[b.added[j]].line.new
 			} else {
 				text += blank(right)
@@ -454,8 +509,9 @@ func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split
 	return out, numbers
 }
 
-// unifiedLine is old and new line numbers, the sign, then the code.
-func unifiedLine(t theme, l codeLine, digits, code int) string {
+// unifiedLine is old and new line numbers, each followed by its tour mark,
+// the sign, then the code.
+func unifiedLine(t theme, l codeLine, digits, code int, marks lineMarks) string {
 	number := func(n int) string {
 		if n == 0 {
 			return blank(digits)
@@ -463,22 +519,23 @@ func unifiedLine(t theme, l codeLine, digits, code int) string {
 		s := strconv.Itoa(n)
 		return blank(digits-len(s)) + s
 	}
-	gutter := t.faint.render(number(l.line.old) + " " + number(l.line.new) + " ")
+	gutter := t.faint.render(number(l.line.old)) + marks.mark(t, sideOld, l.line.old) + t.faint.render(number(l.line.new)) + marks.mark(t, sideNew, l.line.new)
 	return gutter + paintCode(t, l, code+1)
 }
 
-// sideLine is one side of a split row: its line number, sign, and code.
-func sideLine(t theme, l codeLine, digits, width int, newSide bool) string {
-	n := l.line.old
+// sideLine is one side of a split row: its line number, tour mark, sign, and
+// code.
+func sideLine(t theme, l codeLine, digits, width int, newSide bool, marks lineMarks) string {
+	n, side := l.line.old, sideOld
 	if newSide {
-		n = l.line.new
+		n, side = l.line.new, sideNew
 	}
 	number := blank(digits)
 	if n > 0 {
 		s := strconv.Itoa(n)
 		number = blank(digits-len(s)) + s
 	}
-	return t.faint.render(number+" ") + paintCode(t, l, max(1, width-digits-1))
+	return t.faint.render(number) + marks.mark(t, side, n) + paintCode(t, l, max(1, width-digits-1))
 }
 
 // paintCode draws the sign and code in width cells: the line's tint, each

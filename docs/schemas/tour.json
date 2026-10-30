@@ -22,7 +22,8 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["file", "line", "description"],
+        "required": ["file", "description"],
+        "anyOf": [{"required": ["line"]}, {"required": ["selection"]}],
         "properties": {
           "file": {
             "description": "Repository-relative path with / separators, without . or .. segments.",
@@ -32,9 +33,19 @@
             "not": {"pattern": "(^/|\\\\|(^|/)\\.{1,2}(/|$)|//)"}
           },
           "line": {
-            "description": "1-based line in the file at ref, or before the change when side is old.",
+            "description": "1-based line in the file at ref, or before the change when side is old. With selection, it must equal selection.start.line.",
             "type": "integer",
             "minimum": 1
+          },
+          "selection": {
+            "description": "A range of whole lines, on side, of at most 500 lines. Characters are accepted and ignored.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": {"$ref": "#/$defs/position"},
+              "end": {"$ref": "#/$defs/position"}
+            }
           },
           "title": {"type": "string", "maxLength": 1024},
           "description": {
@@ -54,6 +65,17 @@
             "enum": ["old", "new"]
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line"],
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "character": {"type": "integer"}
       }
     }
   }

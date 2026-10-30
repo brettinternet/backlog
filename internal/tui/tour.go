@@ -122,7 +122,7 @@ func (worker *detailWorker) tourFiles(ctx context.Context, c changes.Change, fil
 		if err != nil {
 			view.unread[path] = textutil.Line(err.Error())
 		} else {
-			f.Patch = withContext("", steps, content)
+			f.Patch = withContext("", outsideSteps(nil, steps), content)
 		}
 		out = append(out, f)
 	}
@@ -135,7 +135,7 @@ func oldSteps(steps []tour.Step) []tour.Step {
 	return slices.DeleteFunc(slices.Clone(steps), func(s tour.Step) bool { return s.Side != tour.SideOld })
 }
 
-// anchor is where a step's line is in a file's diff.
+// stepAnchor is where a step's first line is in a file's diff.
 func stepAnchor(path string, s tour.Step) lineAnchor {
 	a := lineAnchor{file: path, line: s.Line}
 	if s.Side == tour.SideOld {
@@ -144,20 +144,22 @@ func stepAnchor(path string, s tour.Step) lineAnchor {
 	return a
 }
 
-// outsideSteps are the steps no hunk line shows.
+// outsideSteps are the lines of steps' ranges no hunk line shows, each as a
+// one-line step on its side.
 func outsideSteps(hunks []diffHunk, steps []tour.Step) []tour.Step {
+	shown := [2]map[int]bool{{}, {}}
+	for _, h := range hunks {
+		for _, l := range h.lines {
+			shown[sideNew][l.new], shown[sideOld][l.old] = true, true
+		}
+	}
 	var out []tour.Step
 	for _, s := range steps {
-		shown := false
-		for _, h := range hunks {
-			for _, l := range h.lines {
-				if s.Side == tour.SideOld && l.old == s.Line || s.Side != tour.SideOld && l.new == s.Line {
-					shown = true
-				}
+		side := stepAnchor("", s).side
+		for n := s.Line; n <= s.End(); n++ {
+			if !shown[side][n] {
+				out = append(out, tour.Step{Line: n, Side: s.Side})
 			}
-		}
-		if !shown {
-			out = append(out, s)
 		}
 	}
 	return out
@@ -313,6 +315,43 @@ func callout(t theme, view *tourView, index int, width int, note string, render 
 		out = append(out, bar+t.yellow.render(ansi.Truncate(note, max(1, width-2), "…")))
 	}
 	return out
+}
+
+// stepSpan is where a step shows on the Diff: its callout's first line and
+// the line of its range's last row.
+type stepSpan struct{ callout, last int }
+
+// lineMarks are the lines of one file's tour ranges, by side.
+type lineMarks [2]map[int]bool
+
+// mark is the gutter cell after a line number: a bar when a tour step
+// covers the line.
+func (m lineMarks) mark(t theme, side diffSide, line int) string {
+	if line > 0 && m[side][line] {
+		return t.accent.render("▎")
+	}
+	return " "
+}
+
+// lineRuns names lines as runs, such as "lines 4–6, 9", or "line 4".
+func lineRuns(lines []int) string {
+	var runs []string
+	for i := 0; i < len(lines); {
+		j := i + 1
+		for j < len(lines) && lines[j] == lines[j-1]+1 {
+			j++
+		}
+		run := strconv.Itoa(lines[i])
+		if j-1 > i {
+			run += "–" + strconv.Itoa(lines[j-1])
+		}
+		runs = append(runs, run)
+		i = j
+	}
+	if len(lines) == 1 {
+		return "line " + runs[0]
+	}
+	return "lines " + strings.Join(runs, ", ")
 }
 
 // short is a commit's first seven characters.

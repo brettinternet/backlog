@@ -108,11 +108,13 @@ func (m *Model) stepTour(forward bool) {
 		step = m.tourStep + 1
 	}
 	m.tourStep = min(max(step, 0), len(m.detailSteps)-1)
-	m.detailScroll = m.detailSteps[m.tourStep]
-	m.diffCursorTo(m.detailScroll)
-	// A callout taller than the view gives way to the step's line.
+	span := m.detailSteps[m.tourStep]
+	m.detailScroll = span.callout
+	m.diffCursorTo(span.callout)
+	// The callout gives way to the range, and the range to its first line.
 	if m.entryCursor < len(m.detailEntries) {
-		m.detailScroll = max(m.detailScroll, m.detailEntries[m.entryCursor]-m.detailVisible()+1)
+		cursor, visible := m.detailEntries[m.entryCursor], m.detailVisible()
+		m.detailScroll = min(max(span.callout, span.last-visible+1, cursor-visible+1), cursor)
 	}
 	m.scrollDetail(0)
 }

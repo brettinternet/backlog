@@ -12,6 +12,7 @@ Write CodeTour JSON for the change's head commit:
   "ref": "0123456789abcdef0123456789abcdef01234567",
   "steps": [
     {"file": "internal/tui/detail.go", "line": 42, "title": "The debounce", "description": "Renders wait **80 ms** after the last keypress.", "criterion": 1},
+    {"file": "internal/tui/detail.go", "selection": {"start": {"line": 60, "character": 1}, "end": {"line": 72, "character": 2}}, "description": "The render it waits on."},
     {"file": "internal/tui/detail.go", "line": 17, "side": "old", "description": "The old code rendered on every key."}
   ]
 }
@@ -25,11 +26,16 @@ Write CodeTour JSON for the change's head commit:
   `/` separators; line is 1-based in the file at ref, or before the change
   with `"side": "old"` (a deleted line or a renamed file's old path);
   description is Markdown, up to 16 KiB.
+- A step may cover up to 500 lines with CodeTour's selection in place of, or
+  beside, line, which must then equal selection.start.line. side applies to
+  the whole range, and characters are ignored: the TUI marks every line of
+  the range and puts the narrative above its first line.
 - Optional: a top-level title and description, and per step a title and
   criterion, the 1-based index of the item's acceptance criterion the step
   satisfies, shown with its text and check state.
-- Lines outside the diff are fine: the TUI shows them with three lines of
-  context. Unknown keys are refused, so a misspelled key isn't silently lost.
+- Lines outside the diff are fine: the TUI shows them, and every line of a
+  range, with three lines of context. Unknown keys are refused, so a
+  misspelled key isn't silently lost.
 
 The schema is docs/schemas/tour.json in bl's repository. Store the file with
 any of:
