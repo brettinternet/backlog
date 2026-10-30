@@ -956,6 +956,13 @@ func TestChangeDiff(t *testing.T) {
 	if got := m.cursorAnchors(); !slices.Equal(got, []lineAnchor{at85, {head: "abc", file: "a.go", side: sideOld, line: 85}}) || !shown(m) {
 		t.Fatalf("split cursor resolves to %v", got)
 	}
+	// A hunk header has no line of its own, and keeps its place by the next.
+	m.diffCursorTo(m.detailHunks[1])
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = settleDetail(t, next.(Model))
+	if m.detailEntries[m.entryCursor] != m.detailHunks[1] {
+		t.Fatalf("hunk header cursor moved to %q", m.detailLines[m.detailEntries[m.entryCursor]])
+	}
 	m, _ = detailKey(m, tea.KeyBackspace, 0)
 	m = settleDetail(t, m)
 	_ = m.switchDetailTab(tabHistory)

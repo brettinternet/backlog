@@ -897,16 +897,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// The Diff keeps the cursor on its line as files expand or the
 			// layout changes.
-			var anchor []lineAnchor
-			if same && m.detailTab == tabChangeDiff && result.head == m.detailHead {
-				anchor = m.cursorAnchors()
+			var place diffPlace
+			keep := same && m.detailTab == tabChangeDiff && result.head == m.detailHead && m.detailCurrent()
+			if keep {
+				place = placeOf(m.detailRows, m.entryCursor)
 			}
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
 			m.detailChanges = result.changes
 			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailRows, m.detailHead = result.rows, result.head
-			if len(anchor) > 0 {
-				if n := diffRowOf(m.detailRows, anchor[0]); n >= 0 {
+			if keep {
+				if n := place.find(m.detailRows); n >= 0 {
 					m.entryCursor = n
 				}
 			}

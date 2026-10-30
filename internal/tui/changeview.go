@@ -131,6 +131,55 @@ func (m *Model) gotoAnchor(a lineAnchor) anchorStatus {
 	return anchorFound
 }
 
+// diffPlace is where a Diff row is, to find again after a re-render: a row
+// without a line, such as a hunk header, is next to the line after or before
+// it. A hunk's first row shows the same old line, if any, in either layout.
+type diffPlace struct {
+	anchor lineAnchor
+	offset int
+}
+
+func placeOf(rows []diffRow, i int) diffPlace {
+	if i < 0 || i >= len(rows) || rows[i].file == "" {
+		return diffPlace{offset: -1}
+	}
+	numbered := func(j int, oldFirst bool) (lineAnchor, bool) {
+		if j < 0 || j >= len(rows) || rows[j].file != rows[i].file {
+			return lineAnchor{}, false
+		}
+		a := rows[j].anchors("")
+		if oldFirst {
+			a[0] = a[len(a)-1]
+		}
+		return a[0], a[0].line > 0
+	}
+	if a, ok := numbered(i, false); ok {
+		return diffPlace{anchor: a}
+	}
+	if a, ok := numbered(i+1, true); ok {
+		return diffPlace{anchor: a, offset: -1}
+	}
+	if a, ok := numbered(i-1, false); ok {
+		return diffPlace{anchor: a, offset: 1}
+	}
+	return diffPlace{anchor: lineAnchor{file: rows[i].file}}
+}
+
+// find is the place's row in rows, or -1.
+func (p diffPlace) find(rows []diffRow) int {
+	if p.anchor.file == "" {
+		return -1
+	}
+	n := diffRowOf(rows, p.anchor)
+	if n < 0 {
+		return -1
+	}
+	if j := n + p.offset; j >= 0 && j < len(rows) && rows[j].file == p.anchor.file {
+		return j
+	}
+	return n
+}
+
 // diffRowOf is the first of rows that shows a, or -1.
 func diffRowOf(rows []diffRow, a lineAnchor) int {
 	return slices.IndexFunc(rows, func(r diffRow) bool { return r.shows(a) })
