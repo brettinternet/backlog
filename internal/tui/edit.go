@@ -1199,9 +1199,17 @@ func (m Model) openSelectedURL() tea.Cmd {
 	}
 }
 
-// selectedURL is the URL O opens: the change under the Changes cursor, else
-// the selected item's.
+// selectedURL is the URL O opens: the check or comment under the change
+// view's cursor, the change under the Changes cursor, else the selected
+// item's.
 func (m Model) selectedURL() (string, string) {
+	if m.detailOpen && m.change != nil && m.detailCurrent() && (m.detailTab == tabChangeOverview || m.detailTab == tabChangeConversation) && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
+		what := "check"
+		if m.detailTab == tabChangeConversation {
+			what = "comment"
+		}
+		return m.detailIDs[m.entryCursor], what
+	}
 	if c, ok := m.selectedChange(); ok {
 		return c.URL, "change"
 	}

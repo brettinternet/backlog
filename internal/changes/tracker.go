@@ -83,13 +83,27 @@ func (t *Tracker) Updates() <-chan struct{} { return t.updates }
 // the tracked projects' that serves its pull request. A nil tracker reads
 // only Git.
 func (t *Tracker) Detail(ctx context.Context, c Change, patch bool) (Detail, error) {
+	return LoadDetail(ctx, c, t.forges(), patch)
+}
+
+// Review reads a pull request change's review from the forge serving it.
+func (t *Tracker) Review(ctx context.Context, c Change, fresh bool) (Review, error) {
+	return LoadReview(ctx, c, t.forges(), fresh)
+}
+
+// Enrich adds Git's and the forges' facts to one item's changes.
+func (t *Tracker) Enrich(ctx context.Context, cs []Change, fresh bool) []Change {
+	return Enrich(ctx, cs, t.forges(), fresh)
+}
+
+func (t *Tracker) forges() []Forge {
 	var forges []Forge
 	if t != nil {
 		for _, o := range t.projects {
 			forges = append(forges, o.Forges...)
 		}
 	}
-	return LoadDetail(ctx, c, forges, patch)
+	return forges
 }
 
 // Refresh reloads local data and every forge now.

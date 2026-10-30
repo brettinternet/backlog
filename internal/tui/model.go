@@ -242,7 +242,7 @@ func New(opts Options) Model {
 		model.detailWorker = newDetailWorker(opts.Context, opts.Read, render)
 		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
 		if tracker := opts.Changes; tracker != nil {
-			model.detailWorker.changeDetail = tracker.Detail
+			model.detailWorker.changeDetail, model.detailWorker.changeReview, model.detailWorker.enrich = tracker.Detail, tracker.Review, tracker.Enrich
 		}
 	}
 	model.initViews()
@@ -916,7 +916,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailScroll = len(m.detailLines)
 			}
 			m.scrollDetail(0)
-			m.keepEntryVisible()
+			if !same || !m.scrollsEntries() {
+				m.keepEntryVisible()
+			}
 			current := m.find.current
 			m.findMatches()
 			if same && current < len(m.find.lines) {
@@ -1299,6 +1301,16 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, m.toggleCriterion()
 			}
 		case "j", "down":
+			// Entries taller than the view, and the description past the
+			// last check, scroll until the next entry shows.
+			if m.scrollsEntries() {
+				if next := m.entryCursor + 1; next < len(m.detailEntries) && m.detailEntries[next] < m.detailScroll+m.detailVisible() {
+					m.entryCursor = next
+				} else {
+					m.scrollDetail(1)
+				}
+				return m, nil
+			}
 			if count, ok := m.entryCount(); ok {
 				if count > 0 {
 					m.entryCursor = min(count-1, m.entryCursor+1)
@@ -1308,6 +1320,14 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			}
 			m.scrollDetail(1)
 		case "k", "up":
+			if m.scrollsEntries() {
+				if m.entryCursor > 0 && m.entryCursor < len(m.detailEntries) && m.detailEntries[m.entryCursor] > m.detailScroll {
+					m.entryCursor--
+				} else {
+					m.scrollDetail(-1)
+				}
+				return m, nil
+			}
 			if _, ok := m.entryCount(); ok {
 				m.entryCursor = max(0, m.entryCursor-1)
 				m.keepEntryVisible()

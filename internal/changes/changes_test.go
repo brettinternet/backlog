@@ -88,7 +88,7 @@ func TestWorktreeToLanded(t *testing.T) {
 	if err := os.Chtimes(filepath.Join(worktree, "a"), later, later); err != nil {
 		t.Fatal(err)
 	}
-	enriched := Enrich(context.Background(), []Change{c})
+	enriched := Enrich(context.Background(), []Change{c}, nil, false)
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("git status ran the repository's filter")
 	}
@@ -102,7 +102,7 @@ func TestWorktreeToLanded(t *testing.T) {
 		t.Fatal("the working tree diff ran the repository's filter")
 	}
 	git(repo, "config", "--unset", "filter.x.clean")
-	if enriched = Enrich(context.Background(), []Change{c}); enriched[0].Dirty == nil {
+	if enriched = Enrich(context.Background(), []Change{c}, nil, false); enriched[0].Dirty == nil {
 		t.Fatal("no dirty count without a repository filter")
 	}
 	detail, err := LoadDetail(context.Background(), c, nil, false)
@@ -237,5 +237,28 @@ func TestLinkStates(t *testing.T) {
 	}
 	if len(got) != len(want) {
 		t.Errorf("linked %d items, want %d: %v", len(got), len(want), got)
+	}
+}
+
+type reviewForge struct{ review Review }
+
+func (reviewForge) Name() string { return "fake" }
+func (reviewForge) Web() string  { return "https://github.com/o/r" }
+func (reviewForge) PullRequests(context.Context) ([]PullRequest, error) {
+	return nil, nil
+}
+func (reviewForge) Pull(context.Context, int) (Detail, error) { return Detail{}, nil }
+func (f reviewForge) Review(context.Context, int, string, bool) (Review, bool, error) {
+	return f.review, true, nil
+}
+
+// Catches a check run reading passing on an open pull request whose checks
+// ran on another commit than the local branch head (D43).
+func TestEnrichStaleChecks(t *testing.T) {
+	forge := reviewForge{Review{Checks: []Check{{Name: "test", State: ChecksPassing}}}}
+	c := Change{Stage: StagePR, State: StateOpen, Checks: ChecksStale, Number: 1, URL: "https://github.com/o/r/pull/1"}
+	got := Enrich(context.Background(), []Change{c}, []Forge{forge}, false)[0]
+	if len(got.CheckRuns) != 1 || got.CheckRuns[0].State != ChecksStale || forge.review.Checks[0].State != ChecksPassing {
+		t.Fatalf("check runs %+v, kept %+v", got.CheckRuns, forge.review.Checks)
 	}
 }

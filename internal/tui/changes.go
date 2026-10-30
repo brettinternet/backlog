@@ -80,7 +80,7 @@ func changeWidth(cs []changes.Change) int {
 }
 
 // changeLines draws one entry per change, furthest first: glyph, label, title,
-// and state, checks, review, size, and age; then its branch, worktree, and how
+// and state, checks, review, unresolved threads, size, and age; then its branch, worktree, and how
 // far it is from the default branch; then why it is unknown or stale.
 func changeLines(cs []changes.Change, t theme, now time.Time, width int) rendered {
 	var page rendered
@@ -95,7 +95,11 @@ func changeLines(cs []changes.Change, t theme, now time.Time, width int) rendere
 		label := textutil.Line(changes.Label(c))
 		head := stageGlyph(t, c) + " " + t.bold.render(label) + "  "
 		tail := "  " + changeState(t, c)
-		for _, part := range []string{checksGlyph(t, c.Checks), changeReview(t, c.Review), changeSize(t, c), t.muted.render(age(c.Updated, now))} {
+		unresolved := ""
+		if c.Unresolved != nil && *c.Unresolved > 0 {
+			unresolved = t.yellow.render(strconv.Itoa(*c.Unresolved) + " unresolved")
+		}
+		for _, part := range []string{checksGlyph(t, c.Checks), changeReview(t, c.Review), unresolved, changeSize(t, c), t.muted.render(age(c.Updated, now))} {
 			if part != "" {
 				tail += "  " + part
 			}

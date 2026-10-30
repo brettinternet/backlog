@@ -3,6 +3,7 @@ package changes
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -44,6 +45,10 @@ type Forge interface {
 	PullRequests(ctx context.Context) ([]PullRequest, error)
 	// Pull reads one pull request's files and commits.
 	Pull(ctx context.Context, number int) (Detail, error)
+	// Review reads one pull request's review, reusing a recent read for the
+	// same head unless fresh. On failure it returns the last read, if any,
+	// with ok, and the error.
+	Review(ctx context.Context, number int, head string, fresh bool) (r Review, ok bool, err error)
 }
 
 // Data is one project's raw changes, before linking. Default is the default
@@ -281,11 +286,13 @@ func MergedBranch(subject string) (string, int) {
 	return "", 0
 }
 
-// Enrich adds what only Git can say about one item's changes, on a worker:
+// Enrich adds what only Git and the forges can say about one item's changes,
+// on a worker:
 // how far each open branch is ahead of and behind the default branch, how
 // many lines a branch or worktree adds and deletes since its merge base, and
-// how many files are dirty in each worktree.
-func Enrich(ctx context.Context, cs []Change) []Change {
+// how many files are dirty in each worktree, and each open pull request's
+// checks and unresolved threads, read again from the forge when fresh.
+func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Change {
 	out := slices.Clone(cs)
 	for i := range out {
 		c := &out[i]
@@ -306,6 +313,14 @@ func Enrich(ctx context.Context, cs []Change) []Change {
 				if files, _, err := localFiles(ctx, *c, false); err == nil {
 					c.Additions, c.Deletions = Size(files)
 				}
+			}
+		}
+		if c.Stage == StagePR && (c.State == StateOpen || c.State == StateDraft) {
+			if r, err := LoadReview(ctx, *c, forges, fresh); err != nil {
+				c.Reason = cmp.Or(c.Reason, "pull request detail unavailable: "+err.Error())
+			} else {
+				unresolved := r.Unresolved()
+				c.CheckRuns, c.Unresolved, c.Reason = r.Checks, &unresolved, cmp.Or(c.Reason, r.Stale)
 			}
 		}
 		if c.Worktree != "" {

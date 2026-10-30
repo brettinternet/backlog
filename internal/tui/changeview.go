@@ -2,6 +2,7 @@ package tui
 
 import (
 	"cmp"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -106,9 +107,10 @@ func (m Model) itemTab() detailTab {
 	return m.detailTab
 }
 
-// changeViewPage draws one change view tab: Overview's properties, one
-// entry per file, or one entry per commit.
-func changeViewPage(c changes.Change, d changes.Detail, request detailRequest) rendered {
+// changeViewPage draws one change view tab: Overview's properties, checks,
+// reviewers, and description, one entry per file or commit, or the
+// Conversation. Checks and Conversation entries carry the URL O opens.
+func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, request detailRequest, render func(string, int, string) (string, error)) rendered {
 	t, width := request.theme, max(1, request.width)
 	now := cmp.Or(request.now, time.Now())
 	var page rendered
@@ -138,22 +140,25 @@ func changeViewPage(c changes.Change, d changes.Detail, request detailRequest) r
 			subject := ansi.Truncate(textutil.Line(commit.Subject), room, "…")
 			page.lines = append(page.lines, head+subject+blank(room-ansi.StringWidth(subject))+t.muted.render(tail))
 		}
+	case tabChangeConversation:
+		page = conversationLines(r, request)
 	default:
-		page.lines = changeOverview(c, d, request)
+		page = changeOverview(c, d, r, request, render)
 	}
-	if d.Reason != "" {
+	if request.tab != tabChangeConversation && d.Reason != "" {
 		page.lines = append(page.lines, "", t.yellow.render(ansi.Truncate(textutil.Line(d.Reason), width, "…")))
 	}
 	return page
 }
 
-// changeOverview is the change's property sheet.
-func changeOverview(c changes.Change, d changes.Detail, request detailRequest) []string {
-	t := request.theme
-	var lines []string
+// changeOverview is the change's property sheet, with a pull request's
+// checks as entries, its reviewers, and its description.
+func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, request detailRequest, render func(string, int, string) (string, error)) rendered {
+	t, width := request.theme, max(1, request.width)
+	var page rendered
 	add := func(label, value string) {
 		if value != "" {
-			lines = append(lines, property(t, label, value))
+			page.lines = append(page.lines, property(t, label, value))
 		}
 	}
 	add("State", stageGlyph(t, c)+" "+changeState(t, c))
@@ -168,7 +173,36 @@ func changeOverview(c changes.Change, d changes.Detail, request detailRequest) [
 	if checks := checksGlyph(t, c.Checks); checks != "" {
 		add("Checks", checks+" "+c.Checks)
 	}
-	add("Review", changeReview(t, c.Review))
+	if r != nil {
+		if c.Checks == "" && len(r.Checks) > 0 {
+			page.lines = append(page.lines, property(t, "Checks", ""))
+		}
+		for _, check := range r.Checks {
+			page.entries, page.ids = append(page.entries, len(page.lines)), append(page.ids, check.URL)
+			head := blank(propertyWidth) + cmp.Or(checksGlyph(t, check.State), t.muted.render("–")) + " "
+			tail := "  " + t.muted.render(check.State)
+			room := max(1, width-ansi.StringWidth(head)-ansi.StringWidth(tail))
+			name := ansi.Truncate(textutil.Line(check.Name), room, "…")
+			page.lines = append(page.lines, head+name+blank(room-ansi.StringWidth(name))+tail)
+		}
+	}
+	review := changeReview(t, c.Review)
+	if r != nil && r.Unresolved() > 0 {
+		if review != "" {
+			review += t.muted.render(" · ")
+		}
+		review += t.yellow.render(strconv.Itoa(r.Unresolved()) + " unresolved")
+	}
+	add("Review", review)
+	if r != nil {
+		for i, reviewer := range r.Reviewers {
+			label := ""
+			if i == 0 {
+				label = "Reviewers"
+			}
+			page.lines = append(page.lines, property(t, label, ansi.Truncate(textutil.Line(reviewer.Login)+"  "+reviewerState(t, reviewer.State), max(1, width-propertyWidth), "…")))
+		}
+	}
 	additions, deletions := changes.Size(d.Files)
 	if len(d.Files) > 0 {
 		add("Files", strconv.Itoa(len(d.Files))+"  "+t.green.render("+"+strconv.Itoa(additions))+" "+t.red.render("−"+strconv.Itoa(deletions)))
@@ -191,10 +225,135 @@ func changeOverview(c changes.Change, d changes.Detail, request detailRequest) [
 	if c.URL != "" {
 		add("URL", t.link.render(textutil.Line(c.URL)))
 	}
-	if c.Reason != "" {
-		lines = append(lines, "", t.yellow.render(ansi.Truncate(textutil.Line(c.Reason), max(1, request.width), "…")))
+	for _, reason := range []string{c.Reason, reviewStale(r)} {
+		if reason != "" {
+			page.lines = append(page.lines, "", t.yellow.render(ansi.Truncate(textutil.Line(reason), width, "…")))
+		}
+	}
+	if r != nil && strings.TrimSpace(r.Body) != "" {
+		limit := bodyLimit
+		if request.expanded {
+			limit = bodyMoreLimit
+		}
+		body := cappedBody{limit: limit}
+		body.write(r.Body)
+		page.truncated = body.full
+		page.lines = append(page.lines, "")
+		page.lines = append(page.lines, markdownLines(body.builder.String(), width, t, render)...)
+	}
+	return page
+}
+
+func reviewStale(r *changes.Review) string {
+	if r == nil {
+		return ""
+	}
+	return r.Stale
+}
+
+func reviewerState(t theme, state string) string {
+	switch state {
+	case changes.ReviewApproved:
+		return t.green.render("approved")
+	case changes.ReviewChanges:
+		return t.red.render("changes requested")
+	case changes.ReviewRequested:
+		return t.yellow.render("requested")
+	}
+	return t.muted.render(state)
+}
+
+// markdownLines renders text, or shows it plain when rendering fails.
+func markdownLines(text string, width int, t theme, render func(string, int, string) (string, error)) []string {
+	out, err := "", errors.New("no renderer")
+	if render != nil {
+		out, err = render(text, width, t.name)
+	}
+	if err != nil {
+		out = ansi.Wrap(textutil.Sanitize(text), width, "")
+	}
+	if len(out) > renderLimit {
+		out = truncateUTF8(out, renderLimit) + "\n… rendered output capped"
+	}
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimRight(out, "\n "), "\n") {
+		lines = append(lines, strings.TrimRight(line, " "))
 	}
 	return lines
+}
+
+// conversationLines draws one entry per comment or review thread, unresolved
+// threads first: a thread's file and line or a comment's author, then each
+// comment's author, age, and wrapped text.
+func conversationLines(r *changes.Review, request detailRequest) rendered {
+	t, width := request.theme, max(1, request.width)
+	now := cmp.Or(request.now, time.Now())
+	var page rendered
+	if r == nil {
+		return page
+	}
+	if r.Stale != "" {
+		page.lines = append(page.lines, t.yellow.render(ansi.Truncate(textutil.Line(r.Stale), width, "…")), "")
+	}
+	entries := r.Conversation()
+	if len(entries) == 0 {
+		page.lines = append(page.lines, t.muted.render("No conversation."))
+		return page
+	}
+	limit := bodyLimit
+	if request.expanded {
+		limit = bodyMoreLimit
+	}
+	used := 0
+	comment := func(c changes.Comment, indent string) {
+		head := indent + t.bold.render(textutil.Line(c.Author))
+		if c.State != "" {
+			head += "  " + reviewerState(t, c.State)
+		}
+		if a := age(c.Time, now); a != "" {
+			head += t.muted.render("  " + a)
+		}
+		page.lines = append(page.lines, ansi.Truncate(head, width, "…"))
+		body := strings.TrimSpace(textutil.Sanitize(c.Body))
+		if body == "" || page.truncated {
+			return
+		}
+		if used+len(body) > limit {
+			body, page.truncated = truncateUTF8(body, max(0, limit-used))+"…", true
+		}
+		used += len(body)
+		for line := range strings.SplitSeq(ansi.Wrap(body, max(1, width-len(indent)-2), ""), "\n") {
+			page.lines = append(page.lines, indent+"  "+strings.TrimRight(line, " "))
+		}
+	}
+	for i, e := range entries {
+		if i > 0 {
+			page.lines = append(page.lines, "")
+		}
+		page.entries, page.ids = append(page.entries, len(page.lines)), append(page.ids, e.Comment.URL)
+		if e.Thread == nil {
+			comment(e.Comment, "")
+			continue
+		}
+		state := t.yellow.render("● unresolved")
+		if e.Thread.Resolved {
+			state = t.muted.render("✓ resolved")
+		}
+		if e.Thread.Outdated {
+			state += t.muted.render(" · outdated")
+		}
+		where := textutil.Line(e.Thread.Path)
+		if e.Thread.Line > 0 {
+			where += ":" + strconv.Itoa(e.Thread.Line)
+		}
+		room := max(1, width-ansi.StringWidth(state)-2)
+		where = ansi.Truncate(where, room, "…")
+		page.lines = append(page.lines, t.accent.render(where)+blank(room-ansi.StringWidth(where)+2)+state)
+		for _, c := range e.Thread.Comments {
+			comment(c, "  ")
+		}
+	}
+	return page
 }
 
 // fileLine is a status letter, the path (old → new for a rename) cut from

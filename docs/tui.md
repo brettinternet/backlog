@@ -251,15 +251,24 @@ branch or worktree counts `+/−` from its merge base with the default branch,
 including a worktree's uncommitted files. A second line names the branch, the
 worktree relative to the checkout root (or under `~`), how far an open branch
 is ahead of (`↑2`) and behind (`↓1`) the default branch, and dirty files; a
-third says why a change is unknown or stale. Git counts these on a worker each
-time the tab renders. `!` on an entry lists the actions that name a
+third says why a change is unknown or stale. A pull request's review decision
+is followed by its unresolved review threads, such as `2 unresolved`. Git
+counts these on a worker each time the tab renders. `!` on an entry lists the actions that name a
 `{change.*}` placeholder ([Automation](automation.md#placeholders-and-environment)), run on
 that change; `O` opens its URL. `R` reloads changes along with sources.
 
 `enter` on an entry opens its change view in place of the item's tabs, with
-Overview, Files, Diff, and Commits tabs; `backspace` returns to the entry. Overview
-lists the change's state, branch, worktree, base, head, checks, review, file
-and commit counts with `+/−`, and uncommitted files. Files lists one entry per
+Overview, Files, Diff, Commits, and Conversation tabs; `backspace` returns to
+the entry. Overview lists the change's state, branch, worktree, base, head,
+checks, review, file and commit counts with `+/−`, and uncommitted files. For a
+pull request it also lists each check run and commit status as an entry (`O`
+opens the one under the cursor), each requested or submitted reviewer with
+their state, the unresolved thread count beside the review, and the
+description. Conversation lists review threads (file, line, resolved or not)
+and comments, unresolved threads first, each with its comments' authors, ages,
+and text; `O` opens the one under the cursor, and `m` shows more when the text
+is cut off. On both, `j` and `k` scroll until the next entry shows, through a
+long entry or the description past the last check. Files lists one entry per
 changed file: status (`A` added, `M` modified, `D` deleted, `R` renamed,
 `B` binary, `U` uncommitted), path, and `+/−`. Commits lists the change's
 commits newest first, and `ys` copies the one under the cursor. A local
