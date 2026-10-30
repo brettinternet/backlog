@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 )
 
@@ -60,5 +62,37 @@ func TestActionDiscoverySurvivesEarlyTyping(t *testing.T) {
 	m = next.(Model)
 	if len(m.launcher.rows) != 1 || m.launcher.rows[0].actionRef != "tasks:BL-1" || m.launcher.query.text != "w" {
 		t.Fatalf("lost catalog or captured target: %+v", m.launcher)
+	}
+}
+
+// A reopened menu shows the item's last sessions at once, but never another
+// item's: picking one would resume the wrong agent session.
+func TestItemChoicesCacheByItem(t *testing.T) {
+	t.Parallel()
+	m := shellFixture(3)
+	m.opts.Automation = &project.Config{}
+	m.selected = 1
+	open := func() Model {
+		next, _ := m.openConfiguredActions()
+		return next.(Model)
+	}
+	m = open()
+	if !m.launcher.hidden {
+		t.Fatalf("first open drew the menu before its sessions: %+v", m.launcher)
+	}
+	next, _ := m.receiveActionChoices(actionChoicesMsg{serial: m.actionCatalogSerial, key: m.choicesKey(), resumes: []engine.ResumeChoice{{Command: "resume", Session: model.ItemSession{Agent: "claude"}}}})
+	m = next.(Model)
+	if m.launcher.hidden || m.launcher.rows[0].resume == nil {
+		t.Fatalf("sessions not shown: %+v", m.launcher)
+	}
+	m.launcher = launcherState{}
+	m.selected = 2
+	if m = open(); !m.launcher.hidden || slices.ContainsFunc(m.launcher.rows, func(r launcherRow) bool { return r.resume != nil }) {
+		t.Fatal("another item's sessions were offered")
+	}
+	m.launcher = launcherState{}
+	m.selected = 1
+	if m = open(); m.launcher.hidden || m.launcher.rows[0].resume == nil {
+		t.Fatal("reopened menu waited for sessions it had")
 	}
 }

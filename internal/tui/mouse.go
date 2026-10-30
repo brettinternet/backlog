@@ -300,6 +300,9 @@ func (m Model) openItemMenu() (tea.Model, tea.Cmd) {
 
 // insideLauncher reports whether screen cell x, y is on the palette's box.
 func (m Model) insideLauncher(x, y int) bool {
+	if m.launcher.hidden {
+		return false
+	}
 	body, _, _, _, width := m.launcherLayout()
 	left, top, w, h := m.modalRect(width, len(body)+2)
 	return x >= left && x < left+w && y >= top && y < top+h

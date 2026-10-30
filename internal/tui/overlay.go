@@ -35,6 +35,9 @@ func keyText(bindings []string) string {
 // launcherOverlay draws help over the whole body and the palette or go-to
 // list as a centered box.
 func (m Model) launcherOverlay(lines []string) []string {
+	if m.launcher.hidden {
+		return lines
+	}
 	if m.launcher.help {
 		out := append([]string(nil), lines...)
 		body := m.helpBody(m.width, m.helpRows())

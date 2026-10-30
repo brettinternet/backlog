@@ -181,6 +181,7 @@ type Model struct {
 	actionConfirm            *engine.ActionChoice
 	actionSerial             uint64
 	actionCatalogSerial      uint64
+	itemChoices              map[string]actionChoicesMsg // by choicesKey, the last fetched
 	capture                  captureState
 	longEdit                 longEditState
 	board                    boardState
@@ -888,6 +889,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case actionChoicesMsg:
 		return m.receiveActionChoices(msg)
+	case actionChoicesReveal:
+		if m.launcher.open && uint64(msg) == m.actionCatalogSerial {
+			m.launcher.hidden = false
+		}
+		return m, nil
 	case actionPreparedMsg:
 		return m.receiveActionPrepared(msg)
 	case actionFinishedMsg:

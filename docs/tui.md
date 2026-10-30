@@ -399,8 +399,11 @@ Start (not yet started) or Done (active), Priority…, Assign me (not yours) or
 Assignees…, Labels…, Edit title, Comment, Claim / release, Copy ID, Copy branch,
 Open URL, and Archive. Built-in actions that are disabled are left out; the
 palette has every action and says why one is disabled. The palette and help
-include configured actions too, with disabled reasons. `confirm` actions ask
-`y`/`n`.
+include configured actions too, with disabled reasons. The item's actions and
+sessions load on a worker. A menu reopened on the same item shows the ones it
+last loaded at once and refreshes them in place. Otherwise the menu waits up to
+150 ms for them before drawing, so they don't push its rows down under the
+cursor. `confirm` actions ask `y`/`n`.
 Attached actions suspend the TUI like `$EDITOR`; detached ones return at once.
 Bind one with `key:` in its declaration or `action:NAME` in user `keys`. See
 [Automation](automation.md).

@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
@@ -16,10 +18,12 @@ import (
 
 type actionChoicesMsg struct {
 	serial  uint64
+	key     string
 	choices []engine.ActionChoice
 	resumes []engine.ResumeChoice
 	err     error
 }
+type actionChoicesReveal uint64
 type actionPreparedMsg struct {
 	serial uint64
 	choice engine.ActionChoice
@@ -50,14 +54,46 @@ func (m Model) openConfiguredActions() (tea.Model, tea.Cmd) {
 	if m.opts.Automation == nil {
 		return m, nil
 	}
+	return m.loadItemChoices()
+}
+
+// choicesHold is how long a menu waits, hidden, for the item's actions and
+// sessions before it shows without them.
+const choicesHold = 150 * time.Millisecond
+
+// loadItemChoices fetches the selected item's configured actions and sessions
+// into the open launcher. It shows the ones last fetched for the item at once
+// and replaces them when the fetch returns. With none, a menu stays hidden
+// until then, for at most choicesHold, so rows don't arrive under the cursor.
+func (m Model) loadItemChoices() (tea.Model, tea.Cmd) {
 	m.actionCatalogSerial++
+	m.launcher.base = m.launcher.all
+	load := m.loadConfiguredActions()
+	if cached, ok := m.itemChoices[m.choicesKey()]; ok {
+		return m.withItemChoices(cached), load
+	}
 	m.launcher.loading = true
-	return m, m.loadConfiguredActions()
+	if m.launcher.help {
+		return m, load
+	}
+	m.launcher.hidden = true
+	serial := m.actionCatalogSerial
+	return m, tea.Batch(load, tea.Tick(choicesHold, func(time.Time) tea.Msg { return actionChoicesReveal(serial) }))
+}
+
+// choicesKey names the selected item's choices in the cache: its source ID,
+// and the session a History session row narrowed the menu to.
+func (m Model) choicesKey() string {
+	row, _ := m.selectedRow()
+	if m.hasWorkspace() {
+		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
+	}
+	return row.Ref.Source + ":" + row.Ref.ID + "\x00" + m.actionSession
 }
 
 func (m Model) loadConfiguredActions() tea.Cmd {
 	row, ok := m.selectedRow()
-	cfg, ctx, serial, session := m.opts.Automation, m.opts.Context, m.actionCatalogSerial, m.actionSession
+	cfg, ctx, serial, session, key := m.opts.Automation, m.opts.Context, m.actionCatalogSerial, m.actionSession, m.choicesKey()
 	if m.hasWorkspace() {
 		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
 	}
@@ -81,18 +117,35 @@ func (m Model) loadConfiguredActions() tea.Cmd {
 		} else {
 			resumes, resumeErr = engine.ResumeChoices(ctx, *cfg, id, "")
 		}
-		return actionChoicesMsg{serial: serial, choices: choices, resumes: resumes, err: cmp.Or(err, resumeErr)}
+		return actionChoicesMsg{serial: serial, key: key, choices: choices, resumes: resumes, err: cmp.Or(err, resumeErr)}
 	}
 }
 
 func (m Model) receiveActionChoices(msg actionChoicesMsg) (tea.Model, tea.Cmd) {
+	if msg.err == nil && msg.key != "" {
+		if m.itemChoices == nil {
+			m.itemChoices = map[string]actionChoicesMsg{}
+		}
+		m.itemChoices[msg.key] = msg
+	}
 	if !m.launcher.open || m.launcher.goTo || msg.serial != m.actionCatalogSerial {
 		return m, nil
 	}
-	m.launcher.loading = false
+	m.launcher.loading, m.launcher.hidden = false, false
 	if msg.err != nil {
 		m.launcher.err = boundedLine(msg.err.Error())
 	}
+	m = m.withItemChoices(msg)
+	if m.launcher.query.text == "" {
+		return m, nil
+	}
+	return m, m.filterLauncher()
+}
+
+// withItemChoices lists the item's choices with the launcher's built-in rows.
+// Unfiltered rows keep the cursor, so refreshed choices that match the shown
+// ones change nothing.
+func (m Model) withItemChoices(msg actionChoicesMsg) Model {
 	var found []launcherRow
 	for _, choice := range msg.choices {
 		for _, a := range m.keymap {
@@ -109,12 +162,13 @@ func (m Model) receiveActionChoices(msg actionChoicesMsg) (tea.Model, tea.Cmd) {
 	// Menus lead with what only this item has; help keeps them as its last
 	// sections.
 	if m.launcher.help {
-		m.launcher.all = append(m.launcher.all, found...)
+		m.launcher.all = slices.Concat(m.launcher.base, found)
 	} else {
-		m.launcher.all = append(found, m.launcher.all...)
+		m.launcher.all = slices.Concat(found, m.launcher.base)
 	}
 	m.launcher.rows = m.launcher.all
-	return m, m.filterLauncher()
+	m.launcher.cursor = min(m.launcher.cursor, max(0, len(m.launcher.rows)-1))
+	return m
 }
 
 func (m Model) prepareConfiguredAction(name string) (tea.Model, tea.Cmd) {

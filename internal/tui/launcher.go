@@ -26,10 +26,12 @@ type launcherRow struct {
 type launcherState struct {
 	open, help, goTo, loading bool
 	item                      bool // the ! menu: only the selected item's actions
+	hidden                    bool // waiting briefly for the item's choices
 	query                     lineInput
 	err                       string
 	cursor                    int
 	rows, all                 []launcherRow
+	base                      []launcherRow // all without the item's choices
 }
 type launcherFiltered struct {
 	serial uint64
@@ -190,9 +192,7 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	// Configured actions and resumable sessions both come from the selected item.
 	if _, selected := m.selectedRow(); m.opts.Automation != nil && (len(m.opts.Automation.Actions) > 0 || selected) {
 		m.launcherSerial++
-		m.actionCatalogSerial++
-		m.launcher.loading = true
-		return m, m.loadConfiguredActions()
+		return m.loadItemChoices()
 	}
 	return m, nil
 }
