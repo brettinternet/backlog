@@ -359,7 +359,8 @@ unarchive the issue in Linear ([linear.md](linear.md#writes-and-claims)).
 
 ## Coordination
 
-Enable with `coordination: {worklease: {}}` (Worklease 1.10.1 or later).
+Enable with `coordination: {worklease: {}}` (Worklease 1.10.1 or later, or
+1.13.0 on Windows).
 
 ```sh
 bl next --claim --start --session loop-a --json
@@ -521,7 +522,9 @@ Worklease's own policies. Regenerate the pinned test vectors with
 `bl` requires Worklease's schema-v2 JSON, which exposes exact resource
 identities, and guarded release (`release --if-claim-id ID`), which binds a
 release to the verified claim. Worklease 1.10.1 is the minimum; 1.9.3 is only
-the key-policy baseline.
+the key-policy baseline. Windows needs 1.13.0, the first Windows release: with
+an older Worklease there, claim commands and active transitions refuse
+`unavailable` naming that version.
 
 Anything `bl` can't verify fails closed:
 
@@ -695,7 +698,8 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
   edits `.gitignore`, and auto-commit cannot include it.
 - `cache` reads existing caches without repairing them.
 - `worklease` needs `version --json` to report schema v2 and version 1.10.1 or
-  later. A missing binary warns, or fails when coordination is configured.
+  later (1.13.0 on Windows). A missing binary warns, or fails when coordination
+  is configured.
 - `claims` warns about native and Backlog.md items in an active status whose
   claim is missing or expired, such as work an agent abandoned. `bl` never
   reclaims them: a person resumes, resets, or closes each one. It skips

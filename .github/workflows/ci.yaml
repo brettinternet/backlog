@@ -43,9 +43,9 @@ jobs:
 
       - name: Install mise
         uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-        # Worklease has no Windows build, and Windows needs only Go.
+        # Windows needs only Go and Worklease.
         with:
-          install_args: ${{ runner.os == 'Windows' && 'go' || '' }}
+          install_args: ${{ runner.os == 'Windows' && 'go github:brettinternet/worklease' || '' }}
 
       - name: Resolve Go cache settings
         id: go-cache
@@ -92,6 +92,9 @@ jobs:
       - name: Tests
         if: runner.os == 'Windows'
         run: go test ./...
+      - name: Coordination tests
+        if: runner.os == 'Windows'
+        run: BL_PROVIDER_TESTS=1 go test -run Provider ./internal/cli ./internal/worklease
 
       # Cache entries are immutable; main saves one per commit and pull requests reuse them.
       - name: Save Go caches
