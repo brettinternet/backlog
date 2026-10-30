@@ -217,7 +217,7 @@ const (
 	maxPullCommits = 250
 )
 
-// Pull reads one pull request's files and commits through the account's
+// Pull reads one pull request's files, with their patches, and commits through the account's
 // request queue, redacted like the pull request list, newest commit first.
 func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
 	c, err := f.s.authenticate(ctx)
@@ -225,7 +225,7 @@ func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
 		return changes.Detail{}, err
 	}
 	base := f.s.base() + "/repos/" + f.s.o.Repo + "/pulls/" + strconv.Itoa(number)
-	var d changes.Detail
+	d := changes.Detail{Patched: true}
 	for page := 1; len(d.Files) < maxPullFiles; page++ {
 		var files []struct {
 			Filename, Status, Patch string
@@ -245,9 +245,14 @@ func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
 			case "renamed":
 				file.Status, file.From = changes.FileRenamed, n.PreviousFilename
 			}
-			// GitHub sends no patch for a binary file.
-			if n.Patch == "" && n.Additions == 0 && n.Deletions == 0 && n.Status != "renamed" {
+			// GitHub sends no patch for a binary file, nor for one whose diff
+			// is too large, which still counts its lines.
+			file.Patch, file.Cut = changes.TrimPatch(n.Patch)
+			switch {
+			case n.Patch == "" && n.Additions == 0 && n.Deletions == 0 && n.Status != "renamed":
 				file.Status = changes.FileBinary
+			case n.Patch == "" && n.Additions+n.Deletions > 0:
+				file.Cut = "GitHub left out this file's diff"
 			}
 			d.Files = append(d.Files, file)
 		}

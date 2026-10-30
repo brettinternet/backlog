@@ -34,12 +34,13 @@ const (
 	// The change view's tabs replace the item's while it is open.
 	tabChangeOverview
 	tabChangeFiles
+	tabChangeDiff
 	tabChangeCommits
 )
 
 var (
 	detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "Changes", "History"}
-	changeTabNames = [...]string{"Overview", "Files", "Commits"}
+	changeTabNames = [...]string{"Overview", "Files", "Diff", "Commits"}
 )
 
 type detailIdentity struct {
@@ -86,6 +87,8 @@ type detailResult struct {
 	changes    []changes.Change  // the change each Changes entry is
 	ids        []string          // the history entry each History entry is, or each commit's SHA
 	hints      []string          // a key to show on each History entry when selected
+	files      []int             // the Diff tab's line of each file and hunk header
+	hunks      []int
 	truncated  bool
 	err        string
 }
@@ -132,6 +135,8 @@ type rendered struct {
 	changes   []changes.Change
 	ids       []string
 	hints     []string // a key worth showing on each entry when it is selected
+	files     []int    // the Diff tab's line of each file and hunk header
+	hunks     []int
 	truncated bool
 	size      int
 }
@@ -151,22 +156,28 @@ type detailCache struct {
 	items       map[itemKey]*list.Element
 	itemOrder   *list.List
 	itemBytes   int
+	maxEntries  int // renders kept, and their bytes
+	maxBytes    int
 }
 
 const (
 	maxRenderEntries = 24
 	maxRenderBytes   = 1 << 20
-	maxDetailItems   = 8
-	maxDetailBytes   = 1 << 20
-	bodyLimit        = 32 << 10
-	bodyMoreLimit    = 128 << 10
-	renderLimit      = 128 << 10
+	// The Diff tab keeps each file's render, so many small entries.
+	maxDiffEntries = 4096
+	maxDiffBytes   = 16 << 20
+	maxDetailItems = 8
+	maxDetailBytes = 1 << 20
+	bodyLimit      = 32 << 10
+	bodyMoreLimit  = 128 << 10
+	renderLimit    = 128 << 10
 )
 
-func newDetailCache() detailCache {
+func newDetailCache(maxEntries, maxBytes int) detailCache {
 	return detailCache{
 		renders: make(map[renderKey]*list.Element), renderOrder: list.New(),
 		items: make(map[itemKey]*list.Element), itemOrder: list.New(),
+		maxEntries: maxEntries, maxBytes: maxBytes,
 	}
 }
 func (cache *detailCache) render(key renderKey) (rendered, bool) {
@@ -183,13 +194,13 @@ func (cache *detailCache) putRender(key renderKey, value rendered) {
 		cache.renderOrder.Remove(element)
 		delete(cache.renders, key)
 	}
-	if value.size > maxRenderBytes {
+	if value.size > cache.maxBytes {
 		return
 	}
 	element := cache.renderOrder.PushBack(renderedEntry{key, value})
 	cache.renders[key] = element
 	cache.renderBytes += value.size
-	for cache.renderOrder.Len() > maxRenderEntries || cache.renderBytes > maxRenderBytes {
+	for cache.renderOrder.Len() > cache.maxEntries || cache.renderBytes > cache.maxBytes {
 		oldest := cache.renderOrder.Front()
 		entry := oldest.Value.(renderedEntry)
 		cache.renderBytes -= entry.value.size
@@ -280,9 +291,9 @@ type detailWorker struct {
 	history  func(context.Context, model.Item, []changes.Change) history.Result
 	position func(model.Ref) string // the event log's position, so new events redraw History
 	recent   historyCache
-	// changeDetail reads a change's files and commits; recentChange keeps the
-	// last that a worktree's edits can't change.
-	changeDetail func(context.Context, changes.Change) (changes.Detail, error)
+	// changeDetail reads a change's files and commits, with their patches when
+	// asked; recentChange keeps the last that a worktree's edits can't change.
+	changeDetail func(context.Context, changes.Change, bool) (changes.Detail, error)
 	recentChange changeCache
 	requests     chan detailRequest
 	results      chan detailResult
@@ -290,12 +301,13 @@ type detailWorker struct {
 	active       context.CancelFunc
 	started      sync.Once
 	cache        detailCache
+	diffs        detailCache // each file of the Diff tab
 }
 
 func newDetailWorker(ctx context.Context, read func(context.Context, model.Ref) (model.Item, error), render func(string, int, string) (string, error)) *detailWorker {
 	return &detailWorker{
 		ctx: ctx, read: read, render: render,
-		requests: make(chan detailRequest, 1), results: make(chan detailResult, 1), cache: newDetailCache(),
+		requests: make(chan detailRequest, 1), results: make(chan detailResult, 1), cache: newDetailCache(maxRenderEntries, maxRenderBytes), diffs: newDetailCache(maxDiffEntries, maxDiffBytes),
 	}
 }
 func (worker *detailWorker) start() {
@@ -360,7 +372,8 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	identity := identityFor(request.row, true)
 	result := detailResult{generation: request.generation, identity: identity}
 	if request.change != nil {
-		detail, err := worker.loadChange(ctx, *request.change, request.fresh)
+		diff := request.tab == tabChangeDiff
+		detail, err := worker.loadChange(ctx, *request.change, request.fresh, diff)
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
 			return result
@@ -369,8 +382,18 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			// The change's own facts still show, with why its files don't.
 			detail = changes.Detail{Reason: err.Error()}
 		}
-		page := changeViewPage(*request.change, detail, request)
+		var page rendered
+		if diff && err == nil {
+			page = worker.diffPage(ctx, *request.change, detail, request)
+		} else {
+			page = changeViewPage(*request.change, detail, request)
+		}
+		if err := ctx.Err(); err != nil {
+			result.err = textutil.Line(err.Error())
+			return result
+		}
 		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
+		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		return result
 	}
 	if request.tab == tabChanges {
@@ -471,19 +494,20 @@ func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, li
 
 // loadChange reads a change's files and commits each time, as the Changes
 // tab does, except one without a worktree is kept until its head or update
-// time moves, so a pull request isn't fetched again on every tab.
-func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fresh bool) (changes.Detail, error) {
+// time moves, so a pull request isn't fetched again on every tab. The Diff
+// tab asks for patches, which a kept detail without them can't serve.
+func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fresh, patch bool) (changes.Detail, error) {
 	if worker.changeDetail == nil {
 		return changes.Detail{}, errors.New("change detail is unavailable")
 	}
 	key := ""
 	if c.Worktree == "" {
 		key = strings.Join([]string{c.ID, c.Stage, c.State, c.Head, c.Updated.String()}, "\x00")
-		if worker.recentChange.key == key && !fresh {
+		if cached := worker.recentChange; cached.key == key && !fresh && (cached.detail.Patched || !patch) {
 			return worker.recentChange.detail, nil
 		}
 	}
-	detail, err := worker.changeDetail(ctx, c)
+	detail, err := worker.changeDetail(ctx, c, patch)
 	if err == nil && key != "" && ctx.Err() == nil {
 		worker.recentChange = changeCache{key, detail}
 	}

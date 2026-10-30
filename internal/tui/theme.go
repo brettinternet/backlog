@@ -33,6 +33,8 @@ type theme struct {
 	selectionOff                              string
 	urgent, high2, medium, low, none, pending paint
 	failed, mark, link, code                  paint
+	added, removed                            string // diff line backgrounds; reset with 49
+	addedWord, removedWord                    paint  // a diff line's changed words
 }
 
 const resetBg = "\x1b[49m"
@@ -114,6 +116,7 @@ func newTheme(noColor, highContrast bool, fg, bg color.Color) theme {
 		t.selection = "\x1b[7m"
 		t.selectionOff = "\x1b[27m"
 		t.surface = ""
+		t.addedWord, t.removedWord = t.reverse, t.reverse
 		return t
 	}
 	t.muted = sgr(mix(background, foreground, 0.55).fg(), "39")
@@ -125,11 +128,19 @@ func newTheme(noColor, highContrast bool, fg, bg color.Color) theme {
 	t.selectionOff = resetBg
 	t.surface = "\x1b[" + mix(background, foreground, 0.06).bg() + "m"
 	t.tab = sgr("1;"+ansiColor(4)+";"+surface.bg(), "22;39;49")
+	green, red := rgb{0x40, 0xa0, 0x2b}, rgb{0xd2, 0x0f, 0x39}
+	if dark {
+		green, red = rgb{0xa6, 0xe3, 0xa1}, rgb{0xf3, 0x8b, 0xa8}
+	}
+	t.added = "\x1b[" + mix(background, green, 0.16).bg() + "m"
+	t.removed = "\x1b[" + mix(background, red, 0.16).bg() + "m"
+	t.addedWord = sgr(mix(background, green, 0.38).bg(), "49")
+	t.removedWord = sgr(mix(background, red, 0.38).bg(), "49")
 	return t
 }
 
 // key identifies the palette for caches of rendered, colored output.
-func (t theme) key() string { return t.name + t.muted.on + t.faint.on + t.selection }
+func (t theme) key() string { return t.name + t.muted.on + t.faint.on + t.selection + t.added }
 
 // selected paints a full-width line with the selection background.
 func (t theme) selected(line string) string {

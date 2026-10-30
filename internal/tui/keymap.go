@@ -284,6 +284,13 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 		m.inputSerial++
 		return m, nil
 	}
+	// On the Diff tab [ and ] jump files, and c after one jumps hunks instead.
+	if prefix := m.prefix; prefix == "[" || prefix == "]" {
+		if key == "c" && m.detailFocus && m.detailTab == tabChangeDiff {
+			return m.canonicalKey(key)
+		}
+		m.prefix = ""
+	}
 	sequence := key
 	if m.keyPrefix != "" {
 		sequence = m.keyPrefix + " " + key
@@ -426,6 +433,9 @@ func (m Model) disabledReason(a action) string {
 		}
 		if slices.Contains([]string{"move-down", "move-up", "next-item", "previous-item", "first", "last", "half-down", "half-up", "page-down", "page-up", "left", "detail", "next-detail-tab", "previous-detail-tab", "back", "cancel", "next-view", "previous-view", "go-to", "help", "palette", "quit", "quit-now", "save-view", "split-left", "split-right"}, a.id) {
 			return ""
+		}
+		if (a.id == "previous-group" || a.id == "next-group") && m.detailTab == tabChangeDiff {
+			return "" // [ and ] jump files
 		}
 		if a.id == "milestone" && (m.detailTruncated || m.detailExpanded) {
 			return "" // m shows more of the cut-off body

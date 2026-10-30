@@ -183,7 +183,7 @@ the focused column.
 detail, `j`/`k` and page keys scroll, `tab`/`shift-tab` change tabs, `m` shows
 more of a cut-off body (otherwise it picks a milestone), and `enter`, `esc`, or
 `q` close (`enter` follows a relation in Relations, opens a change view from
-Changes, and expands an entry in History). Edit and copy keys work in
+Changes, and in History opens a commit's diff or expands another entry). Edit and copy keys work in
 detail on the item shown, never on marks. If an edit moves the item out of the
 view, detail keeps showing it until you move. `J`/`K` select the next or
 previous item from either pane, counting from where a moved item was. At split
@@ -257,7 +257,7 @@ time the tab renders. `!` on an entry lists the actions that name a
 that change; `O` opens its URL. `R` reloads changes along with sources.
 
 `enter` on an entry opens its change view in place of the item's tabs, with
-Overview, Files, and Commits tabs; `backspace` returns to the entry. Overview
+Overview, Files, Diff, and Commits tabs; `backspace` returns to the entry. Overview
 lists the change's state, branch, worktree, base, head, checks, review, file
 and commit counts with `+/−`, and uncommitted files. Files lists one entry per
 changed file: status (`A` added, `M` modified, `D` deleted, `R` renamed,
@@ -268,6 +268,22 @@ from its landed commits, and a pull request without a local head from the
 forge. Git and forge reads run on the detail worker for the change shown, and
 a worktree's uncommitted files are skipped, saying so, when repository config
 defines a filter driver. `!`, `O`, and `yp` act on the change in view.
+
+Diff shows each file's header line, then its hunks: unified (old and new line
+numbers, sign, code) when the pane is under 120 columns, side by side at 120
+or wider. Code is highlighted by file type, changed lines are tinted green and
+red, and the changed words of a paired line are marked; high contrast marks
+them in reverse and no color leaves them plain. `]`/`[` jump to the next or
+previous file, `]c`/`[c` to the next or previous hunk, and `/` searches.
+A file's diff over 32 KiB shows its size until `m` draws it; patches are cut
+at 128 KiB, saying so. A branch or worktree diffs against its merge base with
+the default branch, plus a worktree's uncommitted changes; a landed change
+diffs its merges against their first parents; a pull request without a local
+head shows the forge's per-file patches and says which files the forge left
+out. Git runs on the detail worker with external diff and textconv drivers
+off, and each file renders there, cached by head, file, width, and theme.
+`enter` on a commit in History opens that commit's Diff in the change view;
+`backspace` returns to the commit's entry.
 
 History opens scrolled to the newest entry, with `j`/`k` moving over entries.
 Each row reads time, source, summary, then member count and actor. The time
@@ -285,7 +301,7 @@ with its entries folded under it. Each linked change is one row (label, title,
 state, checks, review) spanning its first event to its merge, close, or last
 landed commit, with its worktree, branch, opened, merged, and closed events and
 landed commits folded under it. `▸` marks a row that expands: `enter` opens a
-group, a cut-off summary wrapped in full, and the entry's detail, wrapped with
+group (or a commit's diff), a cut-off summary wrapped in full, and the entry's detail, wrapped with
 hanging indents. An edit's detail lists what the summary abbreviates, per field:
 added and removed lines (`+`, `-`, green and red, `…` for skipped unchanged
 lines), and checked or unchecked criteria (`[x]`, `[ ]`). A session's detail

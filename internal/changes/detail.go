@@ -3,6 +3,7 @@ package changes
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -29,17 +30,22 @@ const (
 )
 
 // File is one file a change touches, with From the old path of a rename.
+// Patch is its unified diff hunks, read only when asked for, and Cut says why
+// they are missing or partial.
 type File struct {
 	Path, From, Status   string
 	Additions, Deletions int
+	Patch, Cut           string
 }
 
 // Detail is what a change touches: its files and its commits, newest first.
-// Reason says what it leaves out, such as a worktree's uncommitted files.
+// Reason says what it leaves out, such as a worktree's uncommitted files, and
+// Patched that its files carry their patches.
 type Detail struct {
 	Files   []File
 	Commits []Commit
 	Reason  string
+	Patched bool
 }
 
 const (
@@ -48,22 +54,30 @@ const (
 	// maxUntrackedBytes bounds how much of an untracked file is read to count
 	// its lines.
 	maxUntrackedBytes = 4 << 20
+	// MaxPatchBytes bounds one file's patch.
+	MaxPatchBytes = 128 << 10
 )
 
-// LoadDetail reads one change's files and commits on a worker: from Git for
-// landed commits or a local head, else from the forge serving its pull
-// request.
-func LoadDetail(ctx context.Context, c Change, forges []Forge) (Detail, error) {
+// CommitChange is one commit in the checkout dir as a landed change, so its
+// diff against its first parent can be read like a merge's.
+func CommitChange(dir, sha string) Change {
+	return Change{ID: "commit:" + sha, Stage: StageLanded, State: StateMerged, Head: sha, Commits: []Commit{{SHA: sha}}, dir: dir}
+}
+
+// LoadDetail reads one change's files and commits on a worker, with each
+// file's patch if patch is set: from Git for landed commits or a local head,
+// else from the forge serving its pull request, which always sends patches.
+func LoadDetail(ctx context.Context, c Change, forges []Forge, patch bool) (Detail, error) {
 	switch {
 	case len(c.Commits) > 0 && c.dir != "":
-		return landedDetail(ctx, c)
+		return landedDetail(ctx, c, patch)
 	case c.ref != "" && c.base != "" && c.dir != "":
-		files, reason, err := localFiles(ctx, c)
+		files, reason, err := localFiles(ctx, c, patch)
 		if err != nil {
 			return Detail{}, err
 		}
 		commits, err := gitCommits(ctx, c.dir, c.base+".."+c.ref)
-		return Detail{Files: files, Commits: commits, Reason: reason}, err
+		return Detail{Files: files, Commits: commits, Reason: reason, Patched: patch}, err
 	case c.Number > 0:
 		for _, f := range forges {
 			if strings.HasPrefix(strings.ToLower(c.URL), strings.ToLower(f.Web())+"/pull/") {
@@ -77,24 +91,35 @@ func LoadDetail(ctx context.Context, c Change, forges []Forge) (Detail, error) {
 
 // landedDetail diffs each landed commit against its first parent and lists
 // the commits it brought in, newest first.
-func landedDetail(ctx context.Context, c Change) (Detail, error) {
-	var d Detail
+func landedDetail(ctx context.Context, c Change, patch bool) (Detail, error) {
+	d := Detail{Patched: patch}
 	byPath := map[string]int{}
 	for _, commit := range c.Commits {
-		out, err := git.Run(ctx, c.dir, diffArgs(commit.SHA+"^1", commit.SHA)...)
+		revisions := commit.SHA + "^1.." + commit.SHA
+		files, err := gitFiles(ctx, c.dir, patch, commit.SHA+"^1", commit.SHA)
 		if err != nil {
-			return Detail{}, err
+			// A root commit, such as a History commit, diffs against the empty tree.
+			tree, ok := emptyTree(ctx, c.dir, commit.SHA)
+			if !ok {
+				return Detail{}, err
+			}
+			revisions = commit.SHA
+			if files, err = gitFiles(ctx, c.dir, patch, tree, commit.SHA); err != nil {
+				return Detail{}, err
+			}
 		}
-		for _, f := range parseDiff(out) {
+		for _, f := range files {
 			if i, ok := byPath[f.Path]; ok {
 				d.Files[i].Additions += f.Additions
 				d.Files[i].Deletions += f.Deletions
+				d.Files[i].Patch, d.Files[i].Cut = TrimPatch(d.Files[i].Patch + f.Patch)
+				d.Files[i].Cut = cmp.Or(d.Files[i].Cut, f.Cut)
 				continue
 			}
 			byPath[f.Path] = len(d.Files)
 			d.Files = append(d.Files, f)
 		}
-		commits, err := gitCommits(ctx, c.dir, commit.SHA+"^1.."+commit.SHA)
+		commits, err := gitCommits(ctx, c.dir, revisions)
 		if err != nil {
 			return Detail{}, err
 		}
@@ -104,29 +129,37 @@ func landedDetail(ctx context.Context, c Change) (Detail, error) {
 	return d, nil
 }
 
+// emptyTree is the repository's empty tree when sha is a root commit.
+func emptyTree(ctx context.Context, dir, sha string) (string, bool) {
+	if _, err := git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", sha+"^1"); err == nil {
+		return "", false
+	}
+	out, err := git.Run(ctx, dir, "hash-object", "-t", "tree", "/dev/null")
+	return strings.TrimSpace(string(out)), err == nil
+}
+
 // localFiles diffs a branch against its merge base with the default branch.
 // A worktree diffs its working tree instead, adding untracked files, unless
 // repository config defines a filter, which reading the working tree would
 // run.
-func localFiles(ctx context.Context, c Change) ([]File, string, error) {
+func localFiles(ctx context.Context, c Change, patch bool) ([]File, string, error) {
 	raw, err := git.Run(ctx, c.dir, "merge-base", c.base, c.ref)
 	if err != nil {
 		return nil, "", err
 	}
 	base := strings.TrimSpace(string(raw))
 	if c.Worktree == "" {
-		out, err := git.Run(ctx, c.dir, diffArgs(base, c.ref)...)
-		return parseDiff(out), "", err
+		files, err := gitFiles(ctx, c.dir, patch, base, c.ref)
+		return files, "", err
 	}
 	if filtered, err := git.RepoFilter(ctx, c.Worktree); err != nil || filtered {
-		out, err := git.Run(ctx, c.dir, diffArgs(base, c.ref)...)
-		return parseDiff(out), "uncommitted files skipped: repository config defines a filter", err
+		files, err := gitFiles(ctx, c.dir, patch, base, c.ref)
+		return files, "uncommitted files skipped: repository config defines a filter", err
 	}
-	out, err := git.Run(ctx, c.Worktree, diffArgs(base)...)
+	files, err := gitFiles(ctx, c.Worktree, patch, base)
 	if err != nil {
 		return nil, "", err
 	}
-	files := parseDiff(out)
 	dirty, err := uncommitted(ctx, c.Worktree)
 	if err != nil {
 		return nil, "", err
@@ -139,7 +172,7 @@ func localFiles(ctx context.Context, c Change) ([]File, string, error) {
 		if i, ok := byPath[path]; ok {
 			files[i].Status = FileUncommitted
 		} else if untracked {
-			files = append(files, untrackedFile(c.Worktree, path))
+			files = append(files, untrackedFile(c.Worktree, path, patch))
 		}
 	}
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
@@ -153,6 +186,47 @@ func Size(files []File) (additions, deletions int) {
 		deletions += f.Deletions
 	}
 	return additions, deletions
+}
+
+// gitFiles diffs revs in dir, adding each file's patch if patch is set.
+func gitFiles(ctx context.Context, dir string, patch bool, revs ...string) ([]File, error) {
+	out, err := git.Run(ctx, dir, diffArgs(revs...)...)
+	if err != nil || !patch {
+		return parseDiff(out), err
+	}
+	files := parseDiff(out)
+	args := []string{"diff", "--patch", "-M", "--no-color", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--no-relative", "--src-prefix=a/", "--dst-prefix=b/"}
+	out, err = git.Run(ctx, dir, append(append(args, revs...), "--")...)
+	if err != nil {
+		return nil, err
+	}
+	// Both runs list the same files in the same order, each patch opening
+	// with its own diff --git line; paths come from the -z run, unquoted.
+	patches := strings.Split(string(out), "\ndiff --git ")
+	for i := range len(patches) - 1 {
+		patches[i] += "\n"
+	}
+	if !strings.HasPrefix(string(out), "diff --git ") || len(patches) != len(files) {
+		for i := range files {
+			files[i].Cut = "diff unavailable"
+		}
+		return files, nil
+	}
+	for i, section := range patches {
+		if at := strings.Index(section, "\n@@ "); at >= 0 {
+			files[i].Patch, files[i].Cut = TrimPatch(section[at+1:])
+		}
+	}
+	return files, nil
+}
+
+// TrimPatch cuts a patch to MaxPatchBytes at a line end, saying so.
+func TrimPatch(patch string) (string, string) {
+	if len(patch) <= MaxPatchBytes {
+		return patch, ""
+	}
+	patch = patch[:MaxPatchBytes]
+	return patch[:strings.LastIndexByte(patch, '\n')+1], "diff over 128 KiB cut"
 }
 
 func diffArgs(revs ...string) []string {
@@ -227,8 +301,8 @@ func uncommitted(ctx context.Context, worktree string) (map[string]bool, error) 
 
 // untrackedFile counts an untracked file's lines as Git would, reading only
 // regular files and at most maxUntrackedBytes; a NUL in its first 8,000 bytes
-// makes it binary.
-func untrackedFile(worktree, path string) File {
+// makes it binary. With patch set, its lines become one added hunk.
+func untrackedFile(worktree, path string, patch bool) File {
 	f := File{Path: path, Status: FileUncommitted}
 	full := filepath.Join(worktree, filepath.FromSlash(path))
 	if info, err := os.Lstat(full); err != nil || !info.Mode().IsRegular() {
@@ -246,9 +320,16 @@ func untrackedFile(worktree, path string) File {
 		return f
 	}
 	partial := false
+	var body strings.Builder
 	for {
 		chunk, err := r.ReadSlice('\n')
 		if len(chunk) > 0 {
+			if patch && body.Len() < MaxPatchBytes {
+				if !partial {
+					body.WriteByte('+')
+				}
+				body.Write(chunk)
+			}
 			partial = chunk[len(chunk)-1] != '\n'
 			if !partial {
 				f.Additions++
@@ -260,6 +341,10 @@ func untrackedFile(worktree, path string) File {
 	}
 	if partial {
 		f.Additions++
+		body.WriteString("\n\\ No newline at end of file\n")
+	}
+	if patch && f.Additions > 0 {
+		f.Patch, f.Cut = TrimPatch(fmt.Sprintf("@@ -0,0 +1,%d @@\n", f.Additions) + body.String())
 	}
 	return f
 }

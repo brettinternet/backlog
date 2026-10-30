@@ -82,14 +82,14 @@ func (t *Tracker) Updates() <-chan struct{} { return t.updates }
 // Detail reads one change's files and commits, from Git or the forge among
 // the tracked projects' that serves its pull request. A nil tracker reads
 // only Git.
-func (t *Tracker) Detail(ctx context.Context, c Change) (Detail, error) {
+func (t *Tracker) Detail(ctx context.Context, c Change, patch bool) (Detail, error) {
 	var forges []Forge
 	if t != nil {
 		for _, o := range t.projects {
 			forges = append(forges, o.Forges...)
 		}
 	}
-	return LoadDetail(ctx, c, forges)
+	return LoadDetail(ctx, c, forges, patch)
 }
 
 // Refresh reloads local data and every forge now.

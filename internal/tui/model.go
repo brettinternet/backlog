@@ -154,6 +154,8 @@ type Model struct {
 	detailMasked             bool   // the loading placeholder covers the body
 	detailSubmitted          uint64 // the last generation sent to the worker
 	detailTruncated          bool
+	detailFiles, detailHunks []int    // the Diff tab's file and hunk header lines
+	diffOrigin               int      // the scroll before [ or ], which [c and ]c restore
 	detailLines              []string // the last body, kept while the next loads
 	detailEntries            []int    // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
@@ -208,11 +210,14 @@ type Model struct {
 	detailHistory []detailStop // items followed from, oldest first
 	catalog       *engine.Catalog
 	mouse         mouseState
-	// change is the linked change the change view shows, opened from the
-	// Changes entry at changeCursor of changeRef.
+	// change is the linked change or commit the change view shows, opened
+	// from changeTab of changeRef: the Changes entry at changeCursor, or the
+	// History entry changeEntry, found by ID as History rows shift.
 	change       *changes.Change
 	changeRef    model.Ref
+	changeTab    detailTab
 	changeCursor int
+	changeEntry  string
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -373,7 +378,7 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	m.detailGeneration++
 	row, ok := m.selectedRow()
 	if m.change != nil && (!ok || row.Ref != m.changeRef) {
-		m.change, m.detailTab, m.entryCursor = nil, tabChanges, 0
+		m.change, m.detailTab, m.entryCursor = nil, m.changeTab, 0
 	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
@@ -890,14 +895,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
 			m.detailChanges = result.changes
+			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
 			if !same {
 				m.detailScroll = 0
 				// History opens on its newest entry, at the bottom.
+				// History opens on its newest entry, at the bottom, or on the
+				// commit the change view returns from.
 				if m.detailTab == tabHistory {
 					m.entryCursor = max(0, len(m.detailIDs)-1)
 					m.detailScroll = len(m.detailLines)
+					if n := slices.Index(m.detailIDs, m.changeEntry); m.changeEntry != "" && n >= 0 {
+						m.entryCursor = n
+					}
+					m.changeEntry = ""
 				}
 			}
 			if pinned {
@@ -1205,7 +1217,24 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.detailOpen && m.detailFocus {
+		if prefix := m.prefix; prefix == "[" || prefix == "]" {
+			m.prefix = ""
+			if s == "c" {
+				m.detailScroll = m.diffOrigin
+				m.jumpDiff(m.detailHunks, prefix == "]")
+				return m, nil
+			}
+		}
 		switch s {
+		case "[", "]":
+			if m.detailTab == tabChangeDiff {
+				m.diffOrigin = m.detailScroll
+				m.jumpDiff(m.detailFiles, s == "]")
+				m.prefix = s
+				return m, nil
+			}
+			cmd, _ := m.updateItemKey(s)
+			return m, cmd
 		case "h", "left":
 			if !m.split() {
 				m.closeDetail()
@@ -1222,6 +1251,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, m.followRelation()
 			}
 			if m.detailTab == tabHistory && len(m.detailIDs) > 0 {
+				if cmd, ok := m.openCommit(); ok {
+					return m, cmd
+				}
 				return m, m.toggleHistoryEntry()
 			}
 			if m.change != nil {
@@ -1490,10 +1522,11 @@ func (m *Model) closeDetail() {
 	m.detailLines = nil
 	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
 	m.detailChanges = nil
+	m.detailFiles, m.detailHunks = nil, nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	if m.change != nil {
-		m.change, m.detailTab, m.entryCursor = nil, tabChanges, m.changeCursor
+		m.change, m.detailTab, m.entryCursor = nil, m.changeTab, m.changeCursor
 	}
 	m.detailTruncated = false
 	m.find = findState{}
