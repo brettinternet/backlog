@@ -16,18 +16,20 @@ import (
 
 // Entry is one row of an item's history. ID is stable across loads, so it can
 // be a paging cursor or an expanded-row key. An entry with Span heads a group;
-// Group names the head an entry nests under.
+// Group names the head an entry nests under. Resumable marks a session row
+// whose agent bl resume can reopen.
 type Entry struct {
-	ID       string    `json:"id"`
-	Time     time.Time `json:"time"`
-	Kind     string    `json:"kind"`
-	Actor    string    `json:"actor,omitempty"`
-	Session  string    `json:"session,omitempty"`
-	Group    string    `json:"group,omitempty"`
-	Span     *Span     `json:"span,omitempty"`
-	Summary  string    `json:"summary"`
-	Detail   string    `json:"detail,omitempty"`
-	Provider string    `json:"provider"`
+	ID        string    `json:"id"`
+	Time      time.Time `json:"time"`
+	Kind      string    `json:"kind"`
+	Actor     string    `json:"actor,omitempty"`
+	Session   string    `json:"session,omitempty"`
+	Group     string    `json:"group,omitempty"`
+	Span      *Span     `json:"span,omitempty"`
+	Resumable bool      `json:"resumable,omitempty"`
+	Summary   string    `json:"summary"`
+	Detail    string    `json:"detail,omitempty"`
+	Provider  string    `json:"provider"`
 }
 
 // Span is the extent of a group. End is zero while it is open.
@@ -204,3 +206,27 @@ func (r Result) Page(cursor string, limit int) (Page, error) {
 	}
 	return page, nil
 }
+
+// Label names where an entry came from, usually within LabelWidth cells, so a
+// reader can tell agent work, edits, commits, and remote activity apart.
+func Label(e Entry) string {
+	switch {
+	case e.Kind == "commit":
+		return "git"
+	case e.Kind == "comment":
+		return "comment"
+	case e.Kind == "session" && e.Actor != "":
+		return "agent"
+	case e.Kind == "session.handoff":
+		return "handoff"
+	case e.Kind == "activity":
+		return e.Provider
+	case strings.HasPrefix(e.Kind, "item."):
+		return "item"
+	}
+	kind, _, _ := strings.Cut(e.Kind, ".")
+	return cmp.Or(kind, e.Provider)
+}
+
+// LabelWidth is the widest built-in Label, which a label column pads to.
+const LabelWidth = 7

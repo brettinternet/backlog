@@ -153,6 +153,7 @@ type Model struct {
 	detailEntries            []int    // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
 	detailIDs                []string        // the history entry of each History entry
+	detailHints              []string        // the key hint of each History entry
 	historyOpen              map[string]bool // expanded History entries of historyRef
 	historyRef               model.Ref
 	actionSession            string // the History session row ! opened the actions menu on
@@ -832,7 +833,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailLoading = false
 			m.detailError = result.err
 			m.detailLines = result.lines
-			m.detailEntries, m.detailTargets, m.detailIDs = result.entries, result.targets, result.ids
+			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
 			if !same {
@@ -1415,7 +1416,7 @@ func (m *Model) closeDetail() {
 	m.detailGeneration++
 	m.detailLoading = false
 	m.detailLines = nil
-	m.detailEntries, m.detailTargets, m.detailIDs = nil, nil, nil
+	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	m.detailTruncated = false

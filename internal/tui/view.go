@@ -292,6 +292,9 @@ func (m Model) detailPane(width, rows int) []string {
 	}
 	// A capped body says so where it is always visible, not only at its end.
 	// The meta row has room; the tab row may be full.
+	if m.detailFocus && m.detached != nil && len(m.detailHistory) > 0 {
+		right = append(right, "⌫ back")
+	}
 	if m.detailExpanded {
 		right = append(right, "m less")
 	} else if m.detailTruncated {
@@ -325,9 +328,14 @@ func (m Model) detailPane(width, rows int) []string {
 			put(line, t.muted.render("Loading…"))
 		}
 	default:
-		cursor := -1
+		cursor, hint := -1, ""
 		if m.detailCurrent() && (m.detailTab == tabCriteria || m.detailTab == tabRelations || m.detailTab == tabHistory) && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
 			cursor = m.detailEntries[m.entryCursor]
+			// A row-specific key shows only on the focused row, so the list
+			// stays clean while the key is still found where it applies.
+			if m.detailFocus && m.entryCursor < len(m.detailHints) {
+				hint = m.detailHints[m.entryCursor]
+			}
 		}
 		for i := m.detailScroll; i < len(m.detailLines) && line < rows; i++ {
 			if i == cursor {
@@ -335,7 +343,13 @@ func (m Model) detailPane(width, rows int) []string {
 				if m.detailFocus {
 					bar = t.accent.render("▌")
 				}
-				out[line] = t.selected(fit(bar+blank(detailPad-1)+m.highlightSelection(i, m.highlightFind(m.detailLines[i])), width))
+				text := m.highlightSelection(i, m.highlightFind(m.detailLines[i]))
+				if hint != "" {
+					// History rows keep room for their hint; truncation is a guard.
+					text = ansi.Truncate(text, max(0, inner-hintWidth(hint)), "…")
+					text += blank(inner-ansi.StringWidth(text)-ansi.StringWidth(hint)) + t.faint.render(hint)
+				}
+				out[line] = t.selected(fit(bar+blank(detailPad-1)+text, width))
 			} else {
 				put(line, m.highlightSelection(i, m.highlightFind(m.detailLines[i])))
 			}

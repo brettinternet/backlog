@@ -192,7 +192,10 @@ archived items (up to 100 matches). `enter` opens detail without changing the
 view; `esc` or `q` returns.
 
 `:` opens the palette: every action, its bindings, and why it's disabled if it
-is. `?` opens the same list as read-only help. Both are searchable.
+is. `?` opens the same list as read-only help. Both are searchable. Outside
+them, a key is shown only where it applies and nothing else suggests it, in
+faint text: `m more` and `⌫ back` in the detail header, and `! resume` on a
+selected session row in History.
 
 ## Detail
 
@@ -216,16 +219,31 @@ new version) keeps its body and shows loading on the header row.
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and
 list selection stay. `backspace` returns to the previous item, back through
-every jump to the original selection. A target that isn't loaded shows `?`,
+every jump to the original selection; the detail header shows `⌫ back` while
+there is one. A target that isn't loaded shows `?`,
 and following it says why: its source isn't configured, failed, or is still
 loading, or the item isn't in it.
 
 History opens scrolled to the newest entry, with `j`/`k` moving over entries.
-Each session is one row (agent, phases, duration, state, `resumable`, the
+Each row reads time, source, summary, then member count and actor. The time
+follows `ls -l`: `Oct 26 17:20` within six months, `Oct 26  2025` before. The
+source label is `item` (edits and readiness), `claim`, `agent` (a session),
+`handoff`, `comment`, `git`, `action`, `hook`, or the remote provider
+(`github`, `linear`, `jira`); agents, commits, comments, and remote activity
+are colored, and the column is dropped below 48 cells. An edit's summary names
+each field: `status todo → in-progress`, `labels +windows -human`,
+`criteria 2/5 → 3/5`, or `plan changed` for long text. Each session is one row
+(agent, phases, duration, state unless it is the last phase, `resumable`, the
 first line of its handoff, and its live [contact](cli.md#contact) channels)
-with its entries folded under it; `enter` expands a group or shows an entry's
-full detail. `!` on a session row narrows the actions menu's Sessions to `Resume`
-and `Fork` for that session, each disabled with its reason when refused. A provider that isn't `ok` shows as one
+with its entries folded under it. `▸` marks a row that expands: `enter` opens a
+group, a cut-off summary wrapped in full, and the entry's detail, wrapped with
+hanging indents. An edit's detail lists what the summary abbreviates, per field:
+added and removed lines (`+`, `-`, green and red, `…` for skipped unchanged
+lines), and checked or unchecked criteria (`[x]`, `[ ]`). A session's detail
+aligns its fields. `!` on a session row narrows the actions menu's Sessions to
+`Resume` and `Fork` for that session, each disabled with its reason when
+refused; a resumable session row shows `! resume` at its right end while
+selected, and nowhere else. A provider that isn't `ok` shows as one
 dim line at the top, such as `claims: unavailable (coordination not
 configured)`. History shows the newest 200 entries; `m` raises it to 2,000.
 It loads on a worker when the tab opens and is cached by item version and

@@ -562,8 +562,9 @@ func TestDetailListKeysAndFind(t *testing.T) {
 }
 
 // Catches a History tab that needs renderer changes for a new group kind,
-// hides a failed provider, opens away from the newest entry, or can't expand
-// a group in place.
+// hides a failed provider, opens away from the newest entry, can't expand a
+// group in place, leaves a cut-off summary unreadable, or hides the resume
+// key on a resumable session row.
 func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 1, RenderMarkdown)
@@ -575,6 +576,7 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 				for i := range 40 {
 					entries = append(entries, history.Entry{ID: fmt.Sprintf("event:%d", i), Time: at(i), Kind: "item.updated", Summary: fmt.Sprintf("edit %d", i)})
 				}
+				entries = append(entries, history.Entry{ID: "event:long", Time: at(46), Kind: "item.updated", Summary: strings.Repeat("word ", 40) + "END"})
 				return entries, nil
 			}},
 			history.Provider{Name: "ci", Load: func(context.Context) ([]history.Entry, error) {
@@ -585,7 +587,7 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 			}},
 			history.Provider{Name: "claims", Load: func(context.Context) ([]history.Entry, error) { return nil, errors.New("worklease not found") }},
 			history.Provider{Name: "sessions", Load: func(context.Context) ([]history.Entry, error) {
-				return []history.Entry{{ID: "session:s1", Time: at(45), Kind: "session", Session: "s1", Span: &history.Span{Start: at(45), State: "open"}, Summary: "claude"}}, nil
+				return []history.Entry{{ID: "session:s1", Time: at(45), Kind: "session", Session: "s1", Span: &history.Span{Start: at(45), State: "open"}, Resumable: true, Summary: "claude"}}, nil
 			}},
 		)
 	}
@@ -612,6 +614,19 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	onSession.entryCursor = slices.Index(m.detailIDs, "session:s1")
 	if got := actions(onSession); got != "s1" {
 		t.Fatalf("! on the session row scoped to %q", got)
+	}
+	if strings.Contains(content, "! resume") || !strings.Contains(onSession.View().Content, "! resume") {
+		t.Fatal("resume key not shown only on the selected session row")
+	}
+	long := m
+	long.entryCursor = slices.Index(m.detailIDs, "event:long")
+	if strings.Contains(long.View().Content, "END") {
+		t.Fatal("long summary fit its row; the test needs a longer one")
+	}
+	long, _ = detailKey(long, tea.KeyEnter, 0)
+	long = settleDetail(t, long)
+	if content := long.View().Content; !strings.Contains(content, "END") {
+		t.Fatalf("expanded long summary still cut off\n%s", content)
 	}
 	m, _ = detailKey(m, tea.KeyEnter, 0)
 	m = settleDetail(t, m)

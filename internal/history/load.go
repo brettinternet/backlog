@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"time"
 
@@ -80,8 +78,8 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 }
 
 // activityProvider reads the activity a remote provider recorded, when item's
-// source has the read-activity capability. Its entries are labelled with the
-// provider, beside local events for the same change.
+// source has the read-activity capability. Its entries carry the provider's
+// name, beside local events for the same change.
 func activityProvider(cfg project.Config, item model.Item) (Provider, bool) {
 	reader, kind, ok, err := engine.ActivityReader(cfg, item.Ref)
 	if err != nil {
@@ -97,7 +95,7 @@ func activityProvider(cfg project.Config, item model.Item) (Provider, bool) {
 		}
 		entries := make([]Entry, 0, len(activity))
 		for _, a := range activity {
-			entries = append(entries, Entry{ID: kind + ":" + a.ID, Time: a.Time, Kind: "activity", Actor: textutil.Line(a.Actor), Summary: kind + ": " + textutil.Line(a.Summary), Detail: textutil.Sanitize(a.Detail)})
+			entries = append(entries, Entry{ID: kind + ":" + a.ID, Time: a.Time, Kind: "activity", Actor: textutil.Line(a.Actor), Summary: textutil.Line(a.Summary), Detail: textutil.Sanitize(a.Detail)})
 		}
 		if truncated {
 			return entries, PartialError(fmt.Errorf("showing %d entries", source.ActivityLimit))
@@ -119,7 +117,7 @@ func eventEntries(events []hooks.Event) []Entry {
 		case "item.archived":
 			entry.Summary = "archived"
 		case "item.updated":
-			entry.Summary = changeSummary(e.Changes)
+			entry.Summary, entry.Detail = changeEntry(e.Changes)
 		case "item.readiness":
 			c := e.Changes["readiness"]
 			entry.Summary = fmt.Sprintf("readiness %v → %v", c.From, c.To)
@@ -130,82 +128,16 @@ func eventEntries(events []hooks.Event) []Entry {
 			if len(e.Versions) > 0 {
 				entry.ID = "claim:" + e.Versions[0] + ":" + strings.TrimPrefix(e.Type, "claim.")
 			}
-			entry.Summary = strings.Replace(e.Type, ".", " ", 1)
+			entry.Summary = strings.TrimPrefix(e.Type, "claim.")
 		case "hook.finished", "action.finished":
-			entry.Summary = fmt.Sprintf("%s %s %s", strings.TrimSuffix(e.Type, ".finished"), e.Name, e.Outcome)
+			entry.Summary = e.Name + " " + e.Outcome
 			entry.Detail = e.Message
 		case "session.handoff":
-			entry.Summary, entry.Detail = "handoff: "+firstLine(e.Handoff), e.Handoff
+			entry.Summary, entry.Detail = firstLine(e.Handoff), e.Handoff
 		}
 		out = append(out, entry)
 	}
 	return out
-}
-
-func changeSummary(changes map[string]hooks.Change) string {
-	if c, ok := changes["archived"]; ok && c.To == false {
-		return "unarchived"
-	}
-	keys := make([]string, 0, len(changes))
-	for k := range changes {
-		// fields and updated change with every edit, so they say nothing.
-		if k != "fields" && k != "updated" {
-			keys = append(keys, k)
-		}
-	}
-	slices.Sort(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		c := changes[k]
-		from, to := changeValue(c.From), changeValue(c.To)
-		if len(from)+len(to) > 60 {
-			parts = append(parts, k+" changed")
-		} else {
-			parts = append(parts, fmt.Sprintf("%s %s → %s", k, from, to))
-		}
-	}
-	return cmp.Or(strings.Join(parts, "; "), "updated")
-}
-
-func changeValue(v any) string {
-	if s := textutil.Line(display(v)); s != "" {
-		return s
-	}
-	return "∅"
-}
-
-// display renders a decoded event value: lists as comma-separated items, refs
-// as their IDs, and readiness reasons as "code: refs".
-func display(v any) string {
-	switch v := v.(type) {
-	case nil:
-		return ""
-	case []any:
-		parts := make([]string, 0, len(v))
-		for _, item := range v {
-			if s := display(item); s != "" {
-				parts = append(parts, s)
-			}
-		}
-		return strings.Join(parts, ", ")
-	case map[string]any:
-		if code, ok := v["code"].(string); ok {
-			if s := display(cmp.Or(v["refs"], v["values"])); s != "" {
-				return code + ": " + s
-			}
-			return code
-		}
-		if id, ok := v["id"].(string); ok {
-			return id
-		}
-		keys := slices.Sorted(maps.Keys(v))
-		parts := make([]string, 0, len(keys))
-		for _, k := range keys {
-			parts = append(parts, k+"="+display(v[k]))
-		}
-		return strings.Join(parts, " ")
-	}
-	return fmt.Sprint(v)
 }
 
 func claimEntries(claims []model.ClaimEpoch, now time.Time) []Entry {
@@ -213,15 +145,15 @@ func claimEntries(claims []model.ClaimEpoch, now time.Time) []Entry {
 	for _, c := range claims {
 		base := Entry{Kind: "claim.acquired", Actor: c.Agent, Session: c.Session}
 		acquired := base
-		acquired.ID, acquired.Time, acquired.Summary = "claim:"+c.ID+":acquired", c.AcquiredAt, "claim acquired"
+		acquired.ID, acquired.Time, acquired.Summary = "claim:"+c.ID+":acquired", c.AcquiredAt, "acquired"
 		out = append(out, acquired)
 		ended := base
 		ended.ID, ended.Kind = "claim:"+c.ID+":released", "claim.released"
 		switch {
 		case !c.EndedAt.IsZero():
-			ended.Time, ended.Summary = c.EndedAt, "claim "+cmp.Or(c.EndReason, "ended")
+			ended.Time, ended.Summary = c.EndedAt, cmp.Or(c.EndReason, "ended")
 		case !c.ExpiresAt.IsZero() && c.ExpiresAt.Before(now):
-			ended.Time, ended.Summary = c.ExpiresAt, "claim lapsed"
+			ended.Time, ended.Summary = c.ExpiresAt, "lapsed"
 		default:
 			continue
 		}
@@ -244,8 +176,12 @@ func sessionEntries(sessions []model.ItemSession) []Entry {
 		if d := s.LastSeen.Sub(s.FirstSeen); d >= time.Minute {
 			summary = append(summary, duration(d))
 		}
-		summary = append(summary, span.State)
-		if s.AgentSession != "" {
+		// A session that ends in the category it reached says so once.
+		if len(s.Phases) == 0 || s.Phases[len(s.Phases)-1] != span.State {
+			summary = append(summary, span.State)
+		}
+		resumable := s.Agent != "" && s.AgentSession != ""
+		if resumable {
 			summary = append(summary, "resumable")
 		}
 		if s.Handoff != "" {
@@ -262,18 +198,20 @@ func sessionEntries(sessions []model.ItemSession) []Entry {
 		}
 		reach := contact.Line(s.Contact)
 		var detail []string
-		for _, field := range [][2]string{{"session", s.ID}, {"agent session", s.AgentSession}, {"host", s.Host}, {"cwd", s.CWD}, {"branch", s.Branch}} {
-			if field[1] != "" {
-				detail = append(detail, field[0]+": "+field[1])
-			}
+		agentSession := s.AgentSession
+		if agentSession == s.ID {
+			agentSession = ""
 		}
-		if reach != "" {
-			detail = append(detail, "contact: "+reach)
+		// Values align after the longest key, so the fields scan as a table.
+		for _, field := range [][2]string{{"session", s.ID}, {"agent session", agentSession}, {"host", s.Host}, {"cwd", s.CWD}, {"branch", s.Branch}, {"contact", reach}} {
+			if field[1] != "" {
+				detail = append(detail, fmt.Sprintf("%-14s %s", field[0]+":", field[1]))
+			}
 		}
 		if s.Handoff != "" {
 			detail = append(detail, "handoff:\n"+s.Handoff)
 		}
-		out = append(out, Entry{ID: sessionID(s.ID), Time: s.FirstSeen, Kind: "session", Actor: s.Agent, Session: s.ID, Span: span, Summary: strings.Join(summary, " · "), Detail: strings.Join(detail, "\n")})
+		out = append(out, Entry{ID: sessionID(s.ID), Time: s.FirstSeen, Kind: "session", Actor: s.Agent, Session: s.ID, Span: span, Resumable: resumable, Summary: strings.Join(summary, " · "), Detail: strings.Join(detail, "\n")})
 	}
 	return out
 }
