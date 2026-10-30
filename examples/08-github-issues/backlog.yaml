@@ -5,7 +5,13 @@ sources:
     host: github.com
     repo: acme/app
     account: personal
+  - id: prs
+    type: github-pulls
+    repo: acme/app
+    account: personal
 statuses:
+  - {key: pr-draft, name: Draft PR, category: backlog}
   - {key: open, name: Open, category: todo}
+  - {key: pr-open, name: Open PR, category: active}
   - {key: closed, name: Closed, category: done}
 workflow: {done: closed}

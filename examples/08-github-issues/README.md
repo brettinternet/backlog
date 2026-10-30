@@ -1,6 +1,7 @@
 # GitHub Issues
 
-One repository's issues. Blockers and sub-issues come from GitHub.
+One repository's issues and unlinked pull requests. Blockers and sub-issues
+come from GitHub.
 
 | File | Goes in |
 | --- | --- |
@@ -18,9 +19,11 @@ bl ls
 ```
 
 ```text
-128  open  Checkout fails with an empty cart
-131  open  Add dark mode
-135  open  Upgrade the payment SDK
+issues:128  open      Checkout fails with an empty cart
+issues:131  open      Add dark mode
+issues:135  open      Upgrade the payment SDK
+prs:#142    pr-open   Cache product images
+prs:#144    pr-draft  Try a new search index
 ```
 
 Edits change one field per command:
@@ -37,6 +40,17 @@ bl done issues:128
 `bl done` closes the issue as completed. `bl set issues:128 status=open`
 reopens it. Every open issue is `open` and ready; to give issues statuses, map
 labels with [`statusLabels`](../../docs/github.md#label-statuses).
+
+## Pull requests
+
+The `prs` source lists each open pull request that no issue links to, so work
+started straight from a branch shows up beside the issues. Drafts are
+`pr-draft` and the rest `pr-open`. A pull request linked to an issue, such as
+by `Fixes #128` in its description or a `refs` URL on the issue, leaves the
+list.
+Pull requests from GitHub Apps, such as dependabot, are skipped. The source is
+read-only; `bl claim prs:#142` works, but edits are refused. See
+[Pull requests as items](../../docs/github.md#pull-requests-as-items).
 
 ## Other credentials
 
