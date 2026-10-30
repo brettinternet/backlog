@@ -40,11 +40,12 @@ func itemSessions(ctx context.Context, cfg project.Config, item model.Item, clai
 }
 
 // SessionsFrom folds an item's events, as read by hooks.Log.ItemEvents, and
-// claim history into sessions, with live contact channels resolved.
+// claim history into sessions, with every session's live contact channels
+// resolved, as resume does, so History's resume labels agree with it.
 func SessionsFrom(ctx context.Context, cfg project.Config, events []hooks.Event, claims []model.ClaimEpoch) []model.ItemSession {
 	now := time.Now()
 	sessions := foldSessions(events, claims, now)
-	withContact(ctx, cfg, sessions, now, contactWindow)
+	withContact(ctx, cfg, sessions, now, 0)
 	return sessions
 }
 

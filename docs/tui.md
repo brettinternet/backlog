@@ -233,8 +233,9 @@ source label is `item` (edits and readiness), `claim`, `agent` (a session),
 are colored, and the column is dropped below 48 cells. An edit's summary names
 each field: `status todo → in-progress`, `labels +windows -human`,
 `criteria 2/5 → 3/5`, or `plan changed` for long text. Each session is one row
-(agent, phases, duration, state unless it is the last phase, `resumable`, the
-first line of its handoff, and its live [contact](cli.md#contact) channels)
+(agent, phases, duration, state unless it is the last phase, `resumable` or
+the check that refuses it, such as `checkout removed`, the first line of its
+handoff, and its live [contact](cli.md#contact) channels)
 with its entries folded under it. `▸` marks a row that expands: `enter` opens a
 group, a cut-off summary wrapped in full, and the entry's detail, wrapped with
 hanging indents. An edit's detail lists what the summary abbreviates, per field:

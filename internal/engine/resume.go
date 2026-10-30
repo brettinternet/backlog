@@ -72,19 +72,7 @@ func resumeChoices(ctx context.Context, cfg project.Config, id, session string, 
 	sessions, _ := itemSessions(ctx, cfg, item, claims, 0)
 	closed := item.Category == model.Done || item.Category == model.Canceled
 	now := time.Now()
-	// Liveness belongs to the agent conversation: bl sessions sharing one, such
-	// as a claimed loop and a PR-phase handoff, are all live while any is.
-	running := map[[2]string]string{}
-	for _, s := range sessions {
-		key := [2]string{s.Agent, s.AgentSession}
-		switch {
-		case s.AgentSession == "" || running[key] != "":
-		case live(s, now):
-			running[key] = "session " + s.ID + " still holds its claim; message it instead" + channels(s)
-		case channels(s) != "":
-			running[key] = "agent is still running; message it instead" + channels(s)
-		}
-	}
+	running := runningConversations(sessions, now)
 	var choices []ResumeChoice
 	for _, s := range sessions {
 		if strings.HasPrefix(s.ID, "tui:") || s.Agent == "" && s.AgentSession == "" || session != "" && s.ID != session {
@@ -103,19 +91,7 @@ func resumeChoices(ctx context.Context, cfg project.Config, id, session string, 
 			if name == "fork" {
 				run = agent.Fork
 			}
-			switch {
-			case s.Agent == "" || s.AgentSession == "" || len(run) == 0:
-				choice.Reason, choice.Disabled = "no-agent-config", fmt.Sprintf("no %s command for agent %q", name, cmp.Or(s.Agent, "unknown"))
-			case s.Host != hostname():
-				choice.Reason, choice.Disabled = "other-host", "session ran on "+cmp.Or(s.Host, "an unknown host")
-			case !isDir(s.CWD):
-				choice.Reason, choice.Disabled = "checkout-removed", "checkout no longer exists: "+cmp.Or(s.CWD, "unknown")
-			case running[[2]string{s.Agent, s.AgentSession}] != "":
-				choice.Reason, choice.Disabled = "live", running[[2]string{s.Agent, s.AgentSession}]
-			case claimsErr != "":
-				// Without claim state, the session may still be running.
-				choice.Reason, choice.Disabled = "live", "claim state unavailable: "+claimsErr
-			}
+			choice.Reason, choice.Disabled = resumeRefusal(s, name, run, running, claimsErr)
 			event := makeEvent(ctx, cfg, item, "", "action", []string{rand.Text()})
 			event.ID = rand.Text()
 			event.SchemaVersion = 1
@@ -137,6 +113,69 @@ func resumeChoices(ctx context.Context, cfg project.Config, id, session string, 
 	}
 	slices.SortStableFunc(choices, func(a, b ResumeChoice) int { return b.Session.LastSeen.Compare(a.Session.LastSeen) })
 	return choices, nil
+}
+
+// ResumeRefusals names, by session ID, the check that refuses reopening each
+// of sessions with both resume and fork, as History labels its session rows;
+// a session either would reopen is absent. claimsErr is a failed read of c's
+// claim history, ignored when c can't claim at all. Contact should be resolved
+// for every session, as resume does. It stats each session's checkout, so
+// callers run it on a worker.
+func ResumeRefusals(cfg project.Config, c model.Coordinator, sessions []model.ItemSession, claimsErr string) map[string]string {
+	if claimsUnsupported(c) != "" {
+		claimsErr = ""
+	}
+	running := runningConversations(sessions, time.Now())
+	out := map[string]string{}
+	for _, s := range sessions {
+		agent := cfg.Agents[s.Agent]
+		run := agent.Resume
+		if len(run) == 0 {
+			run = agent.Fork
+		}
+		if reason, _ := resumeRefusal(s, "resume", run, running, claimsErr); reason != "" {
+			out[s.ID] = reason
+		}
+	}
+	return out
+}
+
+// runningConversations maps each running agent conversation, keyed by agent
+// and agent session, to the message refusing to resume it. Liveness belongs to
+// the conversation: bl sessions sharing one, such as a claimed loop and a
+// PR-phase handoff, are all live while any is.
+func runningConversations(sessions []model.ItemSession, now time.Time) map[[2]string]string {
+	running := map[[2]string]string{}
+	for _, s := range sessions {
+		key := [2]string{s.Agent, s.AgentSession}
+		switch {
+		case s.AgentSession == "" || running[key] != "":
+		case live(s, now):
+			running[key] = "session " + s.ID + " still holds its claim; message it instead" + channels(s)
+		case channels(s) != "":
+			running[key] = "agent is still running; message it instead" + channels(s)
+		}
+	}
+	return running
+}
+
+// resumeRefusal is the check that refuses reopening s with the command name
+// running run, as a reason and message, or empty strings.
+func resumeRefusal(s model.ItemSession, name string, run []string, running map[[2]string]string, claimsErr string) (string, string) {
+	switch {
+	case s.Agent == "" || s.AgentSession == "" || len(run) == 0:
+		return "no-agent-config", fmt.Sprintf("no %s command for agent %q", name, cmp.Or(s.Agent, "unknown"))
+	case s.Host != hostname():
+		return "other-host", "session ran on " + cmp.Or(s.Host, "an unknown host")
+	case !isDir(s.CWD):
+		return "checkout-removed", "checkout no longer exists: " + cmp.Or(s.CWD, "unknown")
+	case running[[2]string{s.Agent, s.AgentSession}] != "":
+		return "live", running[[2]string{s.Agent, s.AgentSession}]
+	case claimsErr != "":
+		// Without claim state, the session may still be running.
+		return "live", "claim state unavailable: " + claimsErr
+	}
+	return "", ""
 }
 
 // SelectResume picks the session to reopen: the one named by ID or agent

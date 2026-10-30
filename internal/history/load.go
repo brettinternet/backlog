@@ -28,6 +28,7 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 	}
 	var events []hooks.Event
 	var claims []model.ClaimEpoch
+	var claimsErr string
 	eventsDone, claimsDone := make(chan struct{}), make(chan struct{})
 	providers := []Provider{
 		Provider{Name: "events", Load: func(ctx context.Context) ([]Entry, error) {
@@ -45,10 +46,11 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 				return nil, errors.New("coordination not configured")
 			}
 			resource, err := coordinator.Resource(item)
-			if err != nil {
-				return nil, err
+			if err == nil {
+				claims, err = coordinator.History(ctx, resource)
 			}
-			if claims, err = coordinator.History(ctx, resource); err != nil {
+			if err != nil {
+				claimsErr = err.Error()
 				return nil, err
 			}
 			return claimEntries(claims, time.Now()), nil
@@ -56,7 +58,8 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 		Provider{Name: "sessions", Load: func(ctx context.Context) ([]Entry, error) {
 			<-eventsDone
 			<-claimsDone
-			return sessionEntries(engine.SessionsFrom(ctx, cfg, events, claims)), nil
+			sessions := engine.SessionsFrom(ctx, cfg, events, claims)
+			return sessionEntries(sessions, engine.ResumeRefusals(cfg, coordinator, sessions, claimsErr)), nil
 		}},
 		Provider{Name: "comments", Load: func(context.Context) ([]Entry, error) { return commentEntries(item.Comments), nil }},
 		Provider{Name: "git", Load: func(ctx context.Context) ([]Entry, error) {
@@ -161,7 +164,9 @@ func claimEntries(claims []model.ClaimEpoch, now time.Time) []Entry {
 	return out
 }
 
-func sessionEntries(sessions []model.ItemSession) []Entry {
+// sessionEntries makes one row per session, labelled resumable or with the
+// check in refused, by session ID, that refuses reopening it.
+func sessionEntries(sessions []model.ItemSession, refused map[string]string) []Entry {
 	out := make([]Entry, 0, len(sessions))
 	for _, s := range sessions {
 		span := &Span{Start: s.FirstSeen, State: cmp.Or(s.Ended, "open")}
@@ -179,8 +184,13 @@ func sessionEntries(sessions []model.ItemSession) []Entry {
 		if len(s.Phases) == 0 || s.Phases[len(s.Phases)-1] != span.State {
 			summary = append(summary, span.State)
 		}
-		resumable := s.Agent != "" && s.AgentSession != ""
-		if resumable {
+		resumable := false
+		switch reason := refused[s.ID]; {
+		case strings.HasPrefix(s.ID, "tui:") || s.Agent == "" && s.AgentSession == "":
+		case reason != "":
+			summary = append(summary, strings.ReplaceAll(reason, "-", " "))
+		default:
+			resumable = true
 			summary = append(summary, "resumable")
 		}
 		if s.Handoff != "" {
