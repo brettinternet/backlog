@@ -103,6 +103,11 @@ func TestRecordHandoff(t *testing.T) {
 	if _, err := RecordHandoff(context.Background(), cfg, item, item.Version, "x"); ErrorReason(err) != "session-required" {
 		t.Fatalf("no session: %v", err)
 	}
+	// D21 drops this ID from the event, so the handoff would show under no session.
+	dashed := WithCoordination(context.Background(), nil, model.CallerContext{Session: "-loop", Agent: "claude"})
+	if _, err := RecordHandoff(dashed, cfg, item, item.Version, "x"); ErrorReason(err) != "rejected" {
+		t.Fatalf("invalid session: %v", err)
+	}
 	local, err := RecordHandoff(ctx, cfg, item, "ignored", "first")
 	if err != nil || local.Event == "" || local.Comment != "" || local.Item.Version != item.Version {
 		t.Fatalf("local: %+v %v", local, err)

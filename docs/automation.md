@@ -169,9 +169,10 @@ terminal, `TERM`, `COLORTERM`, and `LANG`, and no timeout. Built-ins:
 | `codex` | `codex resume {agentSession}` | `codex fork {agentSession}` |
 | `pi` | `pi --session {agentSession}` | `pi --fork {agentSession}` |
 
-A session isn't offered when it ran on another host, its checkout is gone, it
-still holds its claim or a contact channel reports its agent running (the
-reason lists the channels), or its agent has no command; the TUI shows why. Every
+A session isn't offered when it ran on another host, its checkout is gone, any
+session on its agent conversation still holds its claim or a contact channel
+reports its agent running (the reason lists the channels), or its agent has no
+command; the TUI shows why. Every
 run ends in `action.finished` named `resume` or `fork` with the session.
 
 To open the agent in a new Herdr pane beside the focused one (the `bl` pane

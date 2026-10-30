@@ -63,9 +63,28 @@ func resumeChoices(ctx context.Context, cfg project.Config, id, session string, 
 		resource, _ = c.Resource(item)
 	}
 	claims, claimsErr := ClaimHistory(ctx, c, resource)
-	sessions, _ := ItemSessions(ctx, cfg, item, claims)
+	if claimsUnsupported(c) != "" {
+		// No claims exist to hold: only contact channels show a running agent.
+		claimsErr = ""
+	}
+	// A running agent may be idle past the display window, so every session's
+	// contact is resolved.
+	sessions, _ := itemSessions(ctx, cfg, item, claims, 0)
 	closed := item.Category == model.Done || item.Category == model.Canceled
 	now := time.Now()
+	// Liveness belongs to the agent conversation: bl sessions sharing one, such
+	// as a claimed loop and a PR-phase handoff, are all live while any is.
+	running := map[[2]string]string{}
+	for _, s := range sessions {
+		key := [2]string{s.Agent, s.AgentSession}
+		switch {
+		case s.AgentSession == "" || running[key] != "":
+		case live(s, now):
+			running[key] = "session " + s.ID + " still holds its claim; message it instead" + channels(s)
+		case channels(s) != "":
+			running[key] = "agent is still running; message it instead" + channels(s)
+		}
+	}
 	var choices []ResumeChoice
 	for _, s := range sessions {
 		if strings.HasPrefix(s.ID, "tui:") || s.Agent == "" && s.AgentSession == "" || session != "" && s.ID != session {
@@ -91,10 +110,8 @@ func resumeChoices(ctx context.Context, cfg project.Config, id, session string, 
 				choice.Reason, choice.Disabled = "other-host", "session ran on "+cmp.Or(s.Host, "an unknown host")
 			case !isDir(s.CWD):
 				choice.Reason, choice.Disabled = "checkout-removed", "checkout no longer exists: "+cmp.Or(s.CWD, "unknown")
-			case live(s, now):
-				choice.Reason, choice.Disabled = "live", "session still holds its claim; message it instead"+channels(s)
-			case channels(s) != "":
-				choice.Reason, choice.Disabled = "live", "agent is still running; message it instead"+channels(s)
+			case running[[2]string{s.Agent, s.AgentSession}] != "":
+				choice.Reason, choice.Disabled = "live", running[[2]string{s.Agent, s.AgentSession}]
 			case claimsErr != "":
 				// Without claim state, the session may still be running.
 				choice.Reason, choice.Disabled = "live", "claim state unavailable: "+claimsErr

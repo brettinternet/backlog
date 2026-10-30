@@ -572,7 +572,7 @@ Refusals exit 4 and list the candidates in `error.details.candidates`:
 | --- | --- |
 | `other-host` | The session ran on another host |
 | `checkout-removed` | The recorded checkout no longer exists |
-| `live` | The session still holds its claim, or a [contact](#contact) channel reports its agent running; the message lists the channels |
+| `live` | A session on the same agent conversation still holds its claim, or a [contact](#contact) channel reports its agent running at any age; the message lists the channels |
 | `no-agent-config` | The agent has no `resume` or `fork` command |
 
 A command that fails exits 5 with its exit status and, under `--json`, its

@@ -19,6 +19,12 @@ import (
 // session ID, joined with its claim history (design.md D40). A failed event
 // read comes back as a message beside the claim-only sessions.
 func ItemSessions(ctx context.Context, cfg project.Config, item model.Item, claims []model.ClaimEpoch) ([]model.ItemSession, string) {
+	return itemSessions(ctx, cfg, item, claims, contactWindow)
+}
+
+// itemSessions resolves contact for sessions seen within window, or for all of
+// them with a zero window.
+func itemSessions(ctx context.Context, cfg project.Config, item model.Item, claims []model.ClaimEpoch, window time.Duration) ([]model.ItemSession, string) {
 	var events []hooks.Event
 	message := ""
 	if cfg.Paths.StateDir != "" {
@@ -27,7 +33,10 @@ func ItemSessions(ctx context.Context, cfg project.Config, item model.Item, clai
 			message = "event history unavailable: " + err.Error()
 		}
 	}
-	return SessionsFrom(ctx, cfg, events, claims), message
+	now := time.Now()
+	sessions := foldSessions(events, claims, now)
+	withContact(ctx, cfg, sessions, now, window)
+	return sessions, message
 }
 
 // SessionsFrom folds an item's events, as read by hooks.Log.ItemEvents, and
@@ -35,7 +44,7 @@ func ItemSessions(ctx context.Context, cfg project.Config, item model.Item, clai
 func SessionsFrom(ctx context.Context, cfg project.Config, events []hooks.Event, claims []model.ClaimEpoch) []model.ItemSession {
 	now := time.Now()
 	sessions := foldSessions(events, claims, now)
-	withContact(ctx, cfg, sessions, now)
+	withContact(ctx, cfg, sessions, now, contactWindow)
 	return sessions
 }
 
@@ -44,12 +53,13 @@ func SessionsFrom(ctx context.Context, cfg project.Config, events []hooks.Event,
 const contactWindow = 24 * time.Hour
 
 // withContact resolves live contact channels for sessions that hold their
-// claim or were seen recently, under contact.Budget (design.md D40).
-func withContact(ctx context.Context, cfg project.Config, sessions []model.ItemSession, now time.Time) {
+// claim or were seen within window, or every session for a zero window, under
+// contact.Budget (design.md D40).
+func withContact(ctx context.Context, cfg project.Config, sessions []model.ItemSession, now time.Time, window time.Duration) {
 	var live []int
 	for i, s := range sessions {
 		held := s.Claim != nil && s.Claim.EndedAt.IsZero() && s.Claim.ExpiresAt.After(now)
-		if s.AgentSession != "" && (held || now.Sub(s.LastSeen) < contactWindow) {
+		if s.AgentSession != "" && (held || window == 0 || now.Sub(s.LastSeen) < window) {
 			live = append(live, i)
 		}
 	}
@@ -172,6 +182,11 @@ func RecordHandoff(ctx context.Context, cfg project.Config, item model.Item, ver
 	}
 	if err := RequireSession(caller); err != nil {
 		return HandoffResult{}, err
+	}
+	// The event drops a session ID that fails D21, and a handoff without one
+	// would never appear under any session.
+	if (hooks.Session{ID: caller.Session}).Checked() == nil {
+		return HandoffResult{}, source.Refuse("rejected", "invalid session")
 	}
 	if cfg.Paths.StateDir == "" {
 		return HandoffResult{}, source.Refuse("unavailable", "handoffs need a state directory for the event log")
