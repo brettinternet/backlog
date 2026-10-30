@@ -315,21 +315,25 @@ type detailWorker struct {
 	changeDraft  func(changes.Change) (changes.Draft, error)
 	enrich       func(context.Context, []changes.Change, bool) []changes.Change
 	// tour reads the tour kept for an item's change, and fileAt a file a
-	// step outside every hunk shows.
-	tour     func(model.Ref, string) (tour.Stored, bool, error)
-	fileAt   func(context.Context, changes.Change, string) ([]byte, error)
-	requests chan detailRequest
-	results  chan detailResult
-	mu       sync.Mutex
-	active   context.CancelFunc
-	started  sync.Once
-	cache    detailCache
-	diffs    detailCache // each file of the Diff tab
+	// step outside every hunk shows; moves carry a tour for an earlier head
+	// to the change's, and movedFile reads a file as of that head.
+	tour        func(model.Ref, string) (tour.Stored, bool, error)
+	fileAt      func(context.Context, changes.Change, string) ([]byte, error)
+	moves       func(context.Context, changes.Change, string) (changes.Moves, bool, error)
+	movedFile   func(changes.Moves, context.Context, string, bool) ([]byte, bool, error)
+	recentMoves movesCache
+	requests    chan detailRequest
+	results     chan detailResult
+	mu          sync.Mutex
+	active      context.CancelFunc
+	started     sync.Once
+	cache       detailCache
+	diffs       detailCache // each file of the Diff tab
 }
 
 func newDetailWorker(ctx context.Context, read func(context.Context, model.Ref) (model.Item, error), render func(string, int, string) (string, error)) *detailWorker {
 	return &detailWorker{
-		ctx: ctx, read: read, render: render, fileAt: changes.FileAt,
+		ctx: ctx, read: read, render: render, fileAt: changes.FileAt, moves: changes.ReadMoves, movedFile: changes.Moves.File,
 		requests: make(chan detailRequest, 1), results: make(chan detailResult, 1), cache: newDetailCache(maxRenderEntries, maxRenderBytes), diffs: newDetailCache(maxDiffEntries, maxDiffBytes),
 	}
 }

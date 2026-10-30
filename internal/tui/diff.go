@@ -46,13 +46,17 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 	}
 	if view != nil {
 		page.steps = make([]stepSpan, len(view.steps))
+		if view.carried != "" {
+			page.lines = append(page.lines, t.yellow.render(ansi.Truncate(view.carried, width, "…")), "")
+		}
 	}
 	if len(d.Files) == 0 && d.Reason == "" {
 		page.lines = append(page.lines, t.muted.render("No changed files."))
 	}
 	left := (width - 1) / 2
 	callouts := func(i int, note string, whole bool) {
-		page.steps[i] = stepSpan{callout: len(page.lines), last: len(page.lines)}
+		_, outdated := view.outdated[i]
+		page.steps[i] = stepSpan{callout: len(page.lines), last: len(page.lines), outdated: outdated}
 		indent, room := 0, width
 		if width >= splitDiffWidth && !whole {
 			if view.steps[i].Side == tour.SideOld {
@@ -76,12 +80,14 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 		page.entries = append(page.entries, len(page.lines))
 		page.rows = append(page.rows, diffRow{file: f.Path})
 		page.lines = append(page.lines, fileLine(t, f, width))
-		var steps []int
+		var steps, outdatedSteps []int
 		var marks lineMarks
 		ranges := ""
 		if view != nil {
 			for n, s := range view.steps {
-				if s.File == f.Path || s.File == f.From && f.From != "" && s.Side == tour.SideOld {
+				if _, outdated := view.outdated[n]; outdated && stepIn(s, f) {
+					outdatedSteps = append(outdatedSteps, n)
+				} else if stepIn(s, f) {
 					steps = append(steps, n)
 					side := stepAnchor("", s).side
 					if marks[side] == nil {
@@ -102,8 +108,11 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 			worker.diffs.putRender(key, body)
 		}
 		// Each step sits above the row showing its first line, or under the
-		// file's header saying why none does; lines of its range the diff
-		// lacks are noted there too.
+		// file's header saying why none does, as an outdated step does; lines
+		// of its range the diff lacks are noted there too.
+		for _, n := range outdatedSteps {
+			callouts(n, "", true)
+		}
 		at, last := map[int][]int{}, map[int][]int{}
 		if len(steps) > 0 {
 			rowOf := map[lineAnchor]int{}

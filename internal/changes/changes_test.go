@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -316,5 +317,106 @@ func TestDraftPersistence(t *testing.T) {
 	}
 	if _, err := os.Stat(draftPath(state, url)); !os.IsNotExist(err) {
 		t.Fatalf("emptied draft kept: %v", err)
+	}
+}
+
+// A tour's lines carry from its ref to a later head as a forge carries
+// review comments: shifted past lines added before them, to a renamed file's
+// new path, and through a merge that moves the old side; a line edited,
+// deleted, or with lines added inside its range is outdated, and a ref that
+// rewritten history left behind carries nothing.
+func TestReadMoves(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	testkit.Isolate(t)
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=Tester", "-c", "user.email=t@example.com", "-c", "commit.gpgSign=false"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lines := func(n int, prefix string) string {
+		var b strings.Builder
+		for i := range n {
+			b.WriteString(prefix + strconv.Itoa(i+1) + "\n")
+		}
+		return b.String()
+	}
+	git("init", "-q", "-b", "main")
+	write("a.go", lines(10, "a"))
+	write("b.go", lines(8, "b"))
+	write("c.go", lines(3, "c"))
+	git("add", ".")
+	git("commit", "-q", "-m", "start")
+	git("switch", "-q", "-c", "bl-1-fix")
+	write("a.go", strings.Replace(lines(10, "a"), "a3\n", "three\n", 1))
+	git("commit", "-q", "-am", "ref")
+	ref := git("rev-parse", "HEAD")
+	git("switch", "-q", "main")
+	write("c.go", "c1\ntwo\nc3\n")
+	git("commit", "-q", "-am", "main moves")
+	git("switch", "-q", "bl-1-fix")
+	git("merge", "-q", "--no-edit", "main")
+	text := strings.Replace(strings.Replace(lines(10, "a"), "a3\n", "three\n", 1), "a1\n", "a1\nx\ny\n", 1)
+	write("a.go", strings.Replace(text, "a6\n", "six\n", 1))
+	git("mv", "b.go", "d.go")
+	write("d.go", strings.Replace(lines(8, "b"), "b5\n", "five\n", 1))
+	git("add", ".")
+	git("commit", "-q", "-m", "head")
+	c := Change{Head: git("rev-parse", "HEAD"), dir: repo, base: "main"}
+	moves, ok, err := ReadMoves(context.Background(), c, ref)
+	if err != nil || !ok {
+		t.Fatalf("moves: ok %v err %v", ok, err)
+	}
+	type at struct {
+		path string
+		line int
+		ok   bool
+	}
+	for _, step := range []struct {
+		path   string
+		old    bool
+		lo, hi int
+		want   at
+	}{
+		{"a.go", false, 1, 1, at{"a.go", 1, true}},
+		{"a.go", false, 4, 5, at{"a.go", 6, true}},
+		{"a.go", false, 10, 10, at{"a.go", 12, true}},
+		{"a.go", false, 6, 6, at{"a.go", 0, false}},
+		{"a.go", false, 5, 7, at{"a.go", 0, false}},
+		{"a.go", false, 1, 2, at{"a.go", 0, false}},
+		{"b.go", false, 2, 4, at{"d.go", 2, true}},
+		{"b.go", false, 5, 5, at{"d.go", 0, false}},
+		{"c.go", true, 3, 3, at{"c.go", 3, true}},
+		{"c.go", true, 2, 2, at{"c.go", 0, false}},
+		{"b.go", true, 5, 5, at{"d.go", 5, true}},
+	} {
+		path, line, ok := moves.Range(step.path, step.old, step.lo, step.hi)
+		if got := (at{path, line, ok}); got != step.want {
+			t.Errorf("%s old %v lines %d–%d: got %+v, want %+v", step.path, step.old, step.lo, step.hi, got, step.want)
+		}
+	}
+	if content, ok, err := moves.File(context.Background(), "a.go", false); err != nil || !ok || !strings.Contains(string(content), "a6\n") {
+		t.Fatalf("a.go at ref: %q %v %v", content, ok, err)
+	}
+	// Rewritten history leaves the ref out of the head's ancestry.
+	git("reset", "-q", "--hard", "main")
+	write("a.go", "rewritten\n")
+	git("commit", "-q", "-am", "rewritten")
+	c.Head = git("rev-parse", "HEAD")
+	if _, ok, err := ReadMoves(context.Background(), c, ref); ok || err != nil {
+		t.Fatalf("rewritten history: ok %v err %v", ok, err)
 	}
 }
