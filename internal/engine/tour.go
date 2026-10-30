@@ -287,3 +287,107 @@ func tourKey(cfg project.Config, ref model.Ref) (stateDir, projectID, item strin
 	p, local := cfg.SourceProject(ref.Source)
 	return p.Paths.StateDir, p.Project.ID, local + ":" + ref.ID
 }
+
+// ToursPending lists item ref's open linked changes, at a stage its project's
+// tours setting covers, that have no tour for their current head, with the
+// setting's mode. With tours off it reads nothing (design.md D43).
+func ToursPending(ctx context.Context, cfg project.Config, ref model.Ref) (string, []changes.Change, error) {
+	p, _ := cfg.SourceProject(ref.Source)
+	mode := p.Tours.Mode
+	if mode != "suggest" && mode != "require" {
+		return mode, nil, nil
+	}
+	linked, err := ItemChanges(ctx, cfg, ref)
+	if err != nil {
+		return mode, nil, err
+	}
+	var pending []changes.Change
+	for _, c := range linked.Changes {
+		open := c.State == changes.StateOpen || c.State == changes.StateDraft
+		if c.Head == "" || !open || !slices.Contains(p.Tours.Stages, c.Stage) || c.Tour != nil && !c.Tour.Stale {
+			continue
+		}
+		current, err := carriedTour(ctx, cfg, ref, c)
+		if err != nil {
+			return mode, nil, err
+		}
+		if !current {
+			pending = append(pending, c)
+		}
+	}
+	return mode, pending, nil
+}
+
+// carriedTour reports whether c's stale tour carries forward to its head with
+// no step outdated, so it still explains the change (BL-165).
+func carriedTour(ctx context.Context, cfg project.Config, ref model.Ref, c changes.Change) (bool, error) {
+	if c.Tour == nil {
+		return false, nil
+	}
+	stored, ok, err := LoadTour(cfg, ref, c.ID)
+	if err != nil || !ok {
+		return false, err
+	}
+	moves, ok, err := changes.ReadMoves(ctx, c, stored.Tour.Ref)
+	if err != nil || !ok {
+		return false, err
+	}
+	for _, s := range stored.Tour.Steps {
+		if _, _, ok := moves.Range(s.File, s.Side == tour.SideOld, s.Line, s.End()); !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// TourRequest asks for a tour of each pending change of item id, at its
+// head, and names the command that stores one.
+func TourRequest(id string, pending []changes.Change) string {
+	names := make([]string, len(pending))
+	for i, c := range pending {
+		names[i] = c.ID + " at " + c.Head[:min(7, len(c.Head))]
+	}
+	return "write a tour of " + strings.Join(names, ", ") + ", citing the acceptance criterion each step satisfies, and store it with `bl tour " + id + " FILE` (MCP tour); bl instructions tours has the format"
+}
+
+// TourSuggestion is the done response's request for tours under tours.mode
+// suggest, or "" when nothing is pending. It never fails a write that
+// already applied, so a read error suggests nothing.
+func TourSuggestion(ctx context.Context, cfg project.Config, ref model.Ref) string {
+	mode, pending, err := ToursPending(ctx, cfg, ref)
+	if err != nil || mode != "suggest" || len(pending) == 0 {
+		return ""
+	}
+	return "Tours are suggested: " + TourRequest(ref.ID, pending) + "."
+}
+
+// requireTours refuses moving an item into a done status while tours.mode
+// require leaves one of its changes without a tour for its current head.
+func requireTours(ctx context.Context, cfg project.Config, backend source.Source, m model.Mutation) error {
+	if p, _ := cfg.SourceProject(m.Ref.Source); p.Tours.Mode != "require" {
+		return nil
+	}
+	target, _, ok := StatusTarget(cfg, m)
+	if !ok {
+		return nil
+	}
+	item, err := backend.Read(ctx, m.Ref.ID)
+	if err != nil || item.Category == model.Done {
+		return err
+	}
+	choices, err := statusChoices(ctx, cfg, backend, item)
+	if err != nil {
+		return err
+	}
+	if i := slices.IndexFunc(choices, func(c model.StatusChoice) bool { return c.Key == target }); i < 0 || choices[i].Category != model.Done {
+		return nil
+	}
+	_, pending, err := ToursPending(ctx, cfg, m.Ref)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return source.Refuse("rejected", "tours are required before done: "+TourRequest(m.Ref.ID, pending))
+	}
+	return nil
+}

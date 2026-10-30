@@ -90,6 +90,9 @@ func (s *Server) instructions(_ context.Context, req *mcp.ReadResourceRequest) (
 type ItemResult struct {
 	Item       itemjson.Summary         `json:"item"`
 	Transition *engine.TransitionResult `json:"transition,omitempty"`
+	// TourRequest asks for tours of the item's changes after done under
+	// tours.mode suggest (design.md D43).
+	TourRequest string `json:"tourRequest,omitempty"`
 }
 type ItemsResult struct {
 	Items []itemjson.Summary `json:"items"`
@@ -503,7 +506,8 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if args.Operation != "" && len(args.Fields) != 0 {
 		return failed[any]("usage", "fields and operation cannot be combined")
 	}
-	if args.Operation == "start" || args.Operation == "done" {
+	done := args.Operation == "done"
+	if args.Operation == "start" || done {
 		// Resolved per item source, then written like a status field update.
 		category := map[string]model.StatusCategory{"start": model.Active, "done": model.Done}[args.Operation]
 		status, err := engine.WorkflowStatus(ctx, s.cfg, item, category)
@@ -602,6 +606,9 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	result := ItemResult{Item: itemjson.NewSummary(updated)}
 	if transition.Status != "" {
 		result.Transition = &transition
+	}
+	if done {
+		result.TourRequest = engine.TourSuggestion(ctx, s.cfg, updated.Ref)
 	}
 	return nil, result, nil
 }

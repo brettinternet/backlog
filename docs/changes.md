@@ -89,6 +89,33 @@ sources](github.md#linked-changes); a GitLab account with a `read_api` token
 serves only its forge ([GitLab](gitlab.md)). Project-declared forges do nothing
 until `bl trust`.
 
+## Tours
+
+Writing a [tour](cli.md#bl-tour-id-file) costs agent tokens, so the project
+opts in:
+
+```yaml
+tours:
+  mode: require
+  stages: [pr]
+```
+
+| Field | Meaning |
+| --- | --- |
+| `mode` | `off` (default) says nothing about tours; `suggest` asks agents for a tour of each matching change; `require` also refuses done while one lacks a tour for its current head |
+| `stages` | Which open changes match: `worktree`, `branch`, `pr` (default all three) |
+
+A matching change is open or draft, has a head, and is at one of `stages`;
+landed and closed changes never match. Under `suggest`, `bl instructions
+workflow` asks for a tour of each matching change at its head, citing the
+criteria its steps satisfy, and `bl done` and MCP `update` with `operation:
+"done"` return `tourRequest` naming each matching change still without one.
+Under `require`, the workflow says so, and any move into a done-category
+status, from the CLI, MCP, or the TUI, is refused with `rejected` naming each
+such change, its head, and `bl tour ID FILE`. A tour carried forward to the
+head with no step outdated counts as current under both modes. An item already
+done is never refused. With `off`, nothing outside `bl instructions tours` mentions tours.
+
 ## Git
 
 `bl` reads refs, packed refs, worktrees, and reflogs from `.git` without

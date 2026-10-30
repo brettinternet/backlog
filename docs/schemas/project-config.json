@@ -327,6 +327,25 @@
         }
       }
     },
+    "tours": {
+      "description": "Opt in to agent-written tours (docs/changes.md#tours). Off by default.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "off says nothing about tours; suggest asks agents for a tour of each open change at one of stages; require also refuses done until each has a tour for its current head.",
+          "enum": ["off", "suggest", "require"],
+          "default": "off"
+        },
+        "stages": {
+          "description": "Which open changes need a tour.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"enum": ["worktree", "branch", "pr"]},
+          "default": ["worktree", "branch", "pr"]
+        }
+      }
+    },
     "history": {
       "type": "object",
       "additionalProperties": false,

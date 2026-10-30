@@ -25,6 +25,7 @@ func instructionsCommand(directory *string, out io.Writer) *urfave.Command {
 			// Guidance works outside a project, so project config is optional.
 			if cfg, err := loadConfig(cmd, *directory); err == nil {
 				markdown = instructions.WithCommitTrailer(topic, markdown, cfg.History.CommitTrailer)
+				markdown = instructions.WithTours(topic, markdown, cfg.Tours.Mode, cfg.Tours.Stages)
 			}
 			if cmd.Bool("json") {
 				return success(out, "instructions", struct {

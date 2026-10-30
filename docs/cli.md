@@ -296,6 +296,11 @@ accepts it, else to the source's only active or done status, else to its
 default (GitHub: `closed`). Anything else is refused naming the source
 ([details](format.md#frontmatter-keys)). One ID each.
 
+Under [`tours.mode`](changes.md#tours) `suggest`, a done outcome carries
+`tourRequest` (text mode: one line on stderr) naming each matching change
+without a tour for its head and the command that stores one. Under `require`,
+done is refused instead until each has one.
+
 ### `bl note ID TEXT|-` and `bl comment ID TEXT|- [--author A]`
 
 Append a paragraph to Notes, or a timestamped comment. `-` reads stdin. The
@@ -813,7 +818,9 @@ Prints Markdown guidance matching the installed version. Topics: `overview`
 Guidance never needs a project. In one whose config sets
 `history.commitTrailer: KEY` (for example `Refs`), `workflow` adds one line
 asking agents to end each commit for an item with `KEY: ID`. Unset, it says
-nothing about commits. A config that fails to load is ignored here.
+nothing about commits. Under [`tours.mode`](changes.md#tours) `suggest` or
+`require`, `workflow` asks for a tour of each matching change before done.
+A config that fails to load is ignored here.
 
 ### `bl auth status [PROVIDER [ACCOUNT]]` and `bl auth login|logout PROVIDER ACCOUNT`
 

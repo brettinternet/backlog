@@ -94,6 +94,99 @@ func TestSetCommaListEntries(t *testing.T) {
 	}
 }
 
+// Catches done slipping past tours.mode require without a tour for the
+// change's current head, or refused when its tour carries forward with no
+// step outdated, a nudge for a change outside tours.stages, and tour
+// guidance leaking into workflow or done output with tours off.
+func TestToursSetting(t *testing.T) {
+	root := writeFixture(t)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	git := func(args ...string) string {
+		t.Helper()
+		data, err := exec.Command("git", append([]string{"-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, data)
+		}
+		return strings.TrimSpace(string(data))
+	}
+	git("init", "-q", "--initial-branch=main")
+	git("add", ".")
+	git("commit", "-q", "-m", "initial")
+	git("checkout", "-q", "-b", "BL-012-fix")
+	commit := func(first string) string {
+		t.Helper()
+		put(t, filepath.Join(root, "main.go"), first+"\n// "+git("rev-parse", "HEAD")+"\n")
+		git("add", "main.go")
+		git("commit", "-q", "-m", "fix")
+		return git("rev-parse", "HEAD")
+	}
+	head := commit("package main")
+	git("checkout", "-q", "main")
+	configPath := filepath.Join(root, "backlog.yaml")
+	base := get(t, configPath)
+	configure := func(tours string) {
+		t.Helper()
+		put(t, configPath, base+tours)
+	}
+	writeOK(t, root, "", "start", "12")
+	workflow := func() string {
+		t.Helper()
+		var result struct{ Data struct{ Markdown string } }
+		_, out, _ := writeRun(root, "", "instructions", "workflow")
+		if err := json.Unmarshal([]byte(out), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result.Data.Markdown
+	}
+
+	if out := workflow(); strings.Contains(strings.ToLower(out), "tour") {
+		t.Fatalf("workflow mentions tours with the setting absent: %s", out)
+	}
+	if out := writeOK(t, root, "", "done", "12"); strings.Contains(strings.ToLower(out), "tour") {
+		t.Fatalf("done mentions tours with the setting absent: %s", out)
+	}
+	writeOK(t, root, "", "set", "12", "status=doing")
+
+	configure("tours: {mode: require}\n")
+	code, out, _ := writeRun(root, "", "done", "12")
+	if code == 0 || !strings.Contains(out, "tours are required before done: write a tour of ") || !strings.Contains(out, " at "+head[:7]) || !strings.Contains(out, "bl tour BL-012 FILE") {
+		t.Fatalf("done without a tour under require: %d %s", code, out)
+	}
+	tourFile := filepath.Join(t.TempDir(), "change.tour")
+	put(t, tourFile, `{"ref":"`+head+`","steps":[{"file":"main.go","line":1,"description":"The fix.","criterion":1}]}`)
+	if code, out, _ := writeRun(root, "", "tour", "12", tourFile); code != 0 {
+		t.Fatalf("tour: %d %s", code, out)
+	}
+	writeOK(t, root, "", "done", "12")
+	writeOK(t, root, "", "set", "12", "status=doing")
+
+	// A new head that leaves the step's line alone carries the tour forward.
+	git("checkout", "-q", "BL-012-fix")
+	commit("package main")
+	git("checkout", "-q", "main")
+	writeOK(t, root, "", "done", "12")
+	writeOK(t, root, "", "set", "12", "status=doing")
+
+	// Editing the step's line outdates it, which suggest asks to replace.
+	git("checkout", "-q", "BL-012-fix")
+	head = commit("package fix")
+	git("checkout", "-q", "main")
+	configure("tours: {mode: suggest}\n")
+	if out := workflow(); !strings.Contains(out, "Before done, write a tour of each open worktree, branch, or pull request") {
+		t.Fatalf("workflow under suggest: %s", out)
+	}
+	if out := writeOK(t, root, "", "done", "12"); !strings.Contains(out, `"tourRequest":"Tours are suggested: write a tour of `) || !strings.Contains(out, " at "+head[:7]) {
+		t.Fatalf("done under suggest: %s", out)
+	}
+	writeOK(t, root, "", "set", "12", "status=doing")
+
+	configure("tours: {mode: require, stages: [pr]}\n")
+	if out := writeOK(t, root, "", "done", "12"); strings.Contains(out, "tour") {
+		t.Fatalf("a branch outside stages [pr] was required: %s", out)
+	}
+}
+
 // Auto-commit must stay off by default, require trust for project-enabled Git
 // hooks, and commit a multi-item command exactly once through the real CLI.
 func TestAutoCommitCLI(t *testing.T) {
