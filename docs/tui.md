@@ -301,7 +301,8 @@ A tour stored with [`bl tour`](cli.md#bl-tour-id-file) puts each step's number,
 title, cited criterion, and Markdown narrative above its line, on the step's
 side when split. A step on a line outside every hunk brings that line in with
 three lines of context; one on a line the file lacks says so under the file's
-header. A tour written for another head shows only that it is stale.
+header. A tour written for another head, or whose step is on a file with uncommitted
+changes, shows only that it is stale.
 `enter` on a commit in History opens that commit's Diff in the change view;
 `backspace` returns to the commit's entry.
 

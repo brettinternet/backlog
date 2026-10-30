@@ -53,6 +53,11 @@ func (worker *detailWorker) loadTour(ctx context.Context, request detailRequest,
 	if t.Ref != c.Head {
 		return &tourView{stale: "Tour is stale: written for " + short(t.Ref) + ", the change is now at " + cmp.Or(short(c.Head), "no head") + "."}
 	}
+	for _, f := range d.Files {
+		if f.Status == changes.FileUncommitted && slices.ContainsFunc(t.Steps, func(s tour.Step) bool { return s.File == f.Path }) {
+			return &tourView{stale: "Tour is stale: " + textutil.Line(f.Path) + " has uncommitted changes since " + short(t.Ref) + "."}
+		}
+	}
 	view := &tourView{steps: t.Steps, unread: map[string]string{}}
 	if slices.ContainsFunc(t.Steps, func(s tour.Step) bool { return s.Criterion > 0 }) {
 		if item, err := worker.item(ctx, request.row); err == nil {
@@ -89,10 +94,15 @@ func (worker *detailWorker) tourFiles(ctx context.Context, c changes.Change, fil
 	}
 	out := slices.Clone(files)
 	for i, f := range out {
-		steps := append(byFile[f.Path], oldSteps(byFile[f.From])...)
+		steps := append(slices.Clone(byFile[f.Path]), oldSteps(byFile[f.From])...)
 		delete(byFile, f.Path)
 		if f.From != "" {
-			delete(byFile, f.From)
+			// Its old path's other steps stay, to say why they don't show.
+			if rest := slices.DeleteFunc(byFile[f.From], func(s tour.Step) bool { return s.Side == tour.SideOld }); len(rest) > 0 {
+				byFile[f.From] = rest
+			} else {
+				delete(byFile, f.From)
+			}
 		}
 		if f.Patch == "" || f.Status == changes.FileBinary || len(f.Patch) > bodyLimit {
 			continue

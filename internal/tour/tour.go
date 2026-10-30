@@ -30,6 +30,9 @@ const (
 	maxDescription = 16 << 10
 	maxTitle       = 1 << 10
 	maxPath        = 4 << 10
+	// storedBytes bounds a stored tour, which JSON escapes of control
+	// characters can make up to six times its file.
+	storedBytes = 6*MaxBytes + 4<<10
 )
 
 // SideOld marks a step on a deleted line; a step without a side is on the
@@ -165,9 +168,15 @@ func Path(stateDir, projectID, item, change string) string {
 
 // Store keeps s for its item and change, replacing any earlier tour.
 func Store(stateDir, projectID string, s Stored) error {
-	data, err := json.Marshal(s)
-	if err != nil {
+	var b bytes.Buffer
+	encoder := json.NewEncoder(&b)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(s); err != nil {
 		return err
+	}
+	data := b.Bytes()
+	if len(data) > storedBytes {
+		return errors.New("tour is too large to store")
 	}
 	return project.WriteStateFile(Path(stateDir, projectID, s.Item, s.Change), data)
 }
@@ -176,7 +185,7 @@ func Store(stateDir, projectID string, s Stored) error {
 // none.
 func Load(stateDir, projectID, item, change string) (Stored, bool, error) {
 	var s Stored
-	data, err := readFile(Path(stateDir, projectID, item, change), MaxBytes+4<<10)
+	data, err := readFile(Path(stateDir, projectID, item, change), storedBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, false, nil
 	}
@@ -196,6 +205,12 @@ func ReadFile(name string) ([]byte, error) {
 }
 
 func readFile(name string, limit int64) ([]byte, error) {
+	// Stat first: opening a FIFO would block.
+	if info, err := os.Stat(name); err != nil {
+		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, errors.New("tour is not a regular file")
+	}
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, err

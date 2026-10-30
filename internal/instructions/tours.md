@@ -19,8 +19,8 @@ Write CodeTour JSON for the change's head commit:
 
 - ref: the full SHA of the change's head, from `git rev-parse HEAD` in its
   checkout or `head` in `bl changes ID --json`. A tour for any other commit is
-  refused; once the change moves on, the TUI shows the tour as stale, so write
-  a new one.
+  refused; once the change moves on or a step's file has uncommitted edits,
+  the TUI shows the tour as stale, so commit and write a new one.
 - steps (1 to 200, in reading order): file is a repository-relative path with
   `/` separators; line is 1-based in the file at ref, or before the change
   with `"side": "old"` (a deleted line or a renamed file's old path);

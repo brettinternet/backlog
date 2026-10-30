@@ -1085,6 +1085,12 @@ func TestChangeTour(t *testing.T) {
 	if len(m.detailSteps) != 0 || !strings.Contains(m.notice, "Tour is stale: written for cdcdcdc, the change is now at ababab") || !strings.Contains(ansi.Strip(m.detailLines[0]), "Tour is stale") {
 		t.Fatalf("stale tour: steps %v notice %q first line %q", m.detailSteps, m.notice, m.detailLines[0])
 	}
+	// Uncommitted edits to a step's file move its lines off the tour's ref.
+	ref = head
+	d := changes.Detail{Files: []changes.File{{Path: "a.go", Status: changes.FileUncommitted, Patch: patch}}}
+	if view := m.detailWorker.loadTour(context.Background(), detailRequest{}, change, &d); view == nil || !strings.Contains(view.stale, "a.go has uncommitted changes") {
+		t.Fatalf("uncommitted tour: %+v", view)
+	}
 }
 
 // anchorsAt is what the Diff row containing text resolves to.

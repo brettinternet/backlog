@@ -373,7 +373,7 @@ func gitCommits(ctx context.Context, dir, revisions string) ([]Commit, error) {
 // it, or else the head commit's blob, as when repository config defines a
 // filter, at most maxUntrackedBytes either way.
 func FileAt(ctx context.Context, c Change, path string) ([]byte, error) {
-	if c.Worktree != "" {
+	if c.Worktree != "" && len(c.Commits) == 0 {
 		if filtered, err := git.RepoFilter(ctx, c.Worktree); err == nil && !filtered {
 			return worktreeFile(c.Worktree, path)
 		}
@@ -398,14 +398,15 @@ func worktreeFile(worktree, path string) ([]byte, error) {
 		return nil, err
 	}
 	defer root.Close()
+	// Stat first: opening a FIFO would block the worker.
+	if info, err := root.Lstat(filepath.FromSlash(path)); err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New(path + " is not a regular file")
+	}
 	file, err := root.Open(filepath.FromSlash(path))
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	if info, err := file.Stat(); err != nil || !info.Mode().IsRegular() {
-		return nil, errors.New(path + " is not a regular file")
-	}
 	data, err := io.ReadAll(io.LimitReader(file, maxUntrackedBytes+1))
 	if err == nil && len(data) > maxUntrackedBytes {
 		err = errors.New(path + " is too large to show")
