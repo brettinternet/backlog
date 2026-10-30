@@ -242,7 +242,7 @@ func New(opts Options) Model {
 		model.detailWorker = newDetailWorker(opts.Context, opts.Read, render)
 		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
 		if tracker := opts.Changes; tracker != nil {
-			model.detailWorker.changeDetail = tracker.Detail
+			model.detailWorker.changeDetail, model.detailWorker.changeReview, model.detailWorker.enrich = tracker.Detail, tracker.Review, tracker.Enrich
 		}
 	}
 	model.initViews()
@@ -1299,7 +1299,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, m.toggleCriterion()
 			}
 		case "j", "down":
-			if count, ok := m.entryCount(); ok {
+			// Past the change Overview's last check, j scrolls on into its
+			// description.
+			if count, ok := m.entryCount(); ok && !(m.detailTab == tabChangeOverview && m.entryCursor >= count-1) {
 				if count > 0 {
 					m.entryCursor = min(count-1, m.entryCursor+1)
 					m.keepEntryVisible()

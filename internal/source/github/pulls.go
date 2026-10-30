@@ -29,6 +29,10 @@ type Forge struct {
 	s     *Source
 	cache string
 	mu    sync.Mutex
+	// reviews are the pull request reviews read, by number; reviewMu keeps a
+	// review read from waiting on a list refresh.
+	reviews  map[int]reviewEntry
+	reviewMu sync.Mutex
 }
 
 // NewForge reads o.Repo's pull requests, caching them redacted at cachePath.

@@ -3,7 +3,11 @@ package mcp_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -114,8 +118,46 @@ func TestEventsMatchCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Origin's forge serves a pull request linked to BL-1 by title, whose
+	// checks and unresolved threads bl changes and MCP must both report.
+	forge := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Query string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		at := "2026-01-01T00:00:00Z"
+		var data any
+		switch {
+		case strings.Contains(body.Query, "{viewer"):
+			data = map[string]any{"viewer": map[string]any{"login": "alice"}}
+		case strings.Contains(body.Query, "pullRequests("):
+			data = map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{}, "nodes": []any{map[string]any{"number": 7, "title": "BL-1 fix", "url": "https://github.fake/owner/repo/pull/7", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "fix", "headRefOid": "abc"}}}}}
+		case strings.Contains(body.Query, "pullRequest(number"):
+			data = map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"headRefOid": "abc",
+				"reviewThreads": map[string]any{"nodes": []any{map[string]any{"isResolved": true, "path": "a.go"}, map[string]any{"path": "b.go"}}},
+				"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://ci.fake/1"}}}}}}}},
+			}}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	}))
+	defer forge.Close()
+	original := http.DefaultTransport
+	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, forge.Listener.Addr().String())
+	}}
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = original; transport.CloseIdleConnections() })
+	t.Setenv("BL_PARITY_TOKEN", "fake-token")
+	userPaths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(userPaths.ConfigFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userPaths.ConfigFile, []byte("accounts:\n  github:\n    - {name: fake, host: github.fake, user: alice, env: BL_PARITY_TOKEN}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	files := map[string]string{
-		".git/config":  "[core]\n bare = false\n",
+		".git/config":  "[core]\n bare = false\n[remote \"origin\"]\n url = https://github.fake/owner/repo\n",
 		"backlog.yaml": "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\n",
 	}
 	for name, text := range files {
@@ -265,7 +307,7 @@ func TestEventsMatchCLI(t *testing.T) {
 	var cliChanges struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"providers"`) {
+	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"checkRuns":[{"name":"test","state":"failing","url":"https://ci.fake/1"}]`) || !strings.Contains(string(cliChanges.Data), `"unresolved":1`) {
 		t.Fatalf("bl changes: %d %s", code, out)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "changes", Arguments: map[string]any{"id": "1"}})

@@ -99,8 +99,9 @@ history --json`; read it to pick up earlier sessions' handoffs before starting.
 An unknown `cursor` returns `not-found`.
 
 `changes` returns `changes` and `providers`, like `bl changes --json`, so an
-agent can see whether its pull request is open, green, and approved without
-calling the forge itself.
+agent can see whether its pull request is open, green, and approved, which
+checks fail, and how many review threads are unresolved, without calling the
+forge itself.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
 coordination, `resource`, `claims`, and `claimsError`, plus `sessions` with

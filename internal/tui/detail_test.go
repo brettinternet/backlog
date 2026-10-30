@@ -947,3 +947,62 @@ func TestChangeDiff(t *testing.T) {
 		t.Fatalf("backspace left tab %d cursor %d", m.detailTab, m.entryCursor)
 	}
 }
+
+// A pull request's change view lists each check as an entry O opens, its
+// reviewers and description, and a Conversation with unresolved threads
+// first; its Changes entry counts the unresolved threads.
+func TestChangeViewReview(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	pr := changes.Change{ID: "pr:45", Stage: changes.StagePR, State: changes.StateOpen, Number: 45, Title: "Fix", URL: "https://github.com/o/r/pull/45", Review: changes.ReviewChanges, Checks: changes.ChecksFailing}
+	m.data.rows[len(m.data.rows)-1].row.Changes = []changes.Change{pr}
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	review := changes.Review{
+		Body:      "Closes BL-1 with **care**",
+		Checks:    []changes.Check{{Name: "test", State: changes.ChecksPassing, URL: "https://ci/test"}, {Name: "lint", State: changes.ChecksFailing, URL: "https://ci/lint"}},
+		Reviewers: []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved}, {Login: "bo", State: changes.ReviewChanges}},
+		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}},
+		Threads: []changes.Thread{
+			{Path: "a.go", Line: 3, Resolved: true, Comments: []changes.Comment{{Author: "ann", Body: "settled", Time: at.Add(2 * time.Hour)}}},
+			{Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this?", Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
+		},
+	}
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	m.detailWorker.changeReview = func(context.Context, changes.Change, bool) (changes.Review, error) { return review, nil }
+	m.detailWorker.enrich = func(_ context.Context, cs []changes.Change) []changes.Change {
+		out := slices.Clone(cs)
+		n := review.Unresolved()
+		out[0].Unresolved = &n
+		return out
+	}
+	var opened string
+	m.opts.OpenURL = func(_ context.Context, value string) error { opened = value; return nil }
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	if content := m.View().Content; !strings.Contains(content, "changes requested  1 unresolved") {
+		t.Fatalf("Changes entry lacks unresolved count\n%s", content)
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	content := m.View().Content
+	for _, want := range []string{"✓ test", "✕ lint", "ann  approved", "bo  changes requested", "1 unresolved", "Closes BL-1"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("Overview lacks %q\n%s", want, content)
+		}
+	}
+	m, _ = detailKey(m, 'j', 0)
+	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/lint" {
+		t.Fatalf("O opened %q, not the check under the cursor", opened)
+	}
+	_ = m.switchDetailTab(tabChangeConversation)
+	m = settleDetail(t, m)
+	content = m.View().Content
+	if b, c, a := strings.Index(content, "b.go:7"), strings.Index(content, "first comment"), strings.Index(content, "a.go:3"); b < 0 || c < b || a < c || !strings.Contains(content, "resolved") {
+		t.Fatalf("Conversation not unresolved first\n%s", content)
+	}
+	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://github.com/o/r/pull/45#r1" {
+		t.Fatalf("O opened %q, not the thread under the cursor", opened)
+	}
+}

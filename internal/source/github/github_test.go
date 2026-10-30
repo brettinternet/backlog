@@ -82,6 +82,11 @@ type fixture struct {
 	pullsFail bool
 	// pullFiles and pullCommits answer pull request 45's REST lists.
 	pullFiles, pullCommits string
+	// review is pull request 45's review node; reviewFail reports it
+	// unavailable; reviews counts its reads.
+	review     map[string]any
+	reviewFail bool
+	reviews    int
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -316,6 +321,13 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		return input
 	}
 	switch {
+	case strings.Contains(q, "pullRequest(number"):
+		f.reviews++
+		if f.reviewFail {
+			emit(map[string]any{"repository": nil})
+			return
+		}
+		emit(map[string]any{"repository": map[string]any{"pullRequest": f.review}})
 	case strings.Contains(q, "pullRequests("):
 		if f.pullsFail {
 			emit(map[string]any{"repository": nil})
@@ -960,6 +972,59 @@ func TestForgePullRequests(t *testing.T) {
 		{Path: "huge.go", Status: changes.FileModified, Additions: 9000, Cut: "GitHub left out this file's diff"}}
 	if !slices.Equal(d.Files, want) || !d.Patched || len(d.Commits) != 2 || d.Commits[0].SHA != "c2" || strings.Contains(d.Commits[0].Subject, "fake-secret") || d.Commits[1].Subject != "first" || d.Commits[1].Author != "Ann" {
 		t.Fatalf("pull detail: %+v", d)
+	}
+
+	// A review maps every check, keeps a re-requested reviewer waiting, and
+	// is redacted and stripped of terminal sequences before it is kept.
+	nodes := func(v ...any) map[string]any { return map[string]any{"nodes": v} }
+	comment := func(login, body string) map[string]any {
+		return map[string]any{"author": map[string]any{"login": login}, "body": body, "createdAt": at, "url": "https://github.com/owner/repo/pull/45#c-" + login}
+	}
+	f.review = map[string]any{
+		"body": "Fixes BL-12 \x1b]52;c;cGF5bG9hZA==\x07with fake-secret", "headRefOid": "aaa",
+		"reviewRequests": nodes(map[string]any{"requestedReviewer": map[string]any{"login": "bo"}}, map[string]any{"requestedReviewer": nil}),
+		"latestReviews":  nodes(map[string]any{"author": map[string]any{"login": "ann"}, "state": "APPROVED"}, map[string]any{"author": map[string]any{"login": "bo"}, "state": "CHANGES_REQUESTED"}),
+		"reviews":        nodes(map[string]any{"author": map[string]any{"login": "bo"}, "body": "needs work", "state": "CHANGES_REQUESTED", "submittedAt": at}),
+		"comments":       nodes(comment("cy", "looks good")),
+		"reviewThreads": nodes(
+			map[string]any{"isResolved": true, "path": "a.go", "line": 3, "comments": nodes(comment("ann", "done"))},
+			map[string]any{"isResolved": false, "path": "b.go", "line": nil, "originalLine": 7, "comments": nodes(comment("bo", "why?"))},
+		),
+		"commits": nodes(map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": nodes(
+			map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://ci/1"},
+			map[string]any{"__typename": "CheckRun", "name": "lint", "status": "IN_PROGRESS", "url": "https://github.com/run/2"},
+			map[string]any{"__typename": "CheckRun", "name": "e2e", "status": "COMPLETED", "conclusion": "TIMED_OUT"},
+			map[string]any{"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "SKIPPED"},
+			map[string]any{"__typename": "StatusContext", "context": "ci/legacy", "state": "ERROR", "targetUrl": "https://legacy/3"},
+		)}}}),
+	}
+	r, ok, err := forge.Review(context.Background(), 45, "aaa", false)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	wantChecks := []changes.Check{{"test", changes.ChecksPassing, "https://ci/1"}, {"lint", changes.ChecksPending, "https://github.com/run/2"}, {"e2e", changes.ChecksFailing, ""}, {"docs", changes.ChecksSkipped, ""}, {"ci/legacy", changes.ChecksFailing, "https://legacy/3"}}
+	wantReviewers := []changes.Reviewer{{"ann", changes.ReviewApproved}, {"bo", changes.ReviewRequested}}
+	if !slices.Equal(r.Checks, wantChecks) || !slices.Equal(r.Reviewers, wantReviewers) || r.Unresolved() != 1 || r.Threads[1].Line != 7 || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
+		t.Fatalf("review: %+v", r)
+	}
+	if strings.Contains(r.Body, "fake-secret") || strings.ContainsAny(r.Body, "\x1b\x07") {
+		t.Fatalf("review body not redacted and stripped: %q", r.Body)
+	}
+	if entries := r.Conversation(); entries[0].Thread == nil || entries[0].Thread.Path != "b.go" || entries[len(entries)-1].Thread == nil || !entries[len(entries)-1].Thread.Resolved {
+		t.Fatalf("conversation order: %+v", entries)
+	}
+	if data, err := os.ReadFile(forge.reviewPath()); err != nil || strings.Contains(string(data), "fake-secret") {
+		t.Fatalf("review cache: %v %s", err, data)
+	}
+	// The same head reuses the read; a new head reads again, and a failed
+	// read keeps the last one with the error.
+	reads := f.reviews
+	if _, _, err := forge.Review(context.Background(), 45, "aaa", false); err != nil || f.reviews != reads {
+		t.Fatalf("reused review: %v %d reads", err, f.reviews-reads)
+	}
+	f.reviewFail = true
+	if kept, ok, err := forge.Review(context.Background(), 45, "bbb", false); err == nil || !ok || !slices.Equal(kept.Checks, wantChecks) || f.reviews != reads+1 {
+		t.Fatalf("failed review read: %v %v %+v", ok, err, kept)
 	}
 }
 

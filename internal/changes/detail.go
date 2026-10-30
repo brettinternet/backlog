@@ -79,10 +79,8 @@ func LoadDetail(ctx context.Context, c Change, forges []Forge, patch bool) (Deta
 		commits, err := gitCommits(ctx, c.dir, c.base+".."+c.ref)
 		return Detail{Files: files, Commits: commits, Reason: reason, Patched: patch}, err
 	case c.Number > 0:
-		for _, f := range forges {
-			if strings.HasPrefix(strings.ToLower(c.URL), strings.ToLower(f.Web())+"/pull/") {
-				return f.Pull(ctx, c.Number)
-			}
+		if f := forgeFor(c, forges); f != nil {
+			return f.Pull(ctx, c.Number)
 		}
 		return Detail{}, errors.New("no forge serves " + c.URL)
 	}

@@ -191,7 +191,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.clickCriterion(x, line)
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
 			return m, m.clickRelation(p.X, p.Y, line)
-		case (m.detailTab == tabChanges || m.detailTab == tabChangeFiles || m.detailTab == tabChangeCommits) && y >= m.detailBodyTop():
+		case m.hasEntries() && m.detailTab >= tabChanges && m.detailTab != tabHistory && y >= m.detailBodyTop():
 			// A click selects the change drawn on any of its lines.
 			if m.detailCurrent() {
 				for i, start := range m.detailEntries {

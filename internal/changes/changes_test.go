@@ -88,7 +88,7 @@ func TestWorktreeToLanded(t *testing.T) {
 	if err := os.Chtimes(filepath.Join(worktree, "a"), later, later); err != nil {
 		t.Fatal(err)
 	}
-	enriched := Enrich(context.Background(), []Change{c})
+	enriched := Enrich(context.Background(), []Change{c}, nil)
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("git status ran the repository's filter")
 	}
@@ -102,7 +102,7 @@ func TestWorktreeToLanded(t *testing.T) {
 		t.Fatal("the working tree diff ran the repository's filter")
 	}
 	git(repo, "config", "--unset", "filter.x.clean")
-	if enriched = Enrich(context.Background(), []Change{c}); enriched[0].Dirty == nil {
+	if enriched = Enrich(context.Background(), []Change{c}, nil); enriched[0].Dirty == nil {
 		t.Fatal("no dirty count without a repository filter")
 	}
 	detail, err := LoadDetail(context.Background(), c, nil, false)

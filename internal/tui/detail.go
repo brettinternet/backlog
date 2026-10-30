@@ -36,11 +36,12 @@ const (
 	tabChangeFiles
 	tabChangeDiff
 	tabChangeCommits
+	tabChangeConversation
 )
 
 var (
 	detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "Changes", "History"}
-	changeTabNames = [...]string{"Overview", "Files", "Diff", "Commits"}
+	changeTabNames = [...]string{"Overview", "Files", "Diff", "Commits", "Conversation"}
 )
 
 type detailIdentity struct {
@@ -295,6 +296,10 @@ type detailWorker struct {
 	// asked; recentChange keeps the last that a worktree's edits can't change.
 	changeDetail func(context.Context, changes.Change, bool) (changes.Detail, error)
 	recentChange changeCache
+	// changeReview reads a pull request's review, which its forge caches;
+	// enrich adds Git's and the forges' facts to the Changes tab.
+	changeReview func(context.Context, changes.Change, bool) (changes.Review, error)
+	enrich       func(context.Context, []changes.Change) []changes.Change
 	requests     chan detailRequest
 	results      chan detailResult
 	mu           sync.Mutex
@@ -382,11 +387,19 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			// The change's own facts still show, with why its files don't.
 			detail = changes.Detail{Reason: err.Error()}
 		}
+		var review *changes.Review
+		if request.change.Number > 0 && (request.tab == tabChangeOverview || request.tab == tabChangeConversation) {
+			r, err := worker.loadReview(ctx, *request.change, request.fresh)
+			if err != nil {
+				r = changes.Review{Stale: "pull request detail unavailable: " + err.Error()}
+			}
+			review = &r
+		}
 		var page rendered
 		if diff && err == nil {
 			page = worker.diffPage(ctx, *request.change, detail, request)
 		} else {
-			page = changeViewPage(*request.change, detail, request)
+			page = changeViewPage(*request.change, detail, review, request, worker.render)
 		}
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
@@ -399,7 +412,11 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	if request.tab == tabChanges {
 		// Git counts ahead, behind, and dirty files each time, so the tab
 		// isn't cached; it needs only the row.
-		page := changeLines(changes.Enrich(ctx, request.row.Changes), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
+		enrich := worker.enrich
+		if enrich == nil {
+			enrich = func(ctx context.Context, cs []changes.Change) []changes.Change { return changes.Enrich(ctx, cs, nil) }
+		}
+		page := changeLines(enrich(ctx, request.row.Changes), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
 			return result
@@ -512,6 +529,15 @@ func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fr
 		worker.recentChange = changeCache{key, detail}
 	}
 	return detail, err
+}
+
+// loadReview reads a pull request change's review; the forge keeps it for a
+// minute per head.
+func (worker *detailWorker) loadReview(ctx context.Context, c changes.Change, fresh bool) (changes.Review, error) {
+	if worker.changeReview == nil {
+		return changes.Review{}, errors.New("no forge is configured")
+	}
+	return worker.changeReview(ctx, c, fresh)
 }
 
 const (

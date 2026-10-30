@@ -187,6 +187,9 @@ func (m Model) entryCount() (int, bool) {
 		return len(m.detailIDs), true
 	case tabChangeFiles, tabChangeCommits:
 		return len(m.detailEntries), true
+	case tabChangeOverview, tabChangeConversation:
+		// Without checks or comments, j and k scroll.
+		return len(m.detailEntries), len(m.detailEntries) > 0
 	}
 	return 0, false
 }

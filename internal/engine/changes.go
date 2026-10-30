@@ -132,6 +132,9 @@ func (f failedForge) PullRequests(context.Context) ([]changes.PullRequest, error
 func (f failedForge) Pull(context.Context, int) (changes.Detail, error) {
 	return changes.Detail{}, f.err
 }
+func (f failedForge) Review(context.Context, int, string, bool) (changes.Review, bool, error) {
+	return changes.Review{}, false, f.err
+}
 
 // LinkChanges links items to state's changes, each item only within its own
 // project. Workspace items carry their project; others belong to cfg's.
@@ -196,7 +199,7 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 	}
 	d := changes.Load(ctx, o)
 	linked := LinkChanges(cfg, reads.Query.Items, &changes.State{Projects: map[string]changes.Data{key: d}})
-	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref]), Providers: d.Statuses}
+	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref], o.Forges), Providers: d.Statuses}
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
 	}

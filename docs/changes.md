@@ -35,6 +35,10 @@ merged, and stale checks never read as passing. An open pull request's checks
 are stale when they ran on a different commit than the local branch head. Each
 change carries a `reason` when it's unknown or stale.
 
+An open pull request also lists `checkRuns`, each check run and commit status
+on its head with `name`, `state` (`passing`, `failing`, `pending`, `skipped`,
+or `stale`), and `url`, and `unresolved`, its unresolved review thread count.
+
 ## Links
 
 | Link | Rule |
@@ -118,6 +122,16 @@ refresh keeps the cached list and marks it stale. The token needs read access
 to pull requests; a pull request whose checks or closing references it can't
 read still links by branch, title, and body.
 
+A pull request's detail (description, checks, reviewers, comments, and review
+threads) is read for the item shown, never on a list refresh: in the Changes
+tab and change view, by `bl changes`, and by MCP `changes`, for open pull
+requests outside the change view. One GraphQL read per pull request goes
+through the account's request queue, redacted and stripped of terminal
+sequences before it is kept in a `.reviews.json` file beside `.pulls.json`, and
+is reused for a minute while the head doesn't move; `R` reads it again. A
+failed read keeps the last one, which shows with why it may be out of date.
+It reads the first 100 checks, comments, reviews, and threads.
+
 The TUI reads local data every five seconds, which starts no process unless the
 default branch moved, and forges every minute, on a worker; `R` reloads both.
 `bl changes`, MCP `changes`, `bl history`, and `bl ls` or MCP `query` with a
@@ -129,7 +143,7 @@ change term load once per call.
 | --- | --- |
 | TUI list | The most advanced change, such as `⇡#45 ✓` ([TUI](tui.md#layout)) |
 | TUI Changes tab | Every change, furthest first, with its actions and URL ([TUI](tui.md#detail)) |
-| TUI change view | One change's overview, files with `+/−`, highlighted diff, and commits ([TUI](tui.md#detail)) |
+| TUI change view | One change's overview with checks and reviewers, files with `+/−`, highlighted diff, commits, and conversation ([TUI](tui.md#detail)) |
 | History | One group per change: its span, events, and landed commits |
 | Queries | `has:change`, `change:`, `checks:`, `review:` ([Query](query.md#fields)) |
 | `bl changes ID` | The same list as text or JSON ([CLI](cli.md#bl-changes-id)) |
