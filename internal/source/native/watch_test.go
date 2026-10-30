@@ -17,11 +17,13 @@ import (
 )
 
 // failedWatch is a notification backend that fails after installing, as a
-// Windows directory handle does when its directory goes away.
+// Windows directory handle does when its directory is deleted.
 type failedWatch struct{}
 
-func (failedWatch) Wait(context.Context) error { return syscall.EMFILE }
-func (failedWatch) Close() error               { return nil }
+func (failedWatch) Wait(context.Context) error {
+	return fmt.Errorf("%w: access denied", native.ErrPollingOnly)
+}
+func (failedWatch) Close() error { return nil }
 
 // These checks catch per-item descriptor growth, missed in-place writes, and
 // a failed open or a failed watch silently disabling external change signals.
@@ -86,6 +88,14 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 				func() error { return os.Remove(filepath.Join(path, "BL-2.md")) },
 			} {
 				drain()
+				if mode == "native" {
+					// A watcher that signals while idle would reload constantly.
+					select {
+					case <-signals:
+						t.Fatal("signal without a change")
+					case <-time.After(100 * time.Millisecond):
+					}
+				}
 				if err := operation(); err != nil {
 					t.Fatal(err)
 				}
@@ -104,6 +114,55 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 				t.Fatalf("fallback count %d", fallback.Load())
 			}
 		})
+	}
+}
+
+// Catches a watch that keeps following its directory after it is moved away
+// and replaced, as Windows does, so items in the new directory go unseen.
+func TestWatchedDirectoryReplaced(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "backlog")
+	if err := os.Mkdir(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	s := openSource(t, root, filepath.Join(root, "common"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	signals := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- s.WatchWithOptions(ctx, func() {
+			select {
+			case signals <- struct{}{}:
+			default:
+			}
+		}, native.WatchOptions{SweepInterval: 10 * time.Millisecond, PollInterval: 10 * time.Millisecond})
+	}()
+	<-signals
+	if err := os.Rename(path, filepath.Join(root, "backlog.old")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond) // Let the move's own signal pass.
+	select {
+	case <-signals:
+	default:
+	}
+	if err := os.WriteFile(filepath.Join(path, "BL-1.md"), []byte("item"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-signals:
+	case err := <-done:
+		t.Fatalf("watch ended: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("item in the replaced directory missed")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

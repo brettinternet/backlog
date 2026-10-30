@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"runtime"
@@ -85,8 +86,16 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	if !polling && !sweepEdits {
-		ticker.Stop()
+	// Without a sweep, the tick only checks the directory's identity: Windows
+	// keeps watching a directory moved away (Explorer delete moves it to the
+	// Recycle Bin) without completing a read, so a replacement would go unseen.
+	directory, _ := os.Stat(s.options.Path)
+	fallback := func(e error) {
+		polling = true
+		if o.OnPolling != nil {
+			o.OnPolling(e)
+		}
+		ticker.Reset(o.PollInterval)
 	}
 	for {
 		select {
@@ -100,14 +109,17 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 				if !errors.Is(e, syscall.EMFILE) && !errors.Is(e, syscall.ENFILE) && !errors.Is(e, errPollingOnly) {
 					return e
 				}
-				polling = true
-				if o.OnPolling != nil {
-					o.OnPolling(e)
-				}
-				ticker.Reset(o.PollInterval)
+				fallback(e)
 			}
 			changed()
 		case <-ticker.C:
+			if !polling && !sweepEdits {
+				if info, e := os.Stat(s.options.Path); e != nil || !os.SameFile(directory, info) {
+					fallback(fmt.Errorf("%w: watched directory replaced", errPollingOnly))
+					changed()
+				}
+				continue
+			}
 			next, e := s.watchStats(baseline)
 			if e != nil {
 				return e
