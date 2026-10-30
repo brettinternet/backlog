@@ -157,6 +157,7 @@ type Model struct {
 	detailFiles, detailHunks []int     // the Diff tab's file and hunk header lines
 	detailRows               []diffRow // what each Diff entry shows
 	detailHead               string    // the commit the Diff shows
+	detailDirty              []string  // the Diff's uncommitted files
 	diffOrigin, diffCursor   int       // the scroll and cursor before [ or ], which [c and ]c restore
 	detailLines              []string  // the last body, kept while the next loads
 	detailEntries            []int     // detailLines index of each criterion or relation
@@ -911,7 +912,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
 			m.detailChanges = result.changes
 			m.detailFiles, m.detailHunks = result.files, result.hunks
-			m.detailRows, m.detailHead = result.rows, result.head
+			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
 			if keep {
 				if n := place.find(m.detailRows); n >= 0 {

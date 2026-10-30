@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -97,6 +98,12 @@ func (m *Model) beginReviewDraft() tea.Cmd {
 			return nil
 		}
 		a := anchors[0]
+		// An uncommitted file's lines aren't the head's, so a comment on one
+		// would post onto another line.
+		if slices.Contains(m.detailDirty, a.file) {
+			m.notice = textutil.Line(a.file) + " has uncommitted changes; commit and push it to comment on it."
+			return nil
+		}
 		edit.comment = &changes.LineComment{Head: a.head, Path: a.file, Old: a.side == sideOld, Line: a.line}
 		text = ""
 		for _, c := range d.Comments {

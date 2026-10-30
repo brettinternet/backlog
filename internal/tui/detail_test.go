@@ -1067,6 +1067,7 @@ func TestChangeViewReview(t *testing.T) {
 	if !ok || prepared.err != nil || prepared.edit.reply == nil || prepared.edit.reply.Thread != "T_b" {
 		t.Fatalf("c on a thread prepared %+v", prepared)
 	}
+	t.Cleanup(func() { _ = os.Remove(prepared.edit.path) })
 	next, _ := m.Update(prepared)
 	if err := os.WriteFile(prepared.edit.path, []byte("fixed in abc\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -1080,6 +1081,20 @@ func TestChangeViewReview(t *testing.T) {
 	_ = m.switchDetailTab(tabChangeOverview)
 	if m = settleDetail(t, m); !strings.Contains(m.View().Content, "1 reply") {
 		t.Fatalf("Overview lacks the draft\n%s", m.View().Content)
+	}
+	// A Diff line comment anchors to the head's line, never to an
+	// uncommitted file's, whose lines may be other lines at head.
+	diff := m
+	diff.detailTab, diff.detailRows, diff.detailDirty, diff.entryCursor = tabChangeDiff, []diffRow{{file: "a.go", old: 2, new: 3}}, []string{"a.go"}, 0
+	if next, cmd := detailKey(diff, 'c', 0); cmd != nil || !strings.Contains(next.notice, "uncommitted") {
+		t.Fatalf("c on an uncommitted line: %q", next.notice)
+	}
+	diff.detailDirty = nil
+	_, cmd = detailKey(diff, 'c', 0)
+	line, ok := cmd().(reviewPreparedMsg)
+	t.Cleanup(func() { _ = os.Remove(line.edit.path) })
+	if !ok || line.edit.comment == nil || line.edit.comment.Line != 3 || line.edit.comment.Old || line.edit.comment.Path != "a.go" {
+		t.Fatalf("c on a Diff line prepared %+v", line)
 	}
 	m, _ = detailKey(m, 'r', 0)
 	if !m.review.prompt || !strings.Contains(m.View().Content, "Request changes") {

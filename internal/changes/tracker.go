@@ -2,6 +2,7 @@ package changes
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sync/atomic"
 	"time"
@@ -113,11 +114,10 @@ func (t *Tracker) Submit(ctx context.Context, c Change, event string) (Draft, er
 	if err != nil {
 		return d, err
 	}
+	// A draft that can't be saved after an unknown outcome could be sent
+	// again, so its failure is always reported.
 	d, err = SubmitReview(ctx, c, t.forges(), d, event)
-	if saveErr := t.SaveDraft(d); err == nil {
-		err = saveErr
-	}
-	return d, err
+	return d, errors.Join(err, t.SaveDraft(d))
 }
 
 func (t *Tracker) stateDir() string {

@@ -92,6 +92,7 @@ type detailResult struct {
 	hunks      []int
 	rows       []diffRow // what each Diff entry shows
 	head       string    // the commit the Diff shows
+	dirty      []string  // the change's uncommitted files, which aren't at head
 	review     *changes.Review
 	draft      *changes.Draft // the pull request's pending review
 	draftErr   string         // why the draft can't be read
@@ -427,6 +428,11 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
 		result.review, result.draft = review, draft
+		for _, f := range detail.Files {
+			if f.Status == changes.FileUncommitted {
+				result.dirty = append(result.dirty, f.Path)
+			}
+		}
 		return result
 	}
 	if request.tab == tabChanges {

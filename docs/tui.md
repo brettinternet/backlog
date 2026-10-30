@@ -301,6 +301,8 @@ A pull request's change view drafts a pending review. `c` opens `$EDITOR` on
 the comment for the Diff line under the cursor, on a reply to the
 Conversation thread under it, on the Overview draft entry under it, and
 otherwise on the review's comment; saving a blank buffer removes that part.
+A line of an uncommitted file can't be commented on, since it may be another
+line at the head.
 Drafts are kept per pull request under the state directory's `reviews/`, so
 they survive restarts, and Overview lists them under Draft. `r` opens the
 submit prompt: `c` comment, `a` approve, `r` request changes, `d` discard. The
