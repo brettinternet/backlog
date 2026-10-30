@@ -53,7 +53,7 @@ read-only:
 
 | App | Client ID | Permissions | Used by |
 | --- | --- | --- | --- |
-| `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects: read | `bl auth login` |
+| `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses: read | `bl auth login` |
 | `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects: read/write | `bl auth login --write` |
 
 1. Declare the account with `oauth: true` instead of `credential` or `env`:
@@ -455,11 +455,11 @@ A GitHub forge lists a repository's pull requests for [linked
 changes](changes.md): state, head branch and commit, merge commit, closing
 issues, review decision, checks rollup, and size. It needs no source. Without
 `changes.forges`, a GitHub `origin` is the forge when exactly one account is
-configured for its host. The `repo` scope (or `public_repo`) reads it. The
-`bl-cli-read` app needs Pull requests, Checks, and Commit statuses: read, which
-the owner grants in the app's settings; until then a device-login forge reports
-`unavailable`. A pull request whose checks or closing issues the token can't
-read still links by branch, title, and body.
+configured for its host. The `repo` scope (or `public_repo`) reads it, and
+device login reads it wherever `bl-cli-read` is installed. Where an
+organization won't install the app, use a `gh auth token` credential account
+instead ([Setup](#setup)). A pull request whose checks or closing issues the
+token can't read still links by branch, title, and body.
 
 ## This repository
 
