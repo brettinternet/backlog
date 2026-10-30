@@ -15,8 +15,10 @@ import (
 
 // Cards are two rows: priority, ID and signals, then the title.
 const (
-	cardHeight = 2
-	boardGap   = 2
+	cardHeight        = 2
+	boardGap          = 2
+	boardMinWidth     = 28
+	boardNoItemsWidth = 11 // cursor, two spaces, "No items"
 )
 
 // Column offsets and flattened rows are prepared in a command, just like lists.
@@ -112,10 +114,42 @@ func (m Model) boardWidth() int {
 	return m.width
 }
 
-// boardGeometry returns the visible column count and column width.
-func (m Model) boardGeometry() (int, int) {
-	count := max(1, min(len(m.data.starts), max(1, (m.boardWidth()+boardGap)/(28+boardGap))))
-	return count, max(1, (m.boardWidth()-boardGap*(count-1))/count)
+// boardColumns returns the widths of the columns shown from left. A column
+// without cards is only as wide as its header or No items line; columns with
+// cards share the rest, each at least boardMinWidth cells.
+func (m Model) boardColumns(left int) []int {
+	total := m.boardWidth()
+	var widths []int
+	used, cards := 0, 0
+	for c := left; c < len(m.data.starts); c++ {
+		width := boardMinWidth
+		empty := m.boardEnd(c) == m.data.starts[c]+1
+		if empty {
+			width = max(boardNoItemsWidth, ansi.StringWidth(m.boardHeader(c, false)))
+		}
+		if len(widths) > 0 {
+			if used+boardGap+width > total {
+				break
+			}
+			used += boardGap
+		}
+		used += width
+		widths = append(widths, width)
+		if !empty {
+			cards++
+		}
+	}
+	if used > total {
+		widths[0] = max(1, total)
+	} else if cards > 0 {
+		share := (total - used) / cards
+		for i, c := 0, left; i < len(widths); i, c = i+1, c+1 {
+			if m.boardEnd(c) > m.data.starts[c]+1 {
+				widths[i] += share
+			}
+		}
+	}
+	return widths
 }
 
 // boardPage is the number of cards visible in one column.
@@ -142,13 +176,15 @@ func (m *Model) keepBoardVisible() {
 		p.top = p.cursor - page + 1
 	}
 	m.board.positions[key] = p
-	count, _ := m.boardGeometry()
-	m.board.left = max(0, min(m.board.left, max(0, len(m.data.starts)-count)))
-	if column < m.board.left {
-		m.board.left = column
+	// Scroll back while the columns from one further left still reach the
+	// last, so a data change leaves no space after it.
+	m.board.left = min(m.board.left, len(m.data.starts)-1)
+	for m.board.left > 0 && m.board.left-1+len(m.boardColumns(m.board.left-1)) >= len(m.data.starts) {
+		m.board.left--
 	}
-	if column >= m.board.left+count {
-		m.board.left = column - count + 1
+	m.board.left = min(m.board.left, column)
+	for column >= m.board.left+len(m.boardColumns(m.board.left)) {
+		m.board.left++
 	}
 }
 func (m *Model) navigateBoard(key string, n int, counted bool, prefix string) bool {
@@ -203,10 +239,12 @@ func (m *Model) navigateBoard(key string, n int, counted bool, prefix string) bo
 // cost is independent of backlog size.
 func (m Model) boardPane(width, rows int) []string {
 	t := m.theme
-	count, columnWidth := m.boardGeometry()
+	widths := m.boardColumns(m.board.left)
+	count := len(widths)
 	focused := m.boardColumn()
 	var columns [][]string
-	for c := m.board.left; c < min(len(m.data.starts), m.board.left+count); c++ {
+	for i, columnWidth := range widths {
+		c := m.board.left + i
 		columns = append(columns, m.boardColumnLines(c, columnWidth, rows, c == focused))
 	}
 	out := make([]string, rows)
@@ -233,6 +271,12 @@ func (m Model) boardPane(width, rows int) []string {
 	return out
 }
 
+// boardHeader is a column's label and card count.
+func (m Model) boardHeader(column int, focused bool) string {
+	start := m.data.starts[column]
+	return " " + m.groupLabel(m.data.rows[start], focused) + "  " + m.theme.muted.render(strconv.Itoa(m.boardEnd(column)-start-1))
+}
+
 func (m Model) boardColumnLines(column, width, rows int, focused bool) []string {
 	t := m.theme
 	start, end := m.data.starts[column], m.boardEnd(column)
@@ -241,7 +285,13 @@ func (m Model) boardColumnLines(column, width, rows int, focused bool) []string 
 	if rows == 0 {
 		return lines
 	}
-	lines[0] = fit(" "+m.groupLabel(header, focused)+"  "+t.muted.render(strconv.Itoa(end-start-1)), width)
+	// A rule after the count sets the header apart from the tabs above it
+	// without styling, so it holds under NO_COLOR and high contrast.
+	label := m.boardHeader(column, focused)
+	if rule := width - ansi.StringWidth(label) - 1; rule > 0 {
+		label += " " + t.faint.render(strings.Repeat("\u2500", rule))
+	}
+	lines[0] = fit(label, width)
 	for i := 1; i < rows; i++ {
 		lines[i] = blank(width)
 	}

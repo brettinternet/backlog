@@ -579,7 +579,7 @@ func (m Model) groupLabel(r screenRow, strong bool) string {
 	if strong {
 		return icon + t.bold.render(label)
 	}
-	return icon + t.muted.render(label)
+	return icon + label
 }
 
 // highlightText marks free-text query matches inside one sanitized cell,

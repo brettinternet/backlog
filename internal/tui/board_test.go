@@ -45,8 +45,10 @@ func TestBoardNavigation(t *testing.T) {
 	if m.boardColumn() != 1 {
 		t.Fatal("vertical motion left empty column")
 	}
+	// At 80 cells the narrow empty column leaves room for three columns, so
+	// reaching the fourth scrolls by one.
 	m = send(m, "l", "j", "l")
-	if m.board.left != 2 {
+	if m.board.left != 1 || len(m.boardColumns(m.board.left)) != 3 {
 		t.Fatalf("horizontal scroll: %d", m.board.left)
 	}
 	m = send(m, "h", "h", "h")

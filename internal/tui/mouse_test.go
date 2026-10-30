@@ -116,15 +116,17 @@ func TestMouseNavigation(t *testing.T) {
 	}
 	m = boardFixture(4)
 	m.width = 160
-	count, width := m.boardGeometry()
-	if count < 2 {
-		t.Fatal("fixture needs columns")
+	// The empty column is narrow, so hit-testing must follow each column's
+	// own width: x=widths[0]+widths[1]+5 lies inside an even split's column 1.
+	widths := m.boardColumns(0)
+	if len(widths) != 4 || widths[1] >= widths[0] {
+		t.Fatalf("empty column not narrowed: %v", widths)
 	}
-	click(width+boardGap, 1)
+	click(widths[0]+boardGap, 1)
 	if m.boardColumn() != 1 {
 		t.Fatal("board header click did not focus empty column")
 	}
-	click(2*(width+boardGap)+1, 3)
+	click(widths[0]+widths[1]+2*boardGap+1, 3)
 	if m.boardColumn() != 2 {
 		t.Fatal("board card hit-testing")
 	}
@@ -139,7 +141,7 @@ func TestMouseNavigation(t *testing.T) {
 	if m.boardColumn() != left-1 || m.board.left != left-1 {
 		t.Fatalf("‹ focused column %d", m.boardColumn())
 	}
-	count, _ = m.boardGeometry()
+	count := len(m.boardColumns(m.board.left))
 	click(m.width-1, 1)
 	if m.boardColumn() != left-1+count {
 		t.Fatalf("› focused column %d", m.boardColumn())

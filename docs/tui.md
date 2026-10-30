@@ -150,8 +150,14 @@ their own status name (design.md D36). The Board tab hides drafts, which are nev
 columns; a negated one drops only the columns it excludes. Other group keys use
 their group order. A card shows priority, ID, open blockers, child progress, and
 assignee above its title; as it narrows, assignee drops first, then children,
-then blockers. Columns are at
-least 28 cells wide, scroll horizontally, and keep their own cursor. `<`/`>`
+then blockers. A column without cards is only as wide as its header; columns
+with cards share the rest, each at least 28 cells, so how many fit depends on
+which are in view. Columns stay in place and order; one changes width only when
+it gains its first card or loses its last. Columns scroll horizontally and keep
+their own cursor. Column labels use the default foreground (the focused one
+bold), and a faint rule fills the rest of each header, so the row stays distinct
+from the muted tabs above without a spacer row, under `NO_COLOR` and high
+contrast too. `<`/`>`
 always change workflow status, even when grouped by something else. Quick-add
 uses the focused column's status. `l` navigates instead of opening the label
 picker.
