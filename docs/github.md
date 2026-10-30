@@ -449,6 +449,18 @@ source already needs. A classic token with `repo` and `project` (among others) r
 ([BL-140](github-verification.md#bl-140-live-verification)); `repo` alone and the app
 rely on documented permissions.
 
+## Linked changes
+
+A GitHub forge lists a repository's pull requests for [linked
+changes](changes.md): state, head branch and commit, merge commit, closing
+issues, review decision, checks rollup, and size. It needs no source. Without
+`changes.forges`, a GitHub `origin` is the forge when exactly one account is
+configured for its host. The `repo` scope (or `public_repo`) reads it. The
+`bl-cli-read` app needs Pull requests, Checks, and Commit statuses: read, which
+the owner grants in the app's settings; until then a device-login forge reports
+`unavailable`. A pull request whose checks or closing issues the token can't
+read still links by branch, title, and body.
+
 ## This repository
 
 The `issues` source uses Projects v2 board

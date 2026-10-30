@@ -31,6 +31,7 @@ type Settings struct {
 	// Agents is honored only from built-ins and user config (design.md D40).
 	Agents  map[string]AgentConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 	History HistoryConfig          `yaml:"history,omitempty" json:"history"`
+	Changes ChangesConfig          `yaml:"changes,omitempty" json:"changes"`
 	// Contact adds or disables contact resolvers by name; like Agents, it is
 	// honored only from user config (design.md D40).
 	Contact map[string]ContactResolver `yaml:"contact,omitempty" json:"contact,omitempty"`
@@ -70,6 +71,24 @@ type HistoryConfig struct {
 	// handoff as a comment on the item.
 	Handoff       string `yaml:"handoff,omitempty" json:"handoff,omitempty"`
 	CommitTrailer string `yaml:"commitTrailer,omitempty" json:"commitTrailer,omitempty"`
+}
+
+// ChangesConfig chooses where linked changes come from (design.md D43): Git
+// reads local branches, worktrees, and landed commits; Forges list pull
+// requests. Without Forges, a GitHub origin with exactly one account for its
+// host is the forge.
+type ChangesConfig struct {
+	Git    bool          `yaml:"git" json:"git"`
+	Forges []ForgeConfig `yaml:"forges,omitempty" json:"forges,omitempty"`
+}
+
+// ForgeConfig is a repository whose pull requests link to items. Account
+// names a configured account, as a source's does.
+type ForgeConfig struct {
+	Type    string `yaml:"type" json:"type"`
+	Host    string `yaml:"host,omitempty" json:"host,omitempty"`
+	Repo    string `yaml:"repo" json:"repo"`
+	Account string `yaml:"account,omitempty" json:"account,omitempty"`
 }
 
 // AgentConfig detects an agent kind: Session names the environment variable

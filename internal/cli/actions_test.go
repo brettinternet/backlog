@@ -268,6 +268,12 @@ func exerciseActionExamples(t *testing.T, root, binary string) {
 		actionOK(t, root, "trust")
 		for _, action := range cfg.Actions {
 			output, err := exec.Command(binary, "-C", root, "--json", "action", action.Name, "12", "--yes").CombinedOutput()
+			if hooks.UsesChange(action) {
+				if err == nil || !strings.Contains(string(output), "runs on a linked change") {
+					t.Fatalf("change example %s ran without a change: %v %s", action.Name, err, output)
+				}
+				continue
+			}
 			if err != nil {
 				t.Fatalf("example %s: %v %s", action.Name, err, output)
 			}

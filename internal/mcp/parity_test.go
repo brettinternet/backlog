@@ -259,4 +259,23 @@ func TestEventsMatchCLI(t *testing.T) {
 	if code, out := run("history", "1", "--cursor", "event:missing"); code != 3 || !strings.Contains(out, `"reason":"not-found"`) {
 		t.Fatalf("CLI unknown history cursor: %d %s", code, out)
 	}
+
+	// bl changes and the MCP changes tool return the same changes and statuses.
+	code, out = run("changes", "1")
+	var cliChanges struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"providers"`) {
+		t.Fatalf("bl changes: %d %s", code, out)
+	}
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "changes", Arguments: map[string]any{"id": "1"}})
+	if err != nil || result.IsError {
+		t.Fatalf("changes: %v %+v", err, result)
+	}
+	var cliData, mcpData any
+	_ = json.Unmarshal(cliChanges.Data, &cliData)
+	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &mcpData)
+	if !reflect.DeepEqual(cliData, mcpData) {
+		t.Fatalf("changes differ\nMCP %v\nCLI %v", mcpData, cliData)
+	}
 }

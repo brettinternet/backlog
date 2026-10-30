@@ -59,9 +59,12 @@ adapters replace the badges with `⚠ Untrusted project config · bl trust --sho
 untrusted adapters aren't opened, but native sources stay browsable.
 
 **Rows:** priority, ID, status, title with labels, open blockers, child
-progress, assignee, and time since update. As the pane narrows, columns drop in
-this order so the title keeps at least two-fifths of the width: updated,
-assignee, children, blockers, claim, then the status name (the icon stays).
+progress, linked change, assignee, and time since update. The change column
+shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓`
+([Changes](changes.md)), and appears once any row has one. As the pane narrows,
+columns drop in this order so the title keeps at least two-fifths of the width:
+updated, assignee, children and change, blockers, claim, then the status name
+(the icon stays).
 Grouping by status shows only the icon. Opaque provider IDs (Linear states and
 users, Jira accountIds, GitHub Projects options) show the provider's name
 everywhere, including group headers and detail; a configured status name wins
@@ -179,7 +182,8 @@ the focused column.
 `enter`, `l`, or `right` opens detail (`enter` on a group header folds it). In
 detail, `j`/`k` and page keys scroll, `tab`/`shift-tab` change tabs, `m` shows
 more of a cut-off body (otherwise it picks a milestone), and `enter`, `esc`, or
-`q` close (`enter` follows a relation in Relations and expands an entry in History). Edit and copy keys work in
+`q` close (`enter` follows a relation in Relations, opens a change's actions in
+Changes, and expands an entry in History). Edit and copy keys work in
 detail on the item shown, never on marks. If an edit moves the item out of the
 view, detail keeps showing it until you move. `J`/`K` select the next or
 previous item from either pane, counting from where a moved item was. At split
@@ -228,7 +232,8 @@ new version) keeps its body and shows loading on the header row.
 | Notes | Plan, notes, summary |
 | Comments | Comments |
 | Relations | Blockers → item → what it blocks, then parent, children with progress, duplicate of, related, each with live status. Blocking, children, and related include inbound links; related omits items linked by blocks. |
-| History | Events, claims, sessions, comments, commits to the item file, and provider activity (`github:`, `linear:`, `jira:`), oldest first (design.md D40) |
+| Changes | Linked worktrees, branches, pull requests, and landed commits, furthest first ([Changes](changes.md)) |
+| History | Events, claims, sessions, comments, linked changes, commits to the item file, and provider activity (`github:`, `linear:`, `jira:`), oldest first (design.md D40) |
 
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and
@@ -238,11 +243,22 @@ there is one. A target that isn't loaded shows `?`,
 and following it says why: its source isn't configured, failed, or is still
 loading, or the item isn't in it.
 
+Changes lists one entry per change, with `j`/`k` moving over them. Its first
+line reads stage glyph (`◇` worktree, `⎇` branch, `⇡` pull request, `◆`
+landed, `?` unknown or stale), `#45` or the branch, title, state, checks (`✓`
+passing, `✕` failing, `●` pending), review decision, `+120 −30`, and age. A
+second line names the branch, worktree, how far an open branch is ahead of and
+behind the default branch, and dirty files; a third says why a change is
+unknown or stale. Ahead, behind, and dirty are counted by Git on a worker each
+time the tab renders. `enter` or `!` on an entry lists the actions that name a
+`{change.*}` placeholder ([Automation](automation.md#placeholders-and-environment)), run on
+that change; `O` opens its URL. `R` reloads changes along with sources.
+
 History opens scrolled to the newest entry, with `j`/`k` moving over entries.
 Each row reads time, source, summary, then member count and actor. The time
 follows `ls -l`: `Oct 26 17:20` within six months, `Oct 26  2025` before. The
 source label is `item` (edits and readiness), `claim`, `agent` (a session),
-`handoff`, `comment`, `git`, `action`, `hook`, or the remote provider
+`handoff`, `comment`, `change`, `git`, `action`, `hook`, or the remote provider
 (`github`, `linear`, `jira`); agents, commits, comments, and remote activity
 are colored, and the column is dropped below 48 cells. An edit's summary names
 each field: `status todo → in-progress`, `labels +windows -human`,
@@ -250,7 +266,10 @@ each field: `status todo → in-progress`, `labels +windows -human`,
 (agent, phases, duration, state unless it is the last phase, `resumable` or
 the check that refuses it, such as `checkout removed`, the first line of its
 handoff, and its live [contact](cli.md#contact) channels)
-with its entries folded under it. `▸` marks a row that expands: `enter` opens a
+with its entries folded under it. Each linked change is one row (label, title,
+state, checks, review) spanning its first event to its merge, close, or last
+landed commit, with its worktree, branch, opened, merged, and closed events and
+landed commits folded under it. `▸` marks a row that expands: `enter` opens a
 group, a cut-off summary wrapped in full, and the entry's detail, wrapped with
 hanging indents. An edit's detail lists what the summary abbreviates, per field:
 added and removed lines (`+`, `-`, green and red, `…` for skipped unchanged
@@ -315,10 +334,13 @@ repeats the last edit on the current targets.
 item source, as `bl start` and `bl done` do. A refused item names its source.
 
 **Copy** with OSC 52: `yy` ID, `yt` title, `yb` branch name, `yu` URL, `ym`
-Markdown link. The branch name is the lowercase ID plus an ASCII title slug, at
+Markdown link, `yp` the URL of the change under the Changes cursor (else the
+item's most advanced change), and `ys` the SHA of the commit under the History
+cursor or the head of the change under the Changes cursor. The branch name is the lowercase ID plus an ASCII title slug, at
 most 48 characters, cut at a word: `bl-12-debounce-detail-rendering`.
 
-`O` opens the item URL. Only absolute HTTP(S) URLs without credentials open,
+`O` opens the item URL, or the change's on a Changes entry. Only absolute
+HTTP(S) URLs without credentials open,
 through the platform opener, never a shell.
 
 ### Quick-add
@@ -406,7 +428,9 @@ last loaded at once and refreshes them in place. Otherwise the menu waits up to
 cursor. `confirm` actions ask `y`/`n`.
 Attached actions suspend the TUI like `$EDITOR`; detached ones return at once.
 Bind one with `key:` in its declaration or `action:NAME` in user `keys`. See
-[Automation](automation.md).
+[Automation](automation.md). An action that names a `{change.*}` placeholder
+runs on a linked change, so it is listed from a Changes entry and disabled
+elsewhere with `runs on a linked change`.
 
 Below them, `Sessions` lists the item's recorded agent sessions, newest first,
 as `Resume claude · 2h` or `Fork claude · 2h` for a closed item. A refused
@@ -462,6 +486,7 @@ to show the hidden tab beside them. In detail, click `⌫ back` or
 header focuses it, and its edge `‹`/`›` focus the hidden column beside them; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
 to toggle it. Click a relation to select it; double-click to open it. Click a
+change to select it. Click a
 History entry, or any line of its expansion, to select it; click its `▸` or
 double-click to expand or collapse it, and click `! resume` to run it. Click the
 query in the status bar to edit it there. The wheel moves three rows, or scrolls
@@ -580,6 +605,8 @@ keys:
 | `yank-branch` | `y b` | Copy branch |
 | `yank-url` | `y u` | Copy URL |
 | `yank-markdown` | `y m` | Copy Markdown link |
+| `yank-change` | `y p` | Copy change URL |
+| `yank-commit` | `y s` | Copy commit SHA |
 | `help` | `?` | Help |
 | `palette` | `:`, `alt+x` | Commands |
 | `quit` | `q` | Quit / back |

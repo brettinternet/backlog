@@ -94,6 +94,9 @@
     "history": {
       "$ref": "project-config.json#/properties/history"
     },
+    "changes": {
+      "$ref": "project-config.json#/properties/changes"
+    },
     "hooks": {
       "$ref": "project-config.json#/properties/hooks"
     },

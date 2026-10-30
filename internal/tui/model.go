@@ -10,8 +10,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/history"
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -27,6 +29,7 @@ type Options struct {
 	Project                    string // display name
 	Store                      *engine.Store
 	Projector                  *engine.Projector
+	Changes                    *changes.Tracker // nil when no project reads changes
 	Context                    context.Context
 	Sources                    []string
 	Statuses                   []project.StatusConfig
@@ -41,7 +44,7 @@ type Options struct {
 	EditorDir                  string
 	OpenURL                    func(context.Context, string) error
 	Read                       func(context.Context, model.Ref) (model.Item, error)
-	History                    func(context.Context, model.Item) history.Result
+	History                    func(context.Context, model.Item, []changes.Change) history.Result
 	HistoryPosition            func(model.Ref) string // changes when the item's event log grows
 	Render                     func(string, int) (string, error)
 	Views                      []project.SavedView
@@ -88,6 +91,7 @@ type snapshotMsg struct {
 	refreshing bool
 }
 type projectionMsg engine.Projection
+type changesMsg *changes.State
 type foldedMsg struct {
 	serial uint64
 	data   prepared
@@ -138,6 +142,7 @@ type Model struct {
 	refreshing               bool // a source load is running; only the status bar shows it
 	snapshots                <-chan *engine.Snapshot
 	snapshot                 *engine.Snapshot
+	changes                  *changes.State // linked into each projection
 	request                  uint64
 	applied, prepared        uint64 // latest projection and preparation shown
 	detailOpen               bool
@@ -152,11 +157,13 @@ type Model struct {
 	detailLines              []string // the last body, kept while the next loads
 	detailEntries            []int    // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
+	detailChanges            []changes.Change
 	detailIDs                []string        // the history entry of each History entry
 	detailHints              []string        // the key hint of each History entry
 	historyOpen              map[string]bool // expanded History entries of historyRef
 	historyRef               model.Ref
-	actionSession            string // the History session row ! opened the actions menu on
+	actionSession            string              // the History session row ! opened the actions menu on
+	actionChange             *hooks.LinkedChange // the Changes entry ! or enter opened the actions menu on
 	detailShownRef           model.Ref
 	detailShownTab           detailTab
 	detailError              string
@@ -255,6 +262,9 @@ func (m Model) Init() tea.Cmd {
 	if m.goToWorker != nil {
 		commands = append(commands, m.waitGoTo())
 	}
+	if m.opts.Changes != nil {
+		commands = append(commands, m.waitChanges())
+	}
 	if m.detailWorker != nil {
 		m.detailWorker.start()
 		commands = append(commands, m.waitDetail())
@@ -285,6 +295,16 @@ func (m Model) waitSnapshot() tea.Cmd {
 				sources = append(sources, badge)
 			}
 			return snapshotMsg{s, sources, syncing, refreshing}
+		}
+	}
+}
+func (m Model) waitChanges() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case <-m.opts.Context.Done():
+			return nil
+		case <-m.opts.Changes.Updates():
+			return changesMsg(m.opts.Changes.Latest())
 		}
 	}
 }
@@ -597,7 +617,7 @@ func (m *Model) requestProjection(refreshClaims bool) {
 	if m.snapshot == nil || m.opts.Projector == nil {
 		return
 	}
-	q := engine.ProjectionQuery{Text: m.query, RefreshClaims: refreshClaims}
+	q := engine.ProjectionQuery{Text: m.query, RefreshClaims: refreshClaims, Changes: m.changes}
 	if m.hasWorkspace() {
 		q.Project = m.scopeProject()
 	}
@@ -724,6 +744,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snapshot, m.sources, m.syncing, m.refreshing = msg.snapshot, msg.sources, msg.syncing, msg.refreshing
 		m.project()
 		return m, m.waitSnapshot()
+	case changesMsg:
+		m.changes = (*changes.State)(msg)
+		m.project()
+		return m, m.waitChanges()
 	case projectionMsg:
 		if msg.Request != m.request {
 			return m, m.waitProjection()
@@ -848,6 +872,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
+			m.detailChanges = result.changes
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
 			if !same {
@@ -1182,6 +1207,11 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			if m.detailTab == tabHistory && len(m.detailIDs) > 0 {
 				return m, m.toggleHistoryEntry()
 			}
+			if c, ok := m.selectedChange(); ok {
+				// Until bl has a change view, a change opens its actions.
+				m.actionSession, m.actionChange = "", new(linkedChange(c))
+				return m.openConfiguredActions()
+			}
 			m.closeDetail()
 			return m, nil
 		case "q":
@@ -1193,6 +1223,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			// The focused item rereads from its source; the list resyncs from the list.
 			cmd := m.scheduleDetail()
 			m.submitDetail(true)
+			if m.opts.Changes != nil {
+				m.opts.Changes.Refresh()
+			}
 			return m, cmd
 		case "n", "N":
 			if m.find.text != "" {
@@ -1395,6 +1428,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		if m.opts.Store != nil {
 			m.opts.Store.Refresh()
 		}
+		if m.opts.Changes != nil {
+			m.opts.Changes.Refresh()
+		}
 	}
 	m.selected = max(0, min(m.selected, len(m.data.rows)-1))
 	m.keepSelectionVisible()
@@ -1435,6 +1471,7 @@ func (m *Model) closeDetail() {
 	m.detailLoading = false
 	m.detailLines = nil
 	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
+	m.detailChanges = nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	m.detailTruncated = false

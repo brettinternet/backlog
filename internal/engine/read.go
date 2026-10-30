@@ -51,6 +51,9 @@ func LoadReads(ctx context.Context, cfg project.Config, archived bool, queries .
 		s, err = loadReads(ctx, cfg, archived, false, sprints)
 	}
 	deriveBlocks(s.Query.Items)
+	if err == nil && slices.ContainsFunc(queries, MentionsChanges) {
+		linkReads(ctx, cfg, &s)
+	}
 	return s, err
 }
 

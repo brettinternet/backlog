@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"crypto/rand"
+	"slices"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/hooks"
@@ -23,6 +24,20 @@ type ActionChoice struct {
 // ActionChoices evaluates when against the same complete snapshot as CLI queries.
 // Callers run this on a worker, never on the TUI update loop.
 func ActionChoices(ctx context.Context, cfg project.Config, id string) ([]ActionChoice, error) {
+	return actionChoices(ctx, cfg, id, nil)
+}
+
+// ChangeActionChoices are the actions that name a {change.*} placeholder,
+// prepared to run on change (design.md D43).
+func ChangeActionChoices(ctx context.Context, cfg project.Config, id string, change hooks.LinkedChange) ([]ActionChoice, error) {
+	choices, err := actionChoices(ctx, cfg, id, &change)
+	return slices.DeleteFunc(choices, func(c ActionChoice) bool {
+		i := slices.IndexFunc(cfg.Actions, func(a project.ActionConfig) bool { return a.Name == c.Name })
+		return !hooks.UsesChange(cfg.Actions[i])
+	}), err
+}
+
+func actionChoices(ctx context.Context, cfg project.Config, id string, change *hooks.LinkedChange) ([]ActionChoice, error) {
 	reads, err := LoadReads(ctx, cfg, false)
 	if err != nil {
 		return nil, err
@@ -60,9 +75,12 @@ func ActionChoices(ctx context.Context, cfg project.Config, id string) ([]Action
 		event.Time = time.Now().UTC()
 		event.Name = action.Name
 		choice := ActionChoice{Name: action.Name, Key: action.Key, Confirm: action.Confirm, Detach: action.Detach,
-			Invocation: hooks.ActionInvocation{Name: action.Name, Event: event, CWD: eventCWD(ctx, cfg)}}
+			Invocation: hooks.ActionInvocation{Name: action.Name, Event: event, CWD: eventCWD(ctx, cfg), Change: change}}
 		if err := hooks.CheckAction(cfg, choice.Invocation); err != nil {
 			choice.Disabled = err.Error()
+		}
+		if change == nil && hooks.UsesChange(action) {
+			choice.Disabled = "runs on a linked change"
 		}
 		choices = append(choices, choice)
 	}
@@ -71,6 +89,17 @@ func ActionChoices(ctx context.Context, cfg project.Config, id string) ([]Action
 
 func PrepareAction(ctx context.Context, cfg project.Config, name, id string, confirmed bool) (ActionChoice, error) {
 	choices, err := ActionChoices(ctx, cfg, id)
+	return prepareChoice(choices, err, name, confirmed)
+}
+
+// PrepareChangeAction resolves an action with change selected, as the TUI's
+// Changes tab does; an action that names no {change.*} placeholder ignores it.
+func PrepareChangeAction(ctx context.Context, cfg project.Config, name, id string, change hooks.LinkedChange) (ActionChoice, error) {
+	choices, err := actionChoices(ctx, cfg, id, &change)
+	return prepareChoice(choices, err, name, true)
+}
+
+func prepareChoice(choices []ActionChoice, err error, name string, confirmed bool) (ActionChoice, error) {
 	if err != nil {
 		return ActionChoice{}, err
 	}

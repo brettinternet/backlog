@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
@@ -19,6 +20,7 @@ type launcherRow struct {
 	label, keywords, reason string
 	group                   string // help section
 	actionRef               string
+	change                  *hooks.LinkedChange // the change a configured action runs on
 	action                  action
 	item                    *GoToItem
 	resume                  *engine.ResumeChoice
@@ -164,7 +166,7 @@ func (m Model) receiveGoTo(r goToResult) (tea.Model, tea.Cmd) {
 }
 func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	m.keyPrefix = ""
-	m.actionSession = ""
+	m.actionSession, m.actionChange = "", nil
 	m.count = 0
 	m.inputSerial++
 	var rows, rest []launcherRow
@@ -314,7 +316,7 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 			return m, m.runResume(*row.resume)
 		}
 		if row.actionRef != "" {
-			return m.prepareConfiguredActionForID(strings.TrimPrefix(row.action.id, "action:"), row.actionRef)
+			return m.prepareConfiguredActionForID(strings.TrimPrefix(row.action.id, "action:"), row.actionRef, row.change)
 		}
 		return m.executeAction(row.action)
 	default:

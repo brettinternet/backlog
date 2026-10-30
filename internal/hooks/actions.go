@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,12 +19,46 @@ import (
 // ActionInvocation is an unlogged invocation context, not a new event type.
 // It is preserved when handing a detached action to the private runner. With
 // Agent set, Name is resume or fork and the command comes from that agent
-// kind's user config, never from the handoff (design.md D40).
+// kind's user config, never from the handoff (design.md D40). Change is the
+// linked change an action runs on (D43).
 type ActionInvocation struct {
-	Name  string   `json:"name"`
-	Event Event    `json:"event"`
-	CWD   string   `json:"cwd"`
-	Agent *Session `json:"agent,omitempty"`
+	Name   string        `json:"name"`
+	Event  Event         `json:"event"`
+	CWD    string        `json:"cwd"`
+	Agent  *Session      `json:"agent,omitempty"`
+	Change *LinkedChange `json:"change,omitempty"`
+}
+
+// LinkedChange fills the {change.*} placeholders, which only an action run on
+// a change has. Base is the default branch ref the change is compared with.
+type LinkedChange struct {
+	Number string `json:"number,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Branch string `json:"branch,omitempty"`
+	Head   string `json:"head,omitempty"`
+	Base   string `json:"base,omitempty"`
+	Path   string `json:"path,omitempty"`
+}
+
+func (c LinkedChange) values() map[string]string {
+	return map[string]string{"change.number": c.Number, "change.url": c.URL, "change.branch": c.Branch,
+		"change.head": c.Head, "change.base": c.Base, "change.path": c.Path}
+}
+
+// UsesChange reports whether an action names a {change.*} placeholder, so it
+// runs only on a change.
+func UsesChange(action project.ActionConfig) bool {
+	for _, value := range append(append([]string(nil), action.Run...), action.CWD) {
+		uses := false
+		scanPlaceholders(value, func(key string) (string, error) {
+			uses = uses || strings.HasPrefix(key, "change.")
+			return "", nil
+		})
+		if uses {
+			return true
+		}
+	}
+	return false
 }
 
 type ActionResult struct {
@@ -63,13 +98,21 @@ func actionConfig(cfg project.Config, invocation ActionInvocation) (project.Acti
 	return project.ActionConfig{}, source.Refuse("not-found", "unknown action: "+name)
 }
 
-// agentValues are the agent placeholders, available only to agent commands.
-func agentValues(invocation ActionInvocation) map[string]string {
-	s := invocation.Agent
-	if s == nil {
-		return nil
+// invocationValues are the agent placeholders, available only to agent
+// commands, and the set change placeholders, only to actions run on a change.
+func invocationValues(invocation ActionInvocation) map[string]string {
+	values := map[string]string{}
+	if s := invocation.Agent; s != nil {
+		maps.Copy(values, map[string]string{"agentSession": s.AgentSession, "session": s.ID, "agent": s.Agent, "cwd": s.CWD, "host": s.Host})
 	}
-	return map[string]string{"agentSession": s.AgentSession, "session": s.ID, "agent": s.Agent, "cwd": s.CWD, "host": s.Host}
+	if c := invocation.Change; c != nil {
+		for key, value := range c.values() {
+			if value != "" {
+				values[key] = value
+			}
+		}
+	}
+	return values
 }
 
 // CheckAction shares the executor's expansion and value checks without I/O.
@@ -85,7 +128,7 @@ func CheckAction(cfg project.Config, invocation ActionInvocation) error {
 		return source.Refuse("rejected", "action run is empty")
 	}
 	for _, value := range append(append([]string(nil), action.Run...), action.CWD) {
-		if _, err := expand(value, cfg, invocation.Event, agentValues(invocation)); err != nil {
+		if _, err := expand(value, cfg, invocation.Event, invocationValues(invocation)); err != nil {
 			return source.Refuse("rejected", err.Error())
 		}
 	}
@@ -112,7 +155,7 @@ func runInvocation(ctx context.Context, cfg project.Config, invocation ActionInv
 	if err != nil {
 		return ActionResult{}, err
 	}
-	opts.extra = agentValues(invocation)
+	opts.extra = invocationValues(invocation)
 	result := execution{outcome: "refused", exitCode: -1}
 	if err := CheckAction(cfg, invocation); err != nil {
 		result.message = err.Error()
@@ -162,7 +205,7 @@ func PreviewAction(cfg project.Config, invocation ActionInvocation) (ActionPrevi
 		return ActionPreview{}, err
 	}
 	action, _ := actionConfig(cfg, invocation)
-	run, failure := prepare(cfg, project.HookConfig{Name: action.Name, Run: action.Run, CWD: action.CWD}, invocation.Event, invocation.CWD, runOptions{extra: agentValues(invocation)})
+	run, failure := prepare(cfg, project.HookConfig{Name: action.Name, Run: action.Run, CWD: action.CWD}, invocation.Event, invocation.CWD, runOptions{extra: invocationValues(invocation)})
 	if failure.outcome == "refused" {
 		return ActionPreview{}, source.Refuse("rejected", failure.message)
 	} else if failure.outcome != "" {

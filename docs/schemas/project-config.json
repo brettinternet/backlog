@@ -281,7 +281,7 @@
           },
           "columns": {
             "type": "array",
-            "items": {"enum": ["id", "priority", "status", "blockers", "children", "claim", "assignee", "updated", "title"]}
+            "items": {"enum": ["id", "priority", "status", "blockers", "children", "changes", "claim", "assignee", "updated", "title"]}
           }
         },
         "required": [
@@ -297,6 +297,33 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {}
+        }
+      }
+    },
+    "changes": {
+      "description": "Where linked changes come from (docs/changes.md).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "git": {
+          "description": "Read local branches, worktrees, and landed commits from .git.",
+          "type": "boolean",
+          "default": true
+        },
+        "forges": {
+          "description": "Repositories whose pull requests link to items. Unset uses a GitHub origin when exactly one account is configured for its host. Project-layer forges need trust.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "repo"],
+            "properties": {
+              "type": {"enum": ["github"]},
+              "host": {"type": "string", "default": "github.com"},
+              "repo": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+              "account": {"description": "A configured account name; defaults to a GitHub source's for the same repository, else the only account for the host.", "type": "string"}
+            }
+          }
         }
       }
     },

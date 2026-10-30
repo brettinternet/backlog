@@ -10,11 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/cache"
+	"github.com/brettinternet/backlog/internal/git"
 	"github.com/brettinternet/backlog/internal/project"
 )
 
@@ -37,7 +38,7 @@ func gitHistory(ctx context.Context, cacheDir, version, path string) ([]Entry, e
 	if d.GitDir == "" {
 		return nil, errors.New("not in a Git repository")
 	}
-	head := headCommit(d)
+	head := git.Head(d)
 	cachePath := ""
 	if cacheDir != "" && head != "" && version != "" {
 		sum := sha256.Sum256([]byte(path))
@@ -57,7 +58,7 @@ func gitHistory(ctx context.Context, cacheDir, version, path string) ([]Entry, e
 	}
 	if cachePath != "" {
 		if data, err := json.Marshal(gitCache{Version: version, Head: head, Partial: reason, Entries: entries}); err == nil {
-			writeCache(cachePath, data)
+			cache.WriteFile(cachePath, data)
 		}
 	}
 	return entries, partial(reason)
@@ -70,18 +71,12 @@ func partial(reason string) error {
 	return PartialError(errors.New(reason))
 }
 
-// gitLog runs git log with no external diff, textconv, or fsmonitor, in the
-// minimal hook environment (design.md D21).
+// gitLog runs git log through the shared runner, without external diff or
+// textconv (design.md D21).
 func gitLog(ctx context.Context, path string) ([]Entry, bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", gitArgs(path)...)
-	cmd.Env = minimalEnv()
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := git.Run(ctx, filepath.Dir(path), gitArgs(path)...)
 	if err != nil {
-		return nil, false, fmt.Errorf("git log: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return nil, false, err
 	}
 	var entries []Entry
 	scanner := bufio.NewScanner(bytes.NewReader(out))
@@ -91,7 +86,7 @@ func gitLog(ctx context.Context, path string) ([]Entry, bool, error) {
 			continue
 		}
 		at, _ := time.Parse(time.RFC3339, fields[1])
-		entries = append(entries, Entry{ID: "git:" + fields[0], Time: at.UTC(), Kind: "commit", Actor: fields[2], Summary: fields[3], Detail: fields[0]})
+		entries = append(entries, Entry{ID: commitID(fields[0]), Time: at.UTC(), Kind: "commit", Actor: fields[2], Summary: fields[3], Detail: fields[0]})
 	}
 	truncated := len(entries) > maxCommits
 	if truncated {
@@ -101,65 +96,6 @@ func gitLog(ctx context.Context, path string) ([]Entry, bool, error) {
 }
 
 func gitArgs(path string) []string {
-	return []string{"--no-pager", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false", "--literal-pathspecs", "-C", filepath.Dir(path),
-		"log", "--follow", "--no-ext-diff", "--no-textconv", "--no-color", fmt.Sprintf("--max-count=%d", maxCommits+1),
+	return []string{"log", "--follow", "--no-ext-diff", "--no-textconv", "--no-color", fmt.Sprintf("--max-count=%d", maxCommits+1),
 		"--format=%H%x1f%aI%x1f%an%x1f%s", "--", filepath.Base(path)}
-}
-
-func minimalEnv() []string {
-	var env []string
-	for _, key := range []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
-		if value, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+value)
-		}
-	}
-	return env
-}
-
-// headCommit resolves HEAD without running git, or returns "" when it can't.
-func headCommit(d project.Discovery) string {
-	data, err := os.ReadFile(filepath.Join(d.GitDir, "HEAD"))
-	if err != nil {
-		return ""
-	}
-	head := strings.TrimSpace(string(data))
-	ref, symbolic := strings.CutPrefix(head, "ref: ")
-	if !symbolic {
-		return head
-	}
-	for _, dir := range []string{d.GitDir, d.CommonDir} {
-		if data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(ref))); err == nil {
-			return strings.TrimSpace(string(data))
-		}
-	}
-	packed, err := os.ReadFile(filepath.Join(d.CommonDir, "packed-refs"))
-	if err != nil {
-		return ""
-	}
-	for line := range strings.SplitSeq(string(packed), "\n") {
-		if commit, name, ok := strings.Cut(line, " "); ok && name == ref {
-			return commit
-		}
-	}
-	return ""
-}
-
-func writeCache(path string, data []byte) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".history-*")
-	if err != nil {
-		return
-	}
-	_, err = f.Write(data)
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(f.Name(), path)
-	}
-	if err != nil {
-		_ = os.Remove(f.Name())
-	}
 }

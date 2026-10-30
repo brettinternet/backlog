@@ -135,6 +135,7 @@ func age(t, now time.Time) string {
 // put while scrolling instead of resizing to whatever is visible.
 type widths struct {
 	id, status, assignee, claim, project, source int
+	changes                                      int
 	blockers, children                           bool // any row has a value
 }
 
@@ -160,6 +161,7 @@ func measure(rows []screenRow, names map[string]string) widths {
 		w.claim = max(w.claim, textWidth(r.Claim))
 		w.project = max(w.project, textWidth(r.Project))
 		w.source = max(w.source, textWidth(r.Source))
+		w.changes = max(w.changes, changeWidth(r.Changes))
 	}
 	w.id = min(w.id, 14)
 	w.status = min(w.status, 16)
@@ -167,6 +169,7 @@ func measure(rows []screenRow, names map[string]string) widths {
 	w.claim = min(w.claim, 18)
 	w.project = min(w.project, 18)
 	w.source = min(w.source, 12)
+	w.changes = min(w.changes, 16)
 	return w
 }
 
@@ -179,6 +182,7 @@ const (
 	colTitle
 	colBlockers
 	colChildren
+	colChanges
 	colClaim
 	colAssignee
 	colUpdated
@@ -242,6 +246,8 @@ func (m Model) layout(width int) listLayout {
 				add(spec{kind: colBlockers, width: 4, right: true, drop: 4})
 			case "children":
 				add(spec{kind: colChildren, width: 7, right: true, drop: 3})
+			case "changes":
+				add(spec{kind: colChanges, width: max(6, w.changes), drop: 3})
 			case "claim":
 				add(spec{kind: colClaim, width: max(5, w.claim), drop: 5})
 			case "assignee":
@@ -266,6 +272,9 @@ func (m Model) layout(width int) listLayout {
 		}
 		if w.children {
 			add(spec{kind: colChildren, width: 7, right: true, drop: 3})
+		}
+		if w.changes > 0 {
+			add(spec{kind: colChanges, width: w.changes, drop: 3})
 		}
 		if coordination {
 			add(spec{kind: colClaim, width: max(5, w.claim), drop: 5})
@@ -328,6 +337,8 @@ func (m Model) layout(width int) listLayout {
 			c.label = "⊘"
 		case colChildren:
 			c.label = "▣"
+		case colChanges:
+			c.label = "⇡"
 		case colClaim:
 			c.label = "Claim"
 		case colAssignee:
@@ -479,6 +490,8 @@ func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool)
 			return t.green.render(text)
 		}
 		return t.muted.render(text)
+	case colChanges:
+		return changeCell(t, row.Changes, c.width)
 	case colClaim:
 		if row.Claim == "" {
 			return strings.Repeat(" ", c.width)

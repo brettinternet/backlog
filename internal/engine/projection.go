@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -39,6 +40,8 @@ type Row struct {
 	ErrorLocalVersion, ErrorRemoteVersion     string
 	OpenBlockers, ChildrenDone, ChildrenTotal int
 	CriteriaDone, CriteriaTotal, Comments     int
+	// Changes are the item's linked changes, furthest first (design.md D43).
+	Changes []changes.Change
 }
 
 // SetCounts tallies the item's checked criteria and its comments, so detail
@@ -82,6 +85,7 @@ type Projection struct {
 }
 type projectionRequest struct {
 	project       string
+	changes       *changes.State
 	id            uint64
 	refreshClaims bool
 	snapshot      *Snapshot
@@ -120,12 +124,14 @@ func (p *Projector) Request(snapshot *Snapshot, text string) uint64 {
 
 // ProjectionQuery is one request. Project scopes a workspace. Complete adds
 // candidates for Prefix in Field, as typed in an editor. RefreshClaims does
-// one bulk claim refresh first.
+// one bulk claim refresh first. Changes is the tracker's latest state; a new
+// pointer relinks every item.
 type ProjectionQuery struct {
 	Text, Project string
 	Complete      bool
 	Field, Prefix string
 	RefreshClaims bool
+	Changes       *changes.State
 }
 
 // RequestQuery runs every projection, completion and claim refresh on the same
@@ -143,7 +149,7 @@ func (p *Projector) RequestQuery(snapshot *Snapshot, q ProjectionQuery) uint64 {
 	case <-p.results:
 	default:
 	}
-	latest(p.requests, projectionRequest{project: q.Project, id: p.serial, snapshot: snapshot, text: q.Text, ctx: ctx, complete: q.Complete, field: q.Field, prefix: q.Prefix, refreshClaims: q.RefreshClaims})
+	latest(p.requests, projectionRequest{project: q.Project, changes: q.Changes, id: p.serial, snapshot: snapshot, text: q.Text, ctx: ctx, complete: q.Complete, field: q.Field, prefix: q.Prefix, refreshClaims: q.RefreshClaims})
 	return p.serial
 }
 func (p *Projector) Results() <-chan Projection { return p.results }
@@ -271,6 +277,7 @@ type Catalog struct {
 	reverse      Reverse
 	explanations map[model.Ref]Explanation
 	claims       map[model.Ref]rowClaim
+	changes      map[model.Ref][]changes.Change
 }
 
 // rowClaim is an item's claim as rows show it, labeled when the overlay was built.
@@ -286,6 +293,7 @@ func (c *Catalog) Row(ref model.Ref) (Row, bool) {
 	}
 	row := newRow(*r.item, r, c.explanations[ref], RelationRows(*r.item, c.snapshot, c.reverse))
 	row.Claim, row.ClaimExpires = c.claims[ref].label, c.claims[ref].expires
+	row.Changes = c.changes[ref]
 	return row, true
 }
 
@@ -364,6 +372,8 @@ func (p *Projector) run() {
 	var explanations map[model.Ref]Explanation
 	var reverse Reverse
 	var catalog *Catalog
+	var linkedState *changes.State
+	var linked map[model.Ref][]changes.Change
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -498,6 +508,27 @@ func (p *Projector) run() {
 				}
 				cached = req.snapshot
 				catalog = &Catalog{snapshot: req.snapshot, reverse: reverse, explanations: explanations, claims: claimRows}
+				linkedState, linked = nil, nil
+			}
+			if req.changes != linkedState {
+				// Relinking is linear in items and changes, so a tracker update
+				// costs no rebuild.
+				for ref := range linked {
+					if state, ok := base.States[ref]; ok {
+						state.Changes = nil
+						base.States[ref] = state
+					}
+				}
+				linkedState, linked = req.changes, LinkChanges(p.cfg, base.Items, req.changes)
+				for ref, cs := range linked {
+					if state, ok := base.States[ref]; ok {
+						state.Changes = queryChanges(cs)
+						base.States[ref] = state
+					}
+				}
+				next := *catalog
+				next.changes = linked
+				catalog = &next
 			}
 			result.Catalog = catalog
 			base.Now = now
@@ -554,6 +585,7 @@ func (p *Projector) run() {
 							row := newRow(i, r, explanations[i.Ref], relations)
 							row.Project, row.Source = projectName, localSource
 							row.Claim, row.ClaimExpires = claimRows[i.Ref].label, claimRows[i.Ref].expires
+							row.Changes = linked[i.Ref]
 							closed := func(ref model.Ref) bool {
 								r := req.snapshot.records[normalizedRef(ref, i.Ref)]
 								return r != nil && !r.stale && (r.item.Category == model.Done || r.item.Category == model.Canceled)

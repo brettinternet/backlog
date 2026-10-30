@@ -134,6 +134,8 @@ func defaultKeymap() []action {
 		{id: "yank-branch", label: "Copy branch", canonical: "y b", bindings: []string{"y b"}},
 		{id: "yank-url", label: "Copy URL", canonical: "y u", bindings: []string{"y u"}},
 		{id: "yank-markdown", label: "Copy Markdown link", canonical: "y m", bindings: []string{"y m"}},
+		{id: "yank-change", label: "Copy change URL", canonical: "y p", bindings: []string{"y p"}},
+		{id: "yank-commit", label: "Copy commit SHA", canonical: "y s", bindings: []string{"y s"}},
 		{group: "General", id: "help", label: "Help", bindings: []string{"?"}},
 		{id: "palette", label: "Commands", bindings: []string{":", "alt+x"}},
 		{id: "quit", label: "Quit / back", canonical: "q", bindings: []string{"q"}},
@@ -341,11 +343,14 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 	}
 	switch a.id {
 	case "actions":
-		m.actionSession = ""
+		m.actionSession, m.actionChange = "", nil
 		if m.detailOpen && m.detailCurrent() && m.detailTab == tabHistory && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
 			if session, ok := history.SessionOf(m.detailIDs[m.entryCursor]); ok {
 				m.actionSession = session
 			}
+		}
+		if c, ok := m.selectedChange(); ok {
+			m.actionChange = new(linkedChange(c))
 		}
 		return m.openConfiguredActions()
 	case "go-to":
@@ -497,12 +502,19 @@ func (m Model) disabledReason(a action) string {
 			return "select an item"
 		}
 		if a.id == "open-url" {
-			if _, err := safeURL(row.URL); err != nil {
+			raw, _ := m.selectedURL()
+			if _, err := safeURL(raw); err != nil {
 				return err.Error()
 			}
 		}
 		if (a.id == "yank-url" || a.id == "yank-markdown") && row.URL == "" {
 			return "selected item has no URL"
+		}
+		if a.id == "yank-change" && m.yankChange().URL == "" {
+			return "no linked change with a URL"
+		}
+		if a.id == "yank-commit" && m.yankCommit() == "" {
+			return "select a commit in History or a change"
 		}
 	}
 	return ""

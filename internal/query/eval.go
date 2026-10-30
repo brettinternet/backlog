@@ -16,7 +16,13 @@ import (
 type State struct {
 	Readiness, Claim  string
 	Archived, Pending bool
+	// Changes are the item's linked changes (design.md D43).
+	Changes []Change
 }
+
+// Change is what queries match of a linked change: its state, checks, and
+// review decision.
+type Change struct{ State, Checks, Review string }
 type Event struct {
 	Type                  string
 	Changed               []string
@@ -283,7 +289,23 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 			return len(i.Criteria) > 0
 		case "claim":
 			return s.Coordination && (state.Claim == "me" || state.Claim == "others")
+		case "change":
+			return len(state.Changes) > 0
 		}
+	case "change", "checks", "review":
+		for _, c := range state.Changes {
+			value := c.State
+			switch f {
+			case "checks":
+				value = c.Checks
+			case "review":
+				value = c.Review
+			}
+			if value == lower {
+				return true
+			}
+		}
+		return false
 	case "changed":
 		if e != nil {
 			for _, field := range e.Changed {

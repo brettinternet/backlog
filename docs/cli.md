@@ -124,6 +124,22 @@ metadata and only that section key. A missing section is `""`.
 `item.version` is the source's opaque version: a content hash for files, a
 composite fingerprint for GitHub. Pass it unchanged to `--if-version`.
 
+### `bl changes ID`
+
+Lists the item's linked worktrees, branches, pull requests, and landed commits,
+furthest first ([Changes](changes.md)). Each line reads label (`#45` or the
+branch), stage and state, checks, review decision, title, and URL, then why a
+change is unknown or stale. JSON returns `data.changes`, each with `id`,
+`stage` (`worktree`, `branch`, `pr`, `landed`), `state` (`open`, `draft`,
+`merged`, `closed`, `unknown`, `stale`), `link` (how it was found: `branch`,
+`title`, `closes`, `provider`, `trailer`, `merge`, `ref`), and optional
+`reason`, `checks`, `review`, `branch`, `head`, `title`, `url`, `repo`,
+`number`, `additions`, `deletions`, `worktree`, `dirty`, `ahead`, `behind`,
+`commits` (`sha`, `subject`, `time`), `events` (`kind`, `time`), and
+`updated`; `data.providers` lists `git` and each forge with its `state` and
+`reason`. Diff text stays out of JSON. Pull requests come from the forge's
+cache, refreshed incrementally; Git is read from `.git` and never fetched.
+
 ### `bl next [QUERY] [-n N] [--explain] [--claim [--start]] [--workspace NAME]`
 
 Returns ready items in [ranking order](readiness.md). QUERY narrows the
@@ -586,9 +602,12 @@ stderr tail. See [Automation](automation.md#agent-sessions).
 Prints the item's history, oldest first: its events, claims (from Worklease,
 including other hosts), sessions folded from both, comments, and the commits
 that touched its file (native and Backlog.md sources, following renames), and
-provider activity (GitHub timeline, Linear history, Jira changelog). Each line
+provider activity (GitHub timeline, Linear history, Jira changelog), and its
+linked changes. Each line
 reads time, source label (`item`, `claim`, `agent`, `handoff`, `comment`,
-`git`, `action`, `hook`, or the provider, such as `github`), and summary. An
+`change`, `git`, `action`, `hook`, or the provider, such as `github`), and
+summary. A change's row spans it and its events and landed commits follow it,
+indented. An
 edit's summary names each changed field, such as `labels +windows -human` or
 `criteria 2/5 → 3/5`, and its `detail` holds what the summary abbreviates:
 per field, lines marked `+ ` or `- ` (`…` for skipped unchanged lines) and

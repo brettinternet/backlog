@@ -99,6 +99,18 @@ func TestFields(t *testing.T) {
 			t.Fatal(state)
 		}
 	}
+	// Change terms match any linked change; hooks can't name them (D43).
+	s.States[item.Ref] = query.State{Changes: []query.Change{{State: "open", Checks: "unknown"}, {State: "merged", Checks: "failing", Review: "approved"}}}
+	for q, want := range map[string]bool{`has:change`: true, `-has:change`: false, `change:merged`: true, `change:closed`: false, `checks:failing`: true, `checks:passing`: false, `review:approved`: true, `review:changes`: false} {
+		if got := parse(t, q, false).Match(item, s, nil); got != want {
+			t.Fatalf("change %s = %v, want %v", q, got, want)
+		}
+	}
+	for _, q := range []string{`has:change`, `change:merged`, `checks:failing`} {
+		if _, err := query.Parse(q, query.Options{Hook: true}); err == nil {
+			t.Fatalf("hook accepted %s", q)
+		}
+	}
 	s.States = nil
 	for _, f := range []string{"claimed:none", "is:claimed", "has:claim"} {
 		if parse(t, f, false).Match(item, s, nil) {
@@ -377,7 +389,7 @@ func TestGroupsAndCompletion(t *testing.T) {
 	if got := s.Complete("", "field.o", query.Options{}); !reflect.DeepEqual(got, []query.Candidate{{Value: "field.owner:"}}) {
 		t.Fatal(got)
 	}
-	if got := s.Complete("", "cha", query.Options{}); len(got) != 0 {
+	if got := s.Complete("", "cha", query.Options{}); !reflect.DeepEqual(got, []query.Candidate{{Value: "change:"}}) {
 		t.Fatal(got)
 	}
 	if got := s.Complete("", "cha", query.Options{Hook: true}); len(got) != 1 || got[0].Value != "changed:" {

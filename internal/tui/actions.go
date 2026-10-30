@@ -36,14 +36,14 @@ type actionFinishedMsg struct {
 
 // openConfiguredActions opens the ! menu: the item's configured actions and
 // agent sessions, then the built-in actions likely to apply. A History session
-// row narrows it to that session.
+// row narrows it to that session, and a Changes entry to that change's actions.
 func (m Model) openConfiguredActions() (tea.Model, tea.Cmd) {
 	m.keyPrefix = ""
 	m.count = 0
 	m.inputSerial++
 	m.launcherSerial++
 	var rows []launcherRow
-	if m.actionSession == "" {
+	if m.actionSession == "" && m.actionChange == nil {
 		rows = m.itemMenuRows()
 	}
 	m.launcher = launcherState{open: true, item: true, rows: rows, all: rows}
@@ -82,18 +82,22 @@ func (m Model) loadItemChoices() (tea.Model, tea.Cmd) {
 }
 
 // choicesKey names the selected item's choices in the cache: its source ID,
-// and the session a History session row narrowed the menu to.
+// and the session or change a History or Changes row narrowed the menu to.
 func (m Model) choicesKey() string {
 	row, _ := m.selectedRow()
 	if m.hasWorkspace() {
 		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
 	}
-	return row.Ref.Source + ":" + row.Ref.ID + "\x00" + m.actionSession
+	key := row.Ref.Source + ":" + row.Ref.ID + "\x00" + m.actionSession
+	if m.actionChange != nil {
+		key += "\x00" + fmt.Sprintf("%+v", *m.actionChange)
+	}
+	return key
 }
 
 func (m Model) loadConfiguredActions() tea.Cmd {
 	row, ok := m.selectedRow()
-	cfg, ctx, serial, session, key := m.opts.Automation, m.opts.Context, m.actionCatalogSerial, m.actionSession, m.choicesKey()
+	cfg, ctx, serial, session, change, key := m.opts.Automation, m.opts.Context, m.actionCatalogSerial, m.actionSession, m.actionChange, m.choicesKey()
 	if m.hasWorkspace() {
 		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
 	}
@@ -105,6 +109,13 @@ func (m Model) loadConfiguredActions() tea.Cmd {
 			return actionChoicesMsg{serial: serial, err: fmt.Errorf("select an item")}
 		}
 		ctx, id := engine.WithEventCWD(ctx, m.opts.EditorDir), row.Ref.Source+":"+row.Ref.ID
+		if change != nil {
+			choices, err := engine.ChangeActionChoices(ctx, *cfg, id, *change)
+			if err == nil && len(choices) == 0 {
+				err = fmt.Errorf("no actions name a {change.*} placeholder")
+			}
+			return actionChoicesMsg{serial: serial, key: key, choices: choices, err: err}
+		}
 		var choices []engine.ActionChoice
 		var err error
 		if len(cfg.Actions) > 0 {
@@ -150,7 +161,7 @@ func (m Model) withItemChoices(msg actionChoicesMsg) Model {
 	for _, choice := range msg.choices {
 		for _, a := range m.keymap {
 			if a.id == "action:"+choice.Name {
-				found = append(found, launcherRow{label: textutil.Line(choice.Name), keywords: strings.Join(a.bindings, " "), reason: textutil.Line(choice.Disabled), action: a, actionRef: choice.Invocation.Event.Ref, group: "Actions"})
+				found = append(found, launcherRow{label: textutil.Line(choice.Name), keywords: strings.Join(a.bindings, " "), reason: textutil.Line(choice.Disabled), action: a, actionRef: choice.Invocation.Event.Ref, change: choice.Invocation.Change, group: "Actions"})
 				break
 			}
 		}
@@ -180,14 +191,25 @@ func (m Model) prepareConfiguredAction(name string) (tea.Model, tea.Cmd) {
 	if m.hasWorkspace() {
 		_, row.Ref.Source = m.opts.Workspace.SourceProject(row.Ref.Source)
 	}
-	return m.prepareConfiguredActionForID(name, row.Ref.Source+":"+row.Ref.ID)
+	var change *hooks.LinkedChange
+	if c, ok := m.selectedChange(); ok {
+		change = new(linkedChange(c))
+	}
+	return m.prepareConfiguredActionForID(name, row.Ref.Source+":"+row.Ref.ID, change)
 }
 
-func (m Model) prepareConfiguredActionForID(name, id string) (tea.Model, tea.Cmd) {
+// prepareConfiguredActionForID resolves an action for id, with the change it
+// runs on when one is selected.
+func (m Model) prepareConfiguredActionForID(name, id string, change *hooks.LinkedChange) (tea.Model, tea.Cmd) {
 	m.actionSerial++
 	serial, cfg, ctx, cwd := m.actionSerial, *m.opts.Automation, m.opts.Context, m.opts.EditorDir
 	return m, func() tea.Msg {
-		choice, err := engine.PrepareAction(engine.WithEventCWD(ctx, cwd), cfg, name, id, true)
+		ctx := engine.WithEventCWD(ctx, cwd)
+		if change != nil {
+			choice, err := engine.PrepareChangeAction(ctx, cfg, name, id, *change)
+			return actionPreparedMsg{serial: serial, choice: choice, err: err}
+		}
+		choice, err := engine.PrepareAction(ctx, cfg, name, id, true)
 		return actionPreparedMsg{serial: serial, choice: choice, err: err}
 	}
 }

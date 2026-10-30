@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/model"
@@ -577,7 +578,7 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 1, RenderMarkdown)
 	at := func(minute int) time.Time { return time.Date(2026, 1, 1, 0, minute, 0, 0, time.UTC) }
-	m.detailWorker.history = func(ctx context.Context, _ model.Item) history.Result {
+	m.detailWorker.history = func(ctx context.Context, _ model.Item, _ []changes.Change) history.Result {
 		return history.Compose(ctx,
 			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
 				var entries []history.Entry
@@ -691,7 +692,7 @@ func TestHistoryMeasurement(t *testing.T) {
 	}
 	m := detailFixture(t, 1, RenderMarkdown)
 	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
-	m.detailWorker.history = func(ctx context.Context, _ model.Item) history.Result {
+	m.detailWorker.history = func(ctx context.Context, _ model.Item, _ []changes.Change) history.Result {
 		return history.Compose(ctx,
 			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
 				var entries []history.Entry

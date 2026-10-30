@@ -414,12 +414,12 @@
   L              Bottom of screen        yb             Copy branch             
   ctrl+d pgdn    Half page down          yu             Copy URL                
   ctrl+u pgup    Half page up            ym             Copy Markdown link      
-  ctrl+f ctrl+v  Page down                                                      
-  ctrl+b alt+v   Page up                 General                                
-  [              Previous group          ?              Help                    
-  ]              Next group              : alt+x        Commands                
-  h ←            Back / parent / left    q              Quit / back             
-  l →            Open / child / right    ctrl+c         Quit now                
-  ctrl+p         Go to item                                                     
+  ctrl+f ctrl+v  Page down               yp             Copy change URL         
+  ctrl+b alt+v   Page up                 ys             Copy commit SHA         
+  [              Previous group                                                 
+  ]              Next group              General                                
+  h ←            Back / parent / left    ?              Help                    
+  l →            Open / child / right    : alt+x        Commands                
+  ctrl+p         Go to item              q              Quit / back             
                                                                              ↓  
  is:ready sort:next                                            ● 3  ! 3    5/60 

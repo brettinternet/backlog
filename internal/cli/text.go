@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/contact"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/history"
@@ -299,6 +300,47 @@ func writeHistory(out io.Writer, page history.Page) error {
 	}
 	if page.More {
 		b.WriteString(p.paint("2", "more: --cursor "+textutil.Line(page.Cursor)) + "\n")
+	}
+	_, err := io.WriteString(out, b.String())
+	return err
+}
+
+// writeChanges prints non-ok providers, then one line per change: label,
+// stage and state, checks, review, title, and URL; then why it is unknown or
+// stale.
+func writeChanges(out io.Writer, result engine.ChangesResult) error {
+	p := paletteFor(out)
+	var b strings.Builder
+	for _, s := range result.Providers {
+		if s.State != changes.OK {
+			b.WriteString(p.paint("2", textutil.Line(fmt.Sprintf("%s: %s (%s)", s.Provider, s.State, s.Reason))) + "\n")
+		}
+	}
+	if len(result.Changes) == 0 {
+		b.WriteString("No linked changes.\n")
+	}
+	for _, c := range result.Changes {
+		state := c.Stage
+		if c.Stage == changes.StagePR || c.State == changes.StateUnknown || c.State == changes.StateStale {
+			state += " " + c.State
+		}
+		fields := []string{changes.Label(c), state}
+		if c.Checks != "" {
+			fields = append(fields, "checks "+c.Checks)
+		}
+		if c.Review != "" {
+			fields = append(fields, "review "+c.Review)
+		}
+		if c.Title != "" && c.Title != changes.Label(c) {
+			fields = append(fields, c.Title)
+		}
+		if c.URL != "" {
+			fields = append(fields, c.URL)
+		}
+		b.WriteString(textutil.Line(strings.Join(fields, "  ")) + "\n")
+		if c.Reason != "" {
+			b.WriteString(p.paint("2", "  "+textutil.Line(c.Reason)) + "\n")
+		}
 	}
 	_, err := io.WriteString(out, b.String())
 	return err

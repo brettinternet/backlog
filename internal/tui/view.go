@@ -365,7 +365,7 @@ func (m Model) detailPane(width, rows int) []string {
 		}
 	default:
 		cursor, hint := -1, ""
-		if m.detailCurrent() && (m.detailTab == tabCriteria || m.detailTab == tabRelations || m.detailTab == tabHistory) && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
+		if m.detailCurrent() && (m.detailTab == tabCriteria || m.detailTab == tabRelations || m.detailTab == tabChanges || m.detailTab == tabHistory) && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
 			cursor = m.detailEntries[m.entryCursor]
 			// A row-specific key shows only on the focused row, so the list
 			// stays clean while the key is still found where it applies.

@@ -2,7 +2,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                                                          
        ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
 ▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
-   ▲   BL-2    ○ todo  Item 2                             │  [Overview] Criteria  Notes  Comments  Relations  History   
+   ▲   BL-2    ○ todo  Item 2                             │  [Overview] Criteria  Notes  Comments  Relations ›          
                                                           │                                                             
                                                           │  Milestone  m-1 — TUI                                       
                                                           │  Readiness  ✓ ready                                         
@@ -27,7 +27,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                                                          
        ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
 ▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
-   ▲   BL-2    ○ todo  Item 2                             │   Overview [Criteria] Notes  Comments  Relations  History   
+   ▲   BL-2    ○ todo  Item 2                             │   Overview [Criteria] Notes  Comments  Relations ›          
                                                           │                                                             
                                                           │  Acceptance criteria  1/1  ▰▰▰▰▰▰▰▰▰▰                       
                                                           │▌   ✓ Keep input responsive                                  
@@ -52,7 +52,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                                                          
        ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
 ▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
-   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria [Notes] Comments  Relations  History   
+   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria [Notes] Comments  Relations ›          
                                                           │                                                             
                                                           │  ## Plan                                                    
                                                           │                                                             
@@ -77,7 +77,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                                                          
        ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
 ▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
-   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria  Notes [Comments] Relations  History   
+   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria  Notes [Comments] Relations ›          
                                                           │                                                             
                                                           │  ### brett                                                  
                                                           │                                                             
@@ -102,7 +102,7 @@
  fixture  [Next]  Active   Mine   Open   Board                                                                          
        ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
 ▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
-   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria  Notes  Comments [Relations] History   
+   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria  Notes  Comments [Relations]›          
                                                           │                                                             
                                                           │  Blocked by  1 open                                         
                                                           │▌ └─ ◐ BL-2  Dependency  active                              
@@ -123,11 +123,36 @@
                                                           │                                                             
                                                           │                                                             
  is:ready sort:next                                                                                                 1/2 
+== Changes ==
+ fixture  [Next]  Active   Mine   Open   Board                                                                          
+       ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
+▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
+   ▲   BL-2    ○ todo  Item 2                             │  ‹ Criteria  Notes  Comments  Relations [Changes]›          
+                                                          │                                                             
+                                                          │  No linked changes.                                         
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+                                                          │                                                             
+ is:ready sort:next                                                                                                 1/2 
 == History ==
  fixture  [Next]  Active   Mine   Open   Board                                                                          
        ID      Status  Title                       Updated│  BL-1  ○ todo  ▲ high                                       
 ▌  ▲   BL-1    ○ todo  Item 1                             │  Item 1                                                     
-   ▲   BL-2    ○ todo  Item 2                             │   Overview  Criteria  Notes  Comments  Relations [History]  
+   ▲   BL-2    ○ todo  Item 2                             │  ‹ Notes  Comments  Relations  Changes [History]            
                                                           │                                                             
                                                           │  history: unavailable (not configured)                      
                                                           │  No history.                                                

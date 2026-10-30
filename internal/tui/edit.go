@@ -1178,11 +1178,11 @@ func openURL(ctx context.Context, value string) error {
 }
 
 func (m Model) openSelectedURL() tea.Cmd {
-	row, ok := m.selectedRow()
-	if !ok || row.URL == "" {
-		return func() tea.Msg { return openResultMsg{err: "Selected item has no URL."} }
+	raw, what := m.selectedURL()
+	if raw == "" {
+		return func() tea.Msg { return openResultMsg{err: "Selected " + what + " has no URL."} }
 	}
-	value, err := safeURL(row.URL)
+	value, err := safeURL(raw)
 	if err != nil {
 		return func() tea.Msg { return openResultMsg{err: err.Error()} }
 	}
@@ -1195,8 +1195,18 @@ func (m Model) openSelectedURL() tea.Cmd {
 		if err := open(ctx, value); err != nil {
 			return openResultMsg{err: boundedLine(err.Error())}
 		}
-		return openResultMsg{err: "Opened item URL."}
+		return openResultMsg{err: "Opened " + what + " URL."}
 	}
+}
+
+// selectedURL is the URL O opens: the change under the Changes cursor, else
+// the selected item's.
+func (m Model) selectedURL() (string, string) {
+	if c, ok := m.selectedChange(); ok {
+		return c.URL, "change"
+	}
+	row, _ := m.selectedRow()
+	return row.URL, "item"
 }
 
 func osc52(value string) tea.Cmd {
@@ -1223,6 +1233,10 @@ func (m *Model) yank(key string) tea.Cmd {
 		if row.URL != "" {
 			value = fmt.Sprintf("[%s](%s)", row.Title, row.URL)
 		}
+	case "p":
+		value = m.yankChange().URL
+	case "s":
+		value = m.yankCommit()
 	default:
 		m.notice = "Unknown yank target."
 		return nil

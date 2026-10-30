@@ -177,6 +177,11 @@ func sessionID(id string) string { return "session:" + id }
 // SessionOf returns the session an entry ID heads, if it is a session row.
 func SessionOf(id string) (string, bool) { return strings.CutPrefix(id, "session:") }
 
+func commitID(sha string) string { return "git:" + sha }
+
+// CommitOf returns the SHA of a commit entry ID.
+func CommitOf(id string) (string, bool) { return strings.CutPrefix(id, "git:") }
+
 // Page is one page of a Result, as bl history and the MCP history tool return
 // it.
 type Page struct {

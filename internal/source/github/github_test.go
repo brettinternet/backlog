@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
@@ -71,6 +74,11 @@ type fixture struct {
 	// timelineStuck answers every timeline page with the same cursor.
 	timelineStuck bool
 	timelineCalls int
+	// pulls are the repository's pull request nodes; one without commits
+	// answers FORBIDDEN for its checks. pullsFail reports the repository
+	// unavailable.
+	pulls     []map[string]any
+	pullsFail bool
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -297,6 +305,22 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		return input
 	}
 	switch {
+	case strings.Contains(q, "pullRequests("):
+		if f.pullsFail {
+			emit(map[string]any{"repository": nil})
+			return
+		}
+		nodes, failures := []any{}, []any{}
+		for _, n := range f.pulls {
+			if fmt.Sprint(v["states"]) == "[OPEN]" && n["state"] != "OPEN" {
+				continue
+			}
+			if n["commits"] == nil {
+				failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests", "nodes", len(nodes), "commits"}})
+			}
+			nodes = append(nodes, n)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": failures, "data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": nodes}}}})
 	case strings.Contains(q, "timelineItems("):
 		// Two pages read newest first: before names the older page.
 		types, _ := v["types"].([]any)
@@ -864,6 +888,55 @@ func TestActivityTimeline(t *testing.T) {
 	s, f = newFixture(t, func(o *Options) { o.Project = nil })
 	if _, _, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "gh", ID: "1"}}); err != nil || strings.Contains(f.timelineTypes, "PROJECT_V2") {
 		t.Fatalf("repository-only types %s: %v", f.timelineTypes, err)
+	}
+}
+
+// Catches checks left stale because an open pull request's update time didn't
+// move, one pull request whose checks the token can't read failing the list,
+// a token echoed in a body reaching the cache, and a failed refresh dropping
+// what was cached.
+func TestForgePullRequests(t *testing.T) {
+	s, f := newFixture(t)
+	cache := filepath.Join(t.TempDir(), "forge.pulls.json")
+	forge := &Forge{s: s, cache: cache}
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rollup := func(state string) map[string]any {
+		return map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"state": state}}}}}
+	}
+	f.pulls = []map[string]any{
+		{"number": 45, "title": "BL-12 fix", "body": "token fake-secret", "url": "https://github.com/owner/repo/pull/45", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "bl-12-fix", "headRefOid": "aaa", "reviewDecision": "APPROVED", "closingIssuesReferences": map[string]any{"nodes": []any{map[string]any{"id": "I_1"}}}, "commits": rollup("PENDING")},
+		{"number": 44, "title": "Old", "url": "https://github.com/owner/repo/pull/44", "state": "MERGED", "createdAt": at, "updatedAt": at, "mergedAt": at, "headRefName": "old", "mergeCommit": map[string]any{"oid": "mmm"}},
+	}
+	read := func() map[int]changes.PullRequest {
+		t.Helper()
+		prs, err := forge.PullRequests(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[int]changes.PullRequest{}
+		for _, pr := range prs {
+			out[pr.Number] = pr
+		}
+		return out
+	}
+	prs := read()
+	open, merged := prs[45], prs[44]
+	if open.State != changes.StateOpen || open.Head != "bl-12-fix" || open.HeadSHA != "aaa" || open.Review != changes.ReviewApproved || open.Checks != changes.ChecksPending || !slices.Equal(open.Closes, []string{"I_1"}) || strings.Contains(open.Body, "fake-secret") {
+		t.Fatalf("open: %+v", open)
+	}
+	if merged.State != changes.StateMerged || merged.MergeSHA != "mmm" || merged.Checks != "" {
+		t.Fatalf("merged: %+v", merged)
+	}
+	if data, err := os.ReadFile(cache); err != nil || strings.Contains(string(data), "fake-secret") {
+		t.Fatalf("cache: %v %s", err, data)
+	}
+	f.pulls[0]["commits"] = rollup("SUCCESS")
+	if prs = read(); prs[45].Checks != changes.ChecksPassing {
+		t.Fatalf("checks after refresh: %+v", prs[45])
+	}
+	f.pullsFail = true
+	if list, err := forge.PullRequests(context.Background()); err == nil || len(list) != 2 {
+		t.Fatalf("failed refresh: %v %+v", err, list)
 	}
 }
 

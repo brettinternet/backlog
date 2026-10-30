@@ -90,6 +90,7 @@ root: primary
 git: {autoCommit: false}
 ui: {highContrast: false}
 ready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}
+changes: {git: true}
 agents:
   claude:
     session: CLAUDE_CODE_SESSION_ID
@@ -547,6 +548,8 @@ func validateUserAccounts(node *yaml.Node) error {
 // trailerKey is a Git trailer key: letters, digits, and hyphens.
 var trailerKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 
+var ownerRepo = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
 func validateSettings(node *yaml.Node) error {
 	fail := func(n *yaml.Node, key, message string) error {
 		return fmt.Errorf("line %d: key %s: %s", n.Line, key, message)
@@ -568,6 +571,16 @@ func validateSettings(node *yaml.Node) error {
 		}
 		if n := field(history, "commitTrailer"); n != nil && !trailerKey.MatchString(n.Value) {
 			return fail(n, "history.commitTrailer", "must be a Git trailer key such as Refs")
+		}
+	}
+	if forges := field(field(node, "changes"), "forges"); forges != nil {
+		for i, entry := range forges.Content {
+			if n := field(entry, "type"); n == nil || n.Value != "github" {
+				return fail(entry, fmt.Sprintf("changes.forges[%d].type", i), "must be github")
+			}
+			if n := field(entry, "repo"); n == nil || !ownerRepo.MatchString(n.Value) {
+				return fail(entry, fmt.Sprintf("changes.forges[%d].repo", i), "must be owner/repo")
+			}
 		}
 	}
 	for _, group := range []string{"hooks", "actions", "views", "workspaces"} {
@@ -634,7 +647,7 @@ func validateSettings(node *yaml.Node) error {
 			if columns := field(entry, "columns"); columns != nil {
 				for _, column := range columns.Content {
 					switch column.Value {
-					case "id", "priority", "status", "blockers", "children", "claim", "assignee", "updated", "title":
+					case "id", "priority", "status", "blockers", "children", "changes", "claim", "assignee", "updated", "title":
 					default:
 						return fail(column, "views.columns", "unknown column")
 					}
@@ -823,13 +836,15 @@ func privileged(cfg Config) []Privileged {
 		p := cfg.Provenance["git.autoCommit"]
 		result = append(result, Privileged{Key: "git.autoCommit", Trusted: !untrustedLayer(p.Layer), Origin: p})
 	}
-	for _, group := range []string{"hooks", "actions", "sources"} {
+	for _, group := range []string{"hooks", "actions", "sources", "changes.forges"} {
 		count := len(cfg.Hooks)
-		if group == "actions" {
+		switch group {
+		case "actions":
 			count = len(cfg.Actions)
-		}
-		if group == "sources" {
+		case "sources":
 			count = len(cfg.Sources)
+		case "changes.forges":
+			count = len(cfg.Changes.Forges)
 		}
 		for i := 0; i < count; i++ {
 			if group == "sources" {

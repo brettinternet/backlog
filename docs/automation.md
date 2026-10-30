@@ -47,7 +47,20 @@ actions:
     run: [herdr, workspace, create, --cwd, "{root}", --label, "{id}", --no-focus]
 ```
 
-Tests run these examples with fake `tell`, `wt`, `worklease`, and `herdr`.
+Actions for a linked change, offered on the TUI Changes tab:
+
+```yaml
+actions:
+  - name: checkout
+    run: [gh, pr, checkout, "{change.number}"]
+  - name: lazygit
+    run: [lazygit, -p, "{change.path}"]
+  - name: review
+    run: [nvim, "+DiffviewOpen {change.base}...{change.head}"]
+```
+
+Tests run these examples with fake `tell`, `wt`, `worklease`, and `herdr`, and
+check that the change actions are refused without a change.
 
 ## Actions
 
@@ -136,6 +149,17 @@ as `{result.KEY}` to hooks triggered by that event.
 | `{branch}` | `bl-12-debounce-detail-rendering`: lowercase ID and ASCII title slug, ≤ 48 characters |
 | `{resource}` | Claim resource key (needs coordination) |
 | `{result.KEY}` | Top-level string from the triggering event's result |
+| `{change.number}` | Pull request number |
+| `{change.url}` | Pull request, branch, or commit URL |
+| `{change.branch}` | Branch name |
+| `{change.head}` | Head commit SHA |
+| `{change.base}` | Default branch ref the change is compared with |
+| `{change.path}` | Worktree path |
+
+An action that names a `{change.*}` placeholder runs only on a linked change,
+from the TUI Changes tab; elsewhere it's disabled with
+"runs on a linked change". A value the change lacks refuses the run. Hooks
+can't name them.
 
 Placeholders expand inside argv elements and `cwd`. A missing value, control
 characters, a leading `-`, or more than 1 KiB refuses the run. Shell

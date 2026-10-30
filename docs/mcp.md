@@ -50,6 +50,7 @@ by the configured source IDs and types for `source:` filters.
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `history` | `id`, `limit` (0 or omitted: all), `cursor` | `bl history` |
+| `changes` | `id` | `bl changes` |
 | `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
@@ -96,6 +97,10 @@ otherwise poll later. An unknown `since` returns `not-found`.
 `history` returns `entries`, `providers`, `cursor`, and `more`, like `bl
 history --json`; read it to pick up earlier sessions' handoffs before starting.
 An unknown `cursor` returns `not-found`.
+
+`changes` returns `changes` and `providers`, like `bl changes --json`, so an
+agent can see whether its pull request is open, green, and approved without
+calling the forge itself.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
 coordination, `resource`, `claims`, and `claimsError`, plus `sessions` with

@@ -72,17 +72,30 @@ func (q Query) Scope() (open, archived bool) {
 	return open, archived
 }
 
-var fields = strings.Fields("id status category priority assignee label type milestone sprint source parent blocked-by blocks created updated due text claimed is has changed hook action outcome sort group")
+var fields = strings.Fields("id status category priority assignee label type milestone sprint source parent blocked-by blocks created updated due text claimed is has change checks review changed hook action outcome sort group")
 var sortKeys = strings.Fields("next priority rank updated created due id title status")
 var groupKeys = strings.Fields("status category priority assignee label milestone sprint type parent source none")
 var isValues = strings.Fields("open closed ready blocked waiting unknown mine claimed archived pending")
-var hasValues = strings.Fields("parent children blockers assignee due criteria claim")
+var hasValues = strings.Fields("parent children blockers assignee due criteria claim change")
+var changeValues = strings.Fields("open draft merged closed unknown stale")
+var checksValues = strings.Fields("passing failing pending stale")
+var reviewValues = strings.Fields("approved changes requested")
 var categories = strings.Fields("backlog todo active done canceled")
 var priorities = strings.Fields("none low medium high urgent")
 var outcomes = strings.Fields("ok failed timeout refused")
 
 func hookField(s string) bool {
 	return slices.Contains([]string{"changed", "hook", "action", "outcome"}, s)
+}
+func changeField(s string) bool { return s == "change" || s == "checks" || s == "review" }
+
+// offered reports whether a field may appear in this parsing mode: hook terms
+// only in hooks, and change terms never there.
+func offered(s string, options Options) bool {
+	if options.Hook {
+		return !changeField(s)
+	}
+	return !hookField(s)
 }
 func ordered(s string) bool { return s == "priority" || s == "created" || s == "updated" || s == "due" }
 
@@ -115,6 +128,10 @@ func Parse(input string, options Options) (Query, error) {
 				// Events carry no sprint catalog to resolve current or next.
 				return q, fail(start, "sprint: is not allowed in hook if:")
 			}
+			if changeField(t.Field) && options.Hook {
+				// Hooks run without linked changes (design.md D43).
+				return q, fail(start, t.Field+": is not allowed in hook if:")
+			}
 		} else {
 			p.i = start
 		}
@@ -144,6 +161,9 @@ func Parse(input string, options Options) (Query, error) {
 			}
 			if err = validateValue(t.Field, v); err != nil {
 				return q, err
+			}
+			if t.Field == "has" && strings.EqualFold(v.Text, "change") && options.Hook {
+				return q, fail(v.Pos, "has:change is not allowed in hook if:")
 			}
 			t.Values = append(t.Values, v)
 			if t.Field == "" || p.i == len(input) || input[p.i] != ',' {
@@ -186,6 +206,12 @@ func validateValue(field string, v Value) error {
 		allowed = priorities
 	case "claimed":
 		allowed = []string{"me", "others", "none"}
+	case "change":
+		allowed = changeValues
+	case "checks":
+		allowed = checksValues
+	case "review":
+		allowed = reviewValues
 	case "outcome":
 		allowed = outcomes
 	case "sort":

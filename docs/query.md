@@ -83,7 +83,10 @@ snapshot.
 | `field.NAME` | Exact string form of a raw scalar, or membership in a raw list. `none` matches missing or null. Not ordered. |
 | `claimed` | `me`, `others`, `none` (needs coordination) |
 | `is` | `open` (backlog, todo, or active), `closed`, `ready`, `blocked`, `waiting`, `unknown`, `mine`, `claimed`, `archived`, `pending` (unconfirmed local edit) |
-| `has` | `parent`, `children`, `blockers`, `assignee`, `due`, `criteria`, `claim` |
+| `has` | `parent`, `children`, `blockers`, `assignee`, `due`, `criteria`, `claim`, `change` |
+| `change` | `open`, `draft`, `merged`, `closed`, `unknown`, `stale`: the state of any linked change ([Changes](changes.md)) |
+| `checks` | `passing`, `failing`, `pending`, `stale`: any linked change's checks |
+| `review` | `approved`, `changes` (changes requested), `requested`: any linked change's review decision |
 | `changed` | Field name or `readiness`. Hooks only: the event changed it. |
 | `hook`, `action` | Name. Hooks only: matches `hook.finished` or `action.finished` from it. |
 | `outcome` | `ok`, `failed`, `timeout`, `refused`. Hooks only, for `*.finished` events. |
@@ -100,8 +103,14 @@ Notes:
   `has:criteria` means acceptance criteria, not DoD.
 - Claim terms use the bulk claim list. An expired claim is free. A failed or
   redacted list is unknown, so `claimed:none` never matches then.
+- Change terms match when any of the item's linked changes does, so
+  `is:active checks:failing` lists active items with a failing pull request and
+  `is:closed -has:change` lists closed items with nothing linked. A landed
+  change is `merged`. `bl ls` and MCP `query` load changes only when the query
+  names a change term; the TUI keeps them current on a worker.
 - Hook-only terms need hook parsing mode and are false outside an event.
-  `sprint:` is refused in hook mode: events carry no sprint catalog.
+  `sprint:` is refused in hook mode: events carry no sprint catalog. Change
+  terms are refused too: events carry no linked changes.
 - `bl ls`, MCP `query`, and views add `is:open` unless an `is:` term selects a
   state; `mine`, `claimed`, and `pending` don't, so `is:mine` lists open items.
   `is:archived` loads `archive/`. The parser itself adds nothing and does no I/O.

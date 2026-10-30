@@ -210,6 +210,24 @@ func Identity(d Discovery) (string, bool, error) {
 	return d.ControlRoot, true, nil
 }
 
+// Origin is the origin remote's host and repository path, empty when origin is
+// unset, local, or invalid.
+func Origin(d Discovery) (host, repo string) {
+	if d.CommonDir == "" {
+		return "", ""
+	}
+	origin, err := gitConfigValue(filepath.Join(d.CommonDir, "config"), "remote", "origin", "url")
+	if err != nil || origin == "" || localRemote(origin) {
+		return "", ""
+	}
+	id, err := NormalizeRemote(origin)
+	if err != nil {
+		return "", ""
+	}
+	host, repo, _ = strings.Cut(id, "/")
+	return host, repo
+}
+
 // Only repository-local facts are consulted: includes are not followed, so a
 // committed repository cannot cause config inspection to read arbitrary files.
 func gitConfigValue(path, wantSection, wantSubsection, wantKey string) (string, error) {

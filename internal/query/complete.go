@@ -24,7 +24,7 @@ func (s Snapshot) CompleteContext(ctx context.Context, field, prefix string, opt
 	field = strings.ToLower(field)
 	if field == "" {
 		for _, f := range fields {
-			if !hookField(f) || options.Hook {
+			if offered(f, options) {
 				candidates = append(candidates, Candidate{Value: f + ":"})
 			}
 		}
@@ -41,7 +41,7 @@ func (s Snapshot) CompleteContext(ctx context.Context, field, prefix string, opt
 		for _, f := range slices.Compact(raw) {
 			candidates = append(candidates, Candidate{Value: f})
 		}
-	} else if !hookField(field) || options.Hook {
+	} else if offered(field, options) {
 		candidates = s.valuesPrefix(ctx, field, prefix)
 	}
 	out := make([]Candidate, 0, len(candidates))
@@ -117,6 +117,10 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 		}
 	case "outcome":
 		for _, v := range outcomes {
+			add(v, "")
+		}
+	case "change", "checks", "review":
+		for _, v := range map[string][]string{"change": changeValues, "checks": checksValues, "review": reviewValues}[field] {
 			add(v, "")
 		}
 	case "sort":

@@ -46,7 +46,7 @@ Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
 | [Jira Cloud](docs/jira.md) | Discovered transitions, confirmed single-assignee replacement and ADF comments |
 
 Around the backlog: [MCP](docs/mcp.md), [hooks and actions](docs/automation.md),
-an [event stream](docs/events.md), and optional [claims](docs/cli.md#coordination)
+an [event stream](docs/events.md), [linked changes and pull requests](docs/changes.md), and optional [claims](docs/cli.md#coordination)
 through [Worklease](https://github.com/brettinternet/worklease) 1.10.1 or later, so
 concurrent agents never pick up the same item.
 
@@ -64,6 +64,7 @@ Using `bl`:
 - [MCP](docs/mcp.md)
 - [Hooks, actions, and agent handoff](docs/automation.md)
 - [Events](docs/events.md)
+- [Linked changes](docs/changes.md)
 - [Worklease coordination](docs/cli.md#coordination)
 - Config schemas: [project](docs/schemas/project-config.json), [user](docs/schemas/user-config.json)
 

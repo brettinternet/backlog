@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/contact"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
@@ -17,8 +18,9 @@ import (
 )
 
 // Load composes item's history from the project that stores it. coordinator
-// is cfg's claim system, or nil when it has none.
-func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator, item model.Item) Result {
+// is cfg's claim system, or nil when it has none; linked loads the item's
+// changes.
+func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator, item model.Item, linked func(context.Context) ([]changes.Change, error)) Result {
 	if cfg.Workspace != nil {
 		p, local := cfg.SourceProject(item.Ref.Source)
 		if p.Workspace != nil {
@@ -62,6 +64,11 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 			return sessionEntries(sessions, engine.ResumeRefusals(cfg, coordinator, sessions, claimsErr)), nil
 		}},
 		Provider{Name: "comments", Load: func(context.Context) ([]Entry, error) { return commentEntries(item.Comments), nil }},
+		// Before git, so a commit both report nests under its change.
+		Provider{Name: "changes", Load: func(ctx context.Context) ([]Entry, error) {
+			cs, err := linked(ctx)
+			return changeEntries(cs), err
+		}},
 		Provider{Name: "git", Load: func(ctx context.Context) ([]Entry, error) {
 			path, ok, err := engine.ItemFile(ctx, cfg, item.Ref)
 			if err != nil {

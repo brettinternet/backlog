@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/model"
@@ -27,16 +28,18 @@ const (
 	tabNotes
 	tabComments
 	tabRelations
+	tabChanges
 	tabHistory
 )
 
-var detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "History"}
+var detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "Changes", "History"}
 
 type detailIdentity struct {
 	Ref              model.Ref
 	Version          string
 	ReadinessVersion string
 	RelationVersion  string
+	ChangesVersion   string
 	Valid            bool
 }
 
@@ -47,7 +50,7 @@ func identityFor(row engine.Row, ok bool) detailIdentity {
 	return detailIdentity{
 		Ref: row.Ref, Version: row.Version,
 		ReadinessVersion: row.ReadinessVersion, RelationVersion: row.RelationVersion,
-		Valid: true,
+		ChangesVersion: changesVersion(row.Changes), Valid: true,
 	}
 }
 
@@ -71,6 +74,7 @@ type detailResult struct {
 	lines      []string
 	entries    []int             // line index of each criterion or relation, for the tab's cursor
 	targets    []engine.Relation // the relation each Relations entry opens
+	changes    []changes.Change  // the change each Changes entry is
 	ids        []string          // the history entry each History entry is
 	hints      []string          // a key to show on each History entry when selected
 	truncated  bool
@@ -86,6 +90,9 @@ func tabCounts(row engine.Row) [len(detailTabNames)]string {
 	}
 	if len(row.Relations) > 0 {
 		c[tabRelations] = strconv.Itoa(len(row.Relations))
+	}
+	if len(row.Changes) > 0 {
+		c[tabChanges] = strconv.Itoa(len(row.Changes))
 	}
 	if row.Comments > 0 {
 		c[tabComments] = strconv.Itoa(row.Comments)
@@ -113,6 +120,7 @@ type rendered struct {
 	lines     []string
 	entries   []int
 	targets   []engine.Relation
+	changes   []changes.Change
 	ids       []string
 	hints     []string // a key worth showing on each entry when it is selected
 	truncated bool
@@ -255,7 +263,7 @@ type detailWorker struct {
 	ctx      context.Context
 	read     func(context.Context, model.Ref) (model.Item, error)
 	render   func(body string, width int, theme string) (string, error)
-	history  func(context.Context, model.Item) history.Result
+	history  func(context.Context, model.Item, []changes.Change) history.Result
 	position func(model.Ref) string // the event log's position, so new events redraw History
 	recent   historyCache
 	requests chan detailRequest
@@ -333,10 +341,21 @@ func latestDetail(ch chan detailResult, value detailResult) {
 func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) detailResult {
 	identity := identityFor(request.row, true)
 	result := detailResult{generation: request.generation, identity: identity}
+	if request.tab == tabChanges {
+		// Git counts ahead, behind, and dirty files each time, so the tab
+		// isn't cached; it needs only the row.
+		page := changeLines(changes.Enrich(ctx, request.row.Changes), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
+		if err := ctx.Err(); err != nil {
+			result.err = textutil.Line(err.Error())
+			return result
+		}
+		result.lines, result.entries, result.changes = page.lines, page.entries, page.changes
+		return result
+	}
 	version := request.row.Version
 	dependency := detailDependency(request.row, request.tab)
 	if request.tab == tabHistory && worker.position != nil {
-		dependency = worker.position(request.row.Ref)
+		dependency = worker.position(request.row.Ref) + " " + dependency
 	}
 	key := renderKey{Ref: request.row.Ref, Version: version, Width: request.width, Theme: request.theme.key(), Tab: request.tab, Expanded: request.expanded, Dependency: dependency}
 	if request.tab == tabHistory {
@@ -381,7 +400,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	var page rendered
 	var err error
 	if request.tab == tabHistory {
-		page = historyLines(worker.loadHistory(ctx, item, key, request.fresh), request, max(1, request.width))
+		page = historyLines(worker.loadHistory(ctx, item, request.row.Changes, key, request.fresh), request, max(1, request.width))
 	} else {
 		page, err = detailPage(ctx, item, request, worker.render)
 	}
@@ -403,7 +422,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 
 // loadHistory composes an item's history once per version and log position,
 // so expanding a row or resizing only redraws it.
-func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, key renderKey, fresh bool) history.Result {
+func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, linked []changes.Change, key renderKey, fresh bool) history.Result {
 	key.Width, key.Theme, key.Expanded, key.Open = 0, "", false, ""
 	if worker.recent.key == key && !fresh {
 		return worker.recent.result
@@ -411,7 +430,7 @@ func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, ke
 	if worker.history == nil {
 		return history.Result{Providers: []history.Status{{Provider: "history", State: history.Unavailable, Reason: "not configured"}}}
 	}
-	result := worker.history(ctx, item)
+	result := worker.history(ctx, item, linked)
 	if ctx.Err() == nil {
 		worker.recent = historyCache{key, result}
 	}
@@ -613,6 +632,8 @@ func detailDependency(row engine.Row, tab detailTab) string {
 		return row.ReadinessVersion
 	case tabRelations:
 		return row.RelationVersion
+	case tabHistory:
+		return changesVersion(row.Changes)
 	default:
 		return ""
 	}

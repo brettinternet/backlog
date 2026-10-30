@@ -222,7 +222,7 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				return err
 			}
 			c, _ := engine.Coordination(ctx)
-			page, err := history.Load(ctx, cfg, c, i).Page(cmd.String("cursor"), cmd.Int("limit"))
+			page, err := history.Load(ctx, cfg, c, i, engine.LinkedChanges(cfg, i.Ref)).Page(cmd.String("cursor"), cmd.Int("limit"))
 			if err != nil {
 				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 			}
@@ -230,6 +230,27 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				return success(out, "history", page)
 			}
 			return writeHistory(out, page)
+		}},
+		{Name: "changes", Usage: "Show an item's linked worktrees, branches, pull requests, and landed commits", ArgsUsage: "ID", Action: func(ctx context.Context, cmd *urfave.Command) error {
+			if cmd.Args().Len() != 1 {
+				return &Error{Reason: "usage", Message: "changes requires exactly one ID"}
+			}
+			cfg, err := loadConfig(cmd, *directory)
+			if err != nil {
+				return err
+			}
+			i, err := readOne(ctx, cfg, cmd.Args().First())
+			if err != nil {
+				return err
+			}
+			result, err := engine.ItemChanges(ctx, cfg, i.Ref)
+			if err != nil {
+				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+			}
+			if cmd.Bool("json") {
+				return success(out, "changes", result)
+			}
+			return writeChanges(out, result)
 		}},
 		{Name: "next", Usage: "Rank ready items", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Explain every included and excluded item"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim the top ready item for --session, resuming its claim first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/source"
@@ -211,5 +212,17 @@ func TestEditEntriesSayWhatChanged(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("entries\n got %q\nwant %q", got, want)
+	}
+}
+
+// Catches History reading an ambiguous landed change as landed while the
+// Changes tab shows it as unknown.
+func TestLandedChangeSpan(t *testing.T) {
+	commit := changes.Commit{SHA: "c1", Subject: "Merge branch 'bl-9-x'", Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	for state, want := range map[string]string{changes.StateMerged: "landed", changes.StateUnknown: changes.StateUnknown} {
+		got := changeEntries([]changes.Change{{ID: "bl-9-x", Stage: changes.StageLanded, State: state, Commits: []changes.Commit{commit}}})
+		if len(got) == 0 || got[0].Span == nil || got[0].Span.State != want {
+			t.Fatalf("%s: %+v", state, got)
+		}
 	}
 }

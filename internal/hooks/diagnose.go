@@ -45,7 +45,7 @@ func Diagnose(cfg project.Config) []Diagnostic {
 				Fix: "Set timeout to a positive duration such as 30s"})
 		}
 		hasResult := hook.On == "hook.finished" || hook.On == "action.finished"
-		out = append(out, diagnoseRun(cfg, label, hook.Run, hook.CWD, hasResult)...)
+		out = append(out, diagnoseRun(cfg, label, hook.Run, hook.CWD, hasResult, false)...)
 	}
 	for i, action := range cfg.Actions {
 		label := fmt.Sprintf("action %s", action.Name)
@@ -58,7 +58,7 @@ func Diagnose(cfg project.Config) []Diagnostic {
 				out = append(out, Diagnostic{Message: fmt.Sprintf("%s: invalid when: %v", label, err), Fix: "Correct the when query"})
 			}
 		}
-		out = append(out, diagnoseRun(cfg, label, action.Run, action.CWD, false)...)
+		out = append(out, diagnoseRun(cfg, label, action.Run, action.CWD, false, true)...)
 	}
 	return out
 }
@@ -67,14 +67,20 @@ func inert(label string) Diagnostic {
 	return Diagnostic{Message: label + " is untrusted and inert", Fix: "Review bl trust --show, then run bl trust", Inert: true}
 }
 
-func diagnoseRun(cfg project.Config, label string, run []string, cwd string, hasResult bool) []Diagnostic {
+func diagnoseRun(cfg project.Config, label string, run []string, cwd string, hasResult, action bool) []Diagnostic {
 	var out []Diagnostic
+	changeKeys := LinkedChange{}.values()
 	for _, value := range append(append([]string(nil), run...), cwd) {
 		_, err := scanPlaceholders(value, func(key string) (string, error) {
+			_, isChange := changeKeys[key]
 			switch {
 			case strings.HasPrefix(key, "result."):
 				if !hasResult {
 					return "", fmt.Errorf("{%s} is only set for hooks on hook.finished or action.finished", key)
+				}
+			case isChange:
+				if !action {
+					return "", fmt.Errorf("{%s} is only set for actions run on a change", key)
 				}
 			case !placeholders[key]:
 				return "", fmt.Errorf("unknown placeholder {%s}", key)
@@ -85,7 +91,7 @@ func diagnoseRun(cfg project.Config, label string, run []string, cwd string, has
 		})
 		if err != nil {
 			out = append(out, Diagnostic{Message: label + ": " + err.Error(),
-				Fix: "Use only {id}, {ref}, {source}, {url}, {root}, {branch}, {resource}, or {result.KEY} where available"})
+				Fix: "Use only {id}, {ref}, {source}, {url}, {root}, {branch}, {resource}, {change.*}, or {result.KEY} where available"})
 		}
 	}
 	if len(run) == 0 || run[0] == "" {

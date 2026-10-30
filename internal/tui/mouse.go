@@ -190,6 +190,16 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.clickCriterion(x, line)
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
 			return m, m.clickRelation(p.X, p.Y, line)
+		case m.detailTab == tabChanges && y >= m.detailBodyTop():
+			// A click selects the change drawn on any of its lines.
+			if m.detailCurrent() {
+				for i, start := range m.detailEntries {
+					if start <= line {
+						m.entryCursor = i
+					}
+				}
+			}
+			return m, nil
 		case m.detailTab == tabHistory && y >= m.detailBodyTop():
 			return m.clickHistory(x, p.X, p.Y, line, inner, hinted)
 		}
@@ -294,7 +304,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // openItemMenu opens the ! menu for the selected item, as right-click does.
 func (m Model) openItemMenu() (tea.Model, tea.Cmd) {
 	m.routeSelectedProject()
-	m.actionSession = ""
+	m.actionSession, m.actionChange = "", nil
 	return m.openConfiguredActions()
 }
 

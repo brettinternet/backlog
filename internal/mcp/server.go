@@ -45,7 +45,8 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "next", Description: "Return ready backlog items in readiness order."}, s.next)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "query", Description: "Search backlog items using the bl query language."}, s.query)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, and Git commits, oldest first, with each provider's status."}, s.history)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, linked changes, and Git commits, oldest first, with each provider's status."}, s.history)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status."}, s.changes)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
@@ -125,6 +126,10 @@ type EventsResult struct {
 const defaultEventLimit = 100
 
 type ShowArgs struct {
+	ID string `json:"id"`
+}
+
+type ChangesArgs struct {
 	ID string `json:"id"`
 }
 
@@ -348,11 +353,25 @@ func (s *Server) history(ctx context.Context, _ *mcp.CallToolRequest, args Histo
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	page, err := history.Load(ctx, s.cfg, s.coordinator, item).Page(args.Cursor, args.Limit)
+	page, err := history.Load(ctx, s.cfg, s.coordinator, item, engine.LinkedChanges(s.cfg, item.Ref)).Page(args.Cursor, args.Limit)
 	if err != nil {
 		return failed[any](reason(err), engine.ErrorMessage(err))
 	}
 	return nil, page, nil
+}
+func (s *Server) changes(ctx context.Context, _ *mcp.CallToolRequest, args ChangesArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" {
+		return failed[any]("usage", "id is required")
+	}
+	item, err := readItem(ctx, s.cfg, args.ID)
+	if err != nil {
+		return failed[any](reason(err), err.Error())
+	}
+	result, err := engine.ItemChanges(ctx, s.cfg, item.Ref)
+	if err != nil {
+		return failed[any](reason(err), engine.ErrorMessage(err))
+	}
+	return nil, result, nil
 }
 func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args CreateArgs) (*mcp.CallToolResult, any, error) {
 	ctx = s.withCaller(ctx, args.WriteArgs)
