@@ -270,7 +270,16 @@ func readFile(name string, limit int64) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("tour is not a regular file")
 	}
-	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	return read(f, limit)
+}
+
+// Read reads a tour of at most MaxBytes an agent piped in.
+func Read(r io.Reader) ([]byte, error) {
+	return read(r, MaxBytes)
+}
+
+func read(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
 	}

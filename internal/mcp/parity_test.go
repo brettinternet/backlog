@@ -19,6 +19,7 @@ import (
 	serverpkg "github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
+	"github.com/brettinternet/backlog/internal/tour"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -371,6 +372,45 @@ func TestEventsMatchCLI(t *testing.T) {
 	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "file": tourFile(stale)}})
 	if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "is the head of no change linked to BL-1") {
 		t.Fatalf("tour with another ref: %v %+v", err, result)
+	}
+
+	// A client without bl's filesystem passes the tour itself: bl tour ID -
+	// reads stdin and the MCP tour tool takes a tour object. Both store and
+	// refuse exactly as a file does.
+	tourJSON := func(ref string) string {
+		return `{"ref":"` + ref + `","steps":[{"file":"main.go","line":1,"description":"Start here."}]}`
+	}
+	inline := func(text string) map[string]any {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(text), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	stdin := func(text string, args ...string) (int, string) {
+		var out, stderr bytes.Buffer
+		code := cli.Run(context.Background(), append([]string{"bl", "-C", root, "--json"}, args...), cli.BuildInfo{}, strings.NewReader(text), &out, &stderr)
+		return code, out.String()
+	}
+	oversize := `{"ref":"` + parityHead + `","description":"` + strings.Repeat("x", tour.MaxBytes) + `","steps":[]}`
+	for _, c := range []struct{ name, text, want string }{
+		{"store", tourJSON(parityHead), `"steps":1`},
+		{"another ref", tourJSON(stale), "is the head of no change linked to BL-1"},
+		{"oversize", oversize, "tour exceeds 1 MiB"},
+		{"bad step", `{"ref":"` + parityHead + `","steps":[{"file":"main.go","line":1,"description":"x","criterion":9}]}`, "has no acceptance criterion 9"},
+	} {
+		code, out := stdin(c.text, "tour", "1", "-")
+		if (code == 0) != (c.name == "store") || !strings.Contains(out, c.want) {
+			t.Fatalf("bl tour - %s: %d %.300s", c.name, code, out)
+		}
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "tour": inline(c.text)}})
+		if err != nil || result.IsError != (c.name != "store") || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, c.want) {
+			t.Fatalf("tour inline %s: %v %.300v", c.name, err, result)
+		}
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "file": tourFile(parityHead), "tour": inline(tourJSON(parityHead))}})
+	if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "give file or tour, not both") {
+		t.Fatalf("tour with file and tour: %v %+v", err, result)
 	}
 }
 

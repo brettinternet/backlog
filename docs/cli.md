@@ -145,11 +145,11 @@ when a tour is stored for the change, stale once its head is another commit;
 `reason`. Diff text stays out of JSON. Pull requests come from the forge's
 cache, refreshed incrementally; Git is read from `.git` and never fetched.
 
-### `bl tour ID [FILE]`
+### `bl tour ID [FILE|-]`
 
-With FILE, stores a tour an agent wrote for the
+With FILE, or `-` to read it from stdin, stores a tour an agent wrote for the
 item's linked change whose head is the tour's `ref`, for the TUI Diff tab
-([schema](schemas/tour.json)). It refuses, with the reason, a file over 1 MiB,
+([schema](schemas/tour.json)). It refuses, with the reason, a tour over 1 MiB,
 an invalid tour, a step citing a criterion the item lacks, or a `ref` that
 heads no linked change, listing the linked heads. It also refuses steps whose
 file doesn't exist at `ref` (or, for `side: "old"`, before the change, where a
