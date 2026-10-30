@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -53,17 +54,10 @@ func StoreTour(ctx context.Context, cfg project.Config, id string, data []byte) 
 	if err != nil {
 		return TourResult{}, source.Refuse("rejected", err.Error())
 	}
-	items, err := ReadDetail(ctx, cfg, id)
+	item, err := tourItem(ctx, cfg, id)
 	if err != nil {
 		return TourResult{}, err
 	}
-	if len(items) == 0 {
-		return TourResult{}, source.Refuse("not-found", "item not found: "+id)
-	}
-	if len(items) != 1 {
-		return TourResult{}, source.Refuse("rejected", "ambiguous item ID: "+id)
-	}
-	item := items[0]
 	if stateDir, _, _ := tourKey(cfg, item.Ref); !filepath.IsAbs(stateDir) {
 		return TourResult{}, source.Refuse("unavailable", "no state directory for tours")
 	}
@@ -157,6 +151,57 @@ func checkSteps(ctx context.Context, c changes.Change, t tour.Tour) error {
 		return source.Refuse("rejected", "tour "+strings.Join(bad, "; "))
 	}
 	return nil
+}
+
+// StoredTour is a tour kept for one of an item's linked changes, with its
+// ref and whether the change has moved on since.
+type StoredTour struct {
+	tour.Stored
+	Ref   string `json:"ref"`
+	Stale bool   `json:"stale"`
+}
+
+// ToursResult is every tour kept for an item's linked changes, in their order.
+type ToursResult struct {
+	Tours []StoredTour `json:"tours"`
+}
+
+// ReadTours reads the tour kept for each of item id's linked changes; an
+// item without one has none.
+func ReadTours(ctx context.Context, cfg project.Config, id string) (ToursResult, error) {
+	result := ToursResult{Tours: []StoredTour{}}
+	item, err := tourItem(ctx, cfg, id)
+	if err != nil {
+		return result, err
+	}
+	linked, err := ItemChanges(ctx, cfg, item.Ref)
+	if err != nil {
+		return result, err
+	}
+	for _, c := range linked.Changes {
+		stored, ok, err := LoadTour(cfg, item.Ref, c.ID)
+		if err != nil {
+			return result, fmt.Errorf("tour for %s: %w", c.ID, err)
+		}
+		if ok {
+			result.Tours = append(result.Tours, StoredTour{Stored: stored, Ref: stored.Tour.Ref, Stale: stored.Tour.Ref != c.Head})
+		}
+	}
+	return result, nil
+}
+
+func tourItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
+	items, err := ReadDetail(ctx, cfg, id)
+	if err != nil {
+		return model.Item{}, err
+	}
+	if len(items) == 0 {
+		return model.Item{}, source.Refuse("not-found", "item not found: "+id)
+	}
+	if len(items) != 1 {
+		return model.Item{}, source.Refuse("rejected", "ambiguous item ID: "+id)
+	}
+	return items[0], nil
 }
 
 // LoadTour reads the tour kept for an item's change, on a worker.

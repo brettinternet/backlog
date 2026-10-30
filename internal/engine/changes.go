@@ -216,6 +216,12 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
 	}
+	for i, c := range result.Changes {
+		// A tour that can't be read is left out; bl tour ID reports why.
+		if stored, ok, err := LoadTour(cfg, ref, c.ID); err == nil && ok {
+			result.Changes[i].Tour = &changes.Tour{Ref: stored.Tour.Ref, Steps: len(stored.Tour.Steps), Stale: stored.Tour.Ref != c.Head}
+		}
+	}
 	if result.Providers == nil {
 		result.Providers = []changes.Status{}
 	}

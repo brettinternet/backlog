@@ -75,9 +75,19 @@ type Change struct {
 	Commits    []Commit  `json:"commits,omitempty"`
 	Events     []Event   `json:"events,omitempty"`
 	Updated    time.Time `json:"updated,omitzero"`
+	// Tour is the tour kept for the change, read for bl changes.
+	Tour *Tour `json:"tour,omitempty"`
 	// ref is the branch ref ahead/behind compares with base, the default
 	// branch, in the checkout dir.
 	ref, base, dir string
+}
+
+// Tour is a stored tour's head and step count; it is stale once the change's
+// head is another commit.
+type Tour struct {
+	Ref   string `json:"ref"`
+	Steps int    `json:"steps"`
+	Stale bool   `json:"stale"`
 }
 
 // Base is the default branch ref an open branch is compared with.

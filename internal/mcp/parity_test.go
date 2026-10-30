@@ -331,8 +331,34 @@ func TestEventsMatchCLI(t *testing.T) {
 		}
 		return name
 	}
+	// Before one is stored, reading tours returns none rather than an error.
+	if code, out := run("tour", "1"); code != 0 || !strings.Contains(out, `"tours":[]`) {
+		t.Fatalf("bl tour read before storing: %d %s", code, out)
+	}
 	if code, out := run("tour", "1", tourFile(parityHead)); code != 0 || !strings.Contains(out, `"steps":1`) {
 		t.Fatalf("bl tour: %d %s", code, out)
+	}
+	// bl tour ID and the MCP tour tool without file read the stored tour
+	// back alike, and bl changes notes it on its change.
+	code, out = run("tour", "1")
+	var cliTours struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &cliTours) != nil || !strings.Contains(string(cliTours.Data), `"ref":"`+parityHead+`","stale":false`) || !strings.Contains(string(cliTours.Data), `"description":"Start here."`) {
+		t.Fatalf("bl tour read: %d %s", code, out)
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1"}})
+	if err != nil || result.IsError {
+		t.Fatalf("tour read: %v %+v", err, result)
+	}
+	cliData, mcpData = nil, nil
+	_ = json.Unmarshal(cliTours.Data, &cliData)
+	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &mcpData)
+	if !reflect.DeepEqual(cliData, mcpData) {
+		t.Fatalf("tours differ\nMCP %v\nCLI %v", mcpData, cliData)
+	}
+	if code, out := run("changes", "1"); code != 0 || !strings.Contains(out, `"tour":{"ref":"`+parityHead+`","steps":1,"stale":false}`) {
+		t.Fatalf("bl changes with a tour: %d %s", code, out)
 	}
 	stale := strings.Repeat("0", 40)
 	if code, out := run("tour", "1", tourFile(stale)); code == 0 || !strings.Contains(out, "is the head of no change linked to BL-1") {
