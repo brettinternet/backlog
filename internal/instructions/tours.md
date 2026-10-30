@@ -43,3 +43,9 @@ bl tour ID change.tour --json
 
 A refusal names the reason: invalid JSON or a bad step, a criterion the item
 lacks, or a ref that heads no change linked to the item, listing their heads.
+Each step is checked against Git objects, never the worktree: its file must
+exist at ref (with `"side": "old"`, before the change, where a renamed file
+may use either path) and its line must be within the file. One refusal lists
+every bad step with its number, file, line, and the file's line count, so fix
+them all before storing again. A head your checkout doesn't hold, such as an
+unfetched pull request, can't be checked and is stored as is.

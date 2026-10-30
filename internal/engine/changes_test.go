@@ -1,12 +1,17 @@
 package engine
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/testkit"
+	"github.com/brettinternet/backlog/internal/tour"
 )
 
 // Catches a GitLab origin read without its one GitLab account, or as a
@@ -43,5 +48,64 @@ func TestOriginForge(t *testing.T) {
 	cfg.Accounts = map[string][]project.AccountConfig{"github": {{Name: "hub", Host: "gitlab.com", User: "alice", Env: "TOKEN"}}}
 	if _, err := forgeAccount(cfg, project.ForgeConfig{Type: "gitlab", Host: "gitlab.com", Repo: "grp/app"}); err == nil {
 		t.Fatal("a GitLab forge used a GitHub account")
+	}
+}
+
+// Catches a tour stored with steps its Diff can't show: a file missing at the
+// ref or before the change, a line past the end of the file, or one counted
+// from the worktree instead of the ref. A renamed file's old side, on either
+// path, and a file the change doesn't touch are accepted, and every bad step
+// is reported at once.
+func TestCheckTourSteps(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	testkit.Isolate(t)
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=Tester", "-c", "user.email=t@example.com", "-c", "commit.gpgSign=false"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	write("old.go", "1\n2\n3\n4\n5\n")
+	write("keep.go", "1\n2\n3")
+	write("gone.go", "1\n2\n")
+	git("add", ".")
+	git("commit", "-q", "-m", "start")
+	git("mv", "old.go", "new.go")
+	write("new.go", "1\n2\n3\n4\n5\n6\n")
+	git("rm", "-q", "gone.go")
+	git("add", ".")
+	git("commit", "-q", "-m", "change")
+	head := git("rev-parse", "HEAD")
+	write("keep.go", strings.Repeat("x\n", 10))
+	c := changes.CommitChange(repo, changes.Commit{SHA: head})
+	step := func(file string, line int, side string) tour.Step {
+		return tour.Step{File: file, Line: line, Side: side, Description: "x"}
+	}
+	good := []tour.Step{step("new.go", 6, ""), step("new.go", 5, tour.SideOld), step("old.go", 5, tour.SideOld), step("keep.go", 3, ""), step("gone.go", 2, tour.SideOld)}
+	if err := checkSteps(context.Background(), c, tour.Tour{Ref: head, Steps: good}); err != nil {
+		t.Fatalf("steps the Diff shows: %v", err)
+	}
+	bad := append(good, step("gone.go", 1, ""), step("keep.go", 9, ""), step("new.go", 6, tour.SideOld), step("missing.go", 1, tour.SideOld))
+	err := checkSteps(context.Background(), c, tour.Tour{Ref: head, Steps: bad})
+	want := "rejected: tour step 6: gone.go line 1: no such file at " + head[:7] +
+		"; step 7: keep.go line 9: past the end of the file, which has 3 lines at " + head[:7] +
+		"; step 8: new.go line 6: past the end of the file, which has 5 lines before the change" +
+		"; step 9: missing.go line 1: no such file before the change"
+	if err == nil || err.Error() != want {
+		t.Fatalf("bad steps:\n got %v\nwant %s", err, want)
 	}
 }

@@ -150,7 +150,13 @@ Stores a tour an agent wrote for the
 item's linked change whose head is the tour's `ref`, for the TUI Diff tab
 ([schema](schemas/tour.json)). It refuses, with the reason, a file over 1 MiB,
 an invalid tour, a step citing a criterion the item lacks, or a `ref` that
-heads no linked change, listing the linked heads. A later tour for the same
+heads no linked change, listing the linked heads. It also refuses steps whose
+file doesn't exist at `ref` (or, for `side: "old"`, before the change, where a
+renamed file may use its old path) or whose line is past the file's end,
+listing every such step's index, file, line, and the file's line count in one
+refusal. The check reads Git objects only, never a worktree; steps on files
+the change doesn't touch are accepted, and a `ref` the checkout doesn't hold
+is stored unchecked. A later tour for the same
 change replaces it. JSON returns `data.item`, `change`, `ref`, and `steps`.
 `bl` never writes a tour itself; `bl instructions tours` explains how to.
 

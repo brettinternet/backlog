@@ -2,6 +2,7 @@ package changes
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,6 +82,12 @@ func TestWorktreeToLanded(t *testing.T) {
 	physical, _ := filepath.EvalSymlinks(worktree)
 	if got, _ := filepath.EvalSymlinks(c.Worktree); c.Stage != StageWorktree || c.State != StateOpen || c.Link != "branch" || got != physical {
 		t.Fatalf("before merge: %+v", c)
+	}
+	// A tour's old side is the merge base, not the default branch's tip.
+	if s, ok, err := ReadSides(context.Background(), c, c.Head); err != nil || !ok || s.Renamed["new"] != "old" {
+		t.Fatalf("sides: %+v %v %v", s, ok, err)
+	} else if _, _, err := s.File(context.Background(), "main-only", true); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old side read the default branch's tip: %v", err)
 	}
 	marker := filepath.Join(t.TempDir(), "ran")
 	git(repo, "config", "filter.x.clean", "touch "+marker+"; cat")

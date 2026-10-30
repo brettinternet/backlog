@@ -393,15 +393,92 @@ func FileAt(ctx context.Context, c Change, path string) ([]byte, error) {
 	if c.dir == "" || c.Head == "" {
 		return nil, errors.New("no local copy of " + path)
 	}
-	object := c.Head + ":" + path
-	size, err := git.Run(ctx, c.dir, "cat-file", "-s", object)
+	return blobAt(ctx, c.dir, c.Head, path)
+}
+
+// blobAt reads path at rev from Git objects in dir, at most
+// maxUntrackedBytes.
+func blobAt(ctx context.Context, dir, rev, path string) ([]byte, error) {
+	object := rev + ":" + path
+	size, err := git.Run(ctx, dir, "cat-file", "-s", object)
 	if err != nil {
 		return nil, err
 	}
 	if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > maxUntrackedBytes {
 		return nil, errors.New(path + " is too large to show")
 	}
-	return git.Run(ctx, c.dir, "cat-file", "blob", object)
+	return git.Run(ctx, dir, "cat-file", "blob", object)
+}
+
+// Sides are the two commits a change's Diff compares, read from Git objects
+// only: New, a head in the checkout, and Old, its merge base with the default
+// branch or its oldest landed commit's first parent ("" when unknown, the
+// empty tree for a root commit). Renamed maps a renamed file's new path to
+// its old one.
+type Sides struct {
+	Old, New string
+	Renamed  map[string]string
+	dir      string
+}
+
+// ReadSides finds c's sides for head, a commit c's checkout must hold; ok is
+// false when it doesn't, as for a pull request whose head was never fetched.
+func ReadSides(ctx context.Context, c Change, head string) (Sides, bool, error) {
+	if c.dir == "" {
+		return Sides{}, false, nil
+	}
+	if _, err := git.Run(ctx, c.dir, "cat-file", "-e", head+"^{commit}"); err != nil {
+		return Sides{}, false, nil
+	}
+	s := Sides{New: head, dir: c.dir}
+	switch {
+	case len(c.Commits) > 0:
+		oldest := c.Commits[len(c.Commits)-1].SHA
+		if tree, ok := emptyTree(ctx, c.dir, oldest); ok {
+			s.Old = tree
+		} else {
+			s.Old = oldest + "^1"
+		}
+	case c.base != "":
+		out, err := git.Run(ctx, c.dir, "merge-base", c.base, head)
+		if err != nil {
+			return Sides{}, false, err
+		}
+		s.Old = strings.TrimSpace(string(out))
+	default:
+		return s, true, nil
+	}
+	files, err := gitFiles(ctx, c.dir, false, s.Old, head)
+	if err != nil {
+		return Sides{}, false, err
+	}
+	for _, f := range files {
+		if f.From != "" {
+			if s.Renamed == nil {
+				s.Renamed = map[string]string{}
+			}
+			s.Renamed[f.Path] = f.From
+		}
+	}
+	return s, true, nil
+}
+
+// File reads path on the new side, or on the old side if old is set, where a
+// renamed file is read at its old path; the error wraps os.ErrNotExist when
+// that side has no such file. ok is false when the old side is unknown.
+func (s Sides) File(ctx context.Context, path string, old bool) (content []byte, ok bool, err error) {
+	rev := s.New
+	if old {
+		if s.Old == "" {
+			return nil, false, nil
+		}
+		rev, path = s.Old, cmp.Or(s.Renamed[path], path)
+	}
+	if kind, err := git.Run(ctx, s.dir, "cat-file", "-t", rev+":"+path); err != nil || strings.TrimSpace(string(kind)) != "blob" {
+		return nil, true, fmt.Errorf("%s: %w", path, os.ErrNotExist)
+	}
+	content, err = blobAt(ctx, s.dir, rev, path)
+	return content, true, err
 }
 
 func worktreeFile(worktree, path string) ([]byte, error) {
