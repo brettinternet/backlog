@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -192,16 +193,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
 			return m, m.clickRelation(p.X, p.Y, line)
 		case m.hasEntries() && m.detailTab >= tabChanges && m.detailTab != tabHistory && y >= m.detailBodyTop():
-			// A click selects the change drawn on any of its lines. Overview
-			// checks are one line each, among lines that aren't checks.
-			if m.detailCurrent() {
-				for i, start := range m.detailEntries {
-					if start == line || start < line && m.detailTab != tabChangeOverview {
-						m.entryCursor = i
-					}
-				}
-			}
-			return m, nil
+			return m, m.clickEntry(p.X, p.Y, line)
 		case m.detailTab == tabHistory && y >= m.detailBodyTop():
 			return m.clickHistory(x, p.X, p.Y, line, inner, hinted)
 		}
@@ -472,6 +464,40 @@ func (m *Model) clickRelation(x, y, line int) tea.Cmd {
 	if double {
 		m.mouse.lastRef = model.Ref{}
 		return m.followRelation()
+	}
+	return nil
+}
+
+// clickEntry selects the entry drawn on a detail line, any of its lines. Overview
+// checks are one line each, among lines that aren't checks. A double-click on
+// a change or a change's commit opens it as enter does. x and y are the screen
+// cell.
+func (m *Model) clickEntry(x, y, line int) tea.Cmd {
+	if !m.detailCurrent() {
+		return nil
+	}
+	found := -1
+	for i, start := range m.detailEntries {
+		if start == line || start < line && m.detailTab != tabChangeOverview {
+			found = i
+		}
+	}
+	if found < 0 {
+		return nil
+	}
+	m.entryCursor = found
+	id, now := fmt.Sprint(m.detailTab, ":", found), m.now()
+	double := id == m.mouse.lastEntry && x == m.mouse.lastX && y == m.mouse.lastY && now.Sub(m.mouse.lastClick) >= 0 && now.Sub(m.mouse.lastClick) <= 400*time.Millisecond
+	m.mouse.lastClick, m.mouse.lastEntry, m.mouse.lastX, m.mouse.lastY = now, id, x, y
+	if !double {
+		return nil
+	}
+	m.mouse.lastEntry = ""
+	if m.change != nil {
+		return m.openChangeCommit()
+	}
+	if c, ok := m.selectedChange(); ok {
+		return m.openChange(c)
 	}
 	return nil
 }

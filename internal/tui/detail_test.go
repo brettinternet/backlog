@@ -880,7 +880,15 @@ func TestChangeDiff(t *testing.T) {
 	m = settleDetail(t, m)
 	_ = m.switchDetailTab(tabChanges)
 	m = settleDetail(t, m)
-	m, _ = detailKey(m, tea.KeyEnter, 0)
+	// A double-click opens the change, as enter does.
+	y := m.detailBodyTop() + 1 + m.detailEntries[0] - m.detailScroll
+	for range 2 {
+		next, _ := m.Update(tea.MouseClickMsg{X: m.width - 10, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+	}
+	if m.change == nil {
+		t.Fatal("double-click did not open the change")
+	}
 	m = settleDetail(t, m)
 	m, _ = detailKey(m, tea.KeyTab, 0)
 	m, _ = detailKey(m, tea.KeyTab, 0)
@@ -909,6 +917,12 @@ func TestChangeDiff(t *testing.T) {
 		if m.detailScroll != step.want() || m.detailEntries[m.entryCursor] != step.want() {
 			t.Fatalf("%s scrolled to %d with the cursor on %d, want %d", step.keys, m.detailScroll, m.detailEntries[m.entryCursor], step.want())
 		}
+	}
+	// A remapped hunk jump starts from the cursor, not from a file jump.
+	remapped := m
+	remapped.keymap, remapped.keyError = buildKeymap(map[string]string{"previous-hunk": "X"})
+	if remapped, _ = detailKey(remapped, 'X', 0); remapped.detailEntries[remapped.entryCursor] != m.detailHunks[0] {
+		t.Fatalf("remapped hunk jump landed on %d, want %d", remapped.detailEntries[remapped.entryCursor], m.detailHunks[0])
 	}
 	// Each row resolves to its file, and to the line on each side it shows.
 	m.entryCursor = slices.Index(m.detailEntries, m.detailFiles[1])

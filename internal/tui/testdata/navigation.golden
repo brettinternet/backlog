@@ -416,10 +416,10 @@
   ctrl+u pgup    Half page up            ym             Copy Markdown link      
   ctrl+f ctrl+v  Page down               yp             Copy change URL         
   ctrl+b alt+v   Page up                 ys             Copy commit SHA         
-  [              Previous group                                                 
-  ]              Next group              General                                
-  h ←            Back / parent / left    ?              Help                    
-  l →            Open / child / right    : alt+x        Commands                
-  ctrl+p         Go to item              q              Quit / back             
+  [              Previous group / file                                          
+  ]              Next group / file       General                                
+  [c             Previous hunk           ?              Help                    
+  ]c             Next hunk               : alt+x        Commands                
+  [t             Previous tour step      q              Quit / back             
                                                                              ↓  
  is:ready sort:next                                            ● 3  ! 3    5/60 
