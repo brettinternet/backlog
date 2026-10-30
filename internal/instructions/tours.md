@@ -64,3 +64,7 @@ Read back what is stored, and whether it is stale, with `bl tour ID --json`
 ref, and stale; an item without one returns `"tours": []`. `bl changes ID
 --json` marks each change with a stored tour as `tour: {ref, steps, stale}`,
 so automation can skip changes whose tour is current.
+
+Storing again replaces a change's tour. To drop a wrong one, run
+`bl tour ID --remove [CHANGE] --json` (MCP: the tour tool with remove and
+change); CHANGE is needed only when several linked changes have tours.

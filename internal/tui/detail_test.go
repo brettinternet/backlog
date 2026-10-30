@@ -1052,8 +1052,11 @@ func TestChangeTour(t *testing.T) {
 		fmt.Fprintf(&content, "line %d\n", i+1)
 	}
 	m.detailWorker.fileAt = func(context.Context, changes.Change, string) ([]byte, error) { return []byte(content.String()), nil }
-	ref := head
+	ref, stored := head, true
 	m.detailWorker.tour = func(model.Ref, string) (tour.Stored, bool, error) {
+		if !stored {
+			return tour.Stored{}, false, nil
+		}
 		return tour.Stored{Tour: tour.Tour{Ref: ref, Steps: []tour.Step{
 			{File: "a.go", Line: 11, Description: "The fix.\x1b]52;c;cHduZWQ=\x07", Criterion: 1},
 			{File: "a.go", Line: 30, Description: "Its caller."},
@@ -1166,6 +1169,19 @@ func TestChangeTour(t *testing.T) {
 	d := changes.Detail{Files: []changes.File{{Path: "a.go", Status: changes.FileUncommitted, Patch: patch}}}
 	if view := m.detailWorker.loadTour(context.Background(), detailRequest{}, change, &d); view == nil || !strings.Contains(view.stale, "a.go has uncommitted changes") {
 		t.Fatalf("uncommitted tour: %+v", view)
+	}
+	// A removed tour is gone from the Diff's next render, not kept from an
+	// earlier one.
+	stored = false
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	if m.detailTab != tabChangeDiff || len(m.detailSteps) != 0 || m.detailTour != "" || slices.ContainsFunc(m.detailLines, func(l string) bool { return strings.Contains(ansi.Strip(l), "Step ") }) {
+		t.Fatalf("removed tour: tab %d steps %v tour %q", m.detailTab, m.detailSteps, m.detailTour)
 	}
 }
 

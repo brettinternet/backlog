@@ -412,6 +412,48 @@ func TestEventsMatchCLI(t *testing.T) {
 	if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "give file or tour, not both") {
 		t.Fatalf("tour with file and tour: %v %+v", err, result)
 	}
+	// bl tour --remove and the MCP tour tool with remove delete the stored
+	// tour, so it reads back as none, and removing none succeeds saying so.
+	if code, out := run("tour", "1", "--remove", "branch:missing"); code == 0 || !strings.Contains(out, "branch:missing is not a change linked to BL-1") {
+		t.Fatalf("bl tour --remove an unlinked change: %d %s", code, out)
+	}
+	if code, out := run("tour", "1", "--remove"); code != 0 || !strings.Contains(out, `"removed":true`) {
+		t.Fatalf("bl tour --remove: %d %s", code, out)
+	}
+	if code, out := run("tour", "1"); code != 0 || !strings.Contains(out, `"tours":[]`) {
+		t.Fatalf("bl tour read after removing: %d %s", code, out)
+	}
+	if code, out := run("changes", "1"); code != 0 || strings.Contains(out, `"tour":`) {
+		t.Fatalf("bl changes after removing the tour: %d %s", code, out)
+	}
+	code, out = run("tour", "1", "--remove")
+	if code != 0 || !strings.Contains(out, `"removed":false`) {
+		t.Fatalf("bl tour --remove with none stored: %d %s", code, out)
+	}
+	var cliRemoved struct {
+		Data json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal([]byte(out), &cliRemoved)
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "remove": true}})
+	if err != nil || result.IsError {
+		t.Fatalf("tour remove with none stored: %v %+v", err, result)
+	}
+	cliData, mcpData = nil, nil
+	_ = json.Unmarshal(cliRemoved.Data, &cliData)
+	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &mcpData)
+	if !reflect.DeepEqual(cliData, mcpData) {
+		t.Fatalf("tour removals differ\nMCP %v\nCLI %v", mcpData, cliData)
+	}
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "file": tourFile(parityHead)}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "remove": true, "change": "branch:fix"}})
+	if err != nil || result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"removed":true`) {
+		t.Fatalf("tour remove: %v %+v", err, result)
+	}
+	if code, out := run("tour", "1"); code != 0 || !strings.Contains(out, `"tours":[]`) {
+		t.Fatalf("bl tour read after the MCP removal: %d %s", code, out)
+	}
 }
 
 // parityHead is the fake pull request's head commit.
