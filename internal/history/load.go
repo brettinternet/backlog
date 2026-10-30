@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -123,7 +124,7 @@ func eventEntries(events []hooks.Event) []Entry {
 			c := e.Changes["readiness"]
 			entry.Summary = fmt.Sprintf("readiness %v → %v", c.From, c.To)
 			if c.Reason != nil {
-				entry.Detail = fmt.Sprint(c.Reason)
+				entry.Detail = textutil.Line(display(c.Reason))
 			}
 		case "claim.acquired", "claim.released":
 			if len(e.Versions) > 0 {
@@ -167,10 +168,44 @@ func changeSummary(changes map[string]hooks.Change) string {
 }
 
 func changeValue(v any) string {
-	if s := textutil.Line(fmt.Sprint(v)); v != nil && s != "" {
+	if s := textutil.Line(display(v)); s != "" {
 		return s
 	}
 	return "∅"
+}
+
+// display renders a decoded event value: lists as comma-separated items, refs
+// as their IDs, and readiness reasons as "code: refs".
+func display(v any) string {
+	switch v := v.(type) {
+	case nil:
+		return ""
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			if s := display(item); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, ", ")
+	case map[string]any:
+		if code, ok := v["code"].(string); ok {
+			if s := display(cmp.Or(v["refs"], v["values"])); s != "" {
+				return code + ": " + s
+			}
+			return code
+		}
+		if id, ok := v["id"].(string); ok {
+			return id
+		}
+		keys := slices.Sorted(maps.Keys(v))
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			parts = append(parts, k+"="+display(v[k]))
+		}
+		return strings.Join(parts, " ")
+	}
+	return fmt.Sprint(v)
 }
 
 func claimEntries(claims []model.ClaimEpoch, now time.Time) []Entry {
