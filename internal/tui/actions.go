@@ -30,10 +30,28 @@ type actionFinishedMsg struct {
 	err     error
 }
 
+// openConfiguredActions opens the ! menu: the item's configured actions and
+// agent sessions, then the built-in actions likely to apply. A History session
+// row narrows it to that session.
 func (m Model) openConfiguredActions() (tea.Model, tea.Cmd) {
+	m.keyPrefix = ""
+	m.count = 0
+	m.inputSerial++
 	m.launcherSerial++
+	var rows []launcherRow
+	if m.actionSession == "" {
+		rows = m.itemMenuRows()
+	}
+	m.launcher = launcherState{open: true, item: true, rows: rows, all: rows}
+	if _, ok := m.selectedRow(); !ok {
+		m.launcher.err = "select an item"
+		return m, nil
+	}
+	if m.opts.Automation == nil {
+		return m, nil
+	}
 	m.actionCatalogSerial++
-	m.launcher = launcherState{open: true, loading: true}
+	m.launcher.loading = true
 	return m, m.loadConfiguredActions()
 }
 
@@ -75,17 +93,25 @@ func (m Model) receiveActionChoices(msg actionChoicesMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.launcher.err = boundedLine(msg.err.Error())
 	}
+	var found []launcherRow
 	for _, choice := range msg.choices {
 		for _, a := range m.keymap {
 			if a.id == "action:"+choice.Name {
-				m.launcher.all = append(m.launcher.all, launcherRow{label: textutil.Line(choice.Name), keywords: strings.Join(a.bindings, " "), reason: textutil.Line(choice.Disabled), action: a, actionRef: choice.Invocation.Event.Ref, group: "Actions"})
+				found = append(found, launcherRow{label: textutil.Line(choice.Name), keywords: strings.Join(a.bindings, " "), reason: textutil.Line(choice.Disabled), action: a, actionRef: choice.Invocation.Event.Ref, group: "Actions"})
 				break
 			}
 		}
 	}
 	for _, choice := range msg.resumes {
 		label := strings.ToUpper(choice.Command[:1]) + choice.Command[1:] + " " + cmp.Or(choice.Session.Agent, "agent") + " · " + age(choice.Session.LastSeen, m.now())
-		m.launcher.all = append(m.launcher.all, launcherRow{label: textutil.Line(label), reason: textutil.Line(choice.Disabled), resume: &choice, group: "Sessions"})
+		found = append(found, launcherRow{label: textutil.Line(label), reason: textutil.Line(choice.Disabled), resume: &choice, group: "Sessions"})
+	}
+	// Menus lead with what only this item has; help keeps them as its last
+	// sections.
+	if m.launcher.help {
+		m.launcher.all = append(m.launcher.all, found...)
+	} else {
+		m.launcher.all = append(found, m.launcher.all...)
 	}
 	m.launcher.rows = m.launcher.all
 	return m, m.filterLauncher()

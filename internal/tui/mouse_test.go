@@ -146,12 +146,28 @@ func TestMouseNavigation(t *testing.T) {
 	if m.boardColumn() != left-1+count {
 		t.Fatalf("› focused column %d", m.boardColumn())
 	}
-	// A modal input must not allow clicks through to underlying rows or divider.
+	// A click outside the palette closes it without reaching the rows below.
 	m = send(m, ":")
 	selected := m.selected
 	click(2, 4)
-	if m.selected != selected || !m.launcher.open {
+	if m.selected != selected || m.launcher.open {
 		t.Fatal("mouse escaped modal")
+	}
+	// A right-click selects the row under it and opens its ! menu, also from
+	// an open menu.
+	m = shellFixture(30)
+	rightClick := func(text string) {
+		t.Helper()
+		next, _ := m.Update(tea.MouseClickMsg{X: 2, Y: drawnRow(t, m, text), Button: tea.MouseRight})
+		m = next.(Model)
+	}
+	rightClick("BL-3 ")
+	if m.selected != 3 || !m.launcher.open || !m.launcher.item {
+		t.Fatalf("right-click opened no menu for the row: selected %d", m.selected)
+	}
+	rightClick("BL-2 ")
+	if m.selected != 2 || !m.launcher.open || !strings.Contains(m.View().Content, "BL-2 ─") {
+		t.Fatalf("right-click from an open menu did not move it: selected %d", m.selected)
 	}
 	// A palette click runs the command drawn under the pointer.
 	m = send(shellFixture(30), ":")

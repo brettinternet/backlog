@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -23,6 +25,7 @@ type launcherRow struct {
 }
 type launcherState struct {
 	open, help, goTo, loading bool
+	item                      bool // the ! menu: only the selected item's actions
 	query                     lineInput
 	err                       string
 	cursor                    int
@@ -162,7 +165,8 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	m.actionSession = ""
 	m.count = 0
 	m.inputSerial++
-	rows := make([]launcherRow, 0, len(m.keymap))
+	var rows, rest []launcherRow
+	_, selected := m.selectedRow()
 	group := ""
 	for _, a := range m.keymap {
 		if a.group != "" {
@@ -171,8 +175,17 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(a.id, "action:") {
 			continue
 		}
-		rows = append(rows, launcherRow{label: a.label, keywords: a.id + " " + strings.Join(a.bindings, " ") + " " + searchAliases[a.id], reason: m.disabledReason(a), action: a, group: group})
+		row := m.actionRow(a)
+		row.group = group
+		// The palette lists the selected item's actions first; help keeps
+		// catalog order.
+		if !help && selected && itemAction(a.id) {
+			rows = append(rows, row)
+		} else {
+			rest = append(rest, row)
+		}
 	}
+	rows = append(rows, rest...)
 	m.launcher = launcherState{open: true, help: help, rows: rows, all: rows}
 	// Configured actions and resumable sessions both come from the selected item.
 	if _, selected := m.selectedRow(); m.opts.Automation != nil && (len(m.opts.Automation.Actions) > 0 || selected) {
@@ -183,6 +196,46 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+func (m Model) actionRow(a action) launcherRow {
+	return launcherRow{label: a.label, keywords: a.id + " " + strings.Join(a.bindings, " ") + " " + searchAliases[a.id], reason: m.disabledReason(a), action: a}
+}
+
+// itemMenuActions are the built-in actions the ! menu offers, in menu order.
+// It shows only those that apply to the item now, so it stays short; the
+// palette has the rest.
+var itemMenuActions = []string{"status", "start", "done", "priority", "assign-me", "assignees", "labels", "title", "comment", "claim", "yank-id", "yank-branch", "open-url", "archive"}
+
+// itemMenuRows are the ! menu's built-in rows for the selected item.
+func (m Model) itemMenuRows() []launcherRow {
+	item, ok := m.selectedRow()
+	if !ok {
+		return nil
+	}
+	me := m.opts.Me[item.Ref.Source]
+	mine := me != "" && slices.Contains(item.Assignees, me)
+	offered := map[string]bool{
+		"start":     item.Category == model.Backlog || item.Category == model.Todo,
+		"done":      item.Category == model.Active,
+		"assign-me": me != "" && !mine,
+		"assignees": me == "" || mine,
+	}
+	var rows []launcherRow
+	for _, id := range itemMenuActions {
+		if shown, ok := offered[id]; ok && !shown {
+			continue
+		}
+		for _, a := range m.keymap {
+			if a.id == id {
+				if row := m.actionRow(a); row.reason == "" {
+					rows = append(rows, row)
+				}
+				break
+			}
+		}
+	}
+	return rows
+}
+
 func (m Model) filterLauncher() tea.Cmd {
 	rows, query, serial, ordered := m.launcher.all, m.launcher.query.text, m.launcherSerial, m.launcher.help
 	return func() tea.Msg {

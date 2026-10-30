@@ -198,8 +198,9 @@ archived items (up to 100 matches). `enter` opens detail without changing the
 view; `esc` or `q` returns.
 
 `:` opens the palette: every action, its bindings, and why it's disabled if it
-is. Its title names the item that item actions apply to. `?` opens the same list
-as read-only help. Both are searchable by label, action ID, key, and common verbs
+is. With an item selected, its title names the item, and the item's actions
+(see [Actions](#actions)) come first. `?` opens the same list as read-only
+help. Both are searchable by label, action ID, key, and common verbs
 (`close` finds Done, `delete` Archive, `rename` Edit title). Go-to, the palette,
 and pickers match each query word separately, in any order; whole words rank
 above partial and fuzzy matches.
@@ -391,8 +392,15 @@ Invalid frontmatter, or leftover `<<<<<<< yours`/`>>>>>>> theirs` markers, offer
 
 ## Actions
 
-`!` lists configured actions whose `when` query matches the item; the palette
-and help include them too, with disabled reasons. `confirm` actions ask `y`/`n`.
+`!`, or a right-click on a row, opens the item's menu, titled with its ID. It
+lists configured actions whose `when` query matches the item, then its agent
+sessions, then the built-in actions likely to apply, each with its key: Status…,
+Start (not yet started) or Done (active), Priority…, Assign me (not yours) or
+Assignees…, Labels…, Edit title, Comment, Claim / release, Copy ID, Copy branch,
+Open URL, and Archive. Built-in actions that are disabled are left out; the
+palette has every action and says why one is disabled. The palette and help
+include configured actions too, with disabled reasons. `confirm` actions ask
+`y`/`n`.
 Attached actions suspend the TUI like `$EDITOR`; detached ones return at once.
 Bind one with `key:` in its declaration or `action:NAME` in user `keys`. See
 [Automation](automation.md).
@@ -446,7 +454,8 @@ Relations and readiness use only the loaded scope; [workspace references](format
 Click a row to select it; double-click (within 400 ms) to open it. Clicking a
 group header folds or unfolds it. Click tabs to switch, or `‹`/`›`
 to show the hidden tab beside them. In detail, click `⌫ back` or
-`m more`/`m less` to run them. Clicking a board column
+`m more`/`m less` to run them. Right-click a row, or detail, to open the item's
+`!` menu. Clicking a board column
 header focuses it, and its edge `‹`/`›` focus the hidden column beside them; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
 to toggle it. Click a relation to select it; double-click to open it. Click a
@@ -459,7 +468,9 @@ release copies it (OSC 52).
 
 In the palette, pickers, and completion, the wheel moves the highlight and a
 click picks a row, or toggles it in a multi-select. Clicking the query being
-edited moves its cursor. Other prompts ignore the mouse.
+edited moves its cursor. A click outside the palette or `!` menu closes it; a
+right-click there opens the menu for the row under it. Other prompts ignore the
+mouse.
 
 ## Default keymap
 

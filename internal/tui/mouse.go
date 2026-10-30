@@ -24,10 +24,19 @@ type mouseState struct {
 // Mouse routing reuses the renderer's geometry (tab spans, column layout,
 // board columns), so hit-testing cannot drift from what is drawn.
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.modalOpen() {
-		return m.modalMouse(msg)
-	}
 	p := msg.Mouse()
+	if m.modalOpen() {
+		// A click outside the palette or menu closes it, like a context
+		// menu; a right-click then opens the menu where it landed.
+		if _, click := msg.(tea.MouseClickMsg); !click || !m.launcher.open || m.launcher.help || m.insideLauncher(p.X, p.Y) {
+			return m.modalMouse(msg)
+		}
+		m.launcher = launcherState{}
+		m.launcherSerial++
+		if p.Button != tea.MouseRight {
+			return m, nil
+		}
+	}
 	switch msg.(type) {
 	case tea.MouseReleaseMsg:
 		m.mouse.dragging = false
@@ -99,7 +108,12 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if _, ok := msg.(tea.MouseClickMsg); !ok || p.Button != tea.MouseLeft {
+	if _, ok := msg.(tea.MouseClickMsg); !ok || p.Button != tea.MouseLeft && p.Button != tea.MouseRight {
+		return m, nil
+	}
+	// A right-click on an item opens its ! menu.
+	right := p.Button == tea.MouseRight
+	if right && (p.Y == 0 || p.Y == m.height-1) {
 		return m, nil
 	}
 	if p.Y == 0 {
@@ -128,9 +142,13 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if y < 0 || y >= m.bodyRows() {
 		return m, nil
 	}
-	if split && p.X == m.listWidth() {
+	if split && p.X == m.listWidth() && !right {
 		m.mouse.dragging = true
 		return m, nil
+	}
+	if detail && right {
+		m.detailFocus = true
+		return m.openItemMenu()
 	}
 	if detail {
 		// Row hints and the back label show only while detail has focus.
@@ -188,6 +206,8 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	index := -1
 	switch {
+	case right && y == 0:
+		return m, nil
 	case m.isBoard():
 		widths := m.boardColumns(m.board.left)
 		column, x := -1, 0
@@ -238,6 +258,17 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.keepBoardVisible()
 	m.keepSelectionVisible()
 	row, ok := m.selectedRow()
+	if right {
+		var load tea.Cmd
+		if m.detailOpen {
+			load = m.scheduleDetail()
+		}
+		if !ok {
+			return m, load
+		}
+		next, open := m.openItemMenu()
+		return next, tea.Batch(load, open)
+	}
 	if !ok {
 		// A group header has no item to open; a click toggles its fold, like
 		// enter.
@@ -258,6 +289,20 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, m.scheduleDetail()
 	}
 	return m, nil
+}
+
+// openItemMenu opens the ! menu for the selected item, as right-click does.
+func (m Model) openItemMenu() (tea.Model, tea.Cmd) {
+	m.routeSelectedProject()
+	m.actionSession = ""
+	return m.openConfiguredActions()
+}
+
+// insideLauncher reports whether screen cell x, y is on the palette's box.
+func (m Model) insideLauncher(x, y int) bool {
+	body, _, _, _, width := m.launcherLayout()
+	left, top, w, h := m.modalRect(width, len(body)+2)
+	return x >= left && x < left+w && y >= top && y < top+h
 }
 
 // modalMouse lets the lists in modals take the pointer: the wheel moves the

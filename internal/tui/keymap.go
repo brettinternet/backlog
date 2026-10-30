@@ -54,6 +54,11 @@ var searchAliases = map[string]string{
 	"quit":        "exit",
 }
 
+// itemAction reports whether an action acts on the selected item.
+func itemAction(id string) bool {
+	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url"}, id)
+}
+
 func defaultKeymap() []action {
 	// Order is the help and palette order; group starts a help section.
 	actions := []action{
@@ -429,7 +434,7 @@ func (m Model) disabledReason(a action) string {
 		}
 		// Item actions work on the item in detail; view and selection actions
 		// belong to the list.
-		if !strings.HasPrefix(a.id, "yank-") && !slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "new", "new-child", "repeat", "undo", "redo", "actions", "open-url", "refresh"}, a.id) {
+		if !itemAction(a.id) && !slices.Contains([]string{"new", "new-child", "repeat", "undo", "redo", "actions", "refresh"}, a.id) {
 			return focusList
 		}
 	}

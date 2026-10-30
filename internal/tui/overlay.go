@@ -42,9 +42,15 @@ func (m Model) launcherOverlay(lines []string) []string {
 		return out
 	}
 	title := "Commands"
-	if m.launcher.goTo {
+	row, selected := m.selectedRow()
+	switch {
+	case m.launcher.goTo:
 		title = "Go to"
-	} else if row, ok := m.selectedRow(); ok {
+	case m.launcher.item && selected:
+		title = textutil.Line(row.Ref.ID)
+	case m.launcher.item:
+		title = "Actions"
+	case selected:
 		title += " · " + textutil.Line(row.Ref.ID)
 	}
 	body, _, _, _, width := m.launcherLayout()
@@ -88,7 +94,7 @@ func (m Model) launcherLine(r launcherRow, selected bool, width int) string {
 		left = t.categoryIcon(item.Category) + " " + t.muted.render(textutil.Line(item.Ref.ID)) + " " + textutil.Line(item.Title)
 	} else {
 		left = textutil.Line(r.label)
-		right = t.accent.render(keyText(r.action.bindings))
+		right = t.faint.render(keyText(r.action.bindings))
 		if r.reason != "" {
 			left, right = t.muted.render(left), t.faint.render("disabled: "+textutil.Line(r.reason))
 		}
