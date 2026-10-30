@@ -156,6 +156,31 @@ func TestEventPartialCoverage(t *testing.T) {
 	}
 }
 
+// Catches a copy of backlog.yaml in another directory sharing the project's
+// event log and recording every difference between the two directories as
+// item deletions and creations.
+func TestEventForeignRootRebaselines(t *testing.T) {
+	root := writeFixture(t)
+	config := "project: {id: shared}\n" + get(t, filepath.Join(root, "backlog.yaml"))
+	put(t, filepath.Join(root, "backlog.yaml"), config)
+	readEvents(t, root)
+	copied := t.TempDir()
+	for _, dir := range []string{".git", "items"} {
+		if err := os.MkdirAll(filepath.Join(copied, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(t, filepath.Join(copied, ".git/config"), "[core]\n bare = false\n")
+	put(t, filepath.Join(copied, "backlog.yaml"), config)
+	readEvents(t, copied)
+	readEvents(t, root)
+	writeOK(t, root, "", "note", "12", "After the copy")
+	events := readEvents(t, root)
+	if len(events) != 1 || events[0].Type != "item.updated" || events[0].Ref != "tasks:BL-012" {
+		t.Fatalf("foreign root emitted transitions: %+v", events)
+	}
+}
+
 // Catches independent observers consuming the cached transition before its
 // events have been appended. Two engine stores are the TUI observation path.
 func TestEventThreeObservers(t *testing.T) {
