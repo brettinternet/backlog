@@ -52,10 +52,10 @@ func TestOriginForge(t *testing.T) {
 }
 
 // Catches a tour stored with steps its Diff can't show: a file missing at the
-// ref or before the change, a line past the end of the file, or one counted
-// from the worktree instead of the ref. A renamed file's old side, on either
-// path, and a file the change doesn't touch are accepted, and every bad step
-// is reported at once.
+// ref or before the change, a line or range end past the end of the file, or
+// one counted from the worktree instead of the ref. A renamed file's old
+// side, on either path, and a file the change doesn't touch are accepted, and
+// every bad step is reported at once.
 func TestCheckTourSteps(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -99,12 +99,15 @@ func TestCheckTourSteps(t *testing.T) {
 	if err := checkSteps(context.Background(), c, tour.Tour{Ref: head, Steps: good}); err != nil {
 		t.Fatalf("steps the Diff shows: %v", err)
 	}
-	bad := append(good, step("gone.go", 1, ""), step("keep.go", 9, ""), step("new.go", 6, tour.SideOld), step("missing.go", 1, tour.SideOld))
+	past := step("new.go", 4, "")
+	past.Selection = &tour.Selection{Start: tour.Position{Line: 4}, End: tour.Position{Line: 7}}
+	bad := append(good, step("gone.go", 1, ""), step("keep.go", 9, ""), step("new.go", 6, tour.SideOld), step("missing.go", 1, tour.SideOld), past)
 	err := checkSteps(context.Background(), c, tour.Tour{Ref: head, Steps: bad})
 	want := "rejected: tour step 6: gone.go line 1: no such file at " + head[:7] +
 		"; step 7: keep.go line 9: past the end of the file, which has 3 lines at " + head[:7] +
 		"; step 8: new.go line 6: past the end of the file, which has 5 lines before the change" +
-		"; step 9: missing.go line 1: no such file before the change"
+		"; step 9: missing.go line 1: no such file before the change" +
+		"; step 10: new.go lines 4–7: past the end of the file, which has 6 lines at " + head[:7]
 	if err == nil || err.Error() != want {
 		t.Fatalf("bad steps:\n got %v\nwant %s", err, want)
 	}

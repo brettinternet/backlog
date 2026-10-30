@@ -140,11 +140,15 @@ func checkSteps(ctx context.Context, c changes.Change, t tour.Tour) error {
 			files[at] = f
 		}
 		problem := f.problem
-		if f.checked && problem == "" && s.Line > f.lines {
+		if f.checked && problem == "" && s.End() > f.lines {
 			problem = "past the end of the file, which has " + strconv.Itoa(f.lines) + " lines " + where
 		}
 		if problem != "" {
-			bad = append(bad, "step "+strconv.Itoa(i+1)+": "+s.File+" line "+strconv.Itoa(s.Line)+": "+problem)
+			lines := " line " + strconv.Itoa(s.Line)
+			if s.End() > s.Line {
+				lines = " lines " + strconv.Itoa(s.Line) + "–" + strconv.Itoa(s.End())
+			}
+			bad = append(bad, "step "+strconv.Itoa(i+1)+": "+s.File+lines+": "+problem)
 		}
 	}
 	if len(bad) > 0 {
