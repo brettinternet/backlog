@@ -47,7 +47,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, linked changes, and Git commits, oldest first, with each provider's status."}, s.history)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status."}, s.changes)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "tour", Description: "Store a CodeTour file for the item's linked change whose head equals the tour's ref, for the TUI Diff tab, or, without file, read the tours stored for its linked changes. The format is in bl instructions tours."}, s.tour)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "tour", Description: "Store a CodeTour, from file or the inline tour object, for the item's linked change whose head equals the tour's ref, for the TUI Diff tab, or, with neither, read the tours stored for its linked changes. The format is in bl instructions tours."}, s.tour)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
@@ -136,7 +136,8 @@ type ChangesArgs struct {
 
 type TourArgs struct {
 	ID   string `json:"id"`
-	File string `json:"file,omitempty" jsonschema:"Path to a CodeTour .tour file to store; omit to read the stored tours. See bl instructions tours."`
+	File string `json:"file,omitempty" jsonschema:"Path to a CodeTour .tour file to store; omit with tour to read the stored tours. See bl instructions tours."`
+	Tour any    `json:"tour,omitempty" jsonschema:"CodeTour object to store instead of file, for a client that doesn't share bl's filesystem. See bl instructions tours."`
 }
 
 type HistoryArgs struct {
@@ -383,14 +384,26 @@ func (s *Server) tour(ctx context.Context, _ *mcp.CallToolRequest, args TourArgs
 	if args.ID == "" {
 		return failed[any]("usage", "id is required")
 	}
-	if args.File == "" {
+	if args.File != "" && args.Tour != nil {
+		return failed[any]("usage", "give file or tour, not both")
+	}
+	if args.File == "" && args.Tour == nil {
 		result, err := engine.ReadTours(ctx, s.cfg, args.ID)
 		if err != nil {
 			return failed[any](reason(err), engine.ErrorMessage(err))
 		}
 		return nil, result, nil
 	}
-	result, err := engine.StoreTourFile(ctx, s.cfg, args.ID, args.File)
+	var result engine.TourResult
+	var err error
+	if args.Tour != nil {
+		var data []byte
+		if data, err = json.Marshal(args.Tour); err == nil {
+			result, err = engine.StoreTour(ctx, s.cfg, args.ID, data)
+		}
+	} else {
+		result, err = engine.StoreTourFile(ctx, s.cfg, args.ID, args.File)
+	}
 	if err != nil {
 		return failed[any](reason(err), engine.ErrorMessage(err))
 	}

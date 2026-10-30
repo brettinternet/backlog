@@ -51,7 +51,7 @@ by the configured source IDs and types for `source:` filters.
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `history` | `id`, `limit` (0 or omitted: all), `cursor` | `bl history` |
 | `changes` | `id` | `bl changes` |
-| `tour` | `id`, and `file` to store | `bl tour` |
+| `tour` | `id`, and `file` or `tour` to store | `bl tour` |
 | `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
@@ -104,9 +104,12 @@ agent can see whether its pull request is open, green, and approved, which
 checks fail, and how many review threads are unresolved, without calling the
 forge itself.
 
-`tour` stores a tour file for the item's linked change whose head is its `ref`
-and returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;
-`bl instructions tours` describes the format. Without `file` it returns
+`tour` stores a tour for the item's linked change whose head is its `ref` and
+returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;
+`bl instructions tours` describes the format. Pass a `file` path, or, when the
+client doesn't share bl's filesystem, the tour object itself as `tour`, as in
+`{"id": "BL-12", "tour": {"ref": "…", "steps": […]}}`; both go through the same
+validator and 1 MiB limit, and giving both is refused. With neither it returns
 `tours`, like `bl tour ID --json`.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with

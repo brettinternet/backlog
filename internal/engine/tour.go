@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,10 +46,21 @@ func StoreTourFile(ctx context.Context, cfg project.Config, id, path string) (To
 	return StoreTour(ctx, cfg, id, data)
 }
 
+// StoreTourReader reads a tour from r, such as stdin, and stores it as
+// StoreTour does.
+func StoreTourReader(ctx context.Context, cfg project.Config, id string, r io.Reader) (TourResult, error) {
+	data, err := tour.Read(r)
+	if err != nil {
+		return TourResult{}, source.Refuse("rejected", "tour: "+err.Error())
+	}
+	return StoreTour(ctx, cfg, id, data)
+}
+
 // StoreTour validates a tour an agent wrote for item id and keeps a copy for
 // the linked change whose head is the tour's ref; bl never writes a tour of
-// its own (design.md D43). Every intake (bl tour, MCP tour, and an action or
-// hook result) comes through here.
+// its own (design.md D43). Every intake (bl tour with a file or stdin, MCP
+// tour with a file or inline tour, and an action or hook result) comes
+// through here.
 func StoreTour(ctx context.Context, cfg project.Config, id string, data []byte) (TourResult, error) {
 	t, err := tour.Parse(data)
 	if err != nil {

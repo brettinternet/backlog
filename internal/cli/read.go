@@ -39,7 +39,7 @@ type nextData struct {
 	*engine.NextOutcome
 }
 
-func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
+func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urfave.Command {
 	load := func(ctx context.Context, cfg project.Config, archived bool, text string) (engine.ReadSnapshot, error) {
 		snapshot, err := engine.LoadReads(ctx, cfg, archived, text)
 		if err != nil {
@@ -252,9 +252,9 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return writeChanges(out, result)
 		}},
-		{Name: "tour", Usage: "Store a CodeTour file for the linked change whose head is its ref, or print the stored tours", ArgsUsage: "ID [FILE]", Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "tour", Usage: "Store a CodeTour file (- reads stdin) for the linked change whose head is its ref, or print the stored tours", ArgsUsage: "ID [FILE|-]", Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if n := cmd.Args().Len(); n != 1 && n != 2 {
-				return &Error{Reason: "usage", Message: "tour requires ID and an optional FILE"}
+				return &Error{Reason: "usage", Message: "tour requires ID and an optional FILE or -"}
 			}
 			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
@@ -270,7 +270,12 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 				}
 				return writeTours(out, result)
 			}
-			result, err := engine.StoreTourFile(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
+			var result engine.TourResult
+			if file := cmd.Args().Get(1); file == "-" {
+				result, err = engine.StoreTourReader(ctx, cfg, cmd.Args().Get(0), in)
+			} else {
+				result, err = engine.StoreTourFile(ctx, cfg, cmd.Args().Get(0), file)
+			}
 			if err != nil {
 				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 			}
