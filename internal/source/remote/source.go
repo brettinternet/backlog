@@ -180,20 +180,19 @@ func (s *Source) Activity(ctx context.Context, item model.Item) ([]model.Activit
 		sum := sha256.Sum256([]byte(item.Ref.ID))
 		path = filepath.Join(strings.TrimSuffix(s.cache.Path, ".sqlite")+".activity", hex.EncodeToString(sum[:16])+".json")
 		var cached activityCache
+		// A secret registered since the cache was written is redacted too.
 		if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &cached) == nil && cached.Version == item.Version {
-			return cached.Activity, cached.Truncated, nil
+			if activity, err := s.redactActivity(cached.Activity); err == nil {
+				return activity, cached.Truncated, nil
+			}
 		}
 	}
 	activity, truncated, err := reader.Activity(ctx, item)
 	if err != nil {
 		return nil, false, s.safeError(err)
 	}
-	data, err := json.Marshal(activity)
-	if err == nil {
-		err = json.Unmarshal([]byte(s.secrets.Redact(string(data))), &activity)
-	}
-	if err != nil {
-		return nil, false, source.Refuse("rejected", "invalid provider activity")
+	if activity, err = s.redactActivity(activity); err != nil {
+		return nil, false, err
 	}
 	if path != "" {
 		if data, err := json.Marshal(activityCache{item.Version, truncated, activity}); err == nil {
@@ -201,6 +200,17 @@ func (s *Source) Activity(ctx context.Context, item model.Item) ([]model.Activit
 		}
 	}
 	return activity, truncated, nil
+}
+
+func (s *Source) redactActivity(activity []model.Activity) ([]model.Activity, error) {
+	data, err := json.Marshal(activity)
+	if err == nil {
+		var redacted []model.Activity
+		if err = json.Unmarshal([]byte(s.secrets.Redact(string(data))), &redacted); err == nil {
+			return redacted, nil
+		}
+	}
+	return nil, source.Refuse("rejected", "invalid provider activity")
 }
 
 // writeFile replaces path atomically, best effort: the cache is disposable.

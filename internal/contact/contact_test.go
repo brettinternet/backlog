@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/brettinternet/backlog/internal/contact"
 	"github.com/brettinternet/backlog/internal/model"
@@ -24,8 +25,9 @@ func put(t *testing.T, path, text string, mode os.FileMode) {
 }
 
 // Contact must reach live sessions without exposing secrets: Claude Code's
-// key files stay unread, user resolvers get no shell and no credentials, and
-// one slow or unknown source never hides another.
+// key files stay unread, user resolvers get no shell and no credentials, one
+// slow or unknown source never hides another, and a slow resolver's children
+// don't outlive the budget.
 func TestResolve(t *testing.T) {
 	testkit.Unix(t, "shell-script resolvers")
 	home := testkit.Isolate(t)
@@ -38,7 +40,8 @@ echo '{"result":{"agents":[{"agent":"claude","agent_session":{"value":"s-1"},"ag
 	put(t, filepath.Join(bin, "probe"), `#!/bin/sh
 printf '[{"channel":"probe","handle":"%s|%s","status":"busy"},{"channel":"probe","handle":"bad\\u001b]0;x\\u0007"}]' "$1" "$GITHUB_TOKEN"
 `, 0o755)
-	put(t, filepath.Join(bin, "slow"), "#!/bin/sh\nsleep 2\n", 0o755)
+	survived := filepath.Join(home, "survived")
+	put(t, filepath.Join(bin, "slow"), "#!/bin/sh\n(sleep 0.3; touch '"+survived+"') &\nsleep 2\n", 0o755)
 	claude := filepath.Join(home, "claude")
 	t.Setenv("CLAUDE_CONFIG_DIR", claude)
 	put(t, filepath.Join(claude, "sessions", "10.json"), `{"pid":10,"sessionId":"s-1","name":"backlog-2b","status":"idle","kind":"interactive","peerProtocol":1,"messagingSocketPath":"/tmp/sock"}`, 0o644)
@@ -74,6 +77,10 @@ printf '[{"channel":"probe","handle":"%s|%s","status":"busy"},{"channel":"probe"
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("contact:\n got %+v\nwant %+v", got, want)
+	}
+	time.Sleep(600 * time.Millisecond)
+	if _, err := os.Stat(survived); !os.IsNotExist(err) {
+		t.Fatal("a timed-out resolver's child kept running")
 	}
 
 	// A user entry replaces or disables a built-in by name.

@@ -22,6 +22,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/proctree"
 	"github.com/brettinternet/backlog/internal/project"
 )
 
@@ -294,9 +295,14 @@ func appendChannel(channels []model.ContactChannel, c model.ContactChannel) []mo
 func output(cmd *exec.Cmd) ([]byte, error) {
 	var stdout bytes.Buffer
 	cmd.Stdout = &limitWriter{w: &stdout, n: outputLimit}
-	// A backgrounded grandchild can hold stdout open past the deadline.
+	// A backgrounded grandchild can hold stdout open past the deadline, and
+	// must not outlive the budget.
 	cmd.WaitDelay = 10 * time.Millisecond
-	err := cmd.Run()
+	tree, err := proctree.Start(cmd)
+	defer tree.Kill()
+	if err == nil {
+		err = cmd.Wait()
+	}
 	return stdout.Bytes(), err
 }
 

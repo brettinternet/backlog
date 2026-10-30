@@ -219,6 +219,13 @@ func (s *Source) query(ctx context.Context, c remote.Credential, query string, v
 // decode refuses any GraphQL error except NOT_FOUND at the missing path, whose
 // null field the caller reports as not-found.
 func decode(raw []byte, out any, missing ...string) error {
+	return decodeAllowing(raw, out, func(kind string, path []any) bool {
+		return kind == "NOT_FOUND" && len(missing) > 0 && fmt.Sprint(path) == fmt.Sprint(missing)
+	})
+}
+
+// decodeAllowing refuses any GraphQL error that allowed rejects.
+func decodeAllowing(raw []byte, out any, allowed func(kind string, path []any) bool) error {
 	var result struct {
 		Data   json.RawMessage
 		Errors []struct {
@@ -230,7 +237,7 @@ func decode(raw []byte, out any, missing ...string) error {
 		return source.Refuse("unavailable", "GitHub returned incomplete or invalid data")
 	}
 	for _, e := range result.Errors {
-		if e.Type != "NOT_FOUND" || len(missing) == 0 || fmt.Sprint(e.Path) != fmt.Sprint(missing) {
+		if !allowed(e.Type, e.Path) {
 			return source.Refuse("unavailable", "GitHub returned incomplete or invalid data")
 		}
 	}

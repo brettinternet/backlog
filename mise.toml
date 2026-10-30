@@ -8,7 +8,9 @@ betterleaks = "1.9.0"
 lefthook = "2.2.2"
 task = "3.54.0"
 worktrunk = "0.81.0"
+# Runs install.ps1 in the release tests.
+powershell = "7.6.9"
 staticcheck = "0.8.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 # Claims for parallel agents and the D20 integration.
-"github:brettinternet/worklease" = "1.10.1"
+"github:brettinternet/worklease" = "1.13.0"

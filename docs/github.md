@@ -439,7 +439,10 @@ reason), renames, cross-references, linked pull requests, and referencing
 commits. A source bound to a project also reads Projects v2 status changes.
 Comments come from the item and drafts have no timeline. Requests go through
 the account queue only when History opens, newest pages first, keeping the
-newest 1,000 entries, and are cached by item version. The `repo` scope (or
+newest 1,000 entries, and are cached by item version. A reference the token
+can't read, such as a pull request without the app's Pull requests permission
+or an unauthorized organization, is skipped rather than failing the timeline.
+The `repo` scope (or
 `public_repo`) and the `bl-cli-read` app's Issues read permission suffice;
 project status changes use the `read:project` or `project` scope a project
 source already needs. A classic token with `repo` and `project` (among others) read it live

@@ -563,8 +563,9 @@ func TestDetailListKeysAndFind(t *testing.T) {
 
 // Catches a History tab that needs renderer changes for a new group kind,
 // hides a failed provider, opens away from the newest entry, can't expand a
-// group in place, leaves a cut-off summary unreadable, or hides the resume
-// key on a resumable session row.
+// group in place, moves the cursor off the group when the newest-200 window
+// shifts, panics expanding after the item is closed and reopened, leaves a
+// cut-off summary unreadable, or hides the resume key on a resumable session.
 func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 1, RenderMarkdown)
@@ -573,21 +574,21 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 		return history.Compose(ctx,
 			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
 				var entries []history.Entry
-				for i := range 40 {
+				for i := range 250 {
 					entries = append(entries, history.Entry{ID: fmt.Sprintf("event:%d", i), Time: at(i), Kind: "item.updated", Summary: fmt.Sprintf("edit %d", i)})
 				}
-				entries = append(entries, history.Entry{ID: "event:long", Time: at(46), Kind: "item.updated", Summary: strings.Repeat("word ", 40) + "END"})
+				entries = append(entries, history.Entry{ID: "event:long", Time: at(296), Kind: "item.updated", Summary: strings.Repeat("word ", 40) + "END"})
 				return entries, nil
 			}},
 			history.Provider{Name: "ci", Load: func(context.Context) ([]history.Entry, error) {
 				return []history.Entry{
-					{ID: "ci:run", Time: at(50), Kind: "ci.run", Span: &history.Span{Start: at(50), State: "running"}, Summary: "build 7"},
-					{ID: "ci:run:1", Time: at(51), Kind: "ci.step", Group: "ci:run", Summary: "lint passed"},
+					{ID: "ci:run", Time: at(300), Kind: "ci.run", Span: &history.Span{Start: at(300), State: "running"}, Summary: "build 7"},
+					{ID: "ci:run:1", Time: at(301), Kind: "ci.step", Group: "ci:run", Summary: "lint passed"},
 				}, nil
 			}},
 			history.Provider{Name: "claims", Load: func(context.Context) ([]history.Entry, error) { return nil, errors.New("worklease not found") }},
 			history.Provider{Name: "sessions", Load: func(context.Context) ([]history.Entry, error) {
-				return []history.Entry{{ID: "session:s1", Time: at(45), Kind: "session", Session: "s1", Span: &history.Span{Start: at(45), State: "open"}, Resumable: true, Summary: "claude"}}, nil
+				return []history.Entry{{ID: "session:s1", Time: at(295), Kind: "session", Session: "s1", Span: &history.Span{Start: at(295), State: "open"}, Resumable: true, Summary: "claude"}}, nil
 			}},
 		)
 	}
@@ -632,6 +633,9 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	m = settleDetail(t, m)
 	if content := m.View().Content; !m.detailOpen || !strings.Contains(content, "▾") || !strings.Contains(content, "lint passed") {
 		t.Fatalf("group did not expand\n%s", content)
+	}
+	if m.detailIDs[m.entryCursor] != "ci:run" {
+		t.Fatalf("cursor moved to %s after expanding", m.detailIDs[m.entryCursor])
 	}
 	// Reopening the same item after close must not toggle into a nil map.
 	m.closeDetail()

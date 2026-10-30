@@ -313,7 +313,8 @@ func (d Discovery) Branch() string {
 		return ""
 	}
 	ref, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "ref: refs/heads/")
-	if !ok {
+	// A reftable repository's HEAD file is a stub naming .invalid.
+	if !ok || ref == ".invalid" {
 		return ""
 	}
 	return ref

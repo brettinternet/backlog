@@ -158,12 +158,14 @@ func TestEventPartialCoverage(t *testing.T) {
 
 // Catches a copy of backlog.yaml in another directory sharing the project's
 // event log and recording every difference between the two directories as
-// item deletions and creations.
+// item deletions and creations, and a run in the other root swallowing a
+// change made in this root since its last run.
 func TestEventForeignRootRebaselines(t *testing.T) {
 	root := writeFixture(t)
 	config := "project: {id: shared}\n" + get(t, filepath.Join(root, "backlog.yaml"))
 	put(t, filepath.Join(root, "backlog.yaml"), config)
 	readEvents(t, root)
+	eventItem(t, root, "BL-020", "")
 	copied := t.TempDir()
 	for _, dir := range []string{".git", "items"} {
 		if err := os.MkdirAll(filepath.Join(copied, dir), 0700); err != nil {
@@ -176,7 +178,7 @@ func TestEventForeignRootRebaselines(t *testing.T) {
 	readEvents(t, root)
 	writeOK(t, root, "", "note", "12", "After the copy")
 	events := readEvents(t, root)
-	if len(events) != 1 || events[0].Type != "item.updated" || events[0].Ref != "tasks:BL-012" {
+	if len(events) != 2 || events[0].Type != "item.created" || events[0].Ref != "tasks:BL-020" || events[1].Type != "item.updated" || events[1].Ref != "tasks:BL-012" {
 		t.Fatalf("foreign root emitted transitions: %+v", events)
 	}
 }

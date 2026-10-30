@@ -262,21 +262,24 @@ func (p *activityProvider) Activity(context.Context, model.Item) ([]model.Activi
 }
 
 // Activity is read once per item version, redacted before it is returned or
-// cached, and a quota refusal keeps its retry time for the status line.
+// cached and again on a cache hit for secrets registered since, and a quota
+// refusal keeps its retry time for the status line.
 func TestRemoteActivityCachedByVersion(t *testing.T) {
 	t.Parallel()
 	const canary = "credential-canary-activity"
 	secrets := &Secrets{}
 	secrets.add(canary)
-	p := &activityProvider{activity: []model.Activity{{ID: "1", Summary: "labeled " + canary}}}
+	const later = "credential-canary-registered-later"
+	p := &activityProvider{activity: []model.Activity{{ID: "1", Summary: "labeled " + canary + " " + later}}}
 	store := remoteStore(t)
 	s := New(p, store, secrets)
 	item := row("A", "todo")
-	for range 2 {
+	for n := range 2 {
 		activity, _, err := s.Activity(context.Background(), item)
-		if err != nil || len(activity) != 1 || strings.Contains(activity[0].Summary, canary) {
+		if err != nil || len(activity) != 1 || strings.Contains(activity[0].Summary, canary) || n > 0 && strings.Contains(activity[0].Summary, later) {
 			t.Fatalf("activity %+v: %v", activity, err)
 		}
+		secrets.add(later)
 	}
 	if p.calls != 1 {
 		t.Fatalf("provider read %d times for one version", p.calls)

@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader("release", str(ROOT / "scripts/release"))
@@ -52,18 +53,34 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("\nBL44_TAG_INJECTION", result.stderr)
 
     def test_installer_integrity(self):
-        with tempfile.TemporaryDirectory(prefix="bl-installer-test-") as temporary:
-            root = Path(temporary)
-            downloads = root / "latest/download"
-            downloads.mkdir(parents=True)
-            arch = "arm64" if platform.machine() in ("arm64", "aarch64") else "amd64"
-            name = f"bl_{platform.system().lower()}_{arch}.tar.gz"
-            archive = downloads / name
+        arch = "arm64" if platform.machine() in ("arm64", "aarch64") else "amd64"
+
+        def tar_gz(archive):
             with tarfile.open(archive, "w:gz") as tar:
                 body = b"#!/bin/sh\nprintf 'fixture-version\\n'\n"
                 entry = tarfile.TarInfo("bl")
                 entry.size, entry.mode = len(body), 0o755
                 tar.addfile(entry, io.BytesIO(body))
+
+        def zip_exe(archive):
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("bl.exe", b"fixture-exe")
+
+        installers = [("sh", ["sh", str(ROOT / "install.sh")],
+                       f"bl_{platform.system().lower()}_{arch}.tar.gz", tar_gz, "bl"),
+                      ("powershell", ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "install.ps1")],
+                       f"bl_windows_{arch}.zip", zip_exe, "bl.exe")]
+        for label, command, name, build, binary_name in installers:
+            with self.subTest(installer=label):
+                self.check_installer(command, name, build, binary_name)
+
+    def check_installer(self, command, name, build, binary_name):
+        with tempfile.TemporaryDirectory(prefix="bl-installer-test-") as temporary:
+            root = Path(temporary)
+            downloads = root / "latest/download"
+            downloads.mkdir(parents=True)
+            archive = downloads / name
+            build(archive)
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             checksums = downloads / "checksums.txt"
             checksums.write_text(f"{digest}  {name}\n")
@@ -85,28 +102,30 @@ class ReleaseTests(unittest.TestCase):
                        "BL_RELEASE_BASE_URL": f"http://127.0.0.1:{server.server_port}"}
 
                 def install():
-                    return subprocess.run(["sh", str(ROOT / "install.sh")], env=env,
-                                          capture_output=True, text=True, timeout=15)
+                    return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
 
                 result = install()
                 self.assertEqual(result.returncode, 0, result.stderr)
-                binary = destination / "bl"
-                self.assertEqual(subprocess.check_output([str(binary)], text=True), "fixture-version\n")
+                binary = destination / binary_name
                 original = binary.read_bytes()
+                if binary_name == "bl":
+                    self.assertEqual(subprocess.check_output([str(binary)], text=True), "fixture-version\n")
+                else:
+                    self.assertEqual(original, b"fixture-exe")
                 archive.write_bytes(b"corrupted")
                 result = install()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Checksum mismatch", result.stderr)
                 self.assertEqual(binary.read_bytes(), original)
-                for content in ("", f"{digest}  {name}\n{digest}  {name}\n"):
+                for content in ("", f"{digest}  {name}\n{digest}  {name}\n", f"{digest[:-1]}  {name}\n"):
                     checksums.write_text(content)
                     self.assertNotEqual(install().returncode, 0)
                     self.assertEqual(binary.read_bytes(), original)
+                self.assertEqual(list(destination.iterdir()), [binary])
             finally:
                 server.shutdown()
                 server.server_close()
                 thread.join()
-
 
 if __name__ == "__main__":
     unittest.main()
