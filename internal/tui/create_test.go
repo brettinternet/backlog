@@ -101,7 +101,7 @@ func TestBacklogMDUnsupportedChoices(t *testing.T) {
 	})
 	defer store.Close()
 	m = New(Options{Store: store, Workspace: &cfg, Sources: []string{"tasks", "other"}})
-	m.beginCapture(false)
+	m.beginCapture(false, nil)
 	if !m.capture.choosing {
 		t.Fatal("source chooser did not open")
 	}
@@ -127,7 +127,7 @@ func TestCaptureResolvesCreateSource(t *testing.T) {
 	})
 	defer store.Close()
 	m := New(Options{Store: store, Workspace: &cfg, Sources: []string{"tasks", "other", "gh"}, Me: map[string]string{"tasks": "@t", "other": "@o"}})
-	m.beginCapture(false)
+	m.beginCapture(false, nil)
 	if m.capture.choosing || m.capture.source != "other" {
 		t.Fatalf("defaults.source not preselected: %+v", m.capture)
 	}
@@ -148,7 +148,7 @@ func TestCaptureResolvesCreateSource(t *testing.T) {
 	}
 	cfg.Defaults.Source = ""
 	m = New(Options{Store: store, Workspace: &cfg, Sources: []string{"tasks", "other", "gh"}})
-	m.beginCapture(false)
+	m.beginCapture(false, nil)
 	if !m.capture.choosing || strings.Join(m.capture.sources, ",") != "tasks,other" {
 		t.Fatalf("chooser: %+v", m.capture)
 	}

@@ -67,7 +67,7 @@ func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 	case "t":
 		return m.beginPicker(pickerTitle), true
 	case "n", "N":
-		m.beginCapture(key == "N")
+		m.beginCapture(key == "N", nil)
 		return nil, true
 	case "+":
 		m.beginAdopt()

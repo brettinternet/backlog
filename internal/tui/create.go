@@ -25,7 +25,8 @@ type captureState struct {
 	original                    model.Item
 	version                     string
 	source                      string
-	refs                        []string // carried into the new item, such as an adopted pull request
+	refs                        []string        // carried into the new item, such as an adopted pull request
+	scope                       *project.Config // limits create sources to this workspace project
 }
 type captureField struct {
 	name  string
@@ -34,7 +35,8 @@ type captureField struct {
 
 var captureNames = []string{"title", "status", "type", "priority", "rank", "assignees", "labels", "milestone", "due", "parent", "blocked_by", "related", "duplicate_of", "refs", "files", "description", "criteria", "dod", "plan", "notes", "summary"}
 
-func (m *Model) beginCapture(child bool) {
+func (m *Model) beginCapture(child bool, scope *project.Config) {
+	m.capture = captureState{scope: scope}
 	if m.opts.Store == nil {
 		m.notice = "Editing is unavailable without an engine store."
 		return
@@ -62,7 +64,7 @@ func (m *Model) beginCapture(child bool) {
 				m.notice = "Disabled: no source supports creation."
 				return
 			}
-			m.capture = captureState{open: true, choosing: true, sources: capable}
+			m.capture = captureState{open: true, choosing: true, sources: capable, scope: scope}
 			m.notice = ""
 			return
 		}
@@ -72,12 +74,13 @@ func (m *Model) beginCapture(child bool) {
 		return
 	}
 	m.routeSourceProject(source)
-	m.capture = captureState{open: true, child: child, source: source}
+	m.capture = captureState{open: true, child: child, source: source, scope: scope}
 	m.notice = ""
 }
 
 // beginAdopt opens quick-add for a new item whose refs link the selected pull
-// request, which hides the pull request item (design.md D44).
+// request, which hides the pull request item (design.md D44). Only a link from
+// the pull request's own project hides it, so the item is created there.
 func (m *Model) beginAdopt() {
 	row, ok := m.selectedRow()
 	if !ok || m.sourceType(row.Ref.Source) != "github-pulls" {
@@ -89,7 +92,12 @@ func (m *Model) beginAdopt() {
 		m.notice = "Item is no longer available."
 		return
 	}
-	m.beginCapture(false)
+	var scope *project.Config
+	if m.hasWorkspace() {
+		cfg, _ := m.opts.Workspace.SourceProject(row.Ref.Source)
+		scope = &cfg
+	}
+	m.beginCapture(false, scope)
 	if m.capture.open {
 		m.capture.line = newLine(query.QuoteTitle(item.Title))
 		m.capture.refs = []string{item.URL}
@@ -103,6 +111,10 @@ func (m Model) createSource(token string) (string, error) {
 	if m.opts.Workspace != nil {
 		cfg = *m.opts.Workspace
 	}
+	if scope := m.capture.scope; scope != nil {
+		// Bare IDs and defaults.source name the scoped project's sources.
+		cfg.Project, cfg.Defaults.Source = scope.Project, scope.Defaults.Source
+	}
 	cfg.Sources = nil
 	for _, id := range m.opts.Sources {
 		cfg.Sources = append(cfg.Sources, project.SourceConfig{ID: id})
@@ -110,9 +122,14 @@ func (m Model) createSource(token string) (string, error) {
 	return engine.CreateSource(m.opts.Context, cfg, "", token, m.createCapabilities)
 }
 
-// createCapabilities hides sources outside the scoped workspace project.
+// createCapabilities hides sources outside the capture's or scoped workspace
+// project.
 func (m Model) createCapabilities(id string) model.Capabilities {
-	if scope := m.scopeProject(); scope != "" {
+	scope := m.scopeProject()
+	if m.capture.scope != nil {
+		scope = m.capture.scope.Project.ID
+	}
+	if scope != "" {
 		if p, _ := m.opts.Workspace.SourceProject(id); p.Project.ID != scope {
 			return model.Capabilities{}
 		}

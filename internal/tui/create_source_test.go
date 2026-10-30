@@ -124,4 +124,31 @@ func TestAdoptPullRequest(t *testing.T) {
 			t.Fatalf("adopted item: %+v", item)
 		}
 	}
+	// An unscoped workspace adopts into the pull request's project, even when
+	// the anchor's defaults.source names another project's source.
+	projects := []project.Config{
+		{Settings: project.Settings{Project: project.ProjectConfig{ID: "a"}, Statuses: statuses, Sources: cfg.Sources[:1], Defaults: project.DefaultsConfig{Source: "tasks"}}},
+		{Settings: project.Settings{Project: project.ProjectConfig{ID: "b"}, Statuses: statuses, Sources: cfg.Sources}},
+	}
+	ws := projects[0]
+	ws.Workspace = &project.Workspace{Name: "all", Project: "a", Projects: projects, Sources: map[string]project.WorkspaceSource{"a/tasks": {Project: 0, ID: "tasks"}, "b/tasks": {Project: 1, ID: "tasks"}, "b/prs": {Project: 1, ID: "prs"}}}
+	pr.Ref.Source = "b/prs"
+	registry := source.Registry{"b/prs": newEditFakeSource([]model.Item{pr}, model.Capabilities{})}
+	for _, id := range []string{"a/tasks", "b/tasks"} {
+		backend, err := native.New(native.Options{ID: "tasks", Prefix: "BL", Path: filepath.Join(t.TempDir(), "tasks"), CommonDir: t.TempDir(), Statuses: map[string]model.StatusCategory{"backlog": model.Backlog, "todo": model.Todo}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		registry[id] = backend
+	}
+	wsStore := engine.OpenStore(ctx, ws, registry)
+	defer wsStore.Close()
+	waitEdit(t, func() bool { return wsStore.Current().Len() == 1 })
+	m = New(Options{Context: ctx, Store: wsStore, Workspace: &ws, WorkspaceScope: true, Sources: []string{"a/tasks", "b/tasks", "b/prs"}, Statuses: statuses})
+	next, _ = m.Update(projectionMsg{Groups: []engine.RowGroup{{Value: "pr-open", Rows: []engine.Row{{Ref: pr.Ref, Title: pr.Title, Status: pr.Status, Version: pr.Version}}}}})
+	m = next.(Model)
+	next, _ = m.Update(m.prepare()())
+	if m = send(next.(Model), "j", "+"); m.capture.source != "b/tasks" {
+		t.Fatalf("workspace adopt: source %q; notice: %s", m.capture.source, m.notice)
+	}
 }
