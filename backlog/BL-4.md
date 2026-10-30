@@ -4,7 +4,7 @@ title: Load and write native items with a shared ID allocator and atomic writes
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [source, format, git, reviewed]
 milestone: m-0
 blocked_by: [BL-2, BL-3]
@@ -12,7 +12,7 @@ rank: a1414141414141414
 refs: [docs/format.md, docs/design.md]
 files: [internal/source, internal/model]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T04:36:00Z
+updated: 2026-10-30T05:43:41Z
 ---
 
 ## Why

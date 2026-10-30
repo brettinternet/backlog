@@ -4,14 +4,14 @@ title: Establish the CLI skeleton, JSON envelope, exit codes, and test isolation
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [cli, tooling, reviewed]
 milestone: m-0
 rank: a0505050505050505
 refs: [docs/design.md, docs/development.md]
 files: [cmd/bl/main.go, internal/cli, internal/testkit, go.mod, go.sum]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T04:01:00Z
+updated: 2026-10-30T05:42:13Z
 ---
 
 ## Why

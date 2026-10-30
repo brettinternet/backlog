@@ -4,7 +4,7 @@ title: Discover projects, resolve the control root, and load layered config
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [config, git, reviewed]
 milestone: m-0
 blocked_by: [BL-1]
@@ -12,7 +12,7 @@ rank: a0f0f0f0f0f0f0f0f
 refs: [docs/design.md]
 files: [internal/project, docs/schemas, internal/cli]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T04:01:00Z
+updated: 2026-10-30T05:43:30Z
 ---
 
 ## Why

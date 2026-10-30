@@ -4,7 +4,7 @@ title: 'Add the write commands: new, set, start, done, note, comment, ac, edit, 
 status: done
 type: feature
 priority: high
-assignees: ['@pi-01a161b8']
+assignees: ["@brett"]
 labels: [cli, agents, reviewed]
 milestone: m-0
 blocked_by: [BL-6, BL-7]
@@ -12,7 +12,7 @@ rank: a2828282828282828
 refs: [docs/design.md, docs/format.md]
 files: [internal/cli, internal/engine, docs/cli.md, docs/design.md]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T05:16:00Z
+updated: 2026-10-30T05:44:46Z
 ---
 
 ## Why

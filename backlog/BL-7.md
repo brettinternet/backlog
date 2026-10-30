@@ -4,7 +4,7 @@ title: 'Add the read commands: ls, show, and next'
 status: done
 type: feature
 priority: high
-assignees: [pi]
+assignees: ["@brett"]
 labels: [cli, agents, reviewed]
 milestone: m-0
 blocked_by: [BL-4, BL-5, BL-6]
@@ -12,7 +12,7 @@ rank: a2323232323232323
 refs: [docs/design.md]
 files: [internal/cli, internal/engine, docs/cli.md, docs/design.md]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T05:16:00Z
+updated: 2026-10-30T05:44:35Z
 ---
 
 ## Why

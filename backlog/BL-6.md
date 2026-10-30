@@ -4,7 +4,7 @@ title: Implement the query language and the quick-add parser
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [query, reviewed]
 milestone: m-0
 blocked_by: [BL-2, BL-5]
@@ -12,7 +12,7 @@ rank: a1e1e1e1e1e1e1e1e
 refs: [docs/query.md, docs/tui.md]
 files: [internal/query, docs/query.md]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T04:36:00Z
+updated: 2026-10-30T05:44:32Z
 ---
 
 ## Why

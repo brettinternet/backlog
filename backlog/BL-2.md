@@ -4,7 +4,7 @@ title: Define the item model and the native format codec with minimal-diff edits
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [model, format, reviewed]
 milestone: m-0
 blocked_by: [BL-1]
@@ -12,7 +12,7 @@ rank: a0a0a0a0a0a0a0a0a
 refs: [docs/format.md, docs/design.md]
 files: [internal/model, internal/format, docs/format.md, go.mod, go.sum]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T04:01:00Z
+updated: 2026-10-30T05:43:22Z
 ---
 
 ## Why

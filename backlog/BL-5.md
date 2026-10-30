@@ -4,7 +4,7 @@ title: Compute readiness and next ranking with explanations
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [engine, readiness, reviewed]
 milestone: m-0
 blocked_by: [BL-2, BL-3]
@@ -12,7 +12,7 @@ rank: a1919191919191919
 refs: [docs/design.md]
 files: [internal/engine]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T04:36:00Z
+updated: 2026-10-30T05:43:58Z
 ---
 
 ## Why

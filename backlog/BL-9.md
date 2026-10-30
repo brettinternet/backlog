@@ -4,7 +4,7 @@ title: Add init, check, and renumber
 status: done
 type: feature
 priority: high
-assignees: ['@pi']
+assignees: ["@brett"]
 labels: [cli, format, reviewed]
 milestone: m-0
 blocked_by: [BL-4, BL-7]
@@ -12,7 +12,7 @@ rank: a2d2d2d2d2d2d2d2d
 refs: [docs/format.md, docs/design.md]
 files: [internal/cli, internal/format, internal/source/native, docs/cli.md]
 created: 2026-10-22T00:50:00Z
-updated: 2026-10-22T05:16:00Z
+updated: 2026-10-30T05:44:48Z
 ---
 
 ## Why
