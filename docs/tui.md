@@ -271,7 +271,9 @@ is cut off. On both, `j` and `k` scroll until the next entry shows, through a
 long entry or the description past the last check. Files lists one entry per
 changed file: status (`A` added, `M` modified, `D` deleted, `R` renamed,
 `B` binary, `U` uncommitted), path, and `+/−`. Commits lists the change's
-commits newest first, and `ys` copies the one under the cursor. A local
+commits newest first, one line each, and `ys` copies the one under the cursor.
+`enter` on a commit opens that commit's Diff in a change view one level under
+the change; `backspace` returns to Commits with the cursor on it. A local
 branch or worktree is read from Git against its merge base, a landed change
 from its landed commits, and a pull request without a local head from the
 forge. Git and forge reads run on the detail worker for the change shown, and
@@ -321,8 +323,16 @@ reasons. When the call's outcome is unknown, the draft says so and `r` offers
 only discard: check the pull request before drafting again. Without a forge
 that posts reviews or an account that may write ([GitHub](github.md)), `c`
 and `r` are disabled with the reason.
+Review actions on a single commit's Diff are disabled with the reason, since
+drafts anchor to the pull request's head.
 `enter` on a commit in History opens that commit's Diff in the change view;
-`backspace` returns to the commit's entry.
+`backspace` returns to the commit's entry. A single commit's Diff starts with
+its SHA, author, age, and full message, subject and body wrapped to the pane
+as `git show` does, above the first file; branch and pull request Diffs don't.
+The message isn't an entry: `j`/`k`, file and hunk jumps, and line anchors
+pass over it. Git reads the body for that one commit; a commit Git lacks, such
+as one from a pull request without a local head, shows the forge's message
+and why its files don't show.
 
 History opens scrolled to the newest entry, with `j`/`k` moving over entries.
 Each row reads time, source, summary, then member count and actor. The time

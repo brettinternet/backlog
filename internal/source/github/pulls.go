@@ -229,8 +229,8 @@ func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
 			return changes.Detail{}, err
 		}
 		for _, n := range commits {
-			subject, _, _ := strings.Cut(n.Commit.Message, "\n")
-			d.Commits = append(d.Commits, changes.Commit{SHA: n.SHA, Subject: subject, Author: n.Commit.Author.Name, Time: n.Commit.Committer.Date.UTC()})
+			subject, body, _ := strings.Cut(n.Commit.Message, "\n")
+			d.Commits = append(d.Commits, changes.Commit{SHA: n.SHA, Subject: subject, Body: strings.Trim(body, "\n"), Author: n.Commit.Author.Name, Time: n.Commit.Committer.Date.UTC()})
 		}
 		if len(commits) < 100 {
 			break

@@ -354,6 +354,7 @@ func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
 		var commits []struct {
 			ID            string
 			Title         string
+			Message       string
 			AuthorName    string    `json:"author_name"`
 			CommittedDate time.Time `json:"committed_date"`
 		}
@@ -362,7 +363,8 @@ func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
 		}
 		// GitLab lists commits newest first.
 		for _, n := range commits {
-			d.Commits = append(d.Commits, changes.Commit{SHA: n.ID, Subject: n.Title, Author: n.AuthorName, Time: n.CommittedDate.UTC()})
+			_, body, _ := strings.Cut(n.Message, "\n")
+			d.Commits = append(d.Commits, changes.Commit{SHA: n.ID, Subject: n.Title, Body: strings.Trim(body, "\n"), Author: n.AuthorName, Time: n.CommittedDate.UTC()})
 		}
 		if len(commits) < 100 {
 			break

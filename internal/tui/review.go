@@ -61,6 +61,8 @@ type reviewSubmittedMsg struct{ err error }
 // reviewBlocked says why review actions are disabled, or "".
 func (m Model) reviewBlocked() string {
 	switch {
+	case m.change != nil && m.change.IsCommit():
+		return "reviews comment on the pull request's head, not one commit"
 	case m.change == nil || m.change.Number == 0:
 		return "open a pull request in the change view"
 	case m.reviewer == nil:

@@ -168,6 +168,7 @@ type Model struct {
 	detailEntries            []int     // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
 	detailChanges            []changes.Change
+	detailCommits            []changes.Commit
 	detailIDs                []string        // the history entry of each History entry
 	detailHints              []string        // the key hint of each History entry
 	historyOpen              map[string]bool // expanded History entries of historyRef
@@ -221,11 +222,15 @@ type Model struct {
 	// change is the linked change or commit the change view shows, opened
 	// from changeTab of changeRef: the Changes entry at changeCursor, or the
 	// History entry changeEntry, found by ID as History rows shift.
+	// changeParent is the change view a Commits entry at parentCursor opened
+	// change from.
 	change       *changes.Change
 	changeRef    model.Ref
 	changeTab    detailTab
 	changeCursor int
 	changeEntry  string
+	changeParent *changes.Change
+	parentCursor int
 	reviewer     reviewer
 	review       reviewState
 }
@@ -393,7 +398,7 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	m.detailGeneration++
 	row, ok := m.selectedRow()
 	if m.change != nil && (!ok || row.Ref != m.changeRef) {
-		m.change, m.detailTab, m.entryCursor = nil, m.changeTab, 0
+		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, 0
 	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
@@ -916,7 +921,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				place = placeOf(m.detailRows, m.entryCursor)
 			}
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
-			m.detailChanges = result.changes
+			m.detailChanges, m.detailCommits = result.changes, result.commits
 			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
@@ -1320,7 +1325,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, m.toggleHistoryEntry()
 			}
 			if m.change != nil {
-				return m, nil
+				return m, m.openChangeCommit()
 			}
 			if c, ok := m.selectedChange(); ok {
 				return m, m.openChange(c)
@@ -1602,14 +1607,14 @@ func (m *Model) closeDetail() {
 	m.detailLoading = false
 	m.detailLines = nil
 	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
-	m.detailChanges = nil
+	m.detailChanges, m.detailCommits = nil, nil
 	m.detailFiles, m.detailHunks = nil, nil
 	m.detailRows, m.detailHead = nil, ""
 	m.detailSteps, m.detailTour, m.tourStep = nil, "", -1
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	if m.change != nil {
-		m.change, m.detailTab, m.entryCursor = nil, m.changeTab, m.changeCursor
+		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, m.changeCursor
 	}
 	m.detailTruncated = false
 	m.find = findState{}

@@ -63,8 +63,8 @@ const (
 
 // CommitChange is one commit in the checkout dir as a landed change, so its
 // diff against its first parent can be read like a merge's.
-func CommitChange(dir, sha string) Change {
-	return Change{ID: "commit:" + sha, Stage: StageLanded, State: StateMerged, Head: sha, Commits: []Commit{{SHA: sha}}, dir: dir}
+func CommitChange(dir string, commit Commit) Change {
+	return Change{ID: "commit:" + commit.SHA, Stage: StageLanded, State: StateMerged, Head: commit.SHA, Commits: []Commit{commit}, dir: dir}
 }
 
 // LoadDetail reads one change's files and commits on a worker, with each
@@ -125,6 +125,18 @@ func landedDetail(ctx context.Context, c Change, patch bool) (Detail, error) {
 			return Detail{}, err
 		}
 		d.Commits = append(d.Commits, commits...)
+	}
+	if c.IsCommit() {
+		// A commit shown on its own shows its whole message.
+		out, err := git.Run(ctx, c.dir, "log", "-1", "--no-color", "--format=%b", c.Head, "--")
+		if err != nil {
+			return Detail{}, err
+		}
+		for i := range d.Commits {
+			if d.Commits[i].SHA == c.Head {
+				d.Commits[i].Body = strings.TrimRight(string(out), "\n")
+			}
+		}
 	}
 	slices.SortFunc(d.Files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return d, nil
