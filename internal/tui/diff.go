@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"hash/fnv"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -31,7 +34,10 @@ const (
 func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d changes.Detail, request detailRequest) rendered {
 	t, width := request.theme, max(1, request.width)
 	var page rendered
-	if len(d.Files) == 0 {
+	if c.IsCommit() {
+		page = commitMessage(c, d, request)
+	}
+	if len(d.Files) == 0 && d.Reason == "" {
 		page.lines = append(page.lines, t.muted.render("No changed files."))
 	}
 	for i, f := range d.Files {
@@ -65,6 +71,46 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 	if d.Reason != "" {
 		page.lines = append(page.lines, "", t.yellow.render(ansi.Truncate(textutil.Line(d.Reason), width, "…")))
 	}
+	return page
+}
+
+// commitMessage heads a commit's Diff, as git show does: its SHA, author,
+// and age, then its subject and body wrapped to the pane. Its lines aren't
+// entries.
+func commitMessage(c changes.Change, d changes.Detail, request detailRequest) rendered {
+	t, width := request.theme, max(1, request.width)
+	var page rendered
+	i := slices.IndexFunc(d.Commits, func(commit changes.Commit) bool { return commit.SHA == c.Head })
+	if i < 0 || d.Commits[i].Subject == "" {
+		return page
+	}
+	commit := d.Commits[i]
+	head := t.yellow.render(commit.SHA[:min(7, len(commit.SHA))])
+	if author := textutil.Line(commit.Author); author != "" {
+		head += "  " + author
+	}
+	if a := age(commit.Time, cmp.Or(request.now, time.Now())); a != "" {
+		head += "  " + t.muted.render(a)
+	}
+	page.lines = append(page.lines, ansi.Truncate(head, width, "…"), "")
+	wrap := func(text string, style func(string) string) {
+		for line := range strings.SplitSeq(ansi.Wrap(text, width, ""), "\n") {
+			page.lines = append(page.lines, style(strings.TrimRight(line, " ")))
+		}
+	}
+	wrap(textutil.Line(commit.Subject), t.bold.render)
+	limit := bodyLimit
+	if request.expanded {
+		limit = bodyMoreLimit
+	}
+	if body := strings.TrimSpace(textutil.Sanitize(commit.Body)); body != "" {
+		if len(body) > limit {
+			body, page.truncated = truncateUTF8(body, limit)+"…", true
+		}
+		page.lines = append(page.lines, "")
+		wrap(body, func(line string) string { return line })
+	}
+	page.lines = append(page.lines, "")
 	return page
 }
 

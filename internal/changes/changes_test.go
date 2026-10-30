@@ -150,7 +150,7 @@ func TestWorktreeToLanded(t *testing.T) {
 	if enriched[0].Additions != 5 || enriched[0].Deletions != 0 {
 		t.Fatalf("worktree size: +%d −%d", enriched[0].Additions, enriched[0].Deletions)
 	}
-	git(repo, "merge", "-q", "--no-ff", "--no-edit", "bl-12-fix")
+	git(repo, "merge", "-q", "--no-ff", "-m", "Merge branch 'bl-12-fix'", "-m", "Lands the fix.", "bl-12-fix")
 	data, c = load(data)
 	if c.Stage != StageLanded || c.State != StateMerged || c.Worktree == "" || len(c.Commits) != 1 {
 		t.Fatalf("after merge: %+v", c)
@@ -161,14 +161,15 @@ func TestWorktreeToLanded(t *testing.T) {
 	if d, err := LoadDetail(context.Background(), c, nil, true); err != nil || d.Files[1].Path != "a" || d.Files[1].Patch != "@@ -0,0 +1 @@\n+a\n" {
 		t.Fatalf("landed patches: %+v %v", d, err)
 	}
-	if d, err := LoadDetail(context.Background(), CommitChange(repo, c.Commits[0].SHA), nil, true); err != nil || len(d.Files) != 4 || len(d.Commits) != 2 {
+	// A commit shown on its own reads its body, and no other commit's.
+	if d, err := LoadDetail(context.Background(), CommitChange(repo, Commit{SHA: c.Commits[0].SHA}), nil, true); err != nil || len(d.Files) != 4 || len(d.Commits) != 2 || d.Commits[0].Body != "Lands the fix." || d.Commits[1].Body != "" {
 		t.Fatalf("commit patches: %+v %v", d, err)
 	}
 	root, err := exec.Command("git", "-C", repo, "rev-list", "--max-parents=0", "HEAD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d, err := LoadDetail(context.Background(), CommitChange(repo, strings.TrimSpace(string(root))), nil, true); err != nil || len(d.Files) == 0 || len(d.Commits) != 1 || d.Files[0].Patch == "" {
+	if d, err := LoadDetail(context.Background(), CommitChange(repo, Commit{SHA: strings.TrimSpace(string(root))}), nil, true); err != nil || len(d.Files) == 0 || len(d.Commits) != 1 || d.Files[0].Patch == "" {
 		t.Fatalf("root commit patches: %+v %v", d, err)
 	}
 	if _, err := os.Stat(marker); err == nil {

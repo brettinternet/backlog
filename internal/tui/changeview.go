@@ -19,7 +19,7 @@ import (
 
 // The change view replaces the item's tabs with one linked change's or
 // commit's Overview, Files, Diff, and Commits (design.md D43); backspace
-// returns to the Changes or History entry it opened from.
+// returns to the Changes, History, or Commits entry it opened from.
 
 // openChange opens the change view on c, from the Changes tab.
 func (m *Model) openChange(c changes.Change) tea.Cmd {
@@ -41,17 +41,37 @@ func (m *Model) openCommit() (tea.Cmd, bool) {
 		return nil, false
 	}
 	row, _ := m.selectedRow()
-	c := changes.CommitChange(cmp.Or(m.opts.EditorDir, "."), sha)
+	c := changes.CommitChange(cmp.Or(m.opts.EditorDir, "."), changes.Commit{SHA: sha})
 	m.change, m.changeRef, m.changeTab, m.changeEntry = &c, row.Ref, tabHistory, id
 	m.find = findState{}
 	return m.switchDetailTab(tabChangeDiff), true
 }
 
+// openChangeCommit opens the Commits entry under the cursor on the Diff tab,
+// one level under the change; a commit's own Commits don't nest further.
+func (m *Model) openChangeCommit() tea.Cmd {
+	if m.detailTab != tabChangeCommits || m.change.IsCommit() || !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailCommits) {
+		return nil
+	}
+	// The forge's message shows when the checkout lacks the commit.
+	c := changes.CommitChange(cmp.Or(m.change.Dir(), m.opts.EditorDir, "."), m.detailCommits[m.entryCursor])
+	m.changeParent, m.parentCursor, m.change = m.change, m.entryCursor, &c
+	m.find = findState{}
+	return m.switchDetailTab(tabChangeDiff)
+}
+
 // closeChange returns to the entry the change view opened from.
 func (m *Model) closeChange() tea.Cmd {
+	m.find = findState{}
+	if m.changeParent != nil {
+		cursor := m.parentCursor
+		m.change, m.changeParent = m.changeParent, nil
+		cmd := m.switchDetailTab(tabChangeCommits)
+		m.entryCursor = cursor
+		return cmd
+	}
 	cursor, tab := m.changeCursor, m.changeTab
 	m.change = nil
-	m.find = findState{}
 	cmd := m.switchDetailTab(tab)
 	if tab == tabChanges {
 		m.entryCursor = cursor

@@ -86,6 +86,7 @@ type detailResult struct {
 	entries    []int             // line index of each criterion or relation, for the tab's cursor
 	targets    []engine.Relation // the relation each Relations entry opens
 	changes    []changes.Change  // the change each Changes entry is
+	commits    []changes.Commit  // the commit each change view Commits entry is
 	ids        []string          // the history entry each History entry is, or each commit's SHA
 	hints      []string          // a key to show on each History entry when selected
 	files      []int             // the Diff tab's line of each file and hunk header
@@ -392,8 +393,12 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			return result
 		}
 		if err != nil {
-			// The change's own facts still show, with why its files don't.
+			// The change's own facts still show, with why its files don't,
+			// and a commit's message as the forge sent it.
 			detail = changes.Detail{Reason: err.Error()}
+			if request.change.IsCommit() {
+				detail.Commits = request.change.Commits
+			}
 		}
 		// Every tab reads the review and its draft, which gate c and r.
 		var review *changes.Review
@@ -415,7 +420,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			}
 		}
 		var page rendered
-		if diff && err == nil {
+		if diff && (err == nil || request.change.IsCommit()) {
 			page = worker.diffPage(ctx, *request.change, detail, request)
 		} else {
 			page = changeViewPage(*request.change, detail, review, draft, result.draftErr, request, worker.render)
@@ -427,6 +432,9 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
+		if request.tab == tabChangeCommits {
+			result.commits = detail.Commits
+		}
 		result.review, result.draft = review, draft
 		for _, f := range detail.Files {
 			if f.Status == changes.FileUncommitted {

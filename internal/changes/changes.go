@@ -8,6 +8,7 @@ package changes
 import (
 	"cmp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/model"
@@ -85,6 +86,10 @@ func (c Change) Base() string { return c.base }
 // Dir is the checkout root the change was found in.
 func (c Change) Dir() string { return c.dir }
 
+// IsCommit is whether the change is one commit, such as one opened from
+// History or a change's Commits.
+func (c Change) IsCommit() bool { return strings.HasPrefix(c.ID, "commit:") }
+
 // Commit is a commit on the default branch's first-parent history, or one a
 // change's detail lists.
 type Commit struct {
@@ -92,6 +97,9 @@ type Commit struct {
 	Subject string    `json:"subject"`
 	Author  string    `json:"author,omitempty"`
 	Time    time.Time `json:"time"`
+	// Body is the message after the subject, read only for a commit shown
+	// on its own, or as a pull request's forge sends it.
+	Body string `json:"body,omitempty"`
 	// Branch and PR are what a merge's subject names; Trailers are the values
 	// of the project's commit trailer.
 	Branch   string   `json:"-"`

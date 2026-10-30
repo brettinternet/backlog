@@ -820,9 +820,11 @@ func TestChangeView(t *testing.T) {
 
 // Catches the Diff tab losing its unified and split layouts, [ ] and [c ]c
 // landing off the file or hunk, m not drawing a large file, enter on a History
-// commit not opening its diff or backspace not returning to that entry, and
-// held j over a 10,000-line diff beyond the §11 navigation budget, measured
-// with BL_TUI_MEASURE=1.
+// commit not opening its diff or backspace not returning to that entry, a
+// Commits entry not nesting its diff under the change, a commit's message
+// missing, taking the cursor, or heading a branch's Diff, and held j over a
+// 10,000-line diff beyond the §11 navigation budget, measured with
+// BL_TUI_MEASURE=1.
 func TestChangeDiff(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 1, RenderMarkdown)
@@ -844,15 +846,17 @@ func TestChangeDiff(t *testing.T) {
 	for i := range 100 {
 		commit = append(commit, file(fmt.Sprintf("pkg/f%d.go", i), hunk(1, 100)))
 	}
+	body := strings.Repeat("Explains why the edit was needed. ", 6)
 	m.detailWorker.changeDetail = func(_ context.Context, c changes.Change, patch bool) (changes.Detail, error) {
 		files := branch
+		commits := []changes.Commit{{SHA: "def5678", Subject: "later"}, {SHA: "abc1234", Subject: "edit BL-1", Author: "ann"}}
 		if c.ID == "commit:abc1234" {
-			files = commit
+			files, commits = commit, []changes.Commit{{SHA: "abc1234", Subject: "edit BL-1", Author: "ann", Body: body}}
 		}
 		if !patch {
 			files = nil
 		}
-		return changes.Detail{Files: files, Patched: patch}, nil
+		return changes.Detail{Files: files, Commits: commits, Patched: patch}, nil
 	}
 	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
 	m.detailWorker.history = func(context.Context, model.Item, []changes.Change) history.Result {
@@ -880,7 +884,7 @@ func TestChangeDiff(t *testing.T) {
 	m, _ = detailKey(m, tea.KeyTab, 0)
 	m, _ = detailKey(m, tea.KeyTab, 0)
 	m = settleDetail(t, m)
-	if m.detailTab != tabChangeDiff || len(m.detailFiles) != 4 || len(m.detailHunks) != 4 {
+	if m.detailTab != tabChangeDiff || len(m.detailFiles) != 4 || len(m.detailHunks) != 4 || m.detailFiles[0] != 0 {
 		t.Fatalf("Diff tab %d files %v hunks %v", m.detailTab, m.detailFiles, m.detailHunks)
 	}
 	if l := line(m, "x := 7 + 1"); strings.Contains(l, "│") || !strings.Contains(l, "8 + ") {
@@ -962,6 +966,40 @@ func TestChangeDiff(t *testing.T) {
 	m = settleDetail(t, next.(Model))
 	if m.detailEntries[m.entryCursor] != m.detailHunks[1] {
 		t.Fatalf("hunk header cursor moved to %q", m.detailLines[m.detailEntries[m.entryCursor]])
+	}
+	// A Commits entry opens its commit's Diff under the change, headed by its
+	// wrapped message, which j, ], and review actions pass over.
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if m.change == nil || m.change.ID != "commit:abc1234" || m.detailTab != tabChangeDiff {
+		t.Fatalf("Commits enter opened %v on tab %d", m.change, m.detailTab)
+	}
+	wrapped := 0
+	for _, l := range m.detailLines[:m.detailFiles[0]] {
+		if strings.Contains(l, "Explains why") {
+			wrapped++
+		}
+	}
+	if !strings.Contains(m.detailLines[0], "abc1234") || !strings.Contains(m.detailLines[0], "ann") || wrapped < 2 || m.detailEntries[0] != m.detailFiles[0] || m.entryCursor != 0 {
+		t.Fatalf("commit Diff starts %q with %d body lines, entry %d at file %d", m.detailLines[:m.detailFiles[0]], wrapped, m.detailEntries[0], m.detailFiles[0])
+	}
+	m.detailScroll = 0
+	m, _ = detailKey(m, '[', 0)
+	if m.detailEntries[m.entryCursor] != m.detailFiles[0] {
+		t.Fatalf("[ moved the cursor onto line %d", m.detailEntries[m.entryCursor])
+	}
+	m, _ = detailKey(m, 'k', 0)
+	m, _ = detailKey(m, 'c', 0)
+	if m.entryCursor != 0 || !strings.Contains(m.notice, "Disabled: ") {
+		t.Fatalf("k moved the cursor to %d; c noticed %q", m.entryCursor, m.notice)
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	if m.change == nil || m.change.ID != change.ID || m.detailTab != tabChangeCommits || m.detailIDs[m.entryCursor] != "abc1234" {
+		t.Fatalf("backspace left %v on tab %d cursor %d", m.change, m.detailTab, m.entryCursor)
 	}
 	m, _ = detailKey(m, tea.KeyBackspace, 0)
 	m = settleDetail(t, m)
