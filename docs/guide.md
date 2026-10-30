@@ -2,8 +2,8 @@
 
 ## Install
 
-Binaries are published for macOS and Linux on arm64 and amd64. The installer
-needs curl, tar, and `sha256sum` or `shasum`:
+Binaries are published for macOS, Linux, and Windows on arm64 and amd64. On
+macOS and Linux, the installer needs curl, tar, and `sha256sum` or `shasum`:
 
 ```text
 curl -fsSL https://raw.githubusercontent.com/brettinternet/backlog/main/install.sh -o /tmp/bl-install.sh
@@ -20,9 +20,20 @@ It verifies the archive checksum, then installs to `~/.local/bin`; add that to
 | `BL_INSTALL_DIR=DIR` | Install somewhere else |
 | `BL_RELEASE_BASE_URL=URL` | Download from a mirror with GitHub's release layout. Checksums catch corruption, not a compromised mirror. |
 
-To build from source, see [Development](development.md#setup). That is the only
-way to run `bl` on Windows for now; claims there are unavailable until Worklease
-supports Windows.
+On Windows, use PowerShell:
+
+```text
+Invoke-WebRequest https://raw.githubusercontent.com/brettinternet/backlog/main/install.ps1 -OutFile $env:TEMP\bl-install.ps1
+notepad $env:TEMP\bl-install.ps1
+powershell -ExecutionPolicy Bypass -File $env:TEMP\bl-install.ps1
+```
+
+It installs `bl.exe` to `%LOCALAPPDATA%\Programs\bl` and prints the command
+that adds it to your `PATH`. Set the same variables with `$env:BL_VERSION =
+'v1.2.3'` before running it. Claims are unavailable on Windows until Worklease
+supports it.
+
+To build from source, see [Development](development.md#setup).
 
 ## Capture work
 

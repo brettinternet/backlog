@@ -94,11 +94,12 @@ To upgrade tools, run `task setup:upgrade`, review the `mise.toml` diff, and run
 
 ## Releases
 
-`task release:snapshot` builds unpublished archives in `dist/` for Darwin and
-Linux on arm64 and amd64: a static `bl` with version, commit, and UTC build time, plus
-`checksums.txt`. `task release:test` (also in `task ci`) tests the CI gate and
-installer against local fixtures. Neither needs credentials or sibling
-repositories.
+`task release:snapshot` builds unpublished archives in `dist/` for Darwin,
+Linux, and Windows on arm64 and amd64: a static `bl` (`bl.exe` in a `.zip` for
+Windows) with version, commit, and UTC build time, plus `checksums.txt`.
+`task release:test` (also in `task ci`) tests the CI gate and both installers
+against local fixtures, running `install.ps1` with the pinned PowerShell.
+Neither needs credentials or sibling repositories.
 
 Pushing a tag runs the release workflow. It publishes only if the latest
 main-push `CI` run for that exact commit passed, checked before building and
@@ -111,7 +112,7 @@ Owner checklist:
 - [ ] Run `task ci`, `task release:snapshot`, and `task release:test`.
 - [ ] Tag that commit with an unused `vMAJOR.MINOR.PATCH` (a `-PRERELEASE` suffix
   publishes a prerelease that the installer's `latest` skips) and push the tag.
-- [ ] Check the notes, four archives, and checksums; after installing, check
+- [ ] Check the notes, six archives, and checksums; after installing, check
   `bl version`.
 - [ ] Within six hours, check that the
   [Homebrew tap](https://github.com/brettinternet/homebrew-tap) committed `bl`
@@ -128,7 +129,9 @@ BL_VERSION=v1.2.3 BL_INSTALL_DIR=/opt/bin sh /tmp/bl-install.sh
 It verifies the archive's SHA-256 before installing to `$HOME/.local/bin` (add
 it to `PATH`). `BL_RELEASE_BASE_URL` selects a mirror with GitHub's
 `latest/download` and `download/TAG` layout; checksums catch corruption, not a
-compromised mirror.
+compromised mirror. On Windows, `install.ps1` takes the same variables, applies
+the same checks, and installs to `%LOCALAPPDATA%\Programs\bl`
+([guide](guide.md#install)).
 
 ## Commit messages
 

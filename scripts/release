@@ -10,6 +10,7 @@ import re
 import subprocess
 import tarfile
 import tempfile
+import zipfile
 
 
 def run(*args, **kwargs):
@@ -46,9 +47,10 @@ def build(version):
     output.mkdir(exist_ok=True)
     checksums = []
     with tempfile.TemporaryDirectory(prefix="bl-release-") as temporary:
-        binary = Path(temporary) / "bl"
-        for system in ("darwin", "linux"):
+        for system in ("darwin", "linux", "windows"):
             for arch in ("arm64", "amd64"):
+                name = "bl.exe" if system == "windows" else "bl"
+                binary = Path(temporary) / system / arch / name
                 subprocess.run(["go", "build", "-trimpath", "-ldflags",
                                 f"-s -w -X main.buildVersion={version} -X main.buildCommit={commit} -X main.buildTime={build_time}",
                                 "-o", str(binary), "./cmd/bl"], check=True,
@@ -60,9 +62,14 @@ def build(version):
                         or commit.encode() not in binary.read_bytes()
                         or build_time.encode() not in binary.read_bytes()):
                     raise ValueError("missing build metadata")
-                archive = output / f"bl_{system}_{arch}.tar.gz"
-                with tarfile.open(archive, "w:gz") as tar:
-                    tar.add(binary, arcname="bl")
+                if system == "windows":
+                    archive = output / f"bl_{system}_{arch}.zip"
+                    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+                        bundle.write(binary, arcname=name)
+                else:
+                    archive = output / f"bl_{system}_{arch}.tar.gz"
+                    with tarfile.open(archive, "w:gz") as tar:
+                        tar.add(binary, arcname=name)
                 checksums.append(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
                 print(f"Built {archive}: {version} ({commit}), CGO_ENABLED=0")
     (output / "checksums.txt").write_text("".join(checksums))

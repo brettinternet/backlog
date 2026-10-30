@@ -39,4 +39,4 @@ jobs:
           python3 scripts/release gate
           # A -PRERELEASE tag must not become the installer's latest release.
           case "$RELEASE_TAG" in *-*) set -- --prerelease ;; esac
-          gh release create "$RELEASE_TAG" "$@" --verify-tag --title "$RELEASE_TAG" --notes-file dist/notes.md dist/bl_*.tar.gz dist/checksums.txt
+          gh release create "$RELEASE_TAG" "$@" --verify-tag --title "$RELEASE_TAG" --notes-file dist/notes.md dist/bl_*.tar.gz dist/bl_*.zip dist/checksums.txt
