@@ -69,6 +69,9 @@ func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 	case "n", "N":
 		m.beginCapture(key == "N")
 		return nil, true
+	case "+":
+		m.beginAdopt()
+		return nil, true
 	case "E":
 		row, ok := m.selectedRow()
 		if !ok {

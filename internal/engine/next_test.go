@@ -587,6 +587,7 @@ func TestLinearCreate(t *testing.T) {
 		{"must be Linear issues", model.Item{BlockedBy: []model.Ref{{Source: "tasks", ID: "BL-1"}}}},
 		{"milestone, criteria", model.Item{Milestone: "m-1", Criteria: []model.Criterion{{Text: "c"}}}},
 		{"at most one assignee", model.Item{Assignees: []string{user, user}}},
+		{"doesn't support refs", model.Item{Refs: []string{"https://github.com/acme/app/pull/45"}}},
 	} {
 		created = nil
 		c.item.Title = "x"

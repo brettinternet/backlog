@@ -27,7 +27,8 @@ const newHelp = `Tokens in TITLE set fields: !high priority, @me assignee, #bug 
 
 Examples:
   bl new 'Fix login !high #bug @me'
-  bl new 'Write the guide' --status draft --ac 'Covers setup'`
+  bl new 'Write the guide' --status draft --ac 'Covers setup'
+  bl new 'Fix flaky login test' --ref https://github.com/acme/app/pull/45`
 
 const setHelp = `FIELD=VALUE sets a field, FIELD+=VALUE adds list entries, and FIELD-=VALUE
 removes them. List values are comma-separated; an empty value clears a field.

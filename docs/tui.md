@@ -464,6 +464,12 @@ switches it. `N` creates a child of the selected item, in its source. Sources
 that can't create disable both.
 On a board, the focused column sets the status.
 
+`+` on a pull request item (`github-pulls`) adopts it: quick-add opens with the
+pull request's title, escaped so it stays the title, and its URL in `refs`. The
+source and status are the ones `n` would pick, never the pull request source, and
+tokens still apply. Saving is one create, so the pull request item disappears
+once the new item is in the snapshot ([GitHub](github.md#adopting)).
+
 ### Forms and editors
 
 The full form covers every field the source supports, plus description and
@@ -683,6 +689,7 @@ keys:
 | `archive` | `d d` | Archive |
 | `new` | `n` | New item / next match |
 | `new-child` | `N` | New child / previous match |
+| `adopt` | `+` | Adopt pull request |
 | `repeat` | `.` | Repeat edit |
 | `undo` | `u` | Undo |
 | `redo` | `ctrl+r` | Redo |
