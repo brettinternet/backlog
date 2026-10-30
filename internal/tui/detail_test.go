@@ -901,9 +901,43 @@ func TestChangeDiff(t *testing.T) {
 		for _, r := range step.keys {
 			m, _ = detailKey(m, r, 0)
 		}
-		if m.detailScroll != step.want() {
-			t.Fatalf("%s scrolled to %d, want %d", step.keys, m.detailScroll, step.want())
+		if m.detailScroll != step.want() || m.detailEntries[m.entryCursor] != step.want() {
+			t.Fatalf("%s scrolled to %d with the cursor on %d, want %d", step.keys, m.detailScroll, m.detailEntries[m.entryCursor], step.want())
 		}
+	}
+	// Each row resolves to its file, and to the line on each side it shows.
+	m.entryCursor = slices.Index(m.detailEntries, m.detailFiles[1])
+	for _, want := range [][]lineAnchor{
+		{{head: "abc", file: "b.go"}},
+		{{head: "abc", file: "b.go"}},
+		{{head: "abc", file: "b.go", side: sideOld, line: 1}},
+		{{head: "abc", file: "b.go", side: sideNew, line: 1}},
+	} {
+		if got := m.cursorAnchors(); !slices.Equal(got, want) {
+			t.Fatalf("row %q resolves to %v, want %v", m.detailLines[m.detailEntries[m.entryCursor]], got, want)
+		}
+		m, _ = detailKey(m, 'j', 0)
+	}
+	at85 := lineAnchor{head: "abc", file: "a.go", side: sideNew, line: 85}
+	for _, step := range []struct {
+		anchor lineAnchor
+		want   anchorStatus
+	}{
+		{lineAnchor{head: "def", file: "a.go", side: sideNew, line: 85}, anchorStale},
+		{lineAnchor{head: "abc", file: "a.go", side: sideNew, line: 50}, anchorOutside},
+		{lineAnchor{head: "abc", file: "z.go"}, anchorOutside},
+		{at85, anchorFound},
+	} {
+		if got := m.gotoAnchor(step.anchor); got != step.want {
+			t.Fatalf("goto %v = %d, want %d", step.anchor, got, step.want)
+		}
+	}
+	shown := func(m Model) bool {
+		line := m.detailEntries[m.entryCursor]
+		return line >= m.detailScroll && line < m.detailScroll+m.detailVisible()
+	}
+	if got := m.cursorAnchors(); len(got) == 0 || got[0] != at85 || !shown(m) || !strings.Contains(m.detailLines[m.detailEntries[m.entryCursor]], "x := 5 + 1") {
+		t.Fatalf("goto left the cursor on %v", got)
 	}
 	line(m, "KiB diff")
 	m, _ = detailKey(m, 'm', 0)
@@ -916,6 +950,18 @@ func TestChangeDiff(t *testing.T) {
 	}
 	if l := line(m, "x := 7 + 1"); !strings.Contains(l, "│") || !strings.Contains(l, "x := 7 ") {
 		t.Fatalf("split line %q", l)
+	}
+	// The cursor stays on its line as a file expands and the layout splits,
+	// where the row resolves on both halves.
+	if got := m.cursorAnchors(); !slices.Equal(got, []lineAnchor{at85, {head: "abc", file: "a.go", side: sideOld, line: 85}}) || !shown(m) {
+		t.Fatalf("split cursor resolves to %v", got)
+	}
+	// A hunk header has no line of its own, and keeps its place by the next.
+	m.diffCursorTo(m.detailHunks[1])
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = settleDetail(t, next.(Model))
+	if m.detailEntries[m.entryCursor] != m.detailHunks[1] {
+		t.Fatalf("hunk header cursor moved to %q", m.detailLines[m.detailEntries[m.entryCursor]])
 	}
 	m, _ = detailKey(m, tea.KeyBackspace, 0)
 	m = settleDetail(t, m)
@@ -934,8 +980,8 @@ func TestChangeDiff(t *testing.T) {
 		_ = m.View()
 		samples = append(samples, time.Since(start))
 	}
-	if m.detailScroll != 2000 {
-		t.Fatalf("held j scrolled to %d", m.detailScroll)
+	if m.entryCursor != 2000 || !shown(m) || m.detailScroll == 0 {
+		t.Fatalf("held j moved the cursor to %d at scroll %d", m.entryCursor, m.detailScroll)
 	}
 	if os.Getenv("BL_TUI_MEASURE") == "1" {
 		slices.Sort(samples)

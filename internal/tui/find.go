@@ -31,6 +31,7 @@ func (m Model) updateFind(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.detailScroll = m.find.origin
 		m.find = findState{}
+		m.scrollDetail(0)
 	case "enter":
 		m.find.open = false
 		if m.find.text == "" {
@@ -92,6 +93,9 @@ func (m *Model) stepFind(forward bool) {
 		}
 	}
 	line, visible := m.find.lines[m.find.current], m.detailVisible()
+	if m.detailTab == tabChangeDiff {
+		m.diffCursorTo(line)
+	}
 	if line < m.detailScroll || line >= m.detailScroll+visible {
 		m.detailScroll = line - visible/2
 		m.scrollDetail(0)
