@@ -305,8 +305,17 @@ first line, on the step's side when split, and marks each line it covers with
 `▎` after that side's line number. A step's lines outside every hunk come in
 with three lines of context; lines the file lacks are noted under the file's
 header. `]t`/`[t` put the cursor on a step's first line and keep as much of
-its range in view as fits. A tour written for another head, or whose step is on a file with uncommitted
-changes, shows only that it is stale.
+its range in view as fits. A tour written for an earlier head is carried
+forward through the diff from its commit to the head, as a forge carries
+review comments: a banner names both commits and how many steps are outdated,
+each step whose lines are unchanged shows at the lines they moved to, a
+renamed file's at its new path, and a step whose lines were edited or deleted,
+or had lines added inside its range, is outdated, showing its lines as of the
+tour's commit under its file's header, where `]t`/`[t` put the cursor. The
+mapping reads Git objects only, on the detail worker, cached by the tour's
+commit and the head. A tour whose commit is no longer in the head's history,
+as after a rebase, or whose step is on a file with uncommitted changes, shows
+only that it is stale.
 
 A pull request's change view drafts a pending review. `c` opens `$EDITOR` on
 the comment for the Diff line under the cursor, on a reply to the

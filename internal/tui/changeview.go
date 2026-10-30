@@ -111,6 +111,11 @@ func (m *Model) stepTour(forward bool) {
 	span := m.detailSteps[m.tourStep]
 	m.detailScroll = span.callout
 	m.diffCursorTo(span.callout)
+	if span.outdated {
+		// Its line isn't at the head, so the cursor goes to its file's header.
+		i, _ := slices.BinarySearch(m.detailEntries, span.callout)
+		m.entryCursor = max(i-1, 0)
+	}
 	// The callout gives way to the range, and the range to its first line.
 	if m.entryCursor < len(m.detailEntries) {
 		cursor, visible := m.detailEntries[m.entryCursor], m.detailVisible()

@@ -20,7 +20,9 @@ import (
 // A tour an agent wrote for a change (design.md D43) shows on its Diff tab:
 // each step's narrative and cited criterion sit above the step's line, and a
 // step on a line outside every hunk brings that line in with context. A tour
-// written for another head shows only that it is stale.
+// written for an earlier head is carried forward to the current one, its
+// steps on lines changed since marked outdated; one whose head is no longer an
+// ancestor shows only that it is stale.
 
 // tourContext is how many lines show on each side of a step outside every
 // hunk.
@@ -32,8 +34,20 @@ type tourView struct {
 	criteria []model.Criterion
 	// stale says why the steps are hidden: the tour is for another head.
 	stale string
+	// carried names the heads a tour was carried between; outdated holds,
+	// by step, the lines of a step changed since, as of the tour's ref.
+	ref, carried string
+	outdated     map[int][]string
 	// unread says why a step's file couldn't be read, by path.
 	unread map[string]string
+}
+
+// movesCache keeps the last tour's moves and the files read as of its ref.
+type movesCache struct {
+	key   string
+	moves changes.Moves
+	ok    bool
+	files map[string][]byte
 }
 
 // loadTour reads the change's tour, the item's criteria if a step cites
@@ -50,15 +64,17 @@ func (worker *detailWorker) loadTour(ctx context.Context, request detailRequest,
 		return nil
 	}
 	t := stored.Tour
+	view := &tourView{steps: t.Steps, unread: map[string]string{}}
 	if t.Ref != c.Head {
-		return &tourView{stale: "Tour is stale: written for " + short(t.Ref) + ", the change is now at " + cmp.Or(short(c.Head), "no head") + "."}
+		if err := worker.carry(ctx, c, t, view); err != nil {
+			return &tourView{stale: "Tour is stale: written for " + short(t.Ref) + ", the change is now at " + cmp.Or(short(c.Head), "no head") + "; " + err.Error() + "."}
+		}
 	}
 	for _, f := range d.Files {
-		if f.Status == changes.FileUncommitted && slices.ContainsFunc(t.Steps, func(s tour.Step) bool { return s.File == f.Path }) {
+		if f.Status == changes.FileUncommitted && slices.ContainsFunc(view.current(), func(s tour.Step) bool { return s.File == f.Path }) {
 			return &tourView{stale: "Tour is stale: " + textutil.Line(f.Path) + " has uncommitted changes since " + short(t.Ref) + "."}
 		}
 	}
-	view := &tourView{steps: t.Steps, unread: map[string]string{}}
 	if slices.ContainsFunc(t.Steps, func(s tour.Step) bool { return s.Criterion > 0 }) {
 		if item, err := worker.item(ctx, request.row); err == nil {
 			view.criteria = item.Criteria
@@ -66,6 +82,68 @@ func (worker *detailWorker) loadTour(ctx context.Context, request detailRequest,
 	}
 	d.Files = worker.tourFiles(ctx, c, d.Files, view)
 	return view
+}
+
+// carry maps t's steps from its ref to c's head through the diff between
+// them, cached by both, keeping each step whose lines are unchanged at its
+// moved line and holding the lines of the rest as of the ref.
+func (worker *detailWorker) carry(ctx context.Context, c changes.Change, t tour.Tour, view *tourView) error {
+	key := c.Dir() + "\x00" + t.Ref + "\x00" + c.Head
+	if worker.recentMoves.key != key {
+		moves, ok, err := worker.moves(ctx, c, t.Ref)
+		if err != nil {
+			return err
+		}
+		worker.recentMoves = movesCache{key: key, moves: moves, ok: ok, files: map[string][]byte{}}
+	}
+	cache := worker.recentMoves
+	if !cache.ok {
+		return errors.New("the head doesn't descend from it in this checkout")
+	}
+	view.ref, view.steps, view.outdated = t.Ref, slices.Clone(t.Steps), map[int][]string{}
+	for i, s := range view.steps {
+		old := s.Side == tour.SideOld
+		path, line, ok := cache.moves.Range(s.File, old, s.Line, s.End())
+		view.steps[i].File = path
+		if ok {
+			if s.Selection != nil {
+				sel := *s.Selection
+				sel.Start.Line, sel.End.Line = line, s.End()+line-s.Line
+				view.steps[i].Selection = &sel
+			}
+			view.steps[i].Line = line
+			continue
+		}
+		view.outdated[i] = nil
+		fileKey := strconv.FormatBool(old) + "\x00" + s.File
+		content, read := cache.files[fileKey]
+		if !read {
+			if data, ok, err := worker.movedFile(cache.moves, ctx, s.File, old); err == nil && ok {
+				content = data
+			}
+			cache.files[fileKey] = content
+		}
+		if content == nil {
+			continue
+		}
+		lines := strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
+		for n := s.Line; n <= min(s.End(), len(lines)); n++ {
+			view.outdated[i] = append(view.outdated[i], expandTabs(textutil.Sanitize(lines[n-1])))
+		}
+	}
+	view.carried = "Tour carried forward from " + short(t.Ref) + " to " + short(c.Head) + ": " + strconv.Itoa(len(view.outdated)) + " of " + strconv.Itoa(len(view.steps)) + " steps outdated."
+	return nil
+}
+
+// current are the tour's steps whose lines show at the head.
+func (view *tourView) current() []tour.Step {
+	var out []tour.Step
+	for i, s := range view.steps {
+		if _, outdated := view.outdated[i]; !outdated {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // item reads the row's item through the detail cache.
@@ -89,10 +167,18 @@ func (worker *detailWorker) item(ctx context.Context, row engine.Row) (model.Ite
 // copies; the change's detail is left as it was read.
 func (worker *detailWorker) tourFiles(ctx context.Context, c changes.Change, files []changes.File, view *tourView) []changes.File {
 	byFile := map[string][]tour.Step{}
-	for _, s := range view.steps {
+	for _, s := range view.current() {
 		byFile[s.File] = append(byFile[s.File], s)
 	}
 	out := slices.Clone(files)
+	// An outdated step sits under its file's header, which shows even when
+	// none of its lines do.
+	for i := range view.outdated {
+		s := view.steps[i]
+		if _, listed := byFile[s.File]; !listed && !slices.ContainsFunc(out, func(f changes.File) bool { return stepIn(s, f) }) {
+			out = append(out, changes.File{Path: s.File, Status: changes.FileUnchanged})
+		}
+	}
 	for i, f := range out {
 		steps := append(slices.Clone(byFile[f.Path]), oldSteps(byFile[f.From])...)
 		delete(byFile, f.Path)
@@ -128,6 +214,12 @@ func (worker *detailWorker) tourFiles(ctx context.Context, c changes.Change, fil
 	}
 	slices.SortStableFunc(out, func(a, b changes.File) int { return strings.Compare(a.Path, b.Path) })
 	return out
+}
+
+// stepIn says whether s is on f: its path, or a renamed file's old path on
+// the old side.
+func stepIn(s tour.Step, f changes.File) bool {
+	return s.File == f.Path || s.File == f.From && f.From != "" && s.Side == tour.SideOld
 }
 
 // oldSteps are a renamed file's steps on its old path, on the old side.
@@ -314,12 +406,28 @@ func callout(t theme, view *tourView, index int, width int, note string, render 
 	if note != "" {
 		out = append(out, bar+t.yellow.render(ansi.Truncate(note, max(1, width-2), "…")))
 	}
+	if lines, outdated := view.outdated[index]; outdated {
+		ref := short(view.ref)
+		if lines == nil {
+			out = append(out, bar+t.yellow.render(ansi.Truncate("Outdated: changed since "+ref+", whose lines can't be read.", max(1, width-2), "…")))
+		} else {
+			out = append(out, bar+t.yellow.render(ansi.Truncate("Outdated: changed since "+ref+", where it read:", max(1, width-2), "…")))
+		}
+		digits := len(strconv.Itoa(s.Line + len(lines)))
+		for n, line := range lines {
+			number := strconv.Itoa(s.Line + n)
+			out = append(out, bar+ansi.Truncate(t.muted.render(blank(digits-len(number))+number+" ")+line, max(1, width-2), "…"))
+		}
+	}
 	return out
 }
 
 // stepSpan is where a step shows on the Diff: its callout's first line and
-// the line of its range's last row.
-type stepSpan struct{ callout, last int }
+// the line of its range's last row. An outdated step's line isn't at the head.
+type stepSpan struct {
+	callout, last int
+	outdated      bool
+}
 
 // lineMarks are the lines of one file's tour ranges, by side.
 type lineMarks [2]map[int]bool

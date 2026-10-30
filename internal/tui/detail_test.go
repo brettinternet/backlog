@@ -1183,6 +1183,64 @@ func TestChangeTour(t *testing.T) {
 	if m.detailTab != tabChangeDiff || len(m.detailSteps) != 0 || m.detailTour != "" || slices.ContainsFunc(m.detailLines, func(l string) bool { return strings.Contains(ansi.Strip(l), "Step ") }) {
 		t.Fatalf("removed tour: tab %d steps %v tour %q", m.detailTab, m.detailSteps, m.detailTour)
 	}
+	// A tour for an ancestor of the head is carried forward: an unchanged
+	// line to where it moved, a renamed file's to its new path, and an edited
+	// line kept as of the ref, outdated, its file's header under the cursor.
+	ref = strings.Repeat("ef", 20)
+	m.detailWorker.tour = func(model.Ref, string) (tour.Stored, bool, error) {
+		return tour.Stored{Tour: tour.Tour{Ref: ref, Steps: []tour.Step{
+			{File: "a.go", Line: 28, Description: "Carried."},
+			{File: "a.go", Line: 20, Description: "Edited since."},
+			{File: "b.go", Line: 2, Description: "Renamed since."},
+		}}}, true, nil
+	}
+	m.detailWorker.moves = func(_ context.Context, _ changes.Change, from string) (changes.Moves, bool, error) {
+		return changes.Moves{Ref: from, OldKnown: true, New: []changes.File{
+			{Path: "a.go", Status: changes.FileModified, Patch: "@@ -1,0 +1,2 @@\n+n1\n+n2\n@@ -20 +22 @@\n-ref line 20\n+line 22\n"},
+			{Path: "e.go", From: "b.go", Status: changes.FileRenamed},
+		}}, true, nil
+	}
+	m.detailWorker.movedFile = func(_ changes.Moves, _ context.Context, path string, _ bool) ([]byte, bool, error) {
+		return []byte(strings.ReplaceAll(content.String(), "line", "ref line")), true, nil
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	if len(m.detailSteps) != 3 || ansi.Strip(m.detailLines[0]) != "Tour carried forward from efefefe to abababa: 1 of 3 steps outdated." {
+		t.Fatalf("carried tour: steps %v first line %q", m.detailSteps, m.detailLines[0])
+	}
+	m.tourStep = -1
+	for _, step := range []struct {
+		index  int
+		anchor *lineAnchor
+		text   string
+	}{
+		{0, &lineAnchor{file: "a.go", side: sideNew, line: 30}, "Carried."},
+		{1, nil, "20 ref line 20"},
+		{2, &lineAnchor{file: "e.go", side: sideNew, line: 2}, "Renamed since."},
+	} {
+		m, _ = detailKey(m, ']', 0)
+		m, _ = detailKey(m, 't', 0)
+		span := m.detailSteps[step.index]
+		callout := ansi.Strip(strings.Join(m.detailLines[span.callout:span.callout+5], "\n"))
+		if !strings.Contains(callout, step.text) {
+			t.Fatalf("step %d callout %q", step.index+1, callout)
+		}
+		anchors := m.cursorAnchors()
+		if step.anchor == nil {
+			if row := ansi.Strip(m.detailLines[m.detailEntries[m.entryCursor]]); !span.outdated || slices.ContainsFunc(anchors, func(a lineAnchor) bool { return a.line != 0 }) || !strings.Contains(row, "a.go") || !strings.Contains(callout, "Outdated: changed since efefefe") {
+				t.Fatalf("outdated step: span %+v cursor row %q anchors %v callout %q", span, row, anchors, callout)
+			}
+			continue
+		}
+		if !slices.ContainsFunc(anchors, func(a lineAnchor) bool { a.head = ""; return a == *step.anchor }) {
+			t.Fatalf("step %d left the cursor on %v, want %v", step.index+1, anchors, *step.anchor)
+		}
+	}
 }
 
 // anchorsAt is what the Diff row containing text resolves to.
