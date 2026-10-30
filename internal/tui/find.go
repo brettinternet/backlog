@@ -31,6 +31,7 @@ func (m Model) updateFind(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.detailScroll = m.find.origin
 		m.find = findState{}
+		m.scrollDetail(0)
 	case "enter":
 		m.find.open = false
 		if m.find.text == "" {
