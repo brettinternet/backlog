@@ -216,7 +216,8 @@ func claimLease(row engine.Row, now time.Time) (label, remaining string) {
 
 // detailTabBar renders the tabs with counts and their spans relative to the
 // pane's inner left edge. Too narrow for all tabs, it drops the counts, then
-// scrolls the tabs so the active one stays visible.
+// scrolls the tabs so the active one stays visible. A scroll arrow's span is
+// the hidden tab beside it, so clicking it shows that tab.
 func (m Model) detailTabBar(width int) (string, []span) {
 	t := m.theme
 	row, _ := m.selectedRow()
@@ -243,6 +244,7 @@ func (m Model) detailTabBar(width int) (string, []span) {
 	x := 0
 	if first > 0 {
 		b.WriteString(t.faint.render("‹"))
+		spans[first-1] = span{0, 1}
 		x++
 	}
 	for i := first; i < end; i++ {
@@ -264,30 +266,17 @@ func (m Model) detailTabBar(width int) (string, []span) {
 	}
 	if end < len(labels) {
 		b.WriteString(t.faint.render("›"))
+		spans[end] = span{x, x + 1}
 	}
 	return b.String(), spans
 }
 
-func (m Model) detailPane(width, rows int) []string {
+// detailMetaLine is the meta row with its right-aligned labels, and the
+// spans of the clickable back and more labels relative to the pane's inner
+// left edge; a span is empty when its label isn't drawn. rows is the pane's
+// height.
+func (m Model) detailMetaLine(row engine.Row, inner, rows int) (string, span, span) {
 	t := m.theme
-	out := make([]string, rows)
-	pad := blank(detailPad)
-	inner := max(1, width-2*detailPad)
-	put := func(i int, s string) {
-		if i < rows {
-			out[i] = fit(pad+s, width)
-		}
-	}
-	for i := range out {
-		out[i] = blank(width)
-	}
-	row, ok := m.selectedRow()
-	if !ok {
-		if rows > 0 {
-			out[rows/2] = center(t.muted.render("No item selected"), width)
-		}
-		return out
-	}
 	meta := m.detailMeta(row)
 	visible := max(1, rows-m.detailBodyTop())
 	placeholder := m.detailPlaceholder()
@@ -310,14 +299,51 @@ func (m Model) detailPane(width, rows int) []string {
 	} else if m.detailTruncated {
 		right = append(right, "m more")
 	}
+	var back, more span
 	for len(right) > 0 {
 		text := strings.Join(right, " · ")
 		if gap := inner - ansi.StringWidth(meta) - ansi.StringWidth(text); gap >= 2 {
+			x := ansi.StringWidth(meta) + gap
+			for _, label := range right {
+				w := ansi.StringWidth(label)
+				switch label {
+				case "⌫ back":
+					back = span{x, x + w}
+				case "m less", "m more":
+					more = span{x, x + w}
+				}
+				x += w + ansi.StringWidth(" · ")
+			}
 			meta += blank(gap) + t.faint.render(text)
 			break
 		}
 		right = right[1:]
 	}
+	return meta, back, more
+}
+
+func (m Model) detailPane(width, rows int) []string {
+	t := m.theme
+	out := make([]string, rows)
+	pad := blank(detailPad)
+	inner := max(1, width-2*detailPad)
+	put := func(i int, s string) {
+		if i < rows {
+			out[i] = fit(pad+s, width)
+		}
+	}
+	for i := range out {
+		out[i] = blank(width)
+	}
+	row, ok := m.selectedRow()
+	if !ok {
+		if rows > 0 {
+			out[rows/2] = center(t.muted.render("No item selected"), width)
+		}
+		return out
+	}
+	meta, _, _ := m.detailMetaLine(row, inner, rows)
+	placeholder := m.detailPlaceholder()
 	put(0, meta)
 	title := textutil.Line(row.Title)
 	put(1, t.bold.render(ansi.Truncate(title, inner, "…")))

@@ -411,6 +411,12 @@ func (m Model) historyOpenIDs(ref model.Ref) string {
 	return strings.Join(ids, "\n")
 }
 
+// toggleMore raises or restores the limit on a cut-off body.
+func (m *Model) toggleMore() tea.Cmd {
+	m.detailExpanded = !m.detailExpanded
+	return m.showDetail()
+}
+
 // toggleHistoryEntry expands or collapses the History entry under the cursor.
 func (m *Model) toggleHistoryEntry() tea.Cmd {
 	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailIDs) {
@@ -1195,8 +1201,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			return m, m.switchDetailTab((m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames)))
 		case "m":
 			if m.detailTruncated || m.detailExpanded {
-				m.detailExpanded = !m.detailExpanded
-				return m, m.showDetail()
+				return m, m.toggleMore()
 			}
 			cmd, _ := m.updateItemKey(s)
 			return m, cmd

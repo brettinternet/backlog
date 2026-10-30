@@ -133,30 +133,47 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if detail {
-		// A row's hint shows only while detail has focus.
+		// Row hints and the back label show only while detail has focus.
 		hinted := m.detailFocus
 		m.detailFocus = true
 		x, width := p.X-detailPad, m.width
 		if split {
 			x, width = x-m.listWidth()-1, m.detailWidth()
 		}
+		inner, line := max(1, width-2*detailPad), m.detailScroll+y-m.detailBodyTop()
 		if y >= m.detailBodyTop() {
-			m.beginSelection(x, m.detailScroll+y-m.detailBodyTop())
+			m.beginSelection(x, line)
 		}
 		switch {
+		case y == 0:
+			if row, ok := m.selectedRow(); ok {
+				// Hit-test the labels as drawn, before this click took focus.
+				drawn := m
+				drawn.detailFocus = hinted
+				_, back, more := drawn.detailMetaLine(row, inner, m.bodyRows())
+				switch {
+				case x >= back.start && x < back.end:
+					return m, m.followBack()
+				case x >= more.start && x < more.end:
+					return m, m.toggleMore()
+				}
+			}
 		case y == 2: // meta, title, then the tab bar
-			_, spans := m.detailTabBar(max(1, width-2*detailPad))
+			_, spans := m.detailTabBar(inner)
 			for i, s := range spans {
 				if x >= s.start && x < s.end {
 					return m, m.switchDetailTab(detailTab(i))
 				}
 			}
+		case y >= m.detailBodyTop() && line == len(m.detailLines) && m.detailTruncated && !m.detailPlaceholder() && m.detailError == "":
+			// The "… m more" line below the body.
+			return m, m.toggleMore()
 		case m.detailTab == tabCriteria && y >= m.detailBodyTop():
-			return m, m.clickCriterion(x, m.detailScroll+y-m.detailBodyTop())
+			return m, m.clickCriterion(x, line)
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
-			return m, m.clickRelation(p.X, p.Y, m.detailScroll+y-m.detailBodyTop())
+			return m, m.clickRelation(p.X, p.Y, line)
 		case m.detailTab == tabHistory && y >= m.detailBodyTop():
-			return m.clickHistory(x, p.X, p.Y, m.detailScroll+y-m.detailBodyTop(), max(1, width-2*detailPad), hinted)
+			return m.clickHistory(x, p.X, p.Y, line, inner, hinted)
 		}
 		return m, nil
 	}

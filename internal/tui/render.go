@@ -620,7 +620,8 @@ func (m Model) highlightText(text string, base paint) string {
 type span struct{ start, end int }
 
 // tabs renders view tabs and reports their cell spans for mouse routing. Tabs
-// that overflow scroll so the active one stays visible; ‹ and › mark the rest.
+// that overflow scroll so the active one stays visible; ‹ and › mark the rest,
+// and an arrow's span is the hidden tab beside it.
 func (m Model) tabs() (string, []span, int) {
 	t := m.theme
 	scope := m.opts.Project
@@ -658,11 +659,12 @@ func (m Model) tabs() (string, []span, int) {
 		widths[i] = ansi.StringWidth(label)
 	}
 	first, end := tabWindow(widths, 1, m.view, m.width-x)
+	spans := make([]span, len(m.views))
 	if first > 0 {
 		b.WriteString(t.faint.render("‹") + " ")
+		spans[first-1] = span{x, x + 1}
 		x += 2
 	}
-	spans := make([]span, len(m.views))
 	for i := first; i < end; i++ {
 		switch {
 		case i == m.view && !t.color:
@@ -681,6 +683,7 @@ func (m Model) tabs() (string, []span, int) {
 	}
 	if end < len(labels) {
 		b.WriteString(t.faint.render("›"))
+		spans[end] = span{x, x + 1}
 		x++
 	}
 	return b.String(), spans, x

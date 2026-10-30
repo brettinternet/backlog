@@ -259,6 +259,13 @@ func TestDetailLargeBodyInput(t *testing.T) {
 	if len(strings.Join(m.detailLines, "\n")) > renderLimit+100 {
 		t.Fatal("expanded output unbounded")
 	}
+	// The header's label takes a click where it is drawn.
+	y := drawnRow(t, m, "m less")
+	next, _ = m.Update(tea.MouseClickMsg{X: drawnAt(t, m, y, "m less"), Y: y, Button: tea.MouseLeft})
+	m = settleDetail(t, next.(Model))
+	if m.detailExpanded {
+		t.Fatal("clicking m less did not restore the limit")
+	}
 }
 
 func TestDetailTabGoldens(t *testing.T) {

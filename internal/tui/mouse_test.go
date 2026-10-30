@@ -94,6 +94,20 @@ func TestMouseNavigation(t *testing.T) {
 	if m.detailTab != tabNotes {
 		t.Fatalf("detail tab: %v", m.detailTab)
 	}
+	// A tab bar too narrow for every tab scrolls; its arrows show the tab
+	// beside them.
+	m.width = 50
+	if !strings.Contains(m.View().Content, "›") {
+		t.Fatalf("tabs fit; the test needs a narrower pane\n%s", m.View().Content)
+	}
+	if strings.Contains(m.View().Content, "Relations") {
+		t.Fatal("Relations drawn; the test needs it hidden")
+	}
+	click(drawnAt(t, m, 3, "›"), 3)
+	if m.detailTab != tabRelations {
+		t.Fatalf("› showed %v", m.detailTab)
+	}
+	m.width = 240
 	m.detailLines = make([]string, 100)
 	next, _ = m.Update(tea.MouseWheelMsg{X: 100, Y: 8, Button: tea.MouseWheelDown})
 	m = next.(Model)
