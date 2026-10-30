@@ -101,7 +101,7 @@ func TestEventInterruptedAppend(t *testing.T) {
 	appendEvent("two")
 	// An index is not a second dedupe authority: rebuild entirely from JSONL.
 	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if err = os.Remove(filepath.Join(log.Dir, "index.sqlite") + suffix); err != nil && !os.IsNotExist(err) {
+		if err = os.Remove(filepath.Join(log.Dir, "index-1.sqlite") + suffix); err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
 	}
@@ -119,9 +119,10 @@ func TestEventInterruptedAppend(t *testing.T) {
 		t.Fatalf("interrupted append: %d %v", len(events), err)
 	}
 	// An index from before the per-item ref column records every file as
-	// indexed, so keeping its file rows would leave per-item reads empty.
+	// indexed, so reusing it would leave per-item reads empty, and adding the
+	// column would break an older bl still writing it.
 	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if err = os.Remove(filepath.Join(log.Dir, "index.sqlite") + suffix); err != nil && !os.IsNotExist(err) {
+		if err = os.Remove(filepath.Join(log.Dir, "index-1.sqlite") + suffix); err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
 	}
@@ -140,6 +141,14 @@ func TestEventInterruptedAppend(t *testing.T) {
 	}
 	if events, err = log.ItemEvents(ctx, "tasks:BL-1"); err != nil || len(events) != 2 {
 		t.Fatalf("old index: %d %v", len(events), err)
+	}
+	if db, err = sql.Open("sqlite", filepath.Join(log.Dir, "index.sqlite")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO events(id,identity,data) VALUES('old','old','{}')`)
+	db.Close()
+	if err != nil {
+		t.Fatalf("an older bl can no longer write its index: %v", err)
 	}
 }
 

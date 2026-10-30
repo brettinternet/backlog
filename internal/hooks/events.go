@@ -158,11 +158,14 @@ func identity(e Event) string {
 
 // The SQLite index is disposable. JSONL remains the authority: under the log
 // lock every transaction first indexes new complete lines, including appends
-// whose producer died before publishing its index/cache transaction.
+// whose producer died before publishing its index/cache transaction. Each
+// schema version has its own file, so an older bl sharing the state directory
+// keeps its own index rather than failing on, or dropping, a newer one.
+// Version 1 adds the per-item ref column.
 const indexVersion = 1
 
 func (l Log) openIndex(ctx context.Context) (*sql.DB, error) {
-	path := filepath.Join(l.Dir, "index.sqlite")
+	path := filepath.Join(l.Dir, fmt.Sprintf("index-%d.sqlite", indexVersion))
 	for attempt := 0; attempt < 2; attempt++ {
 		db, err := sql.Open("sqlite", path)
 		if err != nil {
@@ -170,17 +173,8 @@ func (l Log) openIndex(ctx context.Context) (*sql.DB, error) {
 		}
 		db.SetMaxOpenConns(1)
 		_, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`)
-		var version int
 		if err == nil {
-			err = db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version)
-		}
-		// Version 1 adds the per-item ref index. An older index is rebuilt
-		// from the log, like a deleted one.
-		if err == nil && version < indexVersion {
-			_, err = db.ExecContext(ctx, `DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS files;`)
-		}
-		if err == nil {
-			_, err = db.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, ref TEXT NOT NULL, data BLOB NOT NULL); CREATE INDEX IF NOT EXISTS events_ref ON events(ref, id); CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL); PRAGMA user_version=%d;`, indexVersion))
+			_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, ref TEXT NOT NULL, data BLOB NOT NULL); CREATE INDEX IF NOT EXISTS events_ref ON events(ref, id); CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL);`)
 		}
 		if err == nil {
 			return db, nil
