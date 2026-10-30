@@ -62,6 +62,17 @@ func TestBoardNavigation(t *testing.T) {
 	if got, _ := m.selectedRow(); got.Ref.ID != "BL-30" {
 		t.Fatal(got)
 	}
+	// An all-empty board never has items, so a restored column must not
+	// reclaim the cursor on every later refresh.
+	m.groups, m.restore = nil, &selection{Group: "Active", Header: true}
+	m = prepareBoard(m)
+	if m.boardColumn() != 2 {
+		t.Fatalf("restored column: %d", m.boardColumn())
+	}
+	m = prepareBoard(send(m, "h"))
+	if m.boardColumn() != 1 {
+		t.Fatalf("refresh moved the cursor to column %d", m.boardColumn())
+	}
 	for _, width := range []int{80, 160} {
 		m = boardFixture(3)
 		next, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 12})

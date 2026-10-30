@@ -815,8 +815,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.held = nil
 		// The store can publish its empty loading snapshot before source data.
-		// Keep the restart anchor until rows exist to resolve it against.
-		if m.data.items > 0 {
+		// Keep the restart anchor until rows exist to resolve it against, or
+		// until it resolves: an empty board's headers never become items.
+		if m.data.items > 0 || msg.selected >= 0 {
 			m.restore = nil
 		}
 		if msg.selected >= 0 && m.selected == msg.from {
