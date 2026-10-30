@@ -29,7 +29,7 @@ bl adapter check /tmp/bl-reference-adapter
   re-trust. User config is trusted.
 - **It isn't a sandbox.** An approved adapter has your file and network access.
   It gets only `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, XDG home
-  variables, and `TMPDIR`; no provider tokens or Worklease credentials.
+  variables, `TMPDIR`, and `USERPROFILE` on Windows; no provider tokens or Worklease credentials.
 - Stderr is drained and discarded. Diagnostics never echo adapter output.
 
 `bl adapter check` runs an adapter on your explicit say-so without trusting

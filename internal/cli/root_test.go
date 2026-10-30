@@ -80,6 +80,9 @@ func TestMachineOutput(t *testing.T) {
 
 func TestInvocationDirectory(t *testing.T) {
 	testkit.Isolate(t)
+	// Windows has no relative path between volumes, such as a D: checkout
+	// and a C: temp directory.
+	t.Chdir(t.TempDir())
 	original, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

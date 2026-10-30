@@ -401,7 +401,7 @@ host. All resolvers share a 100 ms budget, and a slow one reports
 User config can add resolvers, replace a built-in by name, or disable one with
 `false`; `backlog.yaml` and `backlog.local.yaml` can't set `contact:`. A
 resolver is an argv run without a shell in the hook environment (PATH, HOME,
-and the XDG directories only), with `{agent}`, `{agentSession}`, `{session}`,
+the XDG directories, and USERPROFILE on Windows), with `{agent}`, `{agentSession}`, `{session}`,
 `{host}`, and `{cwd}` checked like hook placeholders. It prints a JSON array of
 channels on stdout:
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
+	"github.com/brettinternet/backlog/internal/testkit"
 )
 
 // These checks catch per-item descriptor growth, missed in-place writes, and
@@ -86,6 +87,7 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 }
 
 func TestDirectoryWatchDescriptorBound(t *testing.T) {
+	testkit.Unix(t, "/dev/fd")
 	root := t.TempDir()
 	path := filepath.Join(root, "backlog")
 	if err := os.Mkdir(path, 0755); err != nil {

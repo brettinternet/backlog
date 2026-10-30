@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // Without ctime, an edit that restores size and mtime, or a replacement with
@@ -24,6 +25,9 @@ func TestWindowsFileIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// File times advance once per clock tick (about 16 ms); a real edit lands
+	// ticks after the write before it.
+	time.Sleep(50 * time.Millisecond)
 	f, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)

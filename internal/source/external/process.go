@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -304,6 +305,9 @@ func adapterEnvironment() []string {
 		"LC_ALL": {}, "LC_COLLATE": {}, "LC_CTYPE": {}, "LC_MESSAGES": {}, "LC_MONETARY": {},
 		"LC_NUMERIC": {}, "LC_TIME": {}, "XDG_CONFIG_HOME": {}, "XDG_CACHE_HOME": {},
 		"XDG_DATA_HOME": {}, "XDG_STATE_HOME": {},
+	}
+	if runtime.GOOS == "windows" {
+		allowed["USERPROFILE"] = struct{}{}
 	}
 	values := make(map[string]string, len(allowed))
 	for _, entry := range os.Environ() {

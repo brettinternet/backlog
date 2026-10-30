@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -437,10 +438,15 @@ func hookEnvironment(cfg project.Config, event Event, resultPath string) []strin
 }
 
 // MinimalEnvironment is the credential-free environment a configured process
-// starts from (D17, D21): only PATH, HOME, and the XDG base directories.
+// starts from (D17, D21): only PATH, HOME, and the XDG base directories, plus
+// USERPROFILE on Windows, where it names the home directory.
 func MinimalEnvironment() []string {
+	keys := []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"}
+	if runtime.GOOS == "windows" {
+		keys = append(keys, "USERPROFILE")
+	}
 	var env []string
-	for _, key := range []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
+	for _, key := range keys {
 		if value, ok := os.LookupEnv(key); ok {
 			env = append(env, key+"="+value)
 		}

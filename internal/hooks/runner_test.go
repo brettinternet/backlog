@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -372,6 +373,10 @@ func TestHookEnvironmentCanary(t *testing.T) {
 		t.Fatalf("credential leaked in result: %#v", got)
 	}
 	wantKeys := []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "BL_ITEM_ID", "BL_ITEM_REF", "BL_SOURCE", "BL_PROJECT_ID", "BL_ROOT", "BL_BRANCH", "BL_EVENT_ID", "BL_HOOK_DEPTH", "BL_RESULT", "BL_RESOURCE"}
+	if runtime.GOOS == "windows" {
+		// os/exec adds SYSTEMROOT to every Windows child.
+		wantKeys = append(wantKeys, "USERPROFILE", "SYSTEMROOT")
+	}
 	sort.Strings(wantKeys)
 	gotKeys := make([]string, 0, len(finished[0].Result))
 	for key := range finished[0].Result {
@@ -410,8 +415,8 @@ func TestHookAndNestedBLChainsStopAtDepthThree(t *testing.T) {
 	binary := mustExecutable(t)
 	cfg := runnerConfig(t,
 		project.HookConfig{Name: "nested-cli", On: "item.created", Run: []string{binary, "-test.run=^TestNestedHookCLICall$"}},
-		project.HookConfig{Name: "observe-note", On: "item.updated", If: "changed:notes", Run: []string{"/usr/bin/true"}},
-		project.HookConfig{Name: "loop", On: "hook.finished", If: "outcome:ok", Run: []string{"/usr/bin/true"}},
+		project.HookConfig{Name: "observe-note", On: "item.updated", If: "changed:notes", Run: []string{binary, "-test.run=^$"}},
+		project.HookConfig{Name: "loop", On: "hook.finished", If: "outcome:ok", Run: []string{binary, "-test.run=^$"}},
 	)
 	paths, err := project.UserPaths()
 	if err != nil {

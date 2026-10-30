@@ -142,7 +142,7 @@ characters, a leading `-`, or more than 1 KiB refuses the run. Shell
 metacharacters pass through literally.
 
 The process gets only `PATH`, `HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
-`XDG_CACHE_HOME`, and `BL_ITEM_ID`, `BL_ITEM_REF`, `BL_SOURCE`, `BL_PROJECT_ID`,
+`XDG_CACHE_HOME`, `USERPROFILE` on Windows, and `BL_ITEM_ID`, `BL_ITEM_REF`, `BL_SOURCE`, `BL_PROJECT_ID`,
 `BL_ROOT`, `BL_BRANCH`, `BL_RESOURCE` (when available), `BL_EVENT_ID`,
 `BL_HOOK_DEPTH`, and `BL_RESULT`. No credentials, session, or other variables.
 The triggering event is JSON on stdin.
