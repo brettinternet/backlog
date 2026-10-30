@@ -3,6 +3,7 @@ package query
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/brettinternet/backlog/internal/model"
 )
@@ -98,4 +99,18 @@ func QuickAdd(input string, me func(source string) (string, error)) (model.Item,
 		return item, fail(0, "expected title")
 	}
 	return item, nil
+}
+
+// QuoteTitle escapes text so QuickAdd reads it back as the title alone.
+func QuoteTitle(text string) string {
+	var b strings.Builder
+	start := true
+	for _, r := range text {
+		if r == '\\' || r == '"' || start && strings.ContainsRune("!@#^<~:+", r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+		start = unicode.IsSpace(r)
+	}
+	return b.String()
 }

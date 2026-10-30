@@ -8,6 +8,7 @@ assignees: ["@agent"]
 labels: [fresh]
 parent: BL-99
 blocked_by: [BL-012]
+refs: ["https://github.com/acme/app/pull/45", "docs/a,b.md"]
 created: <TIME>
 updated: <TIME>
 ---

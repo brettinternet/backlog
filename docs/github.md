@@ -529,6 +529,23 @@ request, `bl show prs:#45` fails `not-found` naming the linker
 (`prs:#45 is linked to tasks:BL-12`), and `bl release prs:#45` still releases
 it.
 
+### Adopting
+
+Adopting a pull request creates a backlog item that links it, in one create,
+so the pull request item disappears on the next snapshot and the two are never
+both listed because a second write failed:
+
+```sh
+bl new 'Fix flaky login test' --ref https://github.com/acme/app/pull/45
+```
+
+MCP `create` takes the same `refs`, and the TUI's `+` opens quick-add
+prefilled from the selected pull request ([TUI](tui.md#quick-add)). The item
+goes where `bl new` puts it, never the read-only pulls source, in its default
+create status; adopting doesn't start it. The pull request body stays on
+GitHub and shows in the change view. A source whose create can't store `refs`,
+such as GitHub or Linear, refuses with `rejected` instead of dropping them.
+
 ## This repository
 
 The `issues` source uses Projects v2 board

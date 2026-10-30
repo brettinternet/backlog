@@ -21,8 +21,9 @@ import (
 
 // Catches a pull request listed beside the item that links it, by any of
 // linked changes' rules, or hidden by its own URL or by an item in another
-// workspace project; show disagreeing with ls; and a held claim on a pull
-// request that can't be released once an item links it.
+// workspace project; show disagreeing with ls; a held claim on a pull
+// request that can't be released once an item links it; and an adopting
+// create that leaves its pull request listed.
 func TestLinkedPullsHidden(t *testing.T) {
 	testkit.Isolate(t)
 	pulls := []map[string]any{
@@ -121,11 +122,20 @@ func TestLinkedPullsHidden(t *testing.T) {
 	if got := visible(cfg); !slices.Equal(got, []string{"#46", "#47"}) {
 		t.Fatalf("project pull requests: %v", got)
 	}
+	// Adoption is one create carrying the URL in refs, as bl new --ref,
+	// MCP create, and the TUI send it.
+	adopted := model.Item{Title: "Adopt", Status: "todo", Refs: []string{"https://github.com/owner/repo/pull/46"}}
+	if _, err := engine.ApplyWrite(ctx, cfg, model.Mutation{Op: model.Create, Ref: model.Ref{Source: "tasks"}, Item: &adopted}); err != nil {
+		t.Fatal(err)
+	}
+	if got := visible(cfg); !slices.Equal(got, []string{"#47"}) {
+		t.Fatalf("pull requests after adoption: %v", got)
+	}
 	workspace, err := project.OpenWorkspace(cfg, "all", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := visible(workspace); !slices.Equal(got, []string{"#46", "#47"}) {
+	if got := visible(workspace); !slices.Equal(got, []string{"#47"}) {
 		t.Fatalf("workspace pull requests: %v", got)
 	}
 
@@ -138,7 +148,7 @@ func TestLinkedPullsHidden(t *testing.T) {
 	if err := engine.HiddenPull(ctx, cfg, hidden[0]); engine.ErrorReason(err) != "not-found" || !strings.Contains(err.Error(), "prs:#45 is linked to more:BL-5, tasks:BL-5") {
 		t.Fatalf("show of a hidden pull request: %v", err)
 	}
-	shown, _ := engine.ReadDetail(ctx, cfg, "prs:#46")
+	shown, _ := engine.ReadDetail(ctx, cfg, "prs:#47")
 	if err := engine.HiddenPull(ctx, cfg, shown[0]); err != nil {
 		t.Fatalf("show of an unlinked pull request: %v", err)
 	}

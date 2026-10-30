@@ -25,6 +25,7 @@ type captureState struct {
 	original                    model.Item
 	version                     string
 	source                      string
+	refs                        []string // carried into the new item, such as an adopted pull request
 }
 type captureField struct {
 	name  string
@@ -73,6 +74,26 @@ func (m *Model) beginCapture(child bool) {
 	m.routeSourceProject(source)
 	m.capture = captureState{open: true, child: child, source: source}
 	m.notice = ""
+}
+
+// beginAdopt opens quick-add for a new item whose refs link the selected pull
+// request, which hides the pull request item (design.md D44).
+func (m *Model) beginAdopt() {
+	row, ok := m.selectedRow()
+	if !ok || m.sourceType(row.Ref.Source) != "github-pulls" {
+		m.notice = "Select a pull request to adopt."
+		return
+	}
+	item, _, ok := m.currentSnapshot().Get(row.Ref)
+	if !ok {
+		m.notice = "Item is no longer available."
+		return
+	}
+	m.beginCapture(false)
+	if m.capture.open {
+		m.capture.line = newLine(query.QuoteTitle(item.Title))
+		m.capture.refs = []string{item.URL}
+	}
 }
 
 // createSource resolves a new item's source as bl new and MCP create do, from
@@ -356,6 +377,7 @@ func (m *Model) expandCapture(untitled bool) {
 		row, _ := m.selectedRow()
 		item.Parent = &model.Ref{ID: row.Ref.ID}
 	}
+	item.Refs = append(item.Refs, m.capture.refs...)
 	if m.opts.Workspace != nil {
 		engine.ApplyCreateDefaults(*m.opts.Workspace, m.capture.source, &item)
 	}

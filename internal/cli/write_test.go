@@ -260,7 +260,7 @@ func TestWriteGolden(t *testing.T) {
 		file   string
 		editor string
 	}{
-		{"new", []string{"new", "New item !h #fresh @agent :feature <12 ^99", "--body", "-", "--ac", "New criterion, with a comma"}, "Body from stdin.\n", "items/BL-13.md", ""},
+		{"new", []string{"new", "New item !h #fresh @agent :feature <12 ^99", "--body", "-", "--ac", "New criterion, with a comma", "--ref", "https://github.com/acme/app/pull/45", "--ref", "docs/a,b.md"}, "Body from stdin.\n", "items/BL-13.md", ""},
 		{"set", []string{"set", "12", "title=Changed", "priority=high", "label+=new", "label-=bug", "related+=12"}, "", "", ""},
 		{"start", []string{"start", "12"}, "", "", ""},
 		{"done", []string{"done", "12"}, "", "", ""},

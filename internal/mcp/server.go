@@ -187,6 +187,7 @@ type CreateArgs struct {
 	Due         string   `json:"due,omitempty"`
 	Parent      string   `json:"parent,omitempty"`
 	BlockedBy   []string `json:"blocked_by,omitempty"`
+	Refs        []string `json:"refs,omitempty" jsonschema:"Reference URLs or paths, such as a pull request URL to adopt it."`
 	Source      string   `json:"source,omitempty"`
 	Sprint      string   `json:"sprint,omitempty" jsonschema:"current, next, or a sprint name or key (Linear)."`
 }
@@ -454,7 +455,7 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Sprint: args.Sprint}
+	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Refs: args.Refs, Sprint: args.Sprint}
 	if args.Parent != "" {
 		parent, _, err := engine.ResolveRef(ctx, s.cfg, sourceID, model.Ref{ID: args.Parent})
 		if err != nil {

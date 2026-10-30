@@ -50,6 +50,7 @@ var searchAliases = map[string]string{
 	"archive":     "delete remove trash",
 	"new":         "create add",
 	"new-child":   "create add subtask",
+	"adopt":       "create add pull request",
 	"actions":     "run",
 	"open-url":    "browser link",
 	"quit":        "exit",
@@ -57,7 +58,7 @@ var searchAliases = map[string]string{
 
 // itemAction reports whether an action acts on the selected item.
 func itemAction(id string) bool {
-	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url"}, id)
+	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url", "adopt"}, id)
 }
 
 func defaultKeymap() []action {
@@ -122,6 +123,7 @@ func defaultKeymap() []action {
 		{id: "archive", label: "Archive", canonical: "d d", bindings: []string{"d d"}},
 		{id: "new", label: "New item / next match", canonical: "n", bindings: []string{"n"}},
 		{id: "new-child", label: "New child / previous match", canonical: "N", bindings: []string{"N"}},
+		{id: "adopt", label: "Adopt pull request", canonical: "+", bindings: []string{"+"}},
 		{id: "repeat", label: "Repeat edit", canonical: ".", bindings: []string{"."}},
 		{id: "undo", label: "Undo", canonical: "u", bindings: []string{"u"}},
 		{id: "redo", label: "Redo", canonical: "ctrl+r", bindings: []string{"ctrl+r"}},
@@ -467,7 +469,7 @@ func (m Model) disabledReason(a action) string {
 		}
 		return m.pickerCapability(row.Ref, picker)
 	}
-	if a.id == "new" || a.id == "new-child" {
+	if a.id == "new" || a.id == "new-child" || a.id == "adopt" {
 		if m.opts.Store == nil {
 			return "creation is unavailable without an engine store"
 		}
@@ -477,6 +479,11 @@ func (m Model) disabledReason(a action) string {
 				return "select a parent"
 			}
 			return m.capability(row.Ref, model.Create)
+		}
+		if a.id == "adopt" {
+			if row, ok := m.selectedRow(); !ok || m.sourceType(row.Ref.Source) != "github-pulls" {
+				return "select a pull request"
+			}
 		}
 		if m.opts.CreateSource != "" {
 			return m.capability(model.Ref{Source: m.opts.CreateSource}, model.Create)

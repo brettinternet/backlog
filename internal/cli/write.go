@@ -187,6 +187,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		&urfave.StringFlag{Name: "status", Aliases: []string{"s"}, Usage: "Create in status `KEY`, such as draft"},
 		&urfave.StringFlag{Name: "body", Aliases: []string{"b"}, Usage: "Set the description to `TEXT`; - reads stdin"},
 		&urfave.StringSliceFlag{Name: "ac", Usage: "Add the acceptance criterion `TEXT`"},
+		&urfave.StringSliceFlag{Name: "ref", Usage: "Add the reference `URL`, such as a pull request to adopt"},
 		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (default: defaults.source, else the only source that can create)"},
 		&urfave.StringFlag{Name: "sprint", Usage: "Add to sprint `VALUE`: current, next, or a name or key (Linear)"},
 	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
@@ -220,6 +221,12 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				return writeUsage("--ac requires nonempty single-line text")
 			}
 			item.Criteria = append(item.Criteria, model.Criterion{Text: c})
+		}
+		for _, r := range cmd.StringSlice("ref") {
+			if strings.TrimSpace(r) == "" || strings.ContainsAny(r, "\r\n") {
+				return writeUsage("--ref requires nonempty single-line text")
+			}
+			item.Refs = append(item.Refs, r)
 		}
 		item.Description, err = body(cmd.String("body"))
 		if err != nil {

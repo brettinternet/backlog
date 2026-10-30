@@ -228,13 +228,14 @@ the envelope is `ok: false` with the first failure's error and exit code, and
 keeps `data.outcomes`. `--if-version` with several IDs exits 2 before writing.
 Text output prints each written item, then `ID: message` for each failure.
 
-### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--source SOURCE] [--sprint S]`
+### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--ref URL]... [--source SOURCE] [--sprint S]`
 
 Alias: `bl create`.
 
 ```sh
 bl new 'Fix login redirect !h @me #bug ^BL-1 <BL-2 ~m-1 :bug' --ac 'Redirect keeps the path'
 echo 'Long description' | bl new 'Write docs' --body -
+bl new 'Fix flaky login test' --ref https://github.com/acme/app/pull/45
 ```
 
 - [Quick-add tokens](query.md#shared-quick-add-parser) set fields. `@me` uses
@@ -247,6 +248,10 @@ echo 'Long description' | bl new 'Write docs' --body -
   written; `bl check` reports it, and `bl new` warns about a blocker that
   matches no item or several.
 - Each `--ac` adds one criterion; commas stay in the text.
+- Each `--ref` adds one entry to `refs`, written in the same create. A pull
+  request URL adopts its `github-pulls` item, which then disappears
+  ([GitHub](github.md#adopting)). GitHub and Linear creates can't store refs
+  and exit 5 with `rejected` naming `refs`.
 - `--status` takes a status key. `--status draft` creates an item that is never
   ready. An unknown key exits 5 and lists the allowed keys. The default is the
   first todo-category status, else the first status.

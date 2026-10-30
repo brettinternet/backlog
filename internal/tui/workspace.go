@@ -6,16 +6,21 @@ import (
 )
 
 func (m Model) isBacklogMD(source string) bool {
+	return m.sourceType(source) == "backlog-md"
+}
+
+// sourceType is the configured type of source, "" when unknown.
+func (m Model) sourceType(source string) string {
 	if m.opts.Workspace == nil {
-		return false
+		return ""
 	}
 	cfg, local := m.opts.Workspace.SourceProject(source)
 	for _, configured := range cfg.Sources {
 		if configured.ID == local {
-			return configured.Type == "backlog-md"
+			return configured.Type
 		}
 	}
-	return false
+	return ""
 }
 
 func (m Model) hasWorkspace() bool {
