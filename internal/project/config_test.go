@@ -165,6 +165,8 @@ func TestRejectInvalidConfig(t *testing.T) {
 		"ui: [",
 		"hooks: [{name: before, on: item.readiness, phase: before, run: [noop]}]\n",
 		"hooks: [{name: before, on: hook.finished, phase: before, run: [noop]}]\n",
+		"tours: {mode: always}\n",
+		"tours: {stages: [landed]}\n",
 	} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()

@@ -209,6 +209,9 @@ func ApplyWrite(ctx context.Context, cfg project.Config, m model.Mutation) (mode
 	if err := validateWrite(cfg, m.Ref.Source, backend.Info().Capabilities, m); err != nil {
 		return model.Item{}, err
 	}
+	if err := requireTours(ctx, cfg, backend, m); err != nil {
+		return model.Item{}, err
+	}
 	ctx, err = runBeforeMutation(ctx, cfg, m, backend)
 	if err != nil {
 		return model.Item{}, err

@@ -27,6 +27,9 @@ type writeOutcome struct {
 	Item       *readItem                `json:"item,omitempty"`
 	Error      *Error                   `json:"error,omitempty"`
 	Transition *engine.TransitionResult `json:"transition,omitempty"`
+	// TourRequest asks for tours of the item's changes under tours.mode
+	// suggest (design.md D43).
+	TourRequest string `json:"tourRequest,omitempty"`
 }
 
 // handoffData reports a recorded handoff: its event and, under
@@ -138,6 +141,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			} else {
 				summary := itemjson.NewSummary(item)
 				outcome.Item = &summary
+				if cmd.Name == "done" {
+					outcome.TourRequest = engine.TourSuggestion(ctx, cfg, item.Ref)
+				}
 			}
 			data.Outcomes = append(data.Outcomes, outcome)
 		}
@@ -153,6 +159,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 				if r.Error == nil {
 					if err := table.write(*r.Item); err != nil {
 						return err
+					}
+					if r.TourRequest != "" {
+						fmt.Fprintln(errOut, "bl: "+r.TourRequest)
 					}
 				} else if len(data.Outcomes) > 1 {
 					// A single failure is reported once, on stderr.

@@ -71,3 +71,11 @@ so automation can skip changes whose tour is current.
 Storing again replaces a change's tour. To drop a wrong one, run
 `bl tour ID --remove [CHANGE] --json` (MCP: the tour tool with remove and
 change); CHANGE is needed only when several linked changes have tours.
+
+Tours are opt-in. A project's `tours.mode` in backlog.yaml is `off` (the
+default), `suggest`, or `require`, and `tours.stages` (worktree, branch, pr)
+narrows which open changes need one. Under suggest, `bl instructions workflow`
+asks for a tour of each such change and the done response's `tourRequest`
+names any still without one; under require, done refuses until each has a
+tour for its current head, naming the change and the command to store it. A
+tour carried forward to the head with no step outdated counts as current.

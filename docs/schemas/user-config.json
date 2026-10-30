@@ -97,6 +97,9 @@
     "changes": {
       "$ref": "project-config.json#/properties/changes"
     },
+    "tours": {
+      "$ref": "project-config.json#/properties/tours"
+    },
     "hooks": {
       "$ref": "project-config.json#/properties/hooks"
     },

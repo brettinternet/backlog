@@ -66,7 +66,10 @@ by the configured source IDs and types for `source:` filters.
 - `fields` takes `bl set` names. Suffix a list field with `+` or `-` to add or
   remove.
 - `operation: "start"` or `"done"` sets the status `bl start` or `bl done`
-  would, resolved per item source, and takes no `fields`.
+  would, resolved per item source, and takes no `fields`. Under
+  [`tours.mode`](changes.md#tours) `suggest`, a done result carries
+  `tourRequest`; under `require`, done is refused until each matching change
+  has a tour for its head.
 - `criteria` changes acceptance criteria unless `list` is `dod`. `set` rewords
   the entry at `index` to `text`, keeping its check state and evidence.
 - Editable sections: `description`, `criteria`, `dod`, `plan`, `notes`,

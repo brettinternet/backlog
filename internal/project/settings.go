@@ -32,6 +32,7 @@ type Settings struct {
 	Agents  map[string]AgentConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 	History HistoryConfig          `yaml:"history,omitempty" json:"history"`
 	Changes ChangesConfig          `yaml:"changes,omitempty" json:"changes"`
+	Tours   ToursConfig            `yaml:"tours,omitempty" json:"tours"`
 	// Contact adds or disables contact resolvers by name; like Agents, it is
 	// honored only from user config (design.md D40).
 	Contact map[string]ContactResolver `yaml:"contact,omitempty" json:"contact,omitempty"`
@@ -80,6 +81,15 @@ type HistoryConfig struct {
 type ChangesConfig struct {
 	Git    bool          `yaml:"git" json:"git"`
 	Forges []ForgeConfig `yaml:"forges,omitempty" json:"forges,omitempty"`
+}
+
+// ToursConfig opts a project in to agent-written tours (design.md D43).
+// Mode is off (the default), suggest, which asks agents for a tour of each
+// open change at one of Stages, or require, which also refuses done until each
+// has a tour for its current head.
+type ToursConfig struct {
+	Mode   string   `yaml:"mode,omitempty" json:"mode"`
+	Stages []string `yaml:"stages,omitempty" json:"stages"`
 }
 
 // ForgeConfig is a repository whose pull requests link to items. Account

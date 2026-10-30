@@ -571,6 +571,9 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 		m.Ref.ID = ""
 	}
 	m, err := resolveStatusWrite(s.ctx, s.cfg, w.backend, m)
+	if err == nil {
+		err = requireTours(s.ctx, s.cfg, w.backend, m)
+	}
 	if err != nil {
 		s.finishEdit(w, job, model.Item{}, err)
 		return

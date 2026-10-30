@@ -91,6 +91,7 @@ git: {autoCommit: false}
 ui: {highContrast: false}
 ready: {statuses: [todo], satisfiedBy: [done, canceled], skipContainers: true}
 changes: {git: true}
+tours: {mode: "off", stages: [worktree, branch, pr]}
 agents:
   claude:
     session: CLAUDE_CODE_SESSION_ID
@@ -588,6 +589,21 @@ func validateSettings(node *yaml.Node) error {
 			}
 			if n := field(entry, "repo"); kind.Value == "gitlab" && (n == nil || !projectPath.MatchString(n.Value)) {
 				return fail(entry, fmt.Sprintf("changes.forges[%d].repo", i), "must be group/project")
+			}
+		}
+	}
+	if tours := field(node, "tours"); tours != nil {
+		if n := field(tours, "mode"); n != nil && n.Value != "off" && n.Value != "suggest" && n.Value != "require" {
+			return fail(n, "tours.mode", "must be off, suggest, or require")
+		}
+		if n := field(tours, "stages"); n != nil {
+			if len(n.Content) == 0 {
+				return fail(n, "tours.stages", "must name at least one stage")
+			}
+			for i, stage := range n.Content {
+				if stage.Value != "worktree" && stage.Value != "branch" && stage.Value != "pr" {
+					return fail(stage, fmt.Sprintf("tours.stages[%d]", i), "must be worktree, branch, or pr")
+				}
 			}
 		}
 	}
