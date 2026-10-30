@@ -42,7 +42,7 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }
 func (f *Forge) Web() string  { return "https://" + f.s.o.Host + "/" + f.s.o.Repo }
 
-const pullsQuery = `query($owner:String!,$repo:String!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:50,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid mergeCommit{oid} additions deletions reviewDecision closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
+const pullsQuery = `query($owner:String!,$repo:String!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:50,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
 
 type pullNode struct {
 	Number                     int
@@ -51,11 +51,15 @@ type pullNode struct {
 	CreatedAt, UpdatedAt       time.Time
 	MergedAt, ClosedAt         *time.Time
 	HeadRefName, HeadRefOid    string
-	MergeCommit                *struct{ Oid string }
-	Additions, Deletions       int
-	ReviewDecision             string
-	ClosingIssuesReferences    struct{ Nodes []struct{ ID string } }
-	Commits                    struct {
+	Author                     *struct {
+		Login    string
+		Typename string `json:"__typename"`
+	}
+	MergeCommit             *struct{ Oid string }
+	Additions, Deletions    int
+	ReviewDecision          string
+	ClosingIssuesReferences struct{ Nodes []struct{ ID string } }
+	Commits                 struct {
 		Nodes []struct {
 			Commit struct {
 				StatusCheckRollup *struct{ State string }
@@ -68,9 +72,24 @@ type pullNode struct {
 // updated since the last refresh. On failure it returns the cached list with
 // the error, so its entries read as stale.
 func (f *Forge) PullRequests(ctx context.Context) ([]changes.PullRequest, error) {
+	return f.refresh(ctx, 0)
+}
+
+// pullsAge is how long a refresh serves readers that don't own the refresh
+// cadence, as often as the changes tracker refreshes.
+const pullsAge = time.Minute
+
+// Recent is PullRequests, but reuses a list refreshed in the last minute by
+// any process, so the github-pulls source adds no request to the changes
+// tracker's.
+func (f *Forge) Recent(ctx context.Context) ([]changes.PullRequest, error) {
+	return f.refresh(ctx, pullsAge)
+}
+
+func (f *Forge) refresh(ctx context.Context, fresh time.Duration) ([]changes.PullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return changes.RefreshPulls(f.cache, f.s.o.Repo, f.s.o.Secrets.Redact, func(since time.Time) ([]changes.PullRequest, []changes.PullRequest, time.Time, error) {
+	return changes.RefreshPulls(f.cache, f.s.o.Repo, fresh, f.s.o.Secrets.Redact, func(since time.Time) ([]changes.PullRequest, []changes.PullRequest, time.Time, error) {
 		c, err := f.s.authenticate(ctx)
 		if err != nil {
 			return nil, nil, since, err
@@ -153,6 +172,9 @@ func (n pullNode) pull(repo string) changes.PullRequest {
 	}
 	if n.ClosedAt != nil {
 		pr.Closed = n.ClosedAt.UTC()
+	}
+	if n.Author != nil {
+		pr.Author, pr.Bot = n.Author.Login, n.Author.Typename == "Bot"
 	}
 	if n.MergeCommit != nil {
 		pr.MergeSHA = n.MergeCommit.Oid

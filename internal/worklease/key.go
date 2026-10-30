@@ -90,7 +90,7 @@ func resource(cfg project.Config, item model.Item) (string, error) {
 			continue
 		}
 		switch s.Type {
-		case "github":
+		case "github", "github-pulls":
 			host := s.Host
 			if host == "" {
 				host = "github.com"

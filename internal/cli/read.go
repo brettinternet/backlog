@@ -438,5 +438,8 @@ func readOne(ctx context.Context, cfg project.Config, id string) (model.Item, er
 		}
 		return model.Item{}, &Error{Reason: "usage", Message: "ambiguous ID; matches: " + strings.Join(names, ", "), Details: map[string]any{"matches": names}}
 	}
+	if err := engine.HiddenPull(ctx, cfg, matches[0]); err != nil {
+		return model.Item{}, &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+	}
 	return matches[0], nil
 }

@@ -710,6 +710,17 @@ func validateSettings(node *yaml.Node) error {
 				}
 				switch kind.Value {
 				case "native", "backlog-md", "beads", "github", "linear", "jira", "external":
+				case "github-pulls":
+					if n := field(entry, "repo"); n == nil || !ownerRepo.MatchString(n.Value) {
+						return fail(entry, fmt.Sprintf("sources[%d].repo", i), "must be owner/repo")
+					}
+					for k := 0; k < len(entry.Content); k += 2 {
+						switch name := entry.Content[k].Value; name {
+						case "id", "type", "repo", "host", "account":
+						default:
+							return fail(entry.Content[k], fmt.Sprintf("sources[%d].%s", i, name), "does not apply to a github-pulls source")
+						}
+					}
 				default:
 					return fail(kind, "sources.type", "unknown source type")
 				}
@@ -796,6 +807,11 @@ func (c Config) validateGitHubStatuses() error {
 	}
 	if slices.ContainsFunc(c.Sources, func(s SourceConfig) bool { return s.Type == "github" && s.GitHubProject != nil }) {
 		assigned["draft"], by["draft"] = "backlog", "GitHub"
+	}
+	if slices.ContainsFunc(c.Sources, func(s SourceConfig) bool { return s.Type == "github-pulls" }) {
+		for key, category := range map[string]string{"pr-draft": "backlog", "pr-open": "active"} {
+			assigned[key], by[key] = category, "GitHub pull requests"
+		}
 	}
 	for i, s := range c.Sources {
 		if s.Type != "github" {

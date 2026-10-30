@@ -126,7 +126,7 @@ type Event struct {
 
 // PullRequest is a forge's pull request, as its adapter decodes it. State is
 // open, merged, or closed; Closes holds the provider node IDs of the issues it
-// closes; Stale is why one kept from a refresh that failed may be out of date.
+// closes; Bot marks an author that is an app, not a person; Stale is why one kept from a refresh that failed may be out of date.
 type PullRequest struct {
 	Repo            string    `json:"repo"`
 	Number          int       `json:"number"`
@@ -144,6 +144,8 @@ type PullRequest struct {
 	Review          string    `json:"review,omitempty"`
 	Checks          string    `json:"checks,omitempty"`
 	Closes          []string  `json:"closes,omitempty"`
+	Author          string    `json:"author,omitempty"`
+	Bot             bool      `json:"bot,omitempty"`
 	Created         time.Time `json:"created"`
 	Updated         time.Time `json:"updated"`
 	Merged          time.Time `json:"merged,omitzero"`

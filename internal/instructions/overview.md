@@ -9,7 +9,8 @@ use source-qualified IDs otherwise. Read the full item before starting.
 Pass the last returned item version to writes that depend on that read.
 
 Items come from native files, Backlog.md, Beads, GitHub, Linear, or external
-adapters. `bl config show --json` lists the configured sources, and
+adapters, and may be open GitHub pull requests no other item links (read-only;
+they disappear once an item links them). `bl config show --json` lists the configured sources, and
 `bl doctor --json` checks them. The same commands and JSON work for every
 source, from the CLI or MCP. A write that fails with unknown-outcome may have
 applied: reread the item before deciding anything, and never repeat it blindly.

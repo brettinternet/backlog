@@ -123,6 +123,7 @@ func loadReads(ctx context.Context, cfg project.Config, archived, skipUntrusted,
 			}
 		}
 	}
+	s.Query.Items = hidePulls(cfg, s.Query.Items)
 	coordination := cfg.Coordination.Enabled()
 	claims := map[model.Ref]Claim{}
 	if coordination {
@@ -282,6 +283,22 @@ func rawSource(cfg project.Config, c project.SourceConfig) (source.Source, error
 		}{c, account.User, aliases})
 		return remote.New(backend, providerCache(cfg, c.ID, string(identity), account), providerSecrets), nil
 	}
+	if c.Type == "github-pulls" {
+		f := c.PullsForge()
+		account, err := cfg.ForgeAccount(f)
+		if err != nil {
+			return nil, source.Refuse("unavailable", err.Error())
+		}
+		forge, err := githubForge(cfg, f)
+		if err != nil {
+			return nil, err
+		}
+		identity, _ := json.Marshal(struct {
+			Source project.SourceConfig
+			User   string
+		}{c, account.User})
+		return remote.New(github.NewPulls(c.ID, forge), providerCache(cfg, c.ID, string(identity), account), providerSecrets), nil
+	}
 	if c.Type == "external" {
 		return external.New(external.Options{ID: c.ID, Run: c.Run, Dir: cfg.Discovery.ControlRoot})
 	}
@@ -423,7 +440,7 @@ func (s *ReadSnapshot) reassess(fresh model.Item) Explanation {
 func remoteSource(cfg project.Config, id string) bool {
 	for _, c := range cfg.Sources {
 		if c.ID == id {
-			return c.Type == "linear" || c.Type == "github" || c.Type == "jira"
+			return c.Type == "linear" || c.Type == "github" || c.Type == "jira" || c.Type == "github-pulls"
 		}
 	}
 	return false

@@ -5,11 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/changes"
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source/github"
 	"github.com/brettinternet/backlog/internal/testkit"
 	"github.com/brettinternet/backlog/internal/tour"
 )
@@ -46,8 +49,21 @@ func TestOriginForge(t *testing.T) {
 		t.Fatalf("two GitLab accounts: %v", got)
 	}
 	cfg.Accounts = map[string][]project.AccountConfig{"github": {{Name: "hub", Host: "gitlab.com", User: "alice", Env: "TOKEN"}}}
-	if _, err := forgeAccount(cfg, project.ForgeConfig{Type: "gitlab", Host: "gitlab.com", Repo: "grp/app"}); err == nil {
+	if _, err := cfg.ForgeAccount(project.ForgeConfig{Type: "gitlab", Host: "gitlab.com", Repo: "grp/app"}); err == nil {
 		t.Fatal("a GitLab forge used a GitHub account")
+	}
+}
+
+// Catches a pull request kept beside the GitHub issue it closes by
+// GitHub's own closing reference, the one link rule a native item can't make.
+func TestLinkedPullsClosingReference(t *testing.T) {
+	cfg := project.Config{Sources: []project.SourceConfig{{ID: "issues", Type: "github", Repo: "owner/repo"}, {ID: "prs", Type: "github-pulls", Repo: "owner/repo"}}}
+	items := []model.Item{
+		{Ref: model.Ref{Source: "issues", ID: "#7"}, Fields: map[string]any{"id": "I_7"}},
+		{Ref: model.Ref{Source: "prs", ID: "#8"}, URL: "https://github.com/owner/repo/pull/8", Status: github.PullOpen, Fields: map[string]any{"head": "patch", "closes": []any{"I_7"}}},
+	}
+	if got := linkedPulls(cfg, items); !slices.Equal(got[items[1].Ref], []model.Ref{items[0].Ref}) {
+		t.Fatalf("linked pulls: %v", got)
 	}
 }
 

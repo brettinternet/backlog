@@ -959,7 +959,8 @@ func TestForgePullRequests(t *testing.T) {
 		return map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"state": state}}}}}
 	}
 	f.pulls = []map[string]any{
-		{"number": 45, "title": "BL-12 fix", "body": "token fake-secret", "url": "https://github.com/owner/repo/pull/45", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "bl-12-fix", "headRefOid": "aaa", "reviewDecision": "APPROVED", "closingIssuesReferences": map[string]any{"nodes": []any{map[string]any{"id": "I_1"}}}, "commits": rollup("PENDING")},
+		{"number": 45, "title": "BL-12 fix", "body": "token fake-secret", "url": "https://github.com/owner/repo/pull/45", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "bl-12-fix", "headRefOid": "aaa", "reviewDecision": "APPROVED", "closingIssuesReferences": map[string]any{"nodes": []any{map[string]any{"id": "I_1"}}}, "commits": rollup("PENDING"), "author": map[string]any{"login": "ann", "__typename": "User"}},
+		{"number": 46, "title": "Bump deps", "url": "https://github.com/owner/repo/pull/46", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "deps", "commits": rollup("SUCCESS"), "author": map[string]any{"login": "dependabot", "__typename": "Bot"}},
 		{"number": 44, "title": "Old", "url": "https://github.com/owner/repo/pull/44", "state": "MERGED", "createdAt": at, "updatedAt": at, "mergedAt": at, "headRefName": "old", "mergeCommit": map[string]any{"oid": "mmm"}},
 	}
 	read := func() map[int]changes.PullRequest {
@@ -985,12 +986,16 @@ func TestForgePullRequests(t *testing.T) {
 	if data, err := os.ReadFile(cache); err != nil || strings.Contains(string(data), "fake-secret") {
 		t.Fatalf("cache: %v %s", err, data)
 	}
+	// A github-pulls source skips app-opened pull requests.
+	if delta, err := NewPulls("prs", forge).Load(context.Background(), source.Cursor{}); err != nil || len(delta.Items) != 1 || delta.Items[0].Ref.ID != "#45" || !slices.Equal(delta.Items[0].Assignees, []string{"ann"}) {
+		t.Fatalf("pulls source: %v %+v", err, delta.Items)
+	}
 	f.pulls[0]["commits"] = rollup("SUCCESS")
 	if prs = read(); prs[45].Checks != changes.ChecksPassing {
 		t.Fatalf("checks after refresh: %+v", prs[45])
 	}
 	f.pullsFail = true
-	if list, err := forge.PullRequests(context.Background()); err == nil || len(list) != 2 {
+	if list, err := forge.PullRequests(context.Background()); err == nil || len(list) != 3 {
 		t.Fatalf("failed refresh: %v %+v", err, list)
 	}
 	f.pullFiles = `[{"filename":"new.go","previous_filename":"old.go","status":"renamed","additions":1,"deletions":2,"patch":"@@"},{"filename":"logo.png","status":"added"},{"filename":"gone.go","status":"removed","deletions":3,"patch":"@@"},{"filename":"huge.go","status":"modified","additions":9000}]`

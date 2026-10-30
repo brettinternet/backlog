@@ -133,7 +133,7 @@ func (f *Forge) authenticate(ctx context.Context) (remote.Credential, error) {
 func (f *Forge) PullRequests(ctx context.Context) ([]changes.PullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return changes.RefreshPulls(f.cache, f.o.Repo, f.o.Secrets.Redact, func(since time.Time) ([]changes.PullRequest, []changes.PullRequest, time.Time, error) {
+	return changes.RefreshPulls(f.cache, f.o.Repo, 0, f.o.Secrets.Redact, func(since time.Time) ([]changes.PullRequest, []changes.PullRequest, time.Time, error) {
 		c, err := f.authenticate(ctx)
 		if err != nil {
 			return nil, nil, since, err

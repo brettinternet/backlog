@@ -342,6 +342,9 @@ func (s *Server) show(ctx context.Context, _ *mcp.CallToolRequest, args ShowArgs
 		return failed[any]("usage", "id is required")
 	}
 	item, err := readItem(ctx, s.cfg, args.ID)
+	if err == nil {
+		err = engine.HiddenPull(ctx, s.cfg, item)
+	}
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
