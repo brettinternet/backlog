@@ -1699,15 +1699,14 @@ func (m *Model) followRelation() tea.Cmd {
 	return m.showDetail()
 }
 
-// followBack leaves the change view, or returns to the item a relation was
-// followed from.
+// followBack leaves the change view, returns to the item a relation was
+// followed from, or closes detail.
 func (m *Model) followBack() tea.Cmd {
 	if m.change != nil {
 		return m.closeChange()
 	}
 	if m.detached == nil || len(m.detailHistory) == 0 {
-		m.detailHistory = nil
-		m.notice = "No previous item."
+		m.closeDetail()
 		return nil
 	}
 	stop := m.detailHistory[len(m.detailHistory)-1]

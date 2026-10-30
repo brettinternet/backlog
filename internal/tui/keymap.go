@@ -86,7 +86,7 @@ func defaultKeymap() []action {
 		{group: "Detail", id: "detail", label: "Toggle detail", canonical: "enter", bindings: []string{"enter"}},
 		{id: "next-detail-tab", label: "Next tab", canonical: "tab", bindings: []string{"tab"}},
 		{id: "previous-detail-tab", label: "Previous tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
-		{id: "back", label: "Back to previous item", canonical: "backspace", bindings: []string{"backspace"}},
+		{id: "back", label: "Back", canonical: "backspace", bindings: []string{"backspace"}},
 		{id: "split-left", label: "Shrink list", canonical: "ctrl+left", bindings: []string{"ctrl+left"}},
 		{id: "split-right", label: "Grow list", canonical: "ctrl+right", bindings: []string{"ctrl+right"}},
 		{group: "Views", id: "next-view", label: "Next view", canonical: "g t", bindings: []string{"g t"}},
@@ -424,8 +424,8 @@ func (m Model) disabledReason(a action) string {
 	if (a.id == "undo" || a.id == "redo") && m.opts.Store == nil {
 		return "session history is unavailable"
 	}
-	if a.id == "back" && (!m.detailFocus || m.change == nil && (m.detached == nil || len(m.detailHistory) == 0)) {
-		return "no previous item"
+	if a.id == "back" && !m.detailFocus {
+		return "open an item first"
 	}
 	if a.id == "comment" && m.change != nil && m.detailFocus || a.id == "review" {
 		return m.reviewBlocked()

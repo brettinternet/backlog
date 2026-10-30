@@ -238,8 +238,8 @@ new version) keeps its body and shows loading on the header row.
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and
 list selection stay. `backspace` leaves a change view, else returns to the
-previous item, back through every jump to the original selection; the detail
-header shows `⌫ back` while there is one. A target that isn't loaded shows `?`,
+previous item, back through every jump to the original selection, then closes
+detail; the detail header shows `⌫ back` while there is a previous item. A target that isn't loaded shows `?`,
 and following it says why: its source isn't configured, failed, or is still
 loading, or the item isn't in it.
 
@@ -647,7 +647,7 @@ keys:
 | `detail` | `enter` | Toggle detail |
 | `next-detail-tab` | `tab` | Next tab |
 | `previous-detail-tab` | `shift+tab` | Previous tab |
-| `back` | `backspace` | Back to previous item |
+| `back` | `backspace` | Back |
 | `split-left` | `ctrl+left` | Shrink list |
 | `split-right` | `ctrl+right` | Grow list |
 | `next-view` | `g t` | Next view |

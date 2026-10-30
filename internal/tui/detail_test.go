@@ -518,8 +518,8 @@ func TestDetailFollowRelations(t *testing.T) {
 		t.Fatal("back did not end at the original selection and entry")
 	}
 	m, _ = detailKey(m, tea.KeyBackspace, 0)
-	if m.notice != "No previous item." {
-		t.Fatalf("back past the start: %q", m.notice)
+	if m.detailOpen {
+		t.Fatal("back past the start did not close detail")
 	}
 }
 
