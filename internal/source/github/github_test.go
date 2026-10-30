@@ -1002,8 +1002,14 @@ func TestForgePullRequests(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatal(ok, err)
 	}
-	wantChecks := []changes.Check{{"test", changes.ChecksPassing, "https://ci/1"}, {"lint", changes.ChecksPending, "https://github.com/run/2"}, {"e2e", changes.ChecksFailing, ""}, {"docs", changes.ChecksSkipped, ""}, {"ci/legacy", changes.ChecksFailing, "https://legacy/3"}}
-	wantReviewers := []changes.Reviewer{{"ann", changes.ReviewApproved}, {"bo", changes.ReviewRequested}}
+	wantChecks := []changes.Check{
+		{Name: "test", State: changes.ChecksPassing, URL: "https://ci/1"},
+		{Name: "lint", State: changes.ChecksPending, URL: "https://github.com/run/2"},
+		{Name: "e2e", State: changes.ChecksFailing},
+		{Name: "docs", State: changes.ChecksSkipped},
+		{Name: "ci/legacy", State: changes.ChecksFailing, URL: "https://legacy/3"},
+	}
+	wantReviewers := []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved}, {Login: "bo", State: changes.ReviewRequested}}
 	if !slices.Equal(r.Checks, wantChecks) || !slices.Equal(r.Reviewers, wantReviewers) || r.Unresolved() != 1 || r.Threads[1].Line != 7 || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
 		t.Fatalf("review: %+v", r)
 	}

@@ -964,12 +964,12 @@ func TestChangeViewReview(t *testing.T) {
 		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}},
 		Threads: []changes.Thread{
 			{Path: "a.go", Line: 3, Resolved: true, Comments: []changes.Comment{{Author: "ann", Body: "settled", Time: at.Add(2 * time.Hour)}}},
-			{Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this?", Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
+			{Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this? " + strings.Repeat("and this ", 400), Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
 		},
 	}
 	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
 	m.detailWorker.changeReview = func(context.Context, changes.Change, bool) (changes.Review, error) { return review, nil }
-	m.detailWorker.enrich = func(_ context.Context, cs []changes.Change) []changes.Change {
+	m.detailWorker.enrich = func(_ context.Context, cs []changes.Change, _ bool) []changes.Change {
 		out := slices.Clone(cs)
 		n := review.Unresolved()
 		out[0].Unresolved = &n
@@ -998,11 +998,15 @@ func TestChangeViewReview(t *testing.T) {
 	}
 	_ = m.switchDetailTab(tabChangeConversation)
 	m = settleDetail(t, m)
-	content = m.View().Content
+	content = strings.Join(m.detailLines, "\n")
 	if b, c, a := strings.Index(content, "b.go:7"), strings.Index(content, "first comment"), strings.Index(content, "a.go:3"); b < 0 || c < b || a < c || !strings.Contains(content, "resolved") {
 		t.Fatalf("Conversation not unresolved first\n%s", content)
 	}
 	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://github.com/o/r/pull/45#r1" {
 		t.Fatalf("O opened %q, not the thread under the cursor", opened)
+	}
+	// A thread taller than the view scrolls before the cursor moves on.
+	if m, _ = detailKey(m, 'j', 0); m.detailScroll != 1 || m.entryCursor != 0 {
+		t.Fatalf("j on a tall thread: scroll %d, cursor %d", m.detailScroll, m.entryCursor)
 	}
 }

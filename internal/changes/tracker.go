@@ -92,8 +92,8 @@ func (t *Tracker) Review(ctx context.Context, c Change, fresh bool) (Review, err
 }
 
 // Enrich adds Git's and the forges' facts to one item's changes.
-func (t *Tracker) Enrich(ctx context.Context, cs []Change) []Change {
-	return Enrich(ctx, cs, t.forges())
+func (t *Tracker) Enrich(ctx context.Context, cs []Change, fresh bool) []Change {
+	return Enrich(ctx, cs, t.forges(), fresh)
 }
 
 func (t *Tracker) forges() []Forge {

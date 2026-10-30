@@ -307,7 +307,7 @@ func TestEventsMatchCLI(t *testing.T) {
 	var cliChanges struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"checkRuns":[{"name":"test","state":"failing","url":"https://ci.fake/1"}]`) || !strings.Contains(string(cliChanges.Data), `"unresolved":1`) {
+	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"checkRuns":[{"name":"test","state":"failing","url":"https://ci.fake/1"}]`) || !strings.Contains(string(cliChanges.Data), `"unresolved":1`) || !strings.Contains(string(cliChanges.Data), `"providers"`) {
 		t.Fatalf("bl changes: %d %s", code, out)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "changes", Arguments: map[string]any{"id": "1"}})

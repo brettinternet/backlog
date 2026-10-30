@@ -194,6 +194,13 @@ func (m Model) entryCount() (int, bool) {
 	return 0, false
 }
 
+// scrollsEntries is whether j and k scroll through entries taller than the
+// view, or lines between them, rather than jump from entry to entry.
+func (m Model) scrollsEntries() bool {
+	_, ok := m.entryCount()
+	return ok && (m.detailTab == tabChangeOverview || m.detailTab == tabChangeConversation)
+}
+
 // hasEntries is whether the tab's cursor moves over entries.
 func (m Model) hasEntries() bool {
 	_, ok := m.entryCount()

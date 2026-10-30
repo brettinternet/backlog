@@ -122,6 +122,16 @@ func LoadReview(ctx context.Context, c Change, forges []Forge, fresh bool) (Revi
 		}
 		r.Stale = "pull request detail may be out of date: " + err.Error()
 	}
+	// Stale checks never read as passing: a kept read may be for another
+	// head, or the checks ran on another commit than the local branch head.
+	if r.Stale != "" || c.Checks == ChecksStale {
+		r.Checks = slices.Clone(r.Checks)
+		for i := range r.Checks {
+			if r.Checks[i].State == ChecksPassing {
+				r.Checks[i].State = ChecksStale
+			}
+		}
+	}
 	return r, nil
 }
 

@@ -299,7 +299,7 @@ type detailWorker struct {
 	// changeReview reads a pull request's review, which its forge caches;
 	// enrich adds Git's and the forges' facts to the Changes tab.
 	changeReview func(context.Context, changes.Change, bool) (changes.Review, error)
-	enrich       func(context.Context, []changes.Change) []changes.Change
+	enrich       func(context.Context, []changes.Change, bool) []changes.Change
 	requests     chan detailRequest
 	results      chan detailResult
 	mu           sync.Mutex
@@ -414,9 +414,11 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		// isn't cached; it needs only the row.
 		enrich := worker.enrich
 		if enrich == nil {
-			enrich = func(ctx context.Context, cs []changes.Change) []changes.Change { return changes.Enrich(ctx, cs, nil) }
+			enrich = func(ctx context.Context, cs []changes.Change, fresh bool) []changes.Change {
+				return changes.Enrich(ctx, cs, nil, fresh)
+			}
 		}
-		page := changeLines(enrich(ctx, request.row.Changes), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
+		page := changeLines(enrich(ctx, request.row.Changes, request.fresh), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
 			return result

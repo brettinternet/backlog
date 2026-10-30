@@ -262,13 +262,14 @@ Overview, Files, Diff, Commits, and Conversation tabs; `backspace` returns to
 the entry. Overview lists the change's state, branch, worktree, base, head,
 checks, review, file and commit counts with `+/−`, and uncommitted files. For a
 pull request it also lists each check run and commit status as an entry (`O`
-opens the one under the cursor; `j` past the last scrolls on), each requested
-or submitted reviewer with their state, the unresolved thread count beside the
-review, and the description. Conversation lists review threads (file, line,
-resolved or not) and comments, unresolved threads first, each with its
-comments' authors, ages, and text; `O` opens the one under the cursor, and `m`
-shows more when the text is cut off. Files lists one entry per changed file:
-status (`A` added, `M` modified, `D` deleted, `R` renamed,
+opens the one under the cursor), each requested or submitted reviewer with
+their state, the unresolved thread count beside the review, and the
+description. Conversation lists review threads (file, line, resolved or not)
+and comments, unresolved threads first, each with its comments' authors, ages,
+and text; `O` opens the one under the cursor, and `m` shows more when the text
+is cut off. On both, `j` and `k` scroll until the next entry shows, through a
+long entry or the description past the last check. Files lists one entry per
+changed file: status (`A` added, `M` modified, `D` deleted, `R` renamed,
 `B` binary, `U` uncommitted), path, and `+/−`. Commits lists the change's
 commits newest first, and `ys` copies the one under the cursor. A local
 branch or worktree is read from Git against its merge base, a landed change

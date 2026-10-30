@@ -199,7 +199,7 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 	}
 	d := changes.Load(ctx, o)
 	linked := LinkChanges(cfg, reads.Query.Items, &changes.State{Projects: map[string]changes.Data{key: d}})
-	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref], o.Forges), Providers: d.Statuses}
+	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref], o.Forges, false), Providers: d.Statuses}
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
 	}

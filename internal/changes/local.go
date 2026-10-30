@@ -290,8 +290,9 @@ func MergedBranch(subject string) (string, int) {
 // on a worker:
 // how far each open branch is ahead of and behind the default branch, how
 // many lines a branch or worktree adds and deletes since its merge base, and
-// how many files are dirty in each worktree.
-func Enrich(ctx context.Context, cs []Change, forges []Forge) []Change {
+// how many files are dirty in each worktree, and each open pull request's
+// checks and unresolved threads, read again from the forge when fresh.
+func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Change {
 	out := slices.Clone(cs)
 	for i := range out {
 		c := &out[i]
@@ -314,8 +315,8 @@ func Enrich(ctx context.Context, cs []Change, forges []Forge) []Change {
 				}
 			}
 		}
-		if c.Stage == StagePR {
-			if r, err := LoadReview(ctx, *c, forges, false); err != nil {
+		if c.Stage == StagePR && (c.State == StateOpen || c.State == StateDraft) {
+			if r, err := LoadReview(ctx, *c, forges, fresh); err != nil {
 				c.Reason = cmp.Or(c.Reason, "pull request detail unavailable: "+err.Error())
 			} else {
 				unresolved := r.Unresolved()
