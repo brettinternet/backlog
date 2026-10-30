@@ -618,6 +618,18 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	if content := m.View().Content; !m.detailOpen || !strings.Contains(content, "▾") || !strings.Contains(content, "lint passed") {
 		t.Fatalf("group did not expand\n%s", content)
 	}
+	// Reopening the same item after close must not toggle into a nil map.
+	m.closeDetail()
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabHistory)
+	m = settleDetail(t, m)
+	m.entryCursor = slices.Index(m.detailIDs, "ci:run")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if !m.historyOpen["ci:run"] {
+		t.Fatal("group did not expand after reopen")
+	}
 }
 
 // TestHistoryMeasurement times a warm History open on the loop: the tab switch

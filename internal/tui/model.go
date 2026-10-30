@@ -1416,7 +1416,7 @@ func (m *Model) closeDetail() {
 	m.detailLoading = false
 	m.detailLines = nil
 	m.detailEntries, m.detailTargets, m.detailIDs = nil, nil, nil
-	m.historyOpen = nil
+	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	m.detailTruncated = false
 	m.find = findState{}
