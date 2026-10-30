@@ -239,7 +239,7 @@ func untrackedFile(worktree, path string) File {
 		return f
 	}
 	defer file.Close()
-	r := bufio.NewReader(io.LimitReader(file, maxUntrackedBytes))
+	r := bufio.NewReaderSize(io.LimitReader(file, maxUntrackedBytes), 8000)
 	head, _ := r.Peek(8000)
 	if bytes.IndexByte(head, 0) >= 0 {
 		f.Status = FileBinary

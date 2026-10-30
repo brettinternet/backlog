@@ -373,7 +373,7 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	m.detailGeneration++
 	row, ok := m.selectedRow()
 	if m.change != nil && (!ok || row.Ref != m.changeRef) {
-		m.change, m.detailTab = nil, tabChanges
+		m.change, m.detailTab, m.entryCursor = nil, tabChanges, 0
 	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
@@ -1493,7 +1493,7 @@ func (m *Model) closeDetail() {
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	if m.change != nil {
-		m.change, m.detailTab = nil, tabChanges
+		m.change, m.detailTab, m.entryCursor = nil, tabChanges, m.changeCursor
 	}
 	m.detailTruncated = false
 	m.find = findState{}

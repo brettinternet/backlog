@@ -797,4 +797,23 @@ func TestChangeView(t *testing.T) {
 	if m.change != nil || m.detailTab != tabChanges || m.entryCursor != 1 {
 		t.Fatalf("backspace left tab %d cursor %d", m.detailTab, m.entryCursor)
 	}
+	// esc from Files must not carry the Files cursor into Changes.
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'G', 0)
+	m, _ = detailKey(m, tea.KeyEscape, 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if c, ok := m.selectedChange(); m.detailTab != tabChanges || !ok || c.ID != change.ID {
+		t.Fatalf("reopened on tab %d cursor %d", m.detailTab, m.entryCursor)
+	}
+	// A change whose files can't be read still shows its own facts.
+	m, _ = detailKey(m, 'k', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if content := m.View().Content; !strings.Contains(content, "bl-1-old") || !strings.Contains(content, "read another change") {
+		t.Fatalf("failed read hid the change\n%s", content)
+	}
 }

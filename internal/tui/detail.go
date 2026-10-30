@@ -361,12 +361,13 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	result := detailResult{generation: request.generation, identity: identity}
 	if request.change != nil {
 		detail, err := worker.loadChange(ctx, *request.change, request.fresh)
-		if err == nil {
-			err = ctx.Err()
-		}
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
 			return result
+		}
+		if err != nil {
+			// The change's own facts still show, with why its files don't.
+			detail = changes.Detail{Reason: err.Error()}
 		}
 		page := changeViewPage(*request.change, detail, request)
 		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids

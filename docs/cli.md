@@ -136,7 +136,7 @@ change is unknown or stale. JSON returns `data.changes`, each with `id`,
 `reason`, `checks`, `review`, `branch`, `head`, `title`, `url`, `repo`,
 `number`, `additions`, `deletions` (a branch or worktree's from its merge base
 with the default branch, counting a worktree's uncommitted files), `worktree`,
-`dirty`, `ahead`, `behind`, `commits` (`sha`, `subject`, `time`, `author`),
+`dirty`, `ahead`, `behind`, `commits` (`sha`, `subject`, `time`),
 `events` (`kind`, `time`), and
 `updated`; `data.providers` lists `git` and each forge with its `state` and
 `reason`. Diff text stays out of JSON. Pull requests come from the forge's
