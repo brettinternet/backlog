@@ -55,6 +55,19 @@ func recordTransition(ctx context.Context, result TransitionResult) {
 		*out = result
 	}
 }
+
+// claimsUnsupported is non-empty when c cannot claim on this platform, as
+// Worklease cannot on Windows.
+func claimsUnsupported(c model.Coordinator) string {
+	if u, ok := c.(interface{ Unsupported() string }); ok {
+		return u.Unsupported()
+	}
+	return ""
+}
+
+func unsupportedClaim(message string) model.ClaimResult {
+	return model.ClaimResult{Outcome: model.ClaimUnavailable, Reason: "unavailable", Message: message}
+}
 func claimError(r model.ClaimResult) error {
 	reason := r.Reason
 	if reason == "" {
@@ -87,6 +100,9 @@ func claimItem(ctx context.Context, item model.Item) (result model.ClaimResult, 
 	c, caller := Coordination(ctx)
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}, false
+	}
+	if message := claimsUnsupported(c); message != "" {
+		return unsupportedClaim(message), false
 	}
 	if err := RequireSession(caller); err != nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: ErrorReason(err), Message: ErrorMessage(err)}, false
@@ -137,6 +153,9 @@ func ReleaseItem(ctx context.Context, item model.Item) (result model.ClaimResult
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}
 	}
+	if message := claimsUnsupported(c); message != "" {
+		return unsupportedClaim(message)
+	}
 	if err := RequireSession(caller); err != nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: ErrorReason(err), Message: ErrorMessage(err)}
 	}
@@ -167,6 +186,9 @@ func Heartbeat(ctx context.Context) model.ClaimResult {
 	c, caller := Coordination(ctx)
 	if c == nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: "unavailable", Message: "coordination is not configured"}
+	}
+	if message := claimsUnsupported(c); message != "" {
+		return unsupportedClaim(message)
 	}
 	if err := RequireSession(caller); err != nil {
 		return model.ClaimResult{Outcome: "unavailable", Reason: ErrorReason(err), Message: ErrorMessage(err)}
@@ -413,7 +435,8 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, backend source.So
 	if c == nil {
 		return model.Item{}, source.Refuse("unavailable", "coordination is configured but unavailable")
 	}
-	if err := RequireSession(caller); err != nil {
+	unsupported := claimsUnsupported(c)
+	if err := RequireSession(caller); err != nil && unsupported == "" {
 		return model.Item{}, err
 	}
 	item, err := read()
@@ -442,7 +465,7 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, backend source.So
 			category = choices[index].Category
 		}
 	}
-	if caller.Run == "" && category != model.Active {
+	if unsupported == "" && caller.Run == "" && category != model.Active {
 		state := c.InspectSession(ctx, caller)
 		if state.State != "held" && state.State != "absent" {
 			return model.Item{}, source.Refuse("unavailable", "session ownership unresolved; no status write attempted")
@@ -450,6 +473,20 @@ func coordinatedWrite(ctx context.Context, cfg project.Config, backend source.So
 	}
 	if m.ExpectedVersion != "" && m.ExpectedVersion != item.Version {
 		return model.Item{}, source.Refuse("conflict", "expected version does not match current content")
+	}
+	// Without claims, only an active transition needs one; others write unchecked.
+	if unsupported != "" {
+		if caller.Run != "" || category == model.Active {
+			result.Claim = new(unsupportedClaim(unsupported))
+			return model.Item{}, claimError(*result.Claim)
+		}
+		updated, err := write()
+		if err != nil {
+			result.Status = "failed"
+			return model.Item{}, err
+		}
+		result.Status = "written"
+		return updated, nil
 	}
 	// Explicit run context must verify before ANY status write, even todo.
 	if caller.Run != "" {

@@ -161,6 +161,37 @@ func TestCoordinatedStoreTransitions(t *testing.T) {
 	}
 }
 
+type unsupportedCoordinator struct{ *coordinator }
+
+func (unsupportedCoordinator) Unsupported() string { return "claims need Worklease" }
+
+// Regression: on Windows an active transition must refuse rather than write
+// unclaimed, while other status writes still work without a session.
+func TestClaimsUnsupportedPlatform(t *testing.T) {
+	t.Parallel()
+	backend := fakeSource(t, "tasks")
+	ref := model.Ref{Source: "tasks", ID: "BL-1"}
+	c := &coordinator{state: model.SessionState{State: "absent"}}
+	ctx := engine.WithCoordination(context.Background(), unsupportedCoordinator{c}, model.CallerContext{})
+	store := engine.OpenStore(ctx, coordinationConfig(), source.Registry{"tasks": backend})
+	defer store.Close()
+	item, _, _ := awaitSnapshot(t, store, func(s *engine.Snapshot) bool { return s.Len() == 1 }).Get(ref)
+	err := awaitResult(t, store.Mutate(model.Mutation{Op: model.Set, Field: "status", Value: "doing", Ref: ref, ExpectedVersion: item.Version}))
+	if engine.ErrorReason(err) != "unavailable" || !strings.Contains(engine.ErrorMessage(err), "Worklease") || backend.calls.Load() != 0 {
+		t.Fatalf("active write: err=%v calls=%d", err, backend.calls.Load())
+	}
+	if err := awaitResult(t, store.Mutate(model.Mutation{Op: model.Set, Field: "status", Value: "done", Ref: ref, ExpectedVersion: item.Version})); err != nil {
+		t.Fatalf("done write: %v", err)
+	}
+	item, _, _ = store.Current().Get(ref)
+	if r := engine.ClaimItem(ctx, item); r.Outcome != model.ClaimUnavailable || !strings.Contains(r.Message, "Worklease") {
+		t.Fatalf("claim: %+v", r)
+	}
+	if item.Status != "done" || c.acquired+c.released != 0 {
+		t.Fatalf("status=%s coordinator=%+v", item.Status, c)
+	}
+}
+
 type choosingSource struct {
 	*controlledSource
 	choices []model.StatusChoice

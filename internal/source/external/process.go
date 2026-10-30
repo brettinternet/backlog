@@ -16,11 +16,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/brettinternet/backlog/internal/proctree"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
 type processRun struct {
 	cmd           *exec.Cmd
+	tree          *proctree.Tree
 	stdin         *os.File
 	stdout        *os.File
 	reader        *bufio.Reader
@@ -62,8 +64,8 @@ func (s *Source) startLocked() (*processRun, error) {
 	cmd.Stdin = stdinRead
 	cmd.Stdout = stdoutWrite
 	cmd.Stderr = io.Discard
-	prepareProcess(cmd)
-	if err = cmd.Start(); err != nil {
+	tree, err := proctree.Start(cmd)
+	if err != nil {
 		_ = stdinRead.Close()
 		_ = stdinWrite.Close()
 		_ = stdoutRead.Close()
@@ -74,6 +76,7 @@ func (s *Source) startLocked() (*processRun, error) {
 	_ = stdoutWrite.Close()
 	run := &processRun{
 		cmd:    cmd,
+		tree:   tree,
 		stdin:  stdinWrite,
 		stdout: stdoutRead,
 		reader: bufio.NewReaderSize(stdoutRead, frameLimit),
@@ -113,7 +116,7 @@ func (s *Source) reap(run *processRun) {
 
 func (r *processRun) terminate() {
 	r.terminateOnce.Do(func() {
-		terminateProcess(r.cmd)
+		r.tree.Kill()
 		_ = r.stdin.Close()
 		_ = r.stdout.Close()
 	})

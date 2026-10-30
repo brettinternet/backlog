@@ -25,9 +25,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
 
     steps:
+      # Fixtures and golden files are byte-exact.
+      - name: Keep LF line endings
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -35,6 +43,9 @@ jobs:
 
       - name: Install mise
         uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        # Worklease has no Windows build, and Windows needs only Go.
+        with:
+          install_args: ${{ runner.os == 'Windows' && 'go' || '' }}
 
       - name: Resolve Go cache settings
         id: go-cache
@@ -59,7 +70,7 @@ jobs:
           restore-keys: ${{ steps.go-cache.outputs.key }}-
 
       # Linux runs the full gate (task ci). The race run covers the plain test
-      # run. macOS runs only the Go tests for the darwin-specific code.
+      # run. macOS and Windows run only the Go tests for their platform code.
       - name: Security
         if: runner.os == 'Linux'
         run: task security
@@ -78,6 +89,9 @@ jobs:
       - name: Tests
         if: runner.os == 'macOS'
         run: task cli:test
+      - name: Tests
+        if: runner.os == 'Windows'
+        run: go test ./...
 
       # Cache entries are immutable; main saves one per commit and pull requests reuse them.
       - name: Save Go caches

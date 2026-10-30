@@ -54,6 +54,9 @@ func NextClaim(ctx context.Context, cfg project.Config, options NextClaimOptions
 	if c == nil || !cfg.Coordination.Enabled() {
 		return out, source.Refuse("unavailable", "coordination is not configured")
 	}
+	if message := claimsUnsupported(c); message != "" {
+		return out, source.Refuse("unavailable", message)
+	}
 	var item model.Item
 	var claim model.ClaimResult
 	// The start status resolves per source before any acquire (D35).

@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -93,8 +92,8 @@ func TestApplyIntegrity(t *testing.T) {
 	_, err = s.Apply(context.Background(), model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "title", Value: "Stale"})
 	reason(t, err, "conflict")
 	original = read(t, path)
-	// A subprocess lowers its own file-size limit. The temp is created and the
-	// write fails after partial output, without changing this test's limits.
+	// A subprocess makes its own write fail (see breakWrites), without changing
+	// this test's limits.
 	cmd := exec.Command(os.Args[0], "-test.run=^TestWriteFailureProcess$")
 	cmd.Env = append(os.Environ(), "BL_TEST_FAIL_ROOT="+root, "BL_TEST_FAIL_COMMON="+common)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -123,13 +122,9 @@ func TestWriteFailureProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 512, Max: 512}); err != nil {
-		t.Fatal(err)
-	}
+	breakWrites(t, filepath.Join(root, "backlog", "BL-1.md"))
 	_, err = s.Apply(context.Background(), model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.AppendNote, Text: strings.Repeat("a", 8192)})
-	if !errors.Is(err, syscall.EFBIG) {
-		t.Fatalf("expected file-size failure, got %v", err)
-	}
+	wantWriteFailure(t, err)
 }
 func TestLoadAndArchive(t *testing.T) {
 	t.Parallel()
@@ -195,6 +190,7 @@ func TestLoadAndArchive(t *testing.T) {
 	reason(t, err, "duplicate-id")
 }
 func TestIndexedReadPreservesAliasesAndDuplicates(t *testing.T) {
+	testkit.Unix(t, "symlinks")
 	t.Parallel()
 	root := t.TempDir()
 	s, err := native.New(native.Options{

@@ -1,3 +1,7 @@
+// Claims need Worklease, which does not run on Windows yet (BL-109).
+
+//go:build unix
+
 package cli_test
 
 import (

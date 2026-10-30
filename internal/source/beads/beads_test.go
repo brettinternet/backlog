@@ -99,6 +99,7 @@ func put(t *testing.T, path, body string) {
 	}
 }
 func fake(t *testing.T) (*Source, string) {
+	testkit.Unix(t, "a shell-script bd fake")
 	t.Helper()
 	testkit.Isolate(t)
 	root := t.TempDir()

@@ -27,6 +27,7 @@ func put(t *testing.T, path, text string, mode os.FileMode) {
 // key files stay unread, user resolvers get no shell and no credentials, and
 // one slow or unknown source never hides another.
 func TestResolve(t *testing.T) {
+	testkit.Unix(t, "shell-script resolvers")
 	home := testkit.Isolate(t)
 	bin := filepath.Join(home, "bin")
 	t.Setenv("PATH", bin+":/usr/bin:/bin")

@@ -1,3 +1,7 @@
+// These tests run shell-script Worklease fakes.
+
+//go:build unix
+
 package worklease
 
 import (

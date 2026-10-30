@@ -20,7 +20,9 @@ It verifies the archive checksum, then installs to `~/.local/bin`; add that to
 | `BL_INSTALL_DIR=DIR` | Install somewhere else |
 | `BL_RELEASE_BASE_URL=URL` | Download from a mirror with GitHub's release layout. Checksums catch corruption, not a compromised mirror. |
 
-To build from source, see [Development](development.md#setup).
+To build from source, see [Development](development.md#setup). That is the only
+way to run `bl` on Windows for now; claims there are unavailable until Worklease
+supports Windows.
 
 ## Capture work
 

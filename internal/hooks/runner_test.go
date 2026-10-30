@@ -70,6 +70,7 @@ func finishedEvents(t *testing.T, cfg project.Config) []hooks.Event {
 // Catches shell interpolation regressions and result/cwd loss across a chained
 // worktree-to-agent handoff.
 func TestAfterHookChainUsesStdoutResultAndLiteralArgv(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
 	worktree := filepath.Join(root, "worktree")
@@ -127,6 +128,7 @@ func TestAfterHookChainUsesStdoutResultAndLiteralArgv(t *testing.T) {
 
 // The documented notify-ready query must fire only on the derived ready state.
 func TestNotifyReadyAutomationExample(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	tellLog := filepath.Join(root, "tell-args")
 	tell := filepath.Join(root, "tell")
@@ -154,6 +156,7 @@ func TestNotifyReadyAutomationExample(t *testing.T) {
 // The §8 agent hook consumes a successful work action's result and exact item
 // resource, without needing an action runner in this delivery.
 func TestAgentAutomationExample(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	worktree := filepath.Join(root, "agent-worktree")
 	if err := os.Mkdir(worktree, 0700); err != nil {
@@ -185,6 +188,7 @@ func TestAgentAutomationExample(t *testing.T) {
 
 // Untrusted project declarations remain inert for both mutation vetoes and after dispatch.
 func TestUntrustedHooksAreInert(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	marker := filepath.Join(root, "ran")
 	program := filepath.Join(root, "program")
@@ -232,6 +236,7 @@ func TestUntrustedHooksAreInert(t *testing.T) {
 // A backgrounded child inherits the hook's output pipes; without a bounded wait
 // a before hook that exits at once would still block the write for its lifetime.
 func TestBeforeHookIgnoresBackgroundedChildOutput(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	program := filepath.Join(root, "program")
 	executable(t, program, "#!/bin/sh\nsleep 30 &\nexit 0\n")
@@ -247,6 +252,7 @@ func TestBeforeHookIgnoresBackgroundedChildOutput(t *testing.T) {
 
 // A result file wins over stdout, and an oversized result cannot be chained.
 func TestResultFilePrecedenceAndBound(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	fileHook := filepath.Join(root, "file-result")
 	executable(t, fileHook, "#!/bin/sh\nprintf '%s\\n' '{\"source\":\"file\"}' > \"$BL_RESULT\"\nprintf '%s\\n' '{\"source\":\"stdout\"}'\n")
@@ -274,6 +280,7 @@ func TestResultFilePrecedenceAndBound(t *testing.T) {
 // A failed after hook records the end of its stderr, past the capture limit,
 // bounded and stripped of terminal controls; success records nothing.
 func TestFinishedMessageIsBoundedStderrTail(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	failing := filepath.Join(root, "failing")
 	executable(t, failing, "#!/bin/sh\nprintf 'noise %09000d\\n' 1 >&2\nprintf '\\033[31mfatal: boom\\033[0m\\n' >&2\nexit 3\n")
@@ -299,6 +306,7 @@ func TestFinishedMessageIsBoundedStderrTail(t *testing.T) {
 // Invalid placeholder values are refused before process start, not passed to
 // executables where they could become flags, paths, or terminal controls.
 func TestUnsafeAndMissingPlaceholdersRefuseWithoutRunning(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	root := t.TempDir()
 	marker := filepath.Join(root, "ran")
 	program := filepath.Join(root, "program")

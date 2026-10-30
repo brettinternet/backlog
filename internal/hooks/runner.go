@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -113,11 +112,11 @@ func StartRunner(cfg project.Config, events []Event, cwd string) error {
 	return startDetached(cmd)
 }
 
-// startDetached runs a private bl runner in its own session, so closing the
-// invoking terminal does not hang it up, and reaps it so long-lived TUI and MCP
-// processes do not accumulate zombies.
+// startDetached runs a private bl runner detached from the invoking terminal
+// or console, so closing it does not end the runner, and reaps it so
+// long-lived TUI and MCP processes do not accumulate zombies.
 func startDetached(cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detachedAttr()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

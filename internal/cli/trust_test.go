@@ -119,6 +119,7 @@ func TestTrustCanaryProcess(t *testing.T) {
 }
 
 func fakeWorklease(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	t.Helper()
 	directory := t.TempDir()
 	script := "#!/bin/sh\nprintf '%s\\n' '{\"ok\":true,\"schemaVersion\":2,\"version\":\"1.10.1\"}'\n"

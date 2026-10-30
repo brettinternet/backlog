@@ -161,6 +161,7 @@ func TestBacklogMDDetectionAndSectionEdit(t *testing.T) {
 		t.Fatalf("detected write: %d %s", code, out)
 	}
 	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: backlog-md, path: backlog}]\n")
+	testkit.Unix(t, "a shell-script editor")
 	editor := filepath.Join(root, "editor")
 	put(t, editor, "#!/bin/sh\nprintf 'Changed body.\\n' > \"$1\"\n")
 	if err := os.Chmod(editor, 0700); err != nil {

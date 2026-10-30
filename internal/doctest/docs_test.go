@@ -61,6 +61,7 @@ func docCLI(t *testing.T) string {
 }
 
 func TestShellExamples(t *testing.T) {
+	testkit.Unix(t, "POSIX shell examples")
 	repo := docCLI(t)
 	for _, doc := range []string{"README.md", "docs/guide.md"} {
 		t.Run(doc, func(t *testing.T) {
@@ -109,6 +110,7 @@ func TestShellExamples(t *testing.T) {
 // Catch examples rotting as the config schema and CLI change. Examples that
 // need a provider account or bd only have their config validated.
 func TestExamples(t *testing.T) {
+	testkit.Unix(t, "POSIX shell examples")
 	repo := docCLI(t)
 	external := map[string]bool{"07-beads": true, "08-github-issues": true, "09-github-project": true, "10-linear": true, "11-jira": true}
 	entries, err := os.ReadDir(filepath.Join(repo, "examples"))

@@ -7,10 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -53,12 +51,7 @@ func BenchmarkCLI(b *testing.B) {
 				if err := cmd.Run(); err != nil {
 					b.Fatalf("%v: %v %s", args, err, stderr.String())
 				}
-				usage := cmd.ProcessState.SysUsage().(*syscall.Rusage)
-				rss := float64(usage.Maxrss) / (1024 * 1024)
-				if runtime.GOOS == "linux" {
-					rss *= 1024
-				}
-				return rss
+				return peakRSS(cmd.ProcessState)
 			}
 			seeded, committed := false, false
 			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write", "show-history", "history"} {

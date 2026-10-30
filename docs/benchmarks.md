@@ -225,6 +225,7 @@ How the budgets were reached. Details are in each backlog task.
 | BL-57 | Reuse the watched native source and stat-validate in memory | 10k external change 258.3 → 100.1 ms |
 | BL-58 | Share immutable items between source and store; dedupe repeated body strings per refresh; 20% GC heap growth | TUI RSS 300 / 1,073 → 133 / 383 MiB |
 | BL-120 | GitHub change window between hourly reconciliations | vhs warm refresh 4.30 → 0.80 s, 6 → 3 requests |
+| BL-105 | Windows support: shared `filelock`, `atomicfile`, and per-platform file identity | No regression: 10k warm `ls` p95 142.2 / 147.5 ms against `main` 141.1 / 144.4 ms, alternating runs on the reference host (2026-10-29, a slower day than BL-48). Windows not yet measured. |
 
 Notes that still matter:
 

@@ -75,6 +75,7 @@ func readVectors(t *testing.T) []keyVector {
 	return vectors
 }
 func TestProviderKeyVectors(t *testing.T) {
+	testkit.Unix(t, "a Worklease binary")
 	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
 		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.10.1")
 	}

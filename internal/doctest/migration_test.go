@@ -10,12 +10,14 @@ import (
 
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/testkit"
 	"go.yaml.in/yaml/v3"
 )
 
 // Catch a cutover that loses data, restores over new progress, or lets two
 // sessions select the same item. Run the published procedure, not a second one.
 func TestMigrationRehearsal(t *testing.T) {
+	testkit.Unix(t, "POSIX shell examples")
 	repo := docCLI(t)
 	paths, err := project.UserPaths()
 	if err != nil {

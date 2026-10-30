@@ -280,6 +280,13 @@ func cacheCheck(ctx context.Context, cfg project.Config) doctorCheck {
 
 func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
 	c := doctorCheck{"worklease", "pass", "Worklease supports schema v2 and is at least 1.10.1", "No action needed"}
+	if worklease.Unsupported != "" {
+		c.Status, c.Message, c.Fix = "skip", worklease.Unsupported, "No action needed"
+		if cfg.Coordination.Enabled() {
+			c.Status, c.Fix = "fail", "Remove coordination from backlog.yaml, or claim work from macOS or Linux"
+		}
+		return c
+	}
 	path, err := exec.LookPath("worklease")
 	if err != nil {
 		c.Status = "warn"

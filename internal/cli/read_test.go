@@ -77,6 +77,7 @@ func TestWorkspaceReadFlags(t *testing.T) {
 	}
 	// A coordinated workspace must advertise claim-query support, rather than
 	// reject a valid predicate merely because the composed snapshot omitted it.
+	testkit.Unix(t, "a shell-script Worklease fake")
 	enableCoordination(t, root)
 	bin := t.TempDir()
 	put(t, filepath.Join(bin, "worklease"), "#!/bin/sh\nprintf '%s\\n' '{\"schemaVersion\":2,\"ok\":true,\"claims\":[]}'\n")

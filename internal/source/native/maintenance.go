@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/atomicfile"
 	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
@@ -425,7 +426,7 @@ func applyChanges(changes []fileChange) error {
 		var err error
 		linked := false
 		if change.oldPath == change.newPath {
-			err = os.Rename(staged[i], change.newPath)
+			err = atomicfile.Rename(staged[i], change.newPath)
 		} else {
 			err = os.Link(staged[i], change.newPath)
 			linked = err == nil
@@ -450,12 +451,12 @@ func applyChanges(changes []fileChange) error {
 				return rollbackChanges(changes, committed, fmt.Errorf("remove renamed source %s: %w", change.oldPath, err))
 			}
 		}
-		if err := syncDir(filepath.Dir(change.newPath)); err != nil {
+		if err := atomicfile.SyncDir(filepath.Dir(change.newPath)); err != nil {
 			discardStaged()
 			return rollbackChanges(changes, committed, fmt.Errorf("sync %s: %w", filepath.Dir(change.newPath), err))
 		}
 		if change.oldPath != change.newPath && filepath.Dir(change.oldPath) != filepath.Dir(change.newPath) {
-			if err := syncDir(filepath.Dir(change.oldPath)); err != nil {
+			if err := atomicfile.SyncDir(filepath.Dir(change.oldPath)); err != nil {
 				discardStaged()
 				return rollbackChanges(changes, committed, fmt.Errorf("sync %s: %w", filepath.Dir(change.oldPath), err))
 			}

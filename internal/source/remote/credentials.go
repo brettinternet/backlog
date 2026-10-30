@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/oauth"
+	"github.com/brettinternet/backlog/internal/proctree"
 	"github.com/brettinternet/backlog/internal/project"
 )
 
@@ -156,14 +157,16 @@ func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig
 			return fail("helper executable required")
 		}
 		cmd := exec.CommandContext(bounded, account.Credential[0], account.Credential[1:]...)
-		prepareProcess(cmd)
-		cmd.Cancel = func() error { terminateProcess(cmd); return nil }
-		defer terminateProcess(cmd)
 		cmd.Env = helperEnvironment()
 		cmd.WaitDelay = time.Second
 		output, stderr := &boundedOutput{cancel: cancel}, &boundedOutput{cancel: cancel}
 		cmd.Stdout, cmd.Stderr = output, stderr
-		if err := cmd.Run(); err != nil || output.exceeded || stderr.exceeded {
+		tree, err := proctree.Start(cmd)
+		defer tree.Kill()
+		if err == nil {
+			err = cmd.Wait()
+		}
+		if err != nil || output.exceeded || stderr.exceeded {
 			return fail("helper failed or exceeded 15s/4KiB")
 		}
 		token = strings.TrimSpace(output.buffer.String())

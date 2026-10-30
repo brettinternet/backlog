@@ -13,6 +13,7 @@ import (
 )
 
 func helper(t *testing.T, script string) []string {
+	testkit.Unix(t, "a shell-script credential helper")
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "credential-helper")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0700); err != nil {

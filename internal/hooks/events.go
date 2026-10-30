@@ -19,7 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/brettinternet/backlog/internal/atomicfile"
+	"github.com/brettinternet/backlog/internal/filelock"
 	_ "modernc.org/sqlite"
 )
 
@@ -111,21 +112,10 @@ func (l Log) Update(ctx context.Context, fn func(*Transaction) error) error {
 		return err
 	}
 	defer f.Close()
-	for {
-		err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, unix.EWOULDBLOCK) {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Millisecond * 5):
-		}
+	if err = filelock.Lock(ctx, f); err != nil {
+		return err
 	}
-	defer unix.Flock(int(f.Fd()), unix.LOCK_UN)
+	defer filelock.Unlock(f) //nolint:errcheck
 	tx := &Transaction{log: l, ctx: ctx}
 	defer func() {
 		if tx.db != nil {
@@ -338,7 +328,7 @@ func (tx *Transaction) Append(e Event) (bool, error) {
 	}
 	path := filepath.Join(tx.log.Dir, "current.jsonl")
 	if info, err := os.Stat(path); err == nil && tx.log.MaxBytes > 0 && info.Size() > 0 && info.Size()+int64(len(data)) > tx.log.MaxBytes {
-		if err = os.Rename(path, filepath.Join(tx.log.Dir, last+".jsonl")); err != nil {
+		if err = atomicfile.Rename(path, filepath.Join(tx.log.Dir, last+".jsonl")); err != nil {
 			return false, err
 		}
 	}
@@ -357,13 +347,7 @@ func (tx *Transaction) Append(e Event) (bool, error) {
 	if closeErr != nil {
 		return false, closeErr
 	}
-	dir, err := os.Open(tx.log.Dir)
-	if err != nil {
-		return false, err
-	}
-	err = dir.Sync()
-	dir.Close()
-	if err != nil {
+	if err = atomicfile.SyncDir(tx.log.Dir); err != nil {
 		return false, err
 	}
 	if _, err = tx.db.ExecContext(tx.ctx, `INSERT INTO events(id,identity,ref,data) VALUES(?,?,?,?)`, e.ID, key, e.Ref, data); err != nil {

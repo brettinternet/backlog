@@ -36,7 +36,8 @@ bl auth status linear work         # offline: grant, scopes, expiry
   `--write` then asks for write separately (on GitHub, by authorizing a second
   App). MCP, hooks, actions, and claims never start a login.
 - **Storage:** tokens and granted scopes live in owner-only XDG state (0700
-  directory, 0600 records written atomically and fsynced). Never in config,
+  directory, 0600 records written atomically and fsynced; on Windows, a
+  protected DACL granting only the current user). Never in config,
   cache, argv, logs, events, MCP output, hooks, or actions.
 - **Refresh** starts a minute before expiry, under a per-account cross-process
   lock. The rotated pair is stored durably before the lock is released, then the

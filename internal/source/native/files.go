@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
-	"time"
+
+	"github.com/brettinternet/backlog/internal/atomicfile"
+	"github.com/brettinternet/backlog/internal/filelock"
+	"github.com/brettinternet/backlog/internal/source"
 )
 
 // The lock file is never renamed: all processes must flock the same inode.
@@ -18,38 +20,16 @@ func (s *Source) lock(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	for {
-		if err = ctx.Err(); err != nil {
-			_ = f.Close()
-			return nil, err
-		}
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return f, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
-			_ = f.Close()
-			return nil, err
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	if err = filelock.Lock(ctx, f); err != nil {
+		_ = f.Close()
+		return nil, err
 	}
+	return f, nil
 }
+
 func unlock(f *os.File) {
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = filelock.Unlock(f)
 	_ = f.Close()
-}
-func syncDir(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return f.Sync()
 }
 
 // Failures before rename preserve the original; after rename a directory-sync
@@ -74,8 +54,10 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(f.Name(), path); err != nil {
+	if err = atomicfile.Rename(f.Name(), path); errors.Is(err, atomicfile.ErrBusy) {
+		return source.Refuse("unavailable", err.Error()+"; close it and retry")
+	} else if err != nil {
 		return err
 	}
-	return syncDir(dir)
+	return atomicfile.SyncDir(dir)
 }

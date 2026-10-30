@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -120,6 +121,9 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 func (c *Coordinator) call(ctx context.Context, caller model.CallerContext, args ...string) (envelope, error) {
+	if Unsupported != "" {
+		return envelope{}, errors.New(Unsupported)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	argv := append([]string{"--json"}, args...)
@@ -431,6 +435,9 @@ func (c *Coordinator) List(ctx context.Context) ([]model.ClaimInfo, error) {
 	}
 	return claims, nil
 }
+
+// Unsupported is non-empty on platforms where Worklease cannot run.
+func (c *Coordinator) Unsupported() string { return Unsupported }
 
 // History reads the resource's retained epochs. An open epoch takes its lease
 // expiry from the active claim list when that list is readable.

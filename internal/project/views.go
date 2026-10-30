@@ -2,14 +2,16 @@ package project
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 
+	"github.com/brettinternet/backlog/internal/atomicfile"
+	"github.com/brettinternet/backlog/internal/filelock"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -37,15 +39,11 @@ func SaveView(path string, user bool, view ViewConfig) error {
 	}
 	// Lock the directory: it survives the rename and leaves no lock file in
 	// the checkout.
-	lock, err := os.Open(filepath.Dir(path))
+	unlock, err := filelock.LockDir(context.Background(), filepath.Dir(path))
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer unlock()
 	typ := reflect.TypeFor[Settings]()
 	if user {
 		typ = reflect.TypeFor[UserConfig]()
@@ -234,13 +232,8 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(f.Name(), path); err != nil {
+	if err = atomicfile.Rename(f.Name(), path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicfile.SyncDir(filepath.Dir(path))
 }

@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/brettinternet/backlog/internal/atomicfile"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -2060,7 +2061,7 @@ func writePlan(ctx context.Context, plan outputPlan) error {
 			}
 			return err
 		}
-		if err := os.Rename(stage, plan.target); err != nil {
+		if err := atomicfile.Rename(stage, plan.target); err != nil {
 			return fmt.Errorf("publish imported project: %w", err)
 		}
 		return nil
@@ -2075,19 +2076,19 @@ func writePlan(ctx context.Context, plan outputPlan) error {
 	if err := os.Remove(backup); err != nil {
 		return err
 	}
-	if err := os.Rename(plan.target, backup); err != nil {
+	if err := atomicfile.Rename(plan.target, backup); err != nil {
 		return fmt.Errorf("reserve empty target: %w", err)
 	}
 	entries, err := os.ReadDir(backup)
 	if err != nil || len(entries) != 0 {
-		_ = os.Rename(backup, plan.target)
+		_ = atomicfile.Rename(backup, plan.target)
 		if err != nil {
 			return err
 		}
 		return fmt.Errorf("refusing non-empty target directory: %s", plan.target)
 	}
-	if err := os.Rename(stage, plan.target); err != nil {
-		_ = os.Rename(backup, plan.target)
+	if err := atomicfile.Rename(stage, plan.target); err != nil {
+		_ = atomicfile.Rename(backup, plan.target)
 		return fmt.Errorf("publish imported project: %w", err)
 	}
 	if err := os.Remove(backup); err != nil {

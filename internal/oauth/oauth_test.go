@@ -366,14 +366,8 @@ func TestOAuthLifecycleScopesProtectedStorageAndCachePurge(t *testing.T) {
 	if tokenPath == "" {
 		t.Fatal("private token file missing")
 	}
-	fileInfo, err := os.Stat(tokenPath)
-	if err != nil || fileInfo.Mode().Perm() != 0o600 {
-		t.Fatalf("token file mode: %v %v", fileInfo, err)
-	}
-	dirInfo, err := os.Stat(filepath.Join(state, "oauth"))
-	if err != nil || dirInfo.Mode().Perm() != 0o700 {
-		t.Fatalf("token directory mode: %v %v", dirInfo, err)
-	}
+	wantPrivate(t, tokenPath, 0o600)
+	wantPrivate(t, filepath.Join(state, "oauth"), 0o700)
 
 	principal := PrincipalKey(account.Provider, account.Host, account.User)
 	principalCache := cache.NewPrincipal(cacheRoot, "project-a", "source-a", "identity", principal)

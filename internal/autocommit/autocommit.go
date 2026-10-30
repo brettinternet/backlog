@@ -4,6 +4,7 @@ package autocommit
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,8 +12,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/brettinternet/backlog/internal/filelock"
 )
 
 type key struct{}
@@ -214,8 +216,12 @@ func writeLock(root string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	ok, err := filelock.TryLock(f)
+	if err != nil || !ok {
 		_ = f.Close()
+		if err == nil {
+			err = errors.New("locked by another process")
+		}
 		return nil, fmt.Errorf("skipped busy repository: %w", err)
 	}
 	return f, nil
@@ -232,7 +238,7 @@ func (s *Session) flush() {
 			continue
 		}
 		s.commit(root, b)
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = filelock.Unlock(lock)
 		_ = lock.Close()
 	}
 }

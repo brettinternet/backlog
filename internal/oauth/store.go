@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/brettinternet/backlog/internal/atomicfile"
+	"github.com/brettinternet/backlog/internal/filelock"
 )
 
 const storeVersion = 1
@@ -64,14 +66,14 @@ func (s Store) directory() (string, error) {
 }
 
 func secureDirectory(path string) error {
-	if err := os.MkdirAll(path, 0o700); err != nil {
+	if err := makePrivateDir(path); err != nil {
 		return err
 	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("unsafe OAuth directory")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if !privateDir(path, info) {
 		return fmt.Errorf("OAuth directory is accessible by other users")
 	}
 	return nil
@@ -87,7 +89,7 @@ func (s Store) withRecord(ctx context.Context, key string, update func(*storedRe
 	}
 	id := fileID(key)
 	lockPath := filepath.Join(dir, id+".lock")
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR|noFollow, 0o600)
 	if err != nil {
 		return err
 	}
@@ -95,12 +97,12 @@ func (s Store) withRecord(ctx context.Context, key string, update func(*storedRe
 		lock.Close()
 		return err
 	}
-	if err = lockRecord(ctx, lock); err != nil {
+	if err = filelock.Lock(ctx, lock); err != nil {
 		lock.Close()
 		return err
 	}
 	defer func() {
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = filelock.Unlock(lock)
 		_ = lock.Close()
 	}()
 
@@ -125,29 +127,8 @@ func (s Store) withRecord(ctx context.Context, key string, update func(*storedRe
 	return callbackErr
 }
 
-func lockRecord(ctx context.Context, file *os.File) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
-			return err
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
-	}
-}
-
 func readRecord(path string) (*storedRecord, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|noFollow, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -156,7 +137,7 @@ func readRecord(path string) (*storedRecord, error) {
 	}
 	defer file.Close()
 	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || info.Size() > maxRecordSize {
+	if err != nil || !info.Mode().IsRegular() || !privateFile(file, info) || info.Size() > maxRecordSize {
 		return nil, fmt.Errorf("unsafe OAuth token record")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, maxRecordSize+1))
@@ -189,7 +170,7 @@ func writeRecord(path, dir string, record storedRecord) error {
 	}
 	temporary := file.Name()
 	defer os.Remove(temporary)
-	if err = file.Chmod(0o600); err == nil {
+	if err = protectFile(file); err == nil {
 		_, err = file.Write(data)
 	}
 	if err == nil {
@@ -202,27 +183,17 @@ func writeRecord(path, dir string, record storedRecord) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if err = os.Rename(temporary, path); err != nil {
+	if err = atomicfile.Rename(temporary, path); err != nil {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return atomicfile.SyncDir(dir)
 }
 
 func removeRecord(path, dir string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return atomicfile.SyncDir(dir)
 }
 
 func recordFor(account Account, principal Principal, tokens Tokens) storedRecord {

@@ -1,3 +1,7 @@
+// Claims need Worklease, which does not run on Windows yet (BL-109).
+
+//go:build unix
+
 package cli_test
 
 import (
@@ -23,13 +27,6 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/worklease"
 )
-
-func enableCoordination(t *testing.T, root string) {
-	t.Helper()
-	path := filepath.Join(root, "backlog.yaml")
-	put(t, path, get(t, path)+"coordination: {worklease: {}}\n")
-	t.Setenv("BL_SESSION", "loop")
-}
 
 // The fake CLI changes the source AFTER acquire, simulating a concurrent editor.
 // A failed version-bound status write must retain the separately committed claim.

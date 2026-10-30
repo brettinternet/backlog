@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/atomicfile"
 	"github.com/brettinternet/backlog/internal/autocommit"
 	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/format"
@@ -552,13 +553,13 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 			return fail(source.Refuse("conflict", "archive target exists or is inaccessible"))
 		}
 		if err := s.commitWrite(ctx, m, s.item(doc), []string{path, target}, func() error {
-			if err := os.Rename(path, target); err != nil {
+			if err := atomicfile.Rename(path, target); err != nil {
 				return err
 			}
-			if err := syncDir(dir); err != nil {
+			if err := atomicfile.SyncDir(dir); err != nil {
 				return err
 			}
-			return syncDir(filepath.Dir(path))
+			return atomicfile.SyncDir(filepath.Dir(path))
 		}); err != nil {
 			return fail(err)
 		}

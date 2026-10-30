@@ -83,6 +83,7 @@ These rules apply to every new or edited test.
 - **Real providers.** Real `bd`, `worklease`, GitHub, Linear, or Jira round trips are skipped unless `BL_PROVIDER_TESTS=1`. Everything else fakes the provider.
 - **Benchmarks.** Write `Benchmark*` functions, or gate measurements behind `BL_BENCH_*` or `BL_TUI_*` variables. The default run never asserts absolute latency. Assert algorithmic guarantees with counters, such as "no file reads on navigation".
 - **TUI.** Test the TUI through model `Update`/`View` with a fixed size and theme. Real-terminal checks use PTY tests or `scripts/tui-snapshot` (BL-16), which captures a tmux pane at a given size so agents can inspect a render without a human.
+- **Windows.** CI runs `go test ./...` on Windows. A test that needs a Unix facility (a PTY, FIFO, symlink, shell-script fake, or mode bits) calls `testkit.Unix(t, "what it needs")`, or a file that can't compile there is tagged `//go:build unix` with a comment giving the reason. Never weaken the Unix assertion to fit Windows; put the Windows equivalent in a `_windows_test.go` file.
 - **Flaky tests are bugs.** Fix the cause instead of retrying, widening tolerances, or skipping.
 
 ## Toolchain

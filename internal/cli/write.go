@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/editor"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/itemjson"
@@ -560,11 +560,10 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			e.Details = map[string]any{"editedPath": path}
 			return e
 		}
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vi"
+		process, err := editor.Command(ctx, path)
+		if err != nil {
+			return retain(err)
 		}
-		process := exec.CommandContext(ctx, "/bin/sh", "-c", editor+` "$1"`, "bl-edit", path)
 		process.Dir = *directory
 		process.Stdin = in
 		process.Stdout = errOut

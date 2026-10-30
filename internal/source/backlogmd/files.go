@@ -5,9 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
-	"time"
 
+	"github.com/brettinternet/backlog/internal/atomicfile"
+	"github.com/brettinternet/backlog/internal/filelock"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
@@ -20,39 +20,16 @@ func (s *Source) lock(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	for {
-		if err := ctx.Err(); err != nil {
-			_ = file.Close()
-			return nil, err
-		}
-		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return file, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
-			_ = file.Close()
-			return nil, err
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	if err = filelock.Lock(ctx, file); err != nil {
+		_ = file.Close()
+		return nil, err
 	}
+	return file, nil
 }
 
 func unlock(file *os.File) {
-	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	_ = filelock.Unlock(file)
 	_ = file.Close()
-}
-func syncDir(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	return file.Sync()
 }
 
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
@@ -74,10 +51,12 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(file.Name(), path); err != nil {
+	if err := atomicfile.Rename(file.Name(), path); errors.Is(err, atomicfile.ErrBusy) {
+		return source.Refuse("unavailable", err.Error()+"; close it and retry")
+	} else if err != nil {
 		return err
 	}
-	return syncDir(filepath.Dir(path))
+	return atomicfile.SyncDir(filepath.Dir(path))
 }
 
 func (s *Source) ensureDir(dir string) error {
@@ -143,7 +122,7 @@ func (s *Source) publish(changes []fileChange) error {
 			if change.path != change.target {
 				if err := os.Remove(change.target); err != nil && !errors.Is(err, os.ErrNotExist) {
 					rollbackErrors = append(rollbackErrors, err)
-				} else if err := syncDir(filepath.Dir(change.target)); err != nil {
+				} else if err := atomicfile.SyncDir(filepath.Dir(change.target)); err != nil {
 					rollbackErrors = append(rollbackErrors, err)
 				}
 			}
@@ -160,7 +139,7 @@ func (s *Source) publish(changes []fileChange) error {
 			if err := os.Remove(change.path); err != nil {
 				return rollback(err)
 			}
-			if err := syncDir(filepath.Dir(change.path)); err != nil {
+			if err := atomicfile.SyncDir(filepath.Dir(change.path)); err != nil {
 				return rollback(err)
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/brettinternet/backlog/internal/atomicfile"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -223,12 +224,7 @@ func createConfigExclusive(path string, data []byte) error {
 	if err := os.Link(name, path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicfile.SyncDir(filepath.Dir(path))
 }
 
 func maintenanceSources(cfg project.Config) ([]*native.Source, error) {

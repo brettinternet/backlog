@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/editor"
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 )
@@ -160,11 +160,10 @@ func (m Model) prepareLongEdit(state longEditState, item model.Item) tea.Cmd {
 	}
 }
 func (m Model) editorProcess(path string) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
+	cmd, err := editor.Command(m.opts.Context, path)
+	if err != nil {
+		return func() tea.Msg { return editFinishedMsg{err: err} }
 	}
-	cmd := exec.CommandContext(m.opts.Context, "/bin/sh", "-c", editor+` "$1"`, "bl-tui-edit", path)
 	cmd.Dir = m.opts.EditorDir
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return editFinishedMsg{err: err} })
 }

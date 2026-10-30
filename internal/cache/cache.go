@@ -13,10 +13,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
+	"github.com/brettinternet/backlog/internal/filelock"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/query"
 	_ "modernc.org/sqlite"
@@ -228,26 +228,11 @@ func (s Store) lock(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	for {
-		if err = ctx.Err(); err != nil {
-			_ = f.Close()
-			return nil, err
-		}
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return f, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
-			_ = f.Close()
-			return nil, err
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	if err = filelock.Lock(ctx, f); err != nil {
+		_ = f.Close()
+		return nil, err
 	}
+	return f, nil
 }
 
 // tryLock acquires the refresh lock only if it is free.
@@ -256,16 +241,14 @@ func (s Store) tryLock() (*os.File, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	ok, err := filelock.TryLock(f)
+	if err != nil || !ok {
 		_ = f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EINTR) {
-			return nil, false, nil
-		}
 		return nil, false, err
 	}
 	return f, true, nil
 }
-func unlock(f *os.File) { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }
+func unlock(f *os.File) { _ = filelock.Unlock(f); _ = f.Close() }
 
 func (s Store) open(ctx context.Context) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", s.Path)

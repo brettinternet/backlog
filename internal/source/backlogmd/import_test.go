@@ -13,6 +13,7 @@ import (
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/testkit"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -234,6 +235,7 @@ func TestImportRejectsCollisionsAndNonEmptyDryRunTarget(t *testing.T) {
 // Each case comes from a real Backlog.md project that failed or silently lost
 // data on its first import.
 func TestImportResolvesMigrationGaps(t *testing.T) {
+	testkit.Unix(t, "symlinks")
 	t.Parallel()
 	root := t.TempDir()
 	backlog := filepath.Join(root, "backlog")

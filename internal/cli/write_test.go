@@ -50,6 +50,12 @@ func get(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+func enableCoordination(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "backlog.yaml")
+	put(t, path, get(t, path)+"coordination: {worklease: {}}\n")
+	t.Setenv("BL_SESSION", "loop")
+}
 func writeRun(root, stdin string, args ...string) (int, string, string) {
 	var out, stderr bytes.Buffer
 	code := cli.Run(context.Background(), append([]string{"bl", "-C", root, "--json"}, args...), cli.BuildInfo{}, strings.NewReader(stdin), &out, &stderr)
@@ -181,6 +187,7 @@ func TestWriteGolden(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := writeFixture(t)
 			if tc.editor != "" {
+				testkit.Unix(t, "a shell-script editor")
 				path := filepath.Join(root, "editor")
 				put(t, path, "#!/bin/sh\nset -eu\n"+tc.editor)
 				if err := os.Chmod(path, 0700); err != nil {
@@ -245,6 +252,7 @@ func TestWriteGolden(t *testing.T) {
 
 // A veto and a timeout must both fail with exit 5 before item bytes or events change.
 func TestBeforeHookVetoAndTimeoutDoNotWrite(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
 	for _, tc := range []struct {
 		name, script, timeout, stderr string
 	}{
@@ -415,6 +423,7 @@ func TestCriterionVersionAndEvidence(t *testing.T) {
 }
 
 func TestEditorRejectsAndRetains(t *testing.T) {
+	testkit.Unix(t, "a shell-script editor")
 	for _, concurrent := range []bool{true, false} {
 		name := "invalid"
 		if concurrent {

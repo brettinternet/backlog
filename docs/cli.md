@@ -324,7 +324,8 @@ definition-of-done items, which are numbered separately from criteria.
 ### `bl edit ID [--section S [--text TEXT|-]]`
 
 Opens the native file, or one section, in `$EDITOR` (default `vi`, run through
-the shell so arguments work). Sections: `description`, `criteria`, `dod`,
+the shell so arguments work; on Windows, default `notepad`, split into arguments
+without a shell). Sections: `description`, `criteria`, `dod`,
 `plan`, `notes`, `summary`. Editor output goes to stderr, so JSON on stdout stays
 clean.
 
