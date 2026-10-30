@@ -11,6 +11,7 @@ import (
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
@@ -25,6 +26,37 @@ func boardFixture(count int) Model {
 	m.groups = append(m.groups[:1], append([]engine.RowGroup{{Value: "Empty"}}, m.groups[1:]...)...)
 	m.opts.Statuses = []project.StatusConfig{{Key: "To Do"}, {Key: "Empty"}, {Key: "Active"}, {Key: "Done"}}
 	return prepareBoard(m)
+}
+
+// Catches searches hiding workflow columns, and is:open or negated filters
+// leaving columns that can never hold a card.
+func TestBoardEmptyColumns(t *testing.T) {
+	t.Parallel()
+	statuses := []project.StatusConfig{{Key: "draft", Category: "backlog"}, {Key: "todo", Category: "todo"}, {Key: "active", Category: "active"}, {Key: "done", Category: "done"}, {Key: "canceled", Category: "canceled"}}
+	for text, want := range map[string]string{
+		"144":                         "draft todo active done canceled",
+		"is:open,closed 144":          "draft todo active done canceled",
+		"is:closed":                   "done canceled",
+		"is:open -category:backlog":   "todo active",
+		"status:todo,done":            "todo done",
+		"is:open,mine":                "draft todo active done canceled",
+		"-status:done assignee:alice": "draft todo active canceled",
+	} {
+		q, err := query.Parse(text, query.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		empty := boardEmpty(q, statuses)
+		var got []string
+		for _, s := range statuses {
+			if empty(s) {
+				got = append(got, s.Key)
+			}
+		}
+		if strings.Join(got, " ") != want {
+			t.Errorf("%s: %v", text, got)
+		}
+	}
 }
 
 // Catches crossing column boundaries vertically, skipping empty columns, shared

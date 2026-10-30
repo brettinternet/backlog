@@ -40,27 +40,31 @@ func (m Model) boardStatusGroup() bool {
 	return q.Group == "status" || q.Group == "" || q.Group == "none"
 }
 
-// boardEmpty reports which declared statuses keep a column without cards. A
-// status or category term means the query, not the workflow, picks columns,
-// but a negated one, like the Board tab's -category:backlog, hides only the
-// columns it excludes. Empty closed columns are omitted: an open-only board
-// would otherwise always end in empty Done and Canceled columns.
+// boardEmpty reports which declared statuses keep a column without cards: those
+// the query's status, category, and is:open/closed terms admit. Other terms
+// filter cards, not columns, so a search keeps the workflow's columns while
+// the Board tab's is:open -category:backlog drops Draft, Done, and Canceled.
 func boardEmpty(q query.Query, statuses []project.StatusConfig) func(project.StatusConfig) bool {
-	var excluded query.Query
+	var columns query.Query
 	for _, term := range q.Terms {
-		if term.Field != "status" && term.Field != "category" {
-			continue
+		if term.Field == "status" || term.Field == "category" || term.Field == "is" && statusOnly(term) {
+			columns.Terms = append(columns.Terms, term)
 		}
-		if !term.Negated {
-			return func(project.StatusConfig) bool { return false }
-		}
-		excluded.Terms = append(excluded.Terms, term)
 	}
 	snapshot := query.Snapshot{Settings: project.Settings{Statuses: statuses}}
 	return func(s project.StatusConfig) bool {
-		category := model.StatusCategory(s.Category)
-		return category != model.Done && category != model.Canceled && excluded.Match(model.Item{Status: s.Key, Category: category}, snapshot, nil)
+		return columns.Match(model.Item{Status: s.Key, Category: model.StatusCategory(s.Category)}, snapshot, nil)
 	}
+}
+
+// statusOnly reports whether an is: term depends only on status category.
+func statusOnly(term query.Term) bool {
+	for _, v := range term.Values {
+		if !strings.EqualFold(v.Text, "open") && !strings.EqualFold(v.Text, "closed") {
+			return false
+		}
+	}
+	return true
 }
 
 // boardGroups orders status columns by workflow, followed by undeclared

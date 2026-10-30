@@ -149,9 +149,9 @@ under a file lock. The tab appears at once and persists.
 **Board:** configured statuses in workflow order, including empty ones, then
 undeclared statuses. Keys a status `includes` share its column, and cards keep
 their own status name (design.md D36). The Board tab hides drafts, which are never ready
-(design.md D29); `fb` shows them. A status or category filter drops empty
-columns; a negated one drops only the columns it excludes. Other group keys use
-their group order. A card shows priority, ID, open blockers, child progress, and
+(design.md D29); `fb` shows them. Empty columns stay unless the query's status,
+category, or `is:open`/`is:closed` terms exclude that status; other terms filter
+cards, not columns. Other group keys use their group order. A card shows priority, ID, open blockers, child progress, and
 assignee above its title; as it narrows, assignee drops first, then children,
 then blockers. A column without cards is only as wide as its header; columns
 with cards share the rest, each at least 28 cells, so how many fit depends on
