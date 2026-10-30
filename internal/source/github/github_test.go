@@ -36,6 +36,7 @@ type fixture struct {
 	writes, lists, hints, notModified, projectPages int
 	limited, readOnly                               bool
 	oauthApp, issuePermission, projectPermission    string
+	pullPermission                                  string
 	repositoryMissing                               bool
 	personalProject                                 bool
 	// iterationFieldID, secondIterationFieldID, iterations and
@@ -87,6 +88,10 @@ type fixture struct {
 	review     map[string]any
 	reviewFail bool
 	reviews    int
+	// submitted records each review submission's variables; submitReply
+	// answers it, or a 502 after dispatch when empty.
+	submitted   []map[string]any
+	submitReply string
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -191,7 +196,11 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-OAuth-Scopes", "repo, project")
 	if r.Method == http.MethodGet {
 		if r.URL.Path == "/user/installations" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 1, "installations": []any{map[string]any{"id": 42, "app_slug": f.oauthApp, "account": map[string]string{"login": "owner", "type": "Organization"}, "permissions": map[string]string{"issues": f.issuePermission, "organization_projects": f.projectPermission}}}})
+			permissions := map[string]string{"issues": f.issuePermission, "organization_projects": f.projectPermission}
+			if f.pullPermission != "" {
+				permissions["pull_requests"] = f.pullPermission
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 1, "installations": []any{map[string]any{"id": 42, "app_slug": f.oauthApp, "account": map[string]string{"login": "owner", "type": "Organization"}, "permissions": permissions}}})
 			return
 		}
 		if r.URL.Path == "/user/installations/42/repositories" {
@@ -319,6 +328,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		return input
+	}
+	if strings.Contains(q, "addPullRequestReview") {
+		f.submitted = append(f.submitted, v)
+		if f.submitReply == "" {
+			w.WriteHeader(502)
+			return
+		}
+		fmt.Fprint(w, f.submitReply)
+		return
 	}
 	switch {
 	case strings.Contains(q, "pullRequest(number"):
@@ -1031,6 +1049,52 @@ func TestForgePullRequests(t *testing.T) {
 	f.reviewFail = true
 	if kept, ok, err := forge.Review(context.Background(), 45, "bbb", false); err == nil || !ok || !slices.Equal(kept.Checks, wantChecks) || f.reviews != reads+1 {
 		t.Fatalf("failed review read: %v %v %+v", ok, err, kept)
+	}
+}
+
+// Catches a line comment posted onto a moved head, a review not pinned to the
+// head it was read at, a part GitHub refused dropped from the draft or its
+// reason unredacted, and a submission whose outcome is unknown resent.
+func TestForgeSubmitReview(t *testing.T) {
+	s, f := newFixture(t)
+	cache := filepath.Join(t.TempDir(), "forge.pulls.json")
+	forge := &Forge{s: s, cache: cache, reviews: changes.NewReviews(cache, s.o.Repo)}
+	ctx := context.Background()
+	thread := func(id string) map[string]any {
+		return map[string]any{"id": id, "path": "a.go", "line": 3, "comments": map[string]any{"nodes": []any{}}}
+	}
+	f.review = map[string]any{"id": "PR_45", "headRefOid": "aaa", "reviewThreads": map[string]any{"nodes": []any{thread("T_1"), thread("T_2")}}}
+	draft := changes.Draft{
+		URL: "https://github.com/owner/repo/pull/45", Body: "LGTM",
+		Comments: []changes.LineComment{{Head: "aaa", Path: "a.go", Old: true, Line: 2, Body: "why?"}},
+		Replies:  []changes.Reply{{Thread: "T_1", Path: "a.go", Line: 3, Body: "done"}, {Thread: "T_2", Path: "a.go", Line: 3, Body: "ok"}},
+	}
+
+	stale := draft
+	stale.Comments = []changes.LineComment{{Head: "old", Path: "a.go", Line: 2, Body: "why?"}}
+	if left, err := forge.SubmitReview(ctx, 45, stale, changes.EventComment); !reason(err, "conflict") || left.Error == "" || len(f.submitted) != 0 {
+		t.Fatalf("stale comment: %v %+v sent=%d", err, left, len(f.submitted))
+	}
+
+	f.submitReply = `{"data":{"review":{"pullRequestReview":{"id":"PRR_1"}},"r0":null,"r1":{"comment":{"id":"C_1"}}},"errors":[{"message":"thread T_1 is locked fake-secret","path":["r0"]}]}`
+	left, err := forge.SubmitReview(ctx, 45, draft, changes.EventApprove)
+	if !reason(err, "rejected") || left.Body != "" || len(left.Comments) != 0 || len(left.Replies) != 1 || left.Replies[0].Thread != "T_1" || !strings.Contains(left.Error, "locked") || strings.Contains(left.Error, "fake-secret") {
+		t.Fatalf("partial: %v %+v", err, left)
+	}
+	review, _ := f.submitted[0]["review"].(map[string]any)
+	threads, _ := review["threads"].([]any)
+	if review["commitOID"] != "aaa" || review["event"] != "APPROVE" || review["pullRequestId"] != "PR_45" || len(threads) != 1 || fmt.Sprint(threads[0]) != "map[body:why? line:2 path:a.go side:LEFT]" {
+		t.Fatalf("review input: %v", f.submitted[0])
+	}
+
+	f.submitReply = ""
+	left, err = forge.SubmitReview(ctx, 45, draft, changes.EventComment)
+	if !reason(err, "unknown-outcome") || left.Unknown == "" || left.Body != draft.Body || len(left.Replies) != 2 || len(f.submitted) != 2 {
+		t.Fatalf("unknown outcome: %v %+v sent=%d", err, left, len(f.submitted))
+	}
+	pr := changes.Change{URL: draft.URL, Number: 45}
+	if _, err := changes.SubmitReview(ctx, pr, []changes.Forge{forge}, left, changes.EventComment); err == nil || !strings.Contains(err.Error(), "unknown") || len(f.submitted) != 2 {
+		t.Fatalf("unknown draft resent: %v sent=%d", err, len(f.submitted))
 	}
 }
 

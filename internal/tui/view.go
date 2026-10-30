@@ -437,6 +437,8 @@ func (m Model) overlay(lines []string) []string {
 		return m.launcherOverlay(lines)
 	case m.longEdit.choice != "":
 		return m.longEditOverlay(lines)
+	case m.review.prompt:
+		return m.reviewOverlay(lines)
 	case m.capture.open:
 		return m.captureOverlay(lines)
 	case m.picker.open:

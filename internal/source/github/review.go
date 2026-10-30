@@ -9,16 +9,18 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/changes"
+	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/source/remote"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
-const reviewQuery = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){body headRefOid
+const reviewQuery = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){id body headRefOid
 reviewRequests(first:50){nodes{requestedReviewer{__typename ... on User{login} ... on Bot{login} ... on Mannequin{login} ... on Team{slug}}}}
 latestReviews(first:50){nodes{author{login} state}}
 reviews(first:100){nodes{author{login} body state submittedAt url}}
 comments(first:100){nodes{author{login} body createdAt url}}
-reviewThreads(first:100){nodes{isResolved isOutdated path line originalLine comments(first:50){nodes{author{login} body createdAt url}}}}
+reviewThreads(first:100){nodes{id isResolved isOutdated path line originalLine comments(first:50){nodes{author{login} body createdAt url}}}}
 commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion detailsUrl url} ... on StatusContext{context state targetUrl}}}}}}}}}}`
 
 type reviewAuthor struct{ Login string }
@@ -38,8 +40,8 @@ func (c reviewComment) comment() changes.Comment {
 }
 
 type reviewNode struct {
-	Body, HeadRefOid string
-	ReviewRequests   struct {
+	ID, Body, HeadRefOid string
+	ReviewRequests       struct {
 		Nodes []struct {
 			RequestedReviewer *struct{ Login, Slug string }
 		}
@@ -60,6 +62,7 @@ type reviewNode struct {
 	Comments      struct{ Nodes []reviewComment }
 	ReviewThreads struct {
 		Nodes []struct {
+			ID                     string
 			IsResolved, IsOutdated bool
 			Path                   string
 			Line, OriginalLine     *int
@@ -108,7 +111,7 @@ func checkState(status, conclusion string) string {
 }
 
 func (n reviewNode) review() changes.Review {
-	r := changes.Review{Head: n.HeadRefOid, Body: textutil.Sanitize(n.Body)}
+	r := changes.Review{ID: n.ID, Head: n.HeadRefOid, Body: textutil.Sanitize(n.Body)}
 	states := map[string]string{}
 	var order []string
 	set := func(login, state string) {
@@ -146,7 +149,7 @@ func (n reviewNode) review() changes.Review {
 		r.Comments = append(r.Comments, n.comment())
 	}
 	for _, n := range n.ReviewThreads.Nodes {
-		t := changes.Thread{Path: textutil.Line(n.Path), Resolved: n.IsResolved, Outdated: n.IsOutdated}
+		t := changes.Thread{ID: n.ID, Path: textutil.Line(n.Path), Resolved: n.IsResolved, Outdated: n.IsOutdated}
 		if line := cmp.Or(n.Line, n.OriginalLine); line != nil {
 			t.Line = *line
 		}
@@ -166,6 +169,18 @@ func (n reviewNode) review() changes.Review {
 		}
 	}
 	return r
+}
+
+// reviewBlocked says why the account can't post reviews: an OAuth grant
+// needs --write and bl-cli's Pull requests: write.
+func (f *Forge) reviewBlocked(c remote.Credential) string {
+	switch {
+	case f.s.o.Account.OAuth && !c.HasScope("write"):
+		return oauth.WriteRequired().Message
+	case f.s.o.Account.OAuth && !f.s.pullWrite:
+		return "bl-cli lacks Pull requests: write on " + f.s.o.Repo + " (docs/github.md)"
+	}
+	return ""
 }
 
 // reviewError tolerates checks or a team reviewer the token can't read; the
@@ -206,6 +221,7 @@ func (f *Forge) readReview(ctx context.Context, number int) (changes.Review, err
 		return changes.Review{}, source.Refuse("not-found", "pull request unavailable")
 	}
 	r := result.Repository.PullRequest.review()
+	r.Blocked = f.reviewBlocked(c)
 	data, err := json.Marshal(r)
 	if err == nil {
 		r = changes.Review{}
