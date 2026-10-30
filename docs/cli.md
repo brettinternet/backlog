@@ -144,6 +144,16 @@ with the default branch, counting a worktree's uncommitted files), `worktree`,
 `reason`. Diff text stays out of JSON. Pull requests come from the forge's
 cache, refreshed incrementally; Git is read from `.git` and never fetched.
 
+### `bl tour ID FILE`
+
+Stores a tour an agent wrote for the
+item's linked change whose head is the tour's `ref`, for the TUI Diff tab
+([schema](schemas/tour.json)). It refuses, with the reason, a file over 1 MiB,
+an invalid tour, a step citing a criterion the item lacks, or a `ref` that
+heads no linked change, listing the linked heads. A later tour for the same
+change replaces it. JSON returns `data.item`, `change`, `ref`, and `steps`.
+`bl` never writes a tour itself; `bl instructions tours` explains how to.
+
 ### `bl next [QUERY] [-n N] [--explain] [--claim [--start]] [--workspace NAME]`
 
 Returns ready items in [ranking order](readiness.md). QUERY narrows the
@@ -778,7 +788,7 @@ uses reason `adapter-check`. It doesn't trust configured sources. See the
 ### `bl instructions [TOPIC]`
 
 Prints Markdown guidance matching the installed version. Topics: `overview`
-(default), `workflow`, `query`, `format`, `json`. Unknown topics exit 2. JSON
+(default), `workflow`, `query`, `format`, `json`, `tours`. Unknown topics exit 2. JSON
 `data` has `topic`, `topics`, and `markdown`.
 
 Guidance never needs a project. In one whose config sets

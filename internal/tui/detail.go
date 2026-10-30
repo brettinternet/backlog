@@ -18,6 +18,7 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
+	"github.com/brettinternet/backlog/internal/tour"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -92,6 +93,8 @@ type detailResult struct {
 	hunks      []int
 	rows       []diffRow // what each Diff entry shows
 	head       string    // the commit the Diff shows
+	steps      []int     // the Diff's line of each tour step, in tour order
+	tour       string    // why the Diff shows no tour steps, when it has a tour
 	truncated  bool
 	err        string
 }
@@ -141,6 +144,8 @@ type rendered struct {
 	files     []int    // the Diff tab's line of each file and hunk header
 	hunks     []int
 	rows      []diffRow // what each Diff entry, or each line of a file's diff, shows
+	steps     []int     // the line of each tour step's callout, in tour order
+	tour      string    // why a change's tour shows no steps
 	truncated bool
 	size      int
 }
@@ -303,18 +308,22 @@ type detailWorker struct {
 	// enrich adds Git's and the forges' facts to the Changes tab.
 	changeReview func(context.Context, changes.Change, bool) (changes.Review, error)
 	enrich       func(context.Context, []changes.Change, bool) []changes.Change
-	requests     chan detailRequest
-	results      chan detailResult
-	mu           sync.Mutex
-	active       context.CancelFunc
-	started      sync.Once
-	cache        detailCache
-	diffs        detailCache // each file of the Diff tab
+	// tour reads the tour kept for an item's change, and fileAt a file a
+	// step outside every hunk shows.
+	tour     func(model.Ref, string) (tour.Stored, bool, error)
+	fileAt   func(context.Context, changes.Change, string) ([]byte, error)
+	requests chan detailRequest
+	results  chan detailResult
+	mu       sync.Mutex
+	active   context.CancelFunc
+	started  sync.Once
+	cache    detailCache
+	diffs    detailCache // each file of the Diff tab
 }
 
 func newDetailWorker(ctx context.Context, read func(context.Context, model.Ref) (model.Item, error), render func(string, int, string) (string, error)) *detailWorker {
 	return &detailWorker{
-		ctx: ctx, read: read, render: render,
+		ctx: ctx, read: read, render: render, fileAt: changes.FileAt,
 		requests: make(chan detailRequest, 1), results: make(chan detailResult, 1), cache: newDetailCache(maxRenderEntries, maxRenderBytes), diffs: newDetailCache(maxDiffEntries, maxDiffBytes),
 	}
 }
@@ -400,7 +409,8 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		}
 		var page rendered
 		if diff && err == nil {
-			page = worker.diffPage(ctx, *request.change, detail, request)
+			view := worker.loadTour(ctx, request, *request.change, &detail)
+			page = worker.diffPage(ctx, *request.change, detail, view, request)
 		} else {
 			page = changeViewPage(*request.change, detail, review, request, worker.render)
 		}
@@ -411,6 +421,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
+		result.steps, result.tour = page.steps, page.tour
 		return result
 	}
 	if request.tab == tabChanges {

@@ -137,6 +137,10 @@ a result. A malformed or oversized result file fails the hook. The result
 becomes `result` in the finished event, and its top-level strings are available
 as `{result.KEY}` to hooks triggered by that event.
 
+A result with `"tour": "PATH"` stores that [tour](cli.md#bl-tour-id-file) for
+the event's item, as `bl tour` does; a relative path is from the run's `cwd`.
+A refused tour fails the run with the reason.
+
 ## Placeholders and environment
 
 | Placeholder | Value |

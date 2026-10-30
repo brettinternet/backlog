@@ -129,9 +129,9 @@ func TestEventsMatchCLI(t *testing.T) {
 		case strings.Contains(body.Query, "{viewer"):
 			data = map[string]any{"viewer": map[string]any{"login": "alice"}}
 		case strings.Contains(body.Query, "pullRequests("):
-			data = map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{}, "nodes": []any{map[string]any{"number": 7, "title": "BL-1 fix", "url": "https://github.fake/owner/repo/pull/7", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "fix", "headRefOid": "abc"}}}}}
+			data = map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{}, "nodes": []any{map[string]any{"number": 7, "title": "BL-1 fix", "url": "https://github.fake/owner/repo/pull/7", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "fix", "headRefOid": parityHead}}}}}
 		case strings.Contains(body.Query, "pullRequest(number"):
-			data = map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"headRefOid": "abc",
+			data = map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"headRefOid": parityHead,
 				"reviewThreads": map[string]any{"nodes": []any{map[string]any{"isResolved": true, "path": "a.go"}, map[string]any{"path": "b.go"}}},
 				"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://ci.fake/1"}}}}}}}},
 			}}}
@@ -320,4 +320,33 @@ func TestEventsMatchCLI(t *testing.T) {
 	if !reflect.DeepEqual(cliData, mcpData) {
 		t.Fatalf("changes differ\nMCP %v\nCLI %v", mcpData, cliData)
 	}
+
+	// bl tour and the MCP tour tool store a tour only for a linked change's
+	// head, and refuse any other ref with the reason.
+	tourFile := func(ref string) string {
+		name := filepath.Join(t.TempDir(), "change.tour")
+		data := `{"ref":"` + ref + `","steps":[{"file":"main.go","line":1,"description":"Start here."}]}`
+		if err := os.WriteFile(name, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return name
+	}
+	if code, out := run("tour", "1", tourFile(parityHead)); code != 0 || !strings.Contains(out, `"steps":1`) {
+		t.Fatalf("bl tour: %d %s", code, out)
+	}
+	stale := strings.Repeat("0", 40)
+	if code, out := run("tour", "1", tourFile(stale)); code == 0 || !strings.Contains(out, "is the head of no change linked to BL-1") {
+		t.Fatalf("bl tour with another ref: %d %s", code, out)
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "file": tourFile(parityHead)}})
+	if err != nil || result.IsError {
+		t.Fatalf("tour: %v %+v", err, result)
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tour", Arguments: map[string]any{"id": "1", "file": tourFile(stale)}})
+	if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "is the head of no change linked to BL-1") {
+		t.Fatalf("tour with another ref: %v %+v", err, result)
+	}
 }
+
+// parityHead is the fake pull request's head commit.
+const parityHead = "0123456789abcdef0123456789abcdef01234567"

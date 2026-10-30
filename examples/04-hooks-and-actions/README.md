@@ -7,6 +7,7 @@ argv directly, never through a shell, and do nothing until you trust them.
 | --- | --- | --- |
 | `branch` | action, `ctrl+b` in the TUI | `git switch --create bl-4-write-onboarding-docs` |
 | `history` | action | `git log` for the item's file |
+| `tour` | action, on a linked change | An agent writes a [tour](../../docs/cli.md#bl-tour-id-file) of it for the Diff tab ([script](hooks/write-tour.sh)) |
 | `require-criteria` | `before` hook | Refuses `done` while criteria are unchecked ([script](hooks/require-criteria.py)) |
 | `done-log` | `after` hook | Appends the ID to `done.log` |
 

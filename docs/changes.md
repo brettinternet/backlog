@@ -107,6 +107,9 @@ starting Git. It runs Git only where files can't answer:
   or for a History commit, against the merge base (and the working tree for a
   worktree, unless a filter driver is configured) or a landed merge's first
   parent.
+- For a [tour](tui.md) step on a line outside every hunk, `cat-file` of its
+  file at the change's head when there is no worktree to read it from or a
+  filter driver is configured.
 
 Every run passes `--no-pager --no-optional-locks --literal-pathspecs -c
 core.fsmonitor=false -c log.showSignature=false` with `GIT_NO_LAZY_FETCH=1`

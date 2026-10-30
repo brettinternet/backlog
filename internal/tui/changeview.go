@@ -77,6 +77,22 @@ func (m *Model) jumpDiff(lines []int, forward bool) {
 	m.scrollDetail(0)
 }
 
+// stepTour goes to the tour's next or previous step, in the tour's order.
+func (m *Model) stepTour(forward bool) {
+	if len(m.detailSteps) == 0 {
+		m.notice = cmp.Or(m.detailTour, "No tour for this change.")
+		return
+	}
+	step := m.tourStep - 1
+	if forward {
+		step = m.tourStep + 1
+	}
+	m.tourStep = min(max(step, 0), len(m.detailSteps)-1)
+	m.detailScroll = m.detailSteps[m.tourStep]
+	m.diffCursorTo(m.detailScroll)
+	m.scrollDetail(0)
+}
+
 // diffCursorTo puts the Diff cursor on the entry at or after line.
 func (m *Model) diffCursorTo(line int) {
 	if i, _ := slices.BinarySearch(m.detailEntries, line); i < len(m.detailEntries) {
@@ -475,14 +491,17 @@ func fileLine(t theme, f changes.File, width int) string {
 	glyph := map[string]string{
 		changes.FileAdded: t.green.render("A"), changes.FileDeleted: t.red.render("D"),
 		changes.FileRenamed: t.magenta.render("R"), changes.FileBinary: t.muted.render("B"),
-		changes.FileUncommitted: t.yellow.render("U"),
+		changes.FileUncommitted: t.yellow.render("U"), changes.FileUnchanged: t.muted.render("·"),
 	}[f.Status]
 	if glyph == "" {
 		glyph = t.accent.render("M")
 	}
 	tail := "  " + t.green.render("+"+strconv.Itoa(f.Additions)) + " " + t.red.render("−"+strconv.Itoa(f.Deletions))
-	if f.Status == changes.FileBinary {
+	switch f.Status {
+	case changes.FileBinary:
 		tail = "  " + t.muted.render("binary")
+	case changes.FileUnchanged:
+		tail = ""
 	}
 	path := textutil.Line(f.Path)
 	if f.From != "" {
