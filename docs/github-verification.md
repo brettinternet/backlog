@@ -157,3 +157,12 @@ scopes) and passed: three entries, oldest first (`closed as completed`,
 `reopened`, `closed as completed`). A direct GraphQL read with the same token
 returned `ProjectV2ItemStatusChangedEvent` entries (`Ready → In progress`)
 for an issue on a project board. Nothing was written.
+
+## BL-152 live verification
+
+After the owner added Pull requests, Checks, and Commit statuses: read to
+`bl-cli`, its user installation reported those permissions with Issues: write.
+A `bl auth login --write` device login in an isolated config read open pull
+request #24 through `bl changes` on a scratch item linking it: `pr open`,
+`checks failing`, matching `gh pr checks 24`, with the forge `ok`. Nothing was
+written.

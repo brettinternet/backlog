@@ -54,7 +54,7 @@ read-only:
 | App | Client ID | Permissions | Used by |
 | --- | --- | --- | --- |
 | `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses: read | `bl auth login` |
-| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects: read/write | `bl auth login --write` |
+| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects: read/write; Metadata, Pull requests, Checks, Commit statuses: read | `bl auth login --write` |
 
 1. Declare the account with `oauth: true` instead of `credential` or `env`:
 
@@ -459,7 +459,9 @@ changes](changes.md): state, head branch and commit, merge commit, closing
 issues, review decision, checks rollup, and size. It needs no source. Without
 `changes.forges`, a GitHub `origin` is the forge when exactly one account is
 configured for its host. The `repo` scope (or `public_repo`) reads it, and
-device login reads it wherever `bl-cli-read` is installed. Where an
+device login reads it wherever its app is installed: `bl-cli-read`, or `bl-cli`
+after `--write`
+([BL-152](github-verification.md#bl-152-live-verification)). Where an
 organization won't install the app, use a `gh auth token` credential account
 instead ([Setup](#setup)). A pull request whose checks or closing issues the
 token can't read still links by branch, title, and body.
