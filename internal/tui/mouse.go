@@ -178,9 +178,10 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 		case y == 2: // meta, title, then the tab bar
 			_, spans := m.detailTabBar(inner)
+			first, _ := m.tabRange()
 			for i, s := range spans {
 				if x >= s.start && x < s.end {
-					return m, m.switchDetailTab(detailTab(i))
+					return m, m.switchDetailTab(first + detailTab(i))
 				}
 			}
 		case y >= m.detailBodyTop() && line == len(m.detailLines) && m.detailTruncated && !m.detailPlaceholder() && m.detailError == "":
@@ -190,7 +191,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.clickCriterion(x, line)
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
 			return m, m.clickRelation(p.X, p.Y, line)
-		case m.detailTab == tabChanges && y >= m.detailBodyTop():
+		case (m.detailTab == tabChanges || m.detailTab == tabChangeFiles || m.detailTab == tabChangeCommits) && y >= m.detailBodyTop():
 			// A click selects the change drawn on any of its lines.
 			if m.detailCurrent() {
 				for i, start := range m.detailEntries {

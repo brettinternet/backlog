@@ -113,10 +113,13 @@ func changeLines(cs []changes.Change, t theme, now time.Time, width int) rendere
 			facts = append(facts, textutil.Line(c.Branch))
 		}
 		if c.Worktree != "" {
-			facts = append(facts, textutil.Line(c.Worktree))
+			facts = append(facts, textutil.Line(worktreePath(c)))
 		}
-		if c.Ahead != nil && c.Behind != nil {
-			facts = append(facts, strconv.Itoa(*c.Ahead)+" ahead, "+strconv.Itoa(*c.Behind)+" behind")
+		if c.Ahead != nil && *c.Ahead > 0 {
+			facts = append(facts, "↑"+strconv.Itoa(*c.Ahead))
+		}
+		if c.Behind != nil && *c.Behind > 0 {
+			facts = append(facts, "↓"+strconv.Itoa(*c.Behind))
 		}
 		if c.Dirty != nil && *c.Dirty > 0 {
 			facts = append(facts, strconv.Itoa(*c.Dirty)+" dirty")
@@ -180,6 +183,12 @@ func changesVersion(cs []changes.Change) string {
 			h.Write([]byte(s))
 			h.Write([]byte{0})
 		}
+		for _, n := range []*int{&c.Additions, &c.Deletions, c.Ahead, c.Behind, c.Dirty} {
+			if n != nil {
+				h.Write(strconv.AppendInt(nil, int64(*n), 10))
+			}
+			h.Write([]byte{0})
+		}
 	}
 	return strconv.FormatUint(h.Sum64(), 36)
 }
@@ -193,8 +202,12 @@ func linkedChange(c changes.Change) hooks.LinkedChange {
 	return l
 }
 
-// selectedChange is the Changes entry under the detail cursor.
+// selectedChange is the change the change view shows, or the Changes entry
+// under the detail cursor.
 func (m Model) selectedChange() (changes.Change, bool) {
+	if m.detailOpen && m.change != nil {
+		return m.shownChange(), true
+	}
 	if !m.detailOpen || m.detailTab != tabChanges || !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailChanges) {
 		return changes.Change{}, false
 	}
@@ -212,12 +225,15 @@ func (m Model) yankChange() changes.Change {
 	return c
 }
 
-// yankCommit is the SHA ys copies: the History commit or the change under the
-// cursor.
+// yankCommit is the SHA ys copies: the History or change view commit, or the
+// change under the cursor.
 func (m Model) yankCommit() string {
 	if m.detailOpen && m.detailCurrent() && m.detailTab == tabHistory && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
 		sha, _ := history.CommitOf(m.detailIDs[m.entryCursor])
 		return sha
+	}
+	if m.detailOpen && m.detailCurrent() && m.detailTab == tabChangeCommits && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
+		return m.detailIDs[m.entryCursor]
 	}
 	c, _ := m.selectedChange()
 	return c.Head

@@ -16,9 +16,11 @@ import (
 )
 
 // Catches packed refs or linked worktrees read wrongly from .git, git status
-// running a filter that repository config names, a merge that leaves the
-// worktree and landed commits as separate changes, and a change lost once its
-// branch is deleted.
+// or a working tree diff running a filter that repository config names, a
+// change's files counted from the default branch's tip instead of its merge
+// base or missing uncommitted, renamed, or binary files, a merge that leaves
+// the worktree and landed commits as separate changes, and a change lost once
+// its branch is deleted.
 func TestWorktreeToLanded(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -34,16 +36,28 @@ func TestWorktreeToLanded(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	git(repo, "init", "-q", "-b", "main")
-	git(repo, "commit", "-q", "--allow-empty", "-m", "start")
-	git(repo, "worktree", "add", "-q", "-b", "bl-12-fix", worktree)
-	for name, text := range map[string]string{"a": "a\n", ".gitattributes": "a filter=x\n"} {
-		if err := os.WriteFile(filepath.Join(worktree, name), []byte(text), 0o600); err != nil {
+	write := func(dir, name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	git(repo, "init", "-q", "-b", "main")
+	write(repo, "old", "1\n2\n3\n4\n5\n")
+	git(repo, "add", ".")
+	git(repo, "commit", "-q", "-m", "start")
+	git(repo, "worktree", "add", "-q", "-b", "bl-12-fix", worktree)
+	for name, text := range map[string]string{"a": "a\n", ".gitattributes": "a filter=x\n", "bin": "\x00\x01"} {
+		write(worktree, name, text)
+	}
+	git(worktree, "mv", "old", "new")
 	git(worktree, "add", ".")
 	git(worktree, "commit", "-q", "-m", "fix")
+	write(repo, "main-only", "m\n")
+	git(repo, "add", ".")
+	git(repo, "commit", "-q", "-m", "elsewhere")
+	write(worktree, "a", "a\nb\n")
+	write(worktree, "untracked", "x\ny")
 	git(repo, "pack-refs", "--all")
 	d, err := project.Discover(repo)
 	if err != nil {
@@ -81,16 +95,42 @@ func TestWorktreeToLanded(t *testing.T) {
 	if enriched[0].Dirty != nil {
 		t.Fatalf("counted changes through a repository filter: %d", *enriched[0].Dirty)
 	}
+	if d, err := LoadDetail(context.Background(), c, nil); err != nil || d.Reason == "" || len(d.Files) != 4 {
+		t.Fatalf("detail through a repository filter: %+v %v", d, err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the working tree diff ran the repository's filter")
+	}
 	git(repo, "config", "--unset", "filter.x.clean")
 	if enriched = Enrich(context.Background(), []Change{c}); enriched[0].Dirty == nil {
 		t.Fatal("no dirty count without a repository filter")
+	}
+	detail, err := LoadDetail(context.Background(), c, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []File{
+		{Path: ".gitattributes", Status: FileAdded, Additions: 1},
+		{Path: "a", Status: FileUncommitted, Additions: 2},
+		{Path: "bin", Status: FileBinary},
+		{Path: "new", From: "old", Status: FileRenamed},
+		{Path: "untracked", Status: FileUncommitted, Additions: 2},
+	}
+	if !slices.Equal(detail.Files, want) || detail.Reason != "" || len(detail.Commits) != 1 || detail.Commits[0].Subject != "fix" || detail.Commits[0].Author != "Tester" {
+		t.Fatalf("worktree detail: %+v", detail)
+	}
+	if enriched[0].Additions != 5 || enriched[0].Deletions != 0 {
+		t.Fatalf("worktree size: +%d −%d", enriched[0].Additions, enriched[0].Deletions)
 	}
 	git(repo, "merge", "-q", "--no-ff", "--no-edit", "bl-12-fix")
 	data, c = load(data)
 	if c.Stage != StageLanded || c.State != StateMerged || c.Worktree == "" || len(c.Commits) != 1 {
 		t.Fatalf("after merge: %+v", c)
 	}
-	git(repo, "worktree", "remove", worktree)
+	if d, err := LoadDetail(context.Background(), c, nil); err != nil || len(d.Files) != 4 || d.Files[3].Path != "new" || len(d.Commits) != 2 || d.Commits[1].Subject != "fix" {
+		t.Fatalf("landed detail: %+v %v", d, err)
+	}
+	git(repo, "worktree", "remove", "--force", worktree)
 	git(repo, "branch", "-q", "-d", "bl-12-fix")
 	if _, c = load(data); c.Stage != StageLanded || c.Link != "merge" || c.Worktree != "" {
 		t.Fatalf("after branch deleted: %+v", c)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -207,4 +208,92 @@ func (n pullNode) pull(repo string) changes.PullRequest {
 		pr.Checks = map[string]string{"SUCCESS": changes.ChecksPassing, "FAILURE": changes.ChecksFailing, "ERROR": changes.ChecksFailing, "PENDING": changes.ChecksPending, "EXPECTED": changes.ChecksPending}[n.Commits.Nodes[0].Commit.StatusCheckRollup.State]
 	}
 	return pr
+}
+
+const (
+	// maxPullFiles and maxPullCommits are the most GitHub lists for one pull
+	// request.
+	maxPullFiles   = 3000
+	maxPullCommits = 250
+)
+
+// Pull reads one pull request's files and commits through the account's
+// request queue, redacted like the pull request list, newest commit first.
+func (f *Forge) Pull(ctx context.Context, number int) (changes.Detail, error) {
+	c, err := f.s.authenticate(ctx)
+	if err != nil {
+		return changes.Detail{}, err
+	}
+	base := f.s.base() + "/repos/" + f.s.o.Repo + "/pulls/" + strconv.Itoa(number)
+	var d changes.Detail
+	for page := 1; len(d.Files) < maxPullFiles; page++ {
+		var files []struct {
+			Filename, Status, Patch string
+			PreviousFilename        string `json:"previous_filename"`
+			Additions, Deletions    int
+		}
+		if err := f.get(ctx, c, base+"/files?per_page=100&page="+strconv.Itoa(page), &files); err != nil {
+			return changes.Detail{}, err
+		}
+		for _, n := range files {
+			file := changes.File{Path: n.Filename, Additions: n.Additions, Deletions: n.Deletions, Status: changes.FileModified}
+			switch n.Status {
+			case "added", "copied":
+				file.Status = changes.FileAdded
+			case "removed":
+				file.Status = changes.FileDeleted
+			case "renamed":
+				file.Status, file.From = changes.FileRenamed, n.PreviousFilename
+			}
+			// GitHub sends no patch for a binary file.
+			if n.Patch == "" && n.Additions == 0 && n.Deletions == 0 && n.Status != "renamed" {
+				file.Status = changes.FileBinary
+			}
+			d.Files = append(d.Files, file)
+		}
+		if len(files) < 100 {
+			break
+		}
+	}
+	for page := 1; len(d.Commits) < maxPullCommits; page++ {
+		var commits []struct {
+			SHA    string
+			Commit struct {
+				Message   string
+				Author    struct{ Name string }
+				Committer struct{ Date time.Time }
+			}
+		}
+		if err := f.get(ctx, c, base+"/commits?per_page=100&page="+strconv.Itoa(page), &commits); err != nil {
+			return changes.Detail{}, err
+		}
+		for _, n := range commits {
+			subject, _, _ := strings.Cut(n.Commit.Message, "\n")
+			d.Commits = append(d.Commits, changes.Commit{SHA: n.SHA, Subject: subject, Author: n.Commit.Author.Name, Time: n.Commit.Committer.Date.UTC()})
+		}
+		if len(commits) < 100 {
+			break
+		}
+	}
+	// GitHub lists commits oldest first.
+	slices.Reverse(d.Commits)
+	data, err := json.Marshal(d)
+	if err == nil {
+		err = json.Unmarshal([]byte(f.s.o.Secrets.Redact(string(data))), &d)
+	}
+	if err != nil {
+		return changes.Detail{}, source.Refuse("rejected", "invalid pull request data")
+	}
+	return d, nil
+}
+
+func (f *Forge) get(ctx context.Context, c remote.Credential, endpoint string, out any) error {
+	response, err := f.s.request(ctx, c, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	if json.Unmarshal(response.Body, out) != nil {
+		return source.Refuse("unavailable", "GitHub returned incomplete or invalid data")
+	}
+	return nil
 }

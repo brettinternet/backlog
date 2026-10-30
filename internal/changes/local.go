@@ -42,6 +42,8 @@ type Forge interface {
 	Name() string
 	Web() string
 	PullRequests(ctx context.Context) ([]PullRequest, error)
+	// Pull reads one pull request's files and commits.
+	Pull(ctx context.Context, number int) (Detail, error)
 }
 
 // Data is one project's raw changes, before linking. Default is the default
@@ -280,8 +282,9 @@ func MergedBranch(subject string) (string, int) {
 }
 
 // Enrich adds what only Git can say about one item's changes, on a worker:
-// how far each open branch is ahead of and behind the default branch, and how
-// many files are dirty in each worktree.
+// how far each open branch is ahead of and behind the default branch, how
+// many lines a branch or worktree adds and deletes since its merge base, and
+// how many files are dirty in each worktree.
 func Enrich(ctx context.Context, cs []Change) []Change {
 	out := slices.Clone(cs)
 	for i := range out {
@@ -297,6 +300,11 @@ func Enrich(ctx context.Context, cs []Change) []Change {
 					if err1 == nil && err2 == nil {
 						c.Ahead, c.Behind = &ahead, &behind
 					}
+				}
+			}
+			if c.Stage == StageWorktree || c.Stage == StageBranch {
+				if files, _, err := localFiles(ctx, *c); err == nil {
+					c.Additions, c.Deletions = Size(files)
 				}
 			}
 		}

@@ -272,7 +272,7 @@ func (l *linker) explicit(ref model.Ref, raw string, prs map[string]*line, commi
 
 // change builds a line's change before it is linked to each item.
 func (l *linker) change(ln *line) Change {
-	c := Change{ID: ln.key, Branch: ln.name, URL: ln.url, Reason: ln.reason}
+	c := Change{ID: ln.key, Branch: ln.name, URL: ln.url, Reason: ln.reason, dir: l.data.Directory}
 	if ln.stage != "" {
 		c.Stage, c.State = ln.stage, StateUnknown
 		return c
@@ -282,7 +282,7 @@ func (l *linker) change(ln *line) Change {
 	if b != nil {
 		local = cmp.Or(b.Local, b.Remote)
 		c.Head, c.Worktree = local, b.Worktree
-		c.ref, c.base, c.dir = b.RemoteRef, l.data.DefaultRef, l.data.Directory
+		c.ref, c.base = b.RemoteRef, l.data.DefaultRef
 		if b.Local != "" {
 			c.ref = "refs/heads/" + b.Name
 		}

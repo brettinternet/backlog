@@ -78,10 +78,15 @@ type Change struct {
 // Base is the default branch ref an open branch is compared with.
 func (c Change) Base() string { return c.base }
 
-// Commit is a commit on the default branch's first-parent history.
+// Dir is the checkout root the change was found in.
+func (c Change) Dir() string { return c.dir }
+
+// Commit is a commit on the default branch's first-parent history, or one a
+// change's detail lists.
 type Commit struct {
 	SHA     string    `json:"sha"`
 	Subject string    `json:"subject"`
+	Author  string    `json:"author,omitempty"`
 	Time    time.Time `json:"time"`
 	// Branch and PR are what a merge's subject names; Trailers are the values
 	// of the project's commit trailer.

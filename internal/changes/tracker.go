@@ -79,6 +79,19 @@ func (t *Tracker) Latest() *State { return t.latest.Load() }
 // Updates receives after each new state.
 func (t *Tracker) Updates() <-chan struct{} { return t.updates }
 
+// Detail reads one change's files and commits, from Git or the forge among
+// the tracked projects' that serves its pull request. A nil tracker reads
+// only Git.
+func (t *Tracker) Detail(ctx context.Context, c Change) (Detail, error) {
+	var forges []Forge
+	if t != nil {
+		for _, o := range t.projects {
+			forges = append(forges, o.Forges...)
+		}
+	}
+	return LoadDetail(ctx, c, forges)
+}
+
 // Refresh reloads local data and every forge now.
 func (t *Tracker) Refresh() {
 	select {

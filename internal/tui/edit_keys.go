@@ -185,8 +185,16 @@ func (m Model) entryCount() (int, bool) {
 		return len(m.detailChanges), true
 	case tabHistory:
 		return len(m.detailIDs), true
+	case tabChangeFiles, tabChangeCommits:
+		return len(m.detailEntries), true
 	}
 	return 0, false
+}
+
+// hasEntries is whether the tab's cursor moves over entries.
+func (m Model) hasEntries() bool {
+	_, ok := m.entryCount()
+	return ok
 }
 
 func (m *Model) keepEntryVisible() {

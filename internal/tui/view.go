@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
@@ -221,24 +222,30 @@ func claimLease(row engine.Row, now time.Time) (label, remaining string) {
 func (m Model) detailTabBar(width int) (string, []span) {
 	t := m.theme
 	row, _ := m.selectedRow()
-	counts := tabCounts(row)
-	labels := make([]string, len(detailTabNames))
+	tabs := tabCounts(row)
+	names, counts := detailTabNames[:], tabs[:]
+	start, _ := m.tabRange()
+	if m.change != nil {
+		names, counts = changeTabNames[:], nil
+	}
+	labels := make([]string, len(names))
 	widths := make([]int, len(labels))
 	total := 0
-	for i, name := range detailTabNames {
+	for i, name := range names {
 		labels[i] = name
-		if count := counts[i]; count != "" {
-			labels[i] += " " + count
+		if i < len(counts) && counts[i] != "" {
+			labels[i] += " " + counts[i]
 		}
 		total += ansi.StringWidth(labels[i]) + 2
 	}
 	if total > width {
-		copy(labels, detailTabNames[:])
+		copy(labels, names)
 	}
 	for i, label := range labels {
 		widths[i] = ansi.StringWidth(label) + 2
 	}
-	first, end := tabWindow(widths, 0, int(m.detailTab), width)
+	active := int(m.detailTab - start)
+	first, end := tabWindow(widths, 0, active, width)
 	var b strings.Builder
 	spans := make([]span, len(labels))
 	x := 0
@@ -251,7 +258,7 @@ func (m Model) detailTabBar(width int) (string, []span) {
 		label := labels[i]
 		cell := " " + label + " "
 		switch {
-		case detailTab(i) != m.detailTab:
+		case i != active:
 			b.WriteString(t.muted.render(cell))
 		case !t.color:
 			cell = "[" + label + "]"
@@ -291,7 +298,7 @@ func (m Model) detailMetaLine(row engine.Row, inner, rows int) (string, span, sp
 	}
 	// A capped body says so where it is always visible, not only at its end.
 	// The meta row has room; the tab row may be full.
-	if m.detailFocus && m.detached != nil && len(m.detailHistory) > 0 {
+	if m.detailFocus && (m.change != nil || m.detached != nil && len(m.detailHistory) > 0) {
 		right = append(right, "⌫ back")
 	}
 	if m.detailExpanded {
@@ -345,8 +352,18 @@ func (m Model) detailPane(width, rows int) []string {
 	meta, _, _ := m.detailMetaLine(row, inner, rows)
 	placeholder := m.detailPlaceholder()
 	put(0, meta)
-	title := textutil.Line(row.Title)
-	put(1, t.bold.render(ansi.Truncate(title, inner, "…")))
+	title := t.bold.render(ansi.Truncate(textutil.Line(row.Title), inner, "…"))
+	if m.change != nil {
+		// The change view names its change where the item's title was.
+		c := m.shownChange()
+		label := textutil.Line(changes.Label(c))
+		title = stageGlyph(t, c) + " " + t.bold.render(label)
+		if text := textutil.Line(c.Title); text != label {
+			title += "  " + text
+		}
+		title = ansi.Truncate(title, inner, "…")
+	}
+	put(1, title)
 	tabs, _ := m.detailTabBar(inner)
 	put(2, tabs)
 	line := 4
@@ -365,7 +382,7 @@ func (m Model) detailPane(width, rows int) []string {
 		}
 	default:
 		cursor, hint := -1, ""
-		if m.detailCurrent() && (m.detailTab == tabCriteria || m.detailTab == tabRelations || m.detailTab == tabChanges || m.detailTab == tabHistory) && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
+		if m.detailCurrent() && m.hasEntries() && m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
 			cursor = m.detailEntries[m.entryCursor]
 			// A row-specific key shows only on the focused row, so the list
 			// stays clean while the key is still found where it applies.

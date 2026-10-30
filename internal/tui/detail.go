@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"container/list"
 	"context"
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,9 +31,16 @@ const (
 	tabRelations
 	tabChanges
 	tabHistory
+	// The change view's tabs replace the item's while it is open.
+	tabChangeOverview
+	tabChangeFiles
+	tabChangeCommits
 )
 
-var detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "Changes", "History"}
+var (
+	detailTabNames = [...]string{"Overview", "Criteria", "Notes", "Comments", "Relations", "Changes", "History"}
+	changeTabNames = [...]string{"Overview", "Files", "Commits"}
+)
 
 type detailIdentity struct {
 	Ref              model.Ref
@@ -66,7 +74,8 @@ type detailRequest struct {
 	statuses   []project.StatusConfig
 	theme      theme
 	now        time.Time
-	fresh      bool // R: reread from the source, bypassing both caches
+	fresh      bool            // R: reread from the source, bypassing both caches
+	change     *changes.Change // the change view's change
 }
 type detailResult struct {
 	generation uint64
@@ -75,7 +84,7 @@ type detailResult struct {
 	entries    []int             // line index of each criterion or relation, for the tab's cursor
 	targets    []engine.Relation // the relation each Relations entry opens
 	changes    []changes.Change  // the change each Changes entry is
-	ids        []string          // the history entry each History entry is
+	ids        []string          // the history entry each History entry is, or each commit's SHA
 	hints      []string          // a key to show on each History entry when selected
 	truncated  bool
 	err        string
@@ -259,6 +268,11 @@ type historyCache struct {
 	result history.Result
 }
 
+type changeCache struct {
+	key    string
+	detail changes.Detail
+}
+
 type detailWorker struct {
 	ctx      context.Context
 	read     func(context.Context, model.Ref) (model.Item, error)
@@ -266,12 +280,16 @@ type detailWorker struct {
 	history  func(context.Context, model.Item, []changes.Change) history.Result
 	position func(model.Ref) string // the event log's position, so new events redraw History
 	recent   historyCache
-	requests chan detailRequest
-	results  chan detailResult
-	mu       sync.Mutex
-	active   context.CancelFunc
-	started  sync.Once
-	cache    detailCache
+	// changeDetail reads a change's files and commits; recentChange keeps the
+	// last that a worktree's edits can't change.
+	changeDetail func(context.Context, changes.Change) (changes.Detail, error)
+	recentChange changeCache
+	requests     chan detailRequest
+	results      chan detailResult
+	mu           sync.Mutex
+	active       context.CancelFunc
+	started      sync.Once
+	cache        detailCache
 }
 
 func newDetailWorker(ctx context.Context, read func(context.Context, model.Ref) (model.Item, error), render func(string, int, string) (string, error)) *detailWorker {
@@ -341,6 +359,19 @@ func latestDetail(ch chan detailResult, value detailResult) {
 func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) detailResult {
 	identity := identityFor(request.row, true)
 	result := detailResult{generation: request.generation, identity: identity}
+	if request.change != nil {
+		detail, err := worker.loadChange(ctx, *request.change, request.fresh)
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err != nil {
+			result.err = textutil.Line(err.Error())
+			return result
+		}
+		page := changeViewPage(*request.change, detail, request)
+		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
+		return result
+	}
 	if request.tab == tabChanges {
 		// Git counts ahead, behind, and dirty files each time, so the tab
 		// isn't cached; it needs only the row.
@@ -435,6 +466,27 @@ func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, li
 		worker.recent = historyCache{key, result}
 	}
 	return result
+}
+
+// loadChange reads a change's files and commits each time, as the Changes
+// tab does, except one without a worktree is kept until its head or update
+// time moves, so a pull request isn't fetched again on every tab.
+func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fresh bool) (changes.Detail, error) {
+	if worker.changeDetail == nil {
+		return changes.Detail{}, errors.New("change detail is unavailable")
+	}
+	key := ""
+	if c.Worktree == "" {
+		key = strings.Join([]string{c.ID, c.Stage, c.State, c.Head, c.Updated.String()}, "\x00")
+		if worker.recentChange.key == key && !fresh {
+			return worker.recentChange.detail, nil
+		}
+	}
+	detail, err := worker.changeDetail(ctx, c)
+	if err == nil && key != "" && ctx.Err() == nil {
+		worker.recentChange = changeCache{key, detail}
+	}
+	return detail, err
 }
 
 const (

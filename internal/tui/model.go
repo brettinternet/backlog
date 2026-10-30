@@ -208,6 +208,11 @@ type Model struct {
 	detailHistory []detailStop // items followed from, oldest first
 	catalog       *engine.Catalog
 	mouse         mouseState
+	// change is the linked change the change view shows, opened from the
+	// Changes entry at changeCursor of changeRef.
+	change       *changes.Change
+	changeRef    model.Ref
+	changeCursor int
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -231,6 +236,9 @@ func New(opts Options) Model {
 		}
 		model.detailWorker = newDetailWorker(opts.Context, opts.Read, render)
 		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
+		if tracker := opts.Changes; tracker != nil {
+			model.detailWorker.changeDetail = tracker.Detail
+		}
 	}
 	model.initViews()
 	model.shown, _ = query.Parse(model.query, query.Options{})
@@ -364,6 +372,9 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	m.routeSelectedProject()
 	m.detailGeneration++
 	row, ok := m.selectedRow()
+	if m.change != nil && (!ok || row.Ref != m.changeRef) {
+		m.change, m.detailTab = nil, tabChanges
+	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
 	m.detailLoading = m.detailOpen && ok
@@ -411,8 +422,13 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 	if m.snapshot != nil {
 		sprints = m.snapshot.Source(row.Ref.Source).Sprints
 	}
+	var change *changes.Change
+	if m.change != nil {
+		shown := m.shownChange()
+		change = &shown
+	}
 	return detailRequest{
-		generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
+		change: change, generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
 		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
 	}
@@ -1208,10 +1224,11 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			if m.detailTab == tabHistory && len(m.detailIDs) > 0 {
 				return m, m.toggleHistoryEntry()
 			}
+			if m.change != nil {
+				return m, nil
+			}
 			if c, ok := m.selectedChange(); ok {
-				// Until bl has a change view, a change opens its actions.
-				m.actionSession, m.actionChange = "", new(linkedChange(c))
-				return m.openConfiguredActions()
+				return m, m.openChange(c)
 			}
 			m.closeDetail()
 			return m, nil
@@ -1236,9 +1253,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			cmd, _ := m.updateItemKey(s)
 			return m, cmd
 		case "tab":
-			return m, m.switchDetailTab((m.detailTab + 1) % detailTab(len(detailTabNames)))
+			return m, m.switchDetailTab(m.cycleTab(1))
 		case "shift+tab":
-			return m, m.switchDetailTab((m.detailTab + detailTab(len(detailTabNames)) - 1) % detailTab(len(detailTabNames)))
+			return m, m.switchDetailTab(m.cycleTab(-1))
 		case "m":
 			if m.detailTruncated || m.detailExpanded {
 				return m, m.toggleMore()
@@ -1475,6 +1492,9 @@ func (m *Model) closeDetail() {
 	m.detailChanges = nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
+	if m.change != nil {
+		m.change, m.detailTab = nil, tabChanges
+	}
 	m.detailTruncated = false
 	m.find = findState{}
 }
@@ -1558,8 +1578,12 @@ func (m *Model) followRelation() tea.Cmd {
 	return m.showDetail()
 }
 
-// followBack returns to the item a relation was followed from.
+// followBack leaves the change view, or returns to the item a relation was
+// followed from.
 func (m *Model) followBack() tea.Cmd {
+	if m.change != nil {
+		return m.closeChange()
+	}
 	if m.detached == nil || len(m.detailHistory) == 0 {
 		m.detailHistory = nil
 		m.notice = "No previous item."

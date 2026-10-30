@@ -414,7 +414,7 @@ func (m Model) disabledReason(a action) string {
 	if (a.id == "undo" || a.id == "redo") && m.opts.Store == nil {
 		return "session history is unavailable"
 	}
-	if a.id == "back" && (!m.detailFocus || m.detached == nil || len(m.detailHistory) == 0) {
+	if a.id == "back" && (!m.detailFocus || m.change == nil && (m.detached == nil || len(m.detailHistory) == 0)) {
 		return "no previous item"
 	}
 	if a.id == "criterion" && (!m.detailFocus || m.detailTab != tabCriteria) {

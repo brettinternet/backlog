@@ -72,7 +72,7 @@ func LoadSession(cfg project.Config) (*Session, string) {
 // SaveSession is called after Program.Run, outside Bubble Tea callbacks.
 func (m Model) SaveSession(cfg project.Config) error {
 	m.captureView()
-	data, err := json.Marshal(Session{Version: 1, Active: m.views[m.view].ID, Views: m.views, DetailTab: int(m.detailTab), DetailOpen: m.detailOpen, SplitWidth: m.splitWidth})
+	data, err := json.Marshal(Session{Version: 1, Active: m.views[m.view].ID, Views: m.views, DetailTab: int(m.itemTab()), DetailOpen: m.detailOpen, SplitWidth: m.splitWidth})
 	if err != nil {
 		return err
 	}

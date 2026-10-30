@@ -182,7 +182,7 @@ the focused column.
 `enter`, `l`, or `right` opens detail (`enter` on a group header folds it). In
 detail, `j`/`k` and page keys scroll, `tab`/`shift-tab` change tabs, `m` shows
 more of a cut-off body (otherwise it picks a milestone), and `enter`, `esc`, or
-`q` close (`enter` follows a relation in Relations, opens a change's actions in
+`q` close (`enter` follows a relation in Relations, opens a change view from
 Changes, and expands an entry in History). Edit and copy keys work in
 detail on the item shown, never on marks. If an edit moves the item out of the
 view, detail keeps showing it until you move. `J`/`K` select the next or
@@ -237,9 +237,9 @@ new version) keeps its body and shows loading on the header row.
 
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and
-list selection stay. `backspace` returns to the previous item, back through
-every jump to the original selection; the detail header shows `⌫ back` while
-there is one. A target that isn't loaded shows `?`,
+list selection stay. `backspace` leaves a change view, else returns to the
+previous item, back through every jump to the original selection; the detail
+header shows `⌫ back` while there is one. A target that isn't loaded shows `?`,
 and following it says why: its source isn't configured, failed, or is still
 loading, or the item isn't in it.
 
@@ -247,12 +247,27 @@ Changes lists one entry per change, with `j`/`k` moving over them. Its first
 line reads stage glyph (`◇` worktree, `⎇` branch, `⇡` pull request, `◆`
 landed, `?` unknown or stale), `#45` or the branch, title, state, checks (`✓`
 passing, `✕` failing, `●` pending), review decision, `+120 −30`, and age. A
-second line names the branch, worktree, how far an open branch is ahead of and
-behind the default branch, and dirty files; a third says why a change is
-unknown or stale. Ahead, behind, and dirty are counted by Git on a worker each
-time the tab renders. `enter` or `!` on an entry lists the actions that name a
+branch or worktree counts `+/−` from its merge base with the default branch,
+including a worktree's uncommitted files. A second line names the branch, the
+worktree relative to the checkout root (or under `~`), how far an open branch
+is ahead of (`↑2`) and behind (`↓1`) the default branch, and dirty files; a
+third says why a change is unknown or stale. Git counts these on a worker each
+time the tab renders. `!` on an entry lists the actions that name a
 `{change.*}` placeholder ([Automation](automation.md#placeholders-and-environment)), run on
 that change; `O` opens its URL. `R` reloads changes along with sources.
+
+`enter` on an entry opens its change view in place of the item's tabs, with
+Overview, Files, and Commits tabs; `backspace` returns to the entry. Overview
+lists the change's state, branch, worktree, base, head, checks, review, file
+and commit counts with `+/−`, and uncommitted files. Files lists one entry per
+changed file: status (`A` added, `M` modified, `D` deleted, `R` renamed,
+`B` binary, `U` uncommitted), path, and `+/−`. Commits lists the change's
+commits newest first, and `ys` copies the one under the cursor. A local
+branch or worktree is read from Git against its merge base, a landed change
+from its landed commits, and a pull request without a local head from the
+forge. Git and forge reads run on the detail worker for the change shown, and
+a worktree's uncommitted files are skipped, saying so, when repository config
+defines a filter driver. `!`, `O`, and `yp` act on the change in view.
 
 History opens scrolled to the newest entry, with `j`/`k` moving over entries.
 Each row reads time, source, summary, then member count and actor. The time

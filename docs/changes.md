@@ -124,6 +124,7 @@ change term load once per call.
 | --- | --- |
 | TUI list | The most advanced change, such as `⇡#45 ✓` ([TUI](tui.md#layout)) |
 | TUI Changes tab | Every change, furthest first, with its actions and URL ([TUI](tui.md#detail)) |
+| TUI change view | One change's overview, files with `+/−`, and commits ([TUI](tui.md#detail)) |
 | History | One group per change: its span, events, and landed commits |
 | Queries | `has:change`, `change:`, `checks:`, `review:` ([Query](query.md#fields)) |
 | `bl changes ID` | The same list as text or JSON ([CLI](cli.md#bl-changes-id)) |

@@ -134,8 +134,10 @@ change is unknown or stale. JSON returns `data.changes`, each with `id`,
 `merged`, `closed`, `unknown`, `stale`), `link` (how it was found: `branch`,
 `title`, `closes`, `provider`, `trailer`, `merge`, `ref`), and optional
 `reason`, `checks`, `review`, `branch`, `head`, `title`, `url`, `repo`,
-`number`, `additions`, `deletions`, `worktree`, `dirty`, `ahead`, `behind`,
-`commits` (`sha`, `subject`, `time`), `events` (`kind`, `time`), and
+`number`, `additions`, `deletions` (a branch or worktree's from its merge base
+with the default branch, counting a worktree's uncommitted files), `worktree`,
+`dirty`, `ahead`, `behind`, `commits` (`sha`, `subject`, `time`, `author`),
+`events` (`kind`, `time`), and
 `updated`; `data.providers` lists `git` and each forge with its `state` and
 `reason`. Diff text stays out of JSON. Pull requests come from the forge's
 cache, refreshed incrementally; Git is read from `.git` and never fetched.

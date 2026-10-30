@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -79,6 +80,8 @@ type fixture struct {
 	// unavailable.
 	pulls     []map[string]any
 	pullsFail bool
+	// pullFiles and pullCommits answer pull request 45's REST lists.
+	pullFiles, pullCommits string
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -192,6 +195,14 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 				repos = append(repos, map[string]any{"id": 1, "full_name": "owner/repo"})
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(repos), "repositories": repos})
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/repos/owner/repo/pulls/45/") {
+			list := map[string]string{"files": f.pullFiles, "commits": f.pullCommits}[path.Base(r.URL.Path)]
+			if r.URL.Query().Get("page") != "1" || list == "" {
+				list = "[]"
+			}
+			fmt.Fprint(w, list)
 			return
 		}
 		f.hints++
@@ -893,8 +904,9 @@ func TestActivityTimeline(t *testing.T) {
 
 // Catches checks left stale because an open pull request's update time didn't
 // move, one pull request whose checks the token can't read failing the list,
-// a token echoed in a body reaching the cache, and a failed refresh dropping
-// what was cached.
+// a token echoed in a body reaching the cache, a failed refresh dropping
+// what was cached, and a pull request's renamed, binary, or deleted files or
+// commit order read wrongly.
 func TestForgePullRequests(t *testing.T) {
 	s, f := newFixture(t)
 	cache := filepath.Join(t.TempDir(), "forge.pulls.json")
@@ -937,6 +949,16 @@ func TestForgePullRequests(t *testing.T) {
 	f.pullsFail = true
 	if list, err := forge.PullRequests(context.Background()); err == nil || len(list) != 2 {
 		t.Fatalf("failed refresh: %v %+v", err, list)
+	}
+	f.pullFiles = `[{"filename":"new.go","previous_filename":"old.go","status":"renamed","additions":1,"deletions":2,"patch":"@@"},{"filename":"logo.png","status":"added"},{"filename":"gone.go","status":"removed","deletions":3,"patch":"@@"}]`
+	f.pullCommits = `[{"sha":"c1","commit":{"message":"first\n\nbody","author":{"name":"Ann"},"committer":{"date":"2026-01-01T00:00:00Z"}}},{"sha":"c2","commit":{"message":"second fake-secret","author":{"name":"Bo"},"committer":{"date":"2026-01-02T00:00:00Z"}}}]`
+	d, err := forge.Pull(context.Background(), 45)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []changes.File{{Path: "new.go", From: "old.go", Status: changes.FileRenamed, Additions: 1, Deletions: 2}, {Path: "logo.png", Status: changes.FileBinary}, {Path: "gone.go", Status: changes.FileDeleted, Deletions: 3}}
+	if !slices.Equal(d.Files, want) || len(d.Commits) != 2 || d.Commits[0].SHA != "c2" || strings.Contains(d.Commits[0].Subject, "fake-secret") || d.Commits[1].Subject != "first" || d.Commits[1].Author != "Ann" {
+		t.Fatalf("pull detail: %+v", d)
 	}
 }
 

@@ -742,3 +742,59 @@ func TestHistoryMeasurement(t *testing.T) {
 	slices.Sort(samples)
 	t.Logf("warm History open Update+View n=%d p95=%s", len(samples), samples[(len(samples)*95-1)/100])
 }
+
+// Catches enter on a Changes entry not opening its change view, ! losing the
+// change there, backspace not returning to the entry it opened from, and held
+// j in a large Files tab doing per-key work beyond the §11 navigation budget,
+// whose in-process time BL_TUI_MEASURE=1 logs.
+func TestChangeView(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	other := changes.Change{ID: "branch:bl-1-old", Stage: changes.StageBranch, State: changes.StateOpen, Branch: "bl-1-old"}
+	change := changes.Change{ID: "branch:bl-1-fix", Stage: changes.StageWorktree, State: changes.StateOpen, Branch: "bl-1-fix", Worktree: "/tmp/wt"}
+	m.data.rows[len(m.data.rows)-1].row.Changes = []changes.Change{other, change}
+	files := make([]changes.File, 5000)
+	for i := range files {
+		files[i] = changes.File{Path: fmt.Sprintf("internal/pkg%d/file.go", i), Status: changes.FileModified, Additions: i, Deletions: 1}
+	}
+	m.detailWorker.changeDetail = func(_ context.Context, c changes.Change) (changes.Detail, error) {
+		if c.ID != change.ID {
+			return changes.Detail{}, errors.New("read another change")
+		}
+		return changes.Detail{Files: files, Commits: []changes.Commit{{SHA: "abcdef1234", Subject: "fix it"}}}, nil
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if content := m.View().Content; m.change == nil || m.detailTab != tabChangeOverview || !strings.Contains(content, "Commits") || !strings.Contains(content, "5000") {
+		t.Fatalf("change view not open on tab %d\n%s", m.detailTab, content)
+	}
+	if next, _ := m.Update(tea.KeyPressMsg{Code: '!', Text: "!"}); next.(Model).actionChange == nil || next.(Model).actionChange.Branch != "bl-1-fix" {
+		t.Fatal("! in the change view lost its change")
+	}
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	samples := make([]time.Duration, 0, len(files))
+	for range len(files) - 1 {
+		start := time.Now()
+		m, _ = detailKey(m, 'j', 0)
+		_ = m.View()
+		samples = append(samples, time.Since(start))
+	}
+	if m.detailTab != tabChangeFiles || m.entryCursor != len(files)-1 || !strings.Contains(m.View().Content, "pkg4999") {
+		t.Fatalf("Files cursor %d on tab %d", m.entryCursor, m.detailTab)
+	}
+	if os.Getenv("BL_TUI_MEASURE") == "1" {
+		slices.Sort(samples)
+		t.Logf("held j in 5,000 files Update+View p95=%s max=%s", samples[(len(samples)*95-1)/100], samples[len(samples)-1])
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	if m.change != nil || m.detailTab != tabChanges || m.entryCursor != 1 {
+		t.Fatalf("backspace left tab %d cursor %d", m.detailTab, m.entryCursor)
+	}
+}

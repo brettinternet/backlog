@@ -129,6 +129,9 @@ func (f failedForge) Web() string  { return "" }
 func (f failedForge) PullRequests(context.Context) ([]changes.PullRequest, error) {
 	return nil, f.err
 }
+func (f failedForge) Pull(context.Context, int) (changes.Detail, error) {
+	return changes.Detail{}, f.err
+}
 
 // LinkChanges links items to state's changes, each item only within its own
 // project. Workspace items carry their project; others belong to cfg's.
