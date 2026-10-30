@@ -315,7 +315,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		},
 	}
 	// Help lists item commands in this order, then each category by name.
-	root.Commands = append(readCommands(&directory, out, errOut), writeCommands(&directory, in, out, errOut)...)
+	root.Commands = append(readCommands(&directory, in, out, errOut), writeCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands,
 		&urfave.Command{Name: "tui", Usage: "Open the TUI (the default on a terminal)", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{
 			&urfave.StringFlag{Name: "view", Aliases: []string{"V"}, Usage: "Start on the tab `NAME`"},

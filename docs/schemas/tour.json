@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "A CodeTour tour of one linked change, stored with bl tour ID FILE, MCP tour, or an action or hook result {\"tour\": PATH}. bl instructions tours explains how to write one.",
+  "description": "A CodeTour tour of one linked change, stored with bl tour ID FILE (- reads stdin), MCP tour (file or inline tour), or an action or hook result {\"tour\": PATH}. bl instructions tours explains how to write one.",
   "type": "object",
   "additionalProperties": false,
   "required": ["ref", "steps"],

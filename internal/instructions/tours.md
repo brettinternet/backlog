@@ -42,9 +42,12 @@ any of:
 
 ```sh
 bl tour ID change.tour --json
+bl tour ID - --json < change.tour
 ```
 
-- MCP: the tour tool with id and file.
+- MCP: the tour tool with id and file, or, when your client doesn't share
+  bl's filesystem (a sandbox, a container, another machine), id and the tour
+  object itself as tour: `{"id": "ID", "tour": {"ref": "…", "steps": […]}}`.
 - From an action or hook: write `{"tour": "PATH"}` to the file in BL_RESULT.
 
 A refusal names the reason: invalid JSON or a bad step, a criterion the item
@@ -57,7 +60,7 @@ the file's line count, so fix them all before storing again. A head your checkou
 unfetched pull request, can't be checked and is stored as is.
 
 Read back what is stored, and whether it is stale, with `bl tour ID --json`
-(MCP: the tour tool without file). Each entry is the stored tour plus change,
+(MCP: the tour tool without file or tour). Each entry is the stored tour plus change,
 ref, and stale; an item without one returns `"tours": []`. `bl changes ID
 --json` marks each change with a stored tour as `tour: {ref, steps, stale}`,
 so automation can skip changes whose tour is current.
