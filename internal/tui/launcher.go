@@ -14,12 +14,12 @@ import (
 type GoToItem = engine.Row
 
 type launcherRow struct {
-	label, binding, reason string
-	group                  string // help section
-	actionRef              string
-	action                 action
-	item                   *GoToItem
-	resume                 *engine.ResumeChoice
+	label, keywords, reason string
+	group                   string // help section
+	actionRef               string
+	action                  action
+	item                    *GoToItem
+	resume                  *engine.ResumeChoice
 }
 type launcherState struct {
 	open, help, goTo, loading bool
@@ -171,7 +171,7 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(a.id, "action:") {
 			continue
 		}
-		rows = append(rows, launcherRow{label: a.label, binding: a.id + " " + strings.Join(a.bindings, " "), reason: m.disabledReason(a), action: a, group: group})
+		rows = append(rows, launcherRow{label: a.label, keywords: a.id + " " + strings.Join(a.bindings, " ") + " " + searchAliases[a.id], reason: m.disabledReason(a), action: a, group: group})
 	}
 	m.launcher = launcherState{open: true, help: help, rows: rows, all: rows}
 	// Configured actions and resumable sessions both come from the selected item.
@@ -192,7 +192,7 @@ func (m Model) filterLauncher() tea.Cmd {
 		}
 		var found []scored
 		for _, r := range rows {
-			score, ok := pickerScore(query, r.label+" "+r.binding)
+			score, ok := pickerScore(query, r.label+" "+r.keywords)
 			if ok {
 				found = append(found, scored{r, score})
 			}

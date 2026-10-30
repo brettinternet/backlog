@@ -44,6 +44,8 @@ func (m Model) launcherOverlay(lines []string) []string {
 	title := "Commands"
 	if m.launcher.goTo {
 		title = "Go to"
+	} else if row, ok := m.selectedRow(); ok {
+		title += " · " + textutil.Line(row.Ref.ID)
 	}
 	body, _, _, _, width := m.launcherLayout()
 	return m.modal(lines, title, body, width, len(body)+2)

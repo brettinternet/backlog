@@ -133,6 +133,32 @@ func TestKeyOverridesAndPalette(t *testing.T) {
 	if len(help.launcher.rows) == 0 || !strings.Contains(help.launcher.rows[0].label, "Markdown") {
 		t.Fatal("help is not searchable")
 	}
+	// Words match in any order and through aliases; a renamed action must not
+	// silently orphan its aliases.
+	ids := map[string]bool{}
+	for _, a := range m.keymap {
+		ids[a.id] = true
+	}
+	for id := range searchAliases {
+		if !ids[id] {
+			t.Fatalf("search aliases name unknown action %q", id)
+		}
+	}
+	for query, want := range map[string]string{"set priority": "priority", "priority set": "priority", "close": "done", "delete": "archive"} {
+		next, _ = m.openActions(false)
+		palette = next.(Model)
+		next, cmd = palette.updateLauncher("", query)
+		palette = next.(Model)
+		next, _ = palette.Update(cmd())
+		palette = next.(Model)
+		found := false
+		for _, r := range palette.launcher.rows[:min(3, len(palette.launcher.rows))] {
+			found = found || r.action.id == want
+		}
+		if !found {
+			t.Fatalf("palette search %q did not rank %s near the top", query, want)
+		}
+	}
 }
 
 // Catches Emacs alt+> silently doing nothing in terminals that encode an

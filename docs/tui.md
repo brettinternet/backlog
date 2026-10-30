@@ -198,10 +198,15 @@ archived items (up to 100 matches). `enter` opens detail without changing the
 view; `esc` or `q` returns.
 
 `:` opens the palette: every action, its bindings, and why it's disabled if it
-is. `?` opens the same list as read-only help. Both are searchable. Outside
-them, a key is shown only where it applies and nothing else suggests it, in
-faint text: `m more` and `⌫ back` in the detail header, and `! resume` on a
-selected session row in History.
+is. Its title names the item that item actions apply to. `?` opens the same list
+as read-only help. Both are searchable by label, action ID, key, and common verbs
+(`close` finds Done, `delete` Archive, `rename` Edit title). Go-to, the palette,
+and pickers match each query word separately, in any order; whole words rank
+above partial and fuzzy matches.
+
+Outside them, a key is shown only where it applies and nothing else suggests
+it, in faint text: `m more` and `⌫ back` in the detail header, and `! resume` on
+a selected session row in History.
 
 ## Detail
 

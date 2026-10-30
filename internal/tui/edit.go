@@ -549,21 +549,35 @@ func relationLabel(snapshot *engine.Snapshot, ref model.Ref, source string) stri
 	return id + " · " + item.Title
 }
 
+// pickerScore matches each query word on its own, in any order, so "priority
+// set" and "set priority" both find a value. Lower scores are tighter: a word
+// at a word start, then anywhere, then fuzzy, earliest and closest first.
 func pickerScore(query, value string) (int, bool) {
-	query, value = strings.ToLower(query), strings.ToLower(value)
-	if query == "" {
-		return 0, true
-	}
-	at, score := 0, 0
-	for _, char := range query {
-		found := strings.IndexRune(value[at:], char)
-		if found < 0 {
-			return 0, false
+	value = strings.ToLower(value)
+	score := 0
+	for _, word := range strings.Fields(strings.ToLower(query)) {
+		if at := strings.Index(value, word); at >= 0 {
+			if at > 0 && isWordByte(value[at-1]) {
+				score++
+			}
+			continue
 		}
-		score += found
-		at += found + len(string(char))
+		score += 2
+		at := 0
+		for _, char := range word {
+			found := strings.IndexRune(value[at:], char)
+			if found < 0 {
+				return 0, false
+			}
+			score += found
+			at += found + len(string(char))
+		}
 	}
 	return score, true
+}
+
+func isWordByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b >= 0x80
 }
 
 func (m *Model) filterPicker() tea.Cmd {

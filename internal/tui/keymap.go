@@ -23,6 +23,37 @@ type action struct {
 	bindings                          []string
 }
 
+// searchAliases are words the palette and help also match an action by, so
+// the verbs people type find it ("close" finds Done). They are never shown.
+var searchAliases = map[string]string{
+	"go-to":       "find search open jump",
+	"query":       "filter search",
+	"refresh":     "reload",
+	"status":      "set change move state",
+	"start":       "begin progress",
+	"done":        "close complete finish resolve",
+	"priority":    "set change urgency",
+	"assignees":   "set change assign owner",
+	"assign-me":   "take",
+	"labels":      "set change tag",
+	"milestone":   "set change",
+	"sprint":      "set change iteration cycle",
+	"blocker":     "set change block depends dependency",
+	"parent":      "set change epic",
+	"title":       "rename",
+	"description": "body",
+	"comment":     "reply",
+	"note":        "plan",
+	"criterion":   "check acceptance",
+	"claim":       "lease lock unclaim",
+	"archive":     "delete remove trash",
+	"new":         "create add",
+	"new-child":   "create add subtask",
+	"actions":     "run",
+	"open-url":    "browser link",
+	"quit":        "exit",
+}
+
 func defaultKeymap() []action {
 	// Order is the help and palette order; group starts a help section.
 	actions := []action{

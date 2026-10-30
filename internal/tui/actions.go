@@ -78,7 +78,7 @@ func (m Model) receiveActionChoices(msg actionChoicesMsg) (tea.Model, tea.Cmd) {
 	for _, choice := range msg.choices {
 		for _, a := range m.keymap {
 			if a.id == "action:"+choice.Name {
-				m.launcher.all = append(m.launcher.all, launcherRow{label: textutil.Line(choice.Name), binding: strings.Join(a.bindings, " "), reason: textutil.Line(choice.Disabled), action: a, actionRef: choice.Invocation.Event.Ref, group: "Actions"})
+				m.launcher.all = append(m.launcher.all, launcherRow{label: textutil.Line(choice.Name), keywords: strings.Join(a.bindings, " "), reason: textutil.Line(choice.Disabled), action: a, actionRef: choice.Invocation.Event.Ref, group: "Actions"})
 				break
 			}
 		}
