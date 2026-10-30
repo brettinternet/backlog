@@ -192,7 +192,13 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		count, columnWidth := m.boardGeometry()
 		stride := columnWidth + boardGap
 		column := m.board.left + p.X/stride
-		if column >= len(m.data.starts) || column >= m.board.left+count || p.X%stride >= columnWidth {
+		switch {
+		// The header row's edge arrows focus the hidden column beside them.
+		case y == 0 && p.X == 0 && m.board.left > 0:
+			column = m.board.left - 1
+		case y == 0 && p.X == width-1 && m.board.left+count < len(m.data.starts):
+			column = m.board.left + count
+		case column >= len(m.data.starts) || column >= m.board.left+count || p.X%stride >= columnWidth:
 			return m, nil
 		}
 		start, end := m.data.starts[column], m.boardEnd(column)

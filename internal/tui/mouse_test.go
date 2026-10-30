@@ -128,6 +128,22 @@ func TestMouseNavigation(t *testing.T) {
 	if m.boardColumn() != 2 {
 		t.Fatal("board card hit-testing")
 	}
+	// Narrow, the header's edge arrows focus the hidden column beside them.
+	m.width = 60
+	m.keepBoardVisible()
+	if m.board.left == 0 || !strings.Contains(m.View().Content, "›") {
+		t.Fatalf("fixture needs hidden columns on both sides\n%s", m.View().Content)
+	}
+	left := m.board.left
+	click(0, 1)
+	if m.boardColumn() != left-1 || m.board.left != left-1 {
+		t.Fatalf("‹ focused column %d", m.boardColumn())
+	}
+	count, _ = m.boardGeometry()
+	click(m.width-1, 1)
+	if m.boardColumn() != left-1+count {
+		t.Fatalf("› focused column %d", m.boardColumn())
+	}
 	// A modal input must not allow clicks through to underlying rows or divider.
 	m = send(m, ":")
 	selected := m.selected

@@ -436,7 +436,7 @@ Click a row to select it; double-click (within 400 ms) to open it. Clicking a
 group header folds or unfolds it. Click tabs to switch, or `‹`/`›`
 to show the hidden tab beside them. In detail, click `⌫ back` or
 `m more`/`m less` to run them. Clicking a board column
-header focuses it; clicking a list header sorts by ID, priority, status, title,
+header focuses it, and its edge `‹`/`›` focus the hidden column beside them; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
 to toggle it. Click a relation to select it; double-click to open it. Click a
 History entry, or any line of its expansion, to select it; click its `▸` or
