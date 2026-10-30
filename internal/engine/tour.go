@@ -1,12 +1,16 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
@@ -80,6 +84,9 @@ func StoreTour(ctx context.Context, cfg project.Config, id string, data []byte) 
 			}
 			continue
 		}
+		if err := checkSteps(ctx, c, t); err != nil {
+			return TourResult{}, err
+		}
 		stateDir, projectID, key := tourKey(cfg, item.Ref)
 		stored := tour.Stored{Item: key, Change: c.ID, Stored: time.Now().UTC(), Tour: t}
 		if err := tour.Store(stateDir, projectID, stored); err != nil {
@@ -92,6 +99,64 @@ func StoreTour(ctx context.Context, cfg project.Config, id string, data []byte) 
 		reason += "; linked heads: " + strings.Join(heads, ", ")
 	}
 	return TourResult{}, source.Refuse("rejected", reason)
+}
+
+// checkSteps refuses a tour with a step on a file or line its change's Diff
+// lacks, listing every such step so an agent can fix them in one pass. It
+// reads Git objects at the tour's ref, or for an old-side step the commit the
+// Diff compares it with, never a worktree. A step it can't check, on a head
+// the checkout doesn't hold or an old side it can't find, is accepted.
+func checkSteps(ctx context.Context, c changes.Change, t tour.Tour) error {
+	sides, ok, err := changes.ReadSides(ctx, c, t.Ref)
+	if err != nil || !ok {
+		return err
+	}
+	type side struct {
+		path string
+		old  bool
+	}
+	type file struct {
+		lines   int
+		problem string
+		checked bool
+	}
+	files := map[side]file{}
+	var bad []string
+	for i, s := range t.Steps {
+		at := side{s.File, s.Side == tour.SideOld}
+		where := "at " + t.Ref[:7]
+		if at.old {
+			where = "before the change"
+		}
+		f, seen := files[at]
+		if !seen {
+			content, ok, err := sides.File(ctx, s.File, at.old)
+			switch {
+			case !ok:
+			case errors.Is(err, os.ErrNotExist):
+				f.checked, f.problem = true, "no such file "+where
+			case err != nil:
+				f.checked, f.problem = true, err.Error()
+			default:
+				f.checked, f.lines = true, bytes.Count(content, []byte("\n"))
+				if len(content) > 0 && content[len(content)-1] != '\n' {
+					f.lines++
+				}
+			}
+			files[at] = f
+		}
+		problem := f.problem
+		if f.checked && problem == "" && s.Line > f.lines {
+			problem = "past the end of the file, which has " + strconv.Itoa(f.lines) + " lines " + where
+		}
+		if problem != "" {
+			bad = append(bad, "step "+strconv.Itoa(i+1)+": "+s.File+" line "+strconv.Itoa(s.Line)+": "+problem)
+		}
+	}
+	if len(bad) > 0 {
+		return source.Refuse("rejected", "tour "+strings.Join(bad, "; "))
+	}
+	return nil
 }
 
 // LoadTour reads the tour kept for an item's change, on a worker.
