@@ -227,6 +227,30 @@ bl instructions json
 See [CLI coordination](cli.md#coordination), [agent handoff](automation.md), and
 [MCP](mcp.md).
 
+## Changes and tours
+
+Name a branch after its item and the item tracks it through pull request and
+merge:
+
+```text
+$ git switch -c bl-5-rank-by-priority
+BL-5 › Changes   ⎇ bl-5-rank-by-priority   branch  +15 −8
+```
+
+`enter` on a change opens Overview, Files, Diff, Commits, and Conversation. On
+a pull request, `c` drafts a review comment on the Diff line and `r` submits.
+An agent explains a change with a tour, drawn inline in Diff, where `]t` steps
+through it:
+
+```text
+bl instructions tours
+bl tour BL-5 tour.json
+```
+
+`tours: {mode: suggest}` in project config asks agents for one; `require`
+also refuses done without it. See [Linked changes](changes.md) and
+[GitHub](github.md#linked-changes).
+
 ## Hooks and actions
 
 Hooks run when events happen. Actions run on request from the CLI, MCP, or the
@@ -253,14 +277,16 @@ and [Events](events.md).
 ![Fixture TUI tour](demo.gif)
 
 [`demo.tape`](demo.tape) records a 48-item fixture (seed 1, fixed timestamps,
-isolated HOME and XDG) touring Open, detail, Board, and help. To re-record:
+isolated HOME and XDG) with a `bl-5-…` branch and its tour: Open, an item's
+tabs, the branch's Diff and tour, History, the `!` menu, Board, and the
+palette. To re-record:
 
 ```text
 task cli:build
 task docs:demo
 ```
 
-Recording needs VHS 0.11.0, FFmpeg, ttyd, Go, and VHS's default monospace font.
+Recording needs VHS 0.12.1, FFmpeg, ttyd, Go, Git, and VHS's default monospace font.
 Content and keys are deterministic, but GIF bytes vary with fonts, FFmpeg, and
 frame timing, so don't use it for pixel or timing comparisons.
 

@@ -9,6 +9,8 @@
 `bl` is a keyboard-first terminal backlog for people and coding agents. Native tasks are
 Markdown files in Git, and every worktree of a repository shares one live queue. Other supported
 backends include GitHub Issues and Projects v2, Linear, Beads, Backlog.md, Jira and external adapters.
+Items show the branches and pull requests that carry them, with diffs, checks, reviews, and
+agent-written tours.
 
 ![TUI demo](docs/demo.gif)
 
@@ -41,12 +43,14 @@ Run `bl` to open the TUI: `j`/`k` move, `enter` opens, `/` filters, `n` creates,
 | [Backlog.md](docs/backlog-md.md) | Edit in place, or [import](docs/import.md) |
 | [Beads](docs/beads.md) | Local checkout through `bd` 1.3.0 |
 | [GitHub Issues and Projects v2](docs/github.md) | Single-field edits and comments |
+| [GitHub pull requests](docs/github.md#pull-requests-as-items) | Read-only items for unlinked pull requests |
 | [Linear](docs/linear.md) | Single-field edits and comments |
 | [External adapters](docs/external-adapter-protocol.md) | JSON-RPC over stdio |
 | [Jira Cloud](docs/jira.md) | Discovered transitions, confirmed single-assignee replacement and ADF comments |
 
 Around the backlog: [MCP](docs/mcp.md), [hooks and actions](docs/automation.md),
-an [event stream](docs/events.md), [linked changes and pull requests](docs/changes.md), and optional [claims](docs/cli.md#coordination)
+an [event stream](docs/events.md), [linked changes and pull requests](docs/changes.md),
+[tours](docs/changes.md#tours), and optional [claims](docs/cli.md#coordination)
 through [Worklease](https://github.com/brettinternet/worklease) 1.10.1 or later, so
 concurrent agents never pick up the same item.
 
