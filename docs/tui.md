@@ -296,6 +296,22 @@ diffs its merges against their first parents; a pull request without a local
 head shows the forge's per-file patches and says which files the forge left
 out. Git runs on the detail worker with external diff and textconv drivers
 off, and each file renders there, cached by head, file, width, and theme.
+
+A pull request's change view drafts a pending review. `c` opens `$EDITOR` on
+the comment for the Diff line under the cursor, on a reply to the
+Conversation thread under it, on the Overview draft entry under it, and
+otherwise on the review's comment; saving a blank buffer removes that part.
+Drafts are kept per pull request under the state directory's `reviews/`, so
+they survive restarts, and Overview lists them under Draft. `r` opens the
+submit prompt: `c` comment, `a` approve, `r` request changes, `d` discard. The
+forge rereads the pull request first and refuses while a line comment was
+drafted on another head (marked `stale`, never posted onto other lines) or a
+reply's thread is gone; it then sends the review and the replies in one call
+that is never retried. Parts the forge refused stay in the draft with its
+reasons. When the call's outcome is unknown, the draft says so and `r` offers
+only discard: check the pull request before drafting again. Without a forge
+that posts reviews or an account that may write ([GitHub](github.md)), `c`
+and `r` are disabled with the reason.
 `enter` on a commit in History opens that commit's Diff in the change view;
 `backspace` returns to the commit's entry.
 
@@ -630,6 +646,7 @@ keys:
 | `description` | `e` | Edit description |
 | `edit` | `E` | Edit all fields |
 | `comment` | `c` | Comment |
+| `review` | `r` | Submit review… |
 | `note` | `i` | Edit notes |
 | `criterion` | `x` | Toggle criterion |
 | `claim` | `C` | Claim / release |

@@ -92,6 +92,9 @@ type detailResult struct {
 	hunks      []int
 	rows       []diffRow // what each Diff entry shows
 	head       string    // the commit the Diff shows
+	review     *changes.Review
+	draft      *changes.Draft // the pull request's pending review
+	draftErr   string         // why the draft can't be read
 	truncated  bool
 	err        string
 }
@@ -302,6 +305,7 @@ type detailWorker struct {
 	// changeReview reads a pull request's review, which its forge caches;
 	// enrich adds Git's and the forges' facts to the Changes tab.
 	changeReview func(context.Context, changes.Change, bool) (changes.Review, error)
+	changeDraft  func(changes.Change) (changes.Draft, error)
 	enrich       func(context.Context, []changes.Change, bool) []changes.Change
 	requests     chan detailRequest
 	results      chan detailResult
@@ -390,19 +394,30 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			// The change's own facts still show, with why its files don't.
 			detail = changes.Detail{Reason: err.Error()}
 		}
+		// Every tab reads the review and its draft, which gate c and r.
 		var review *changes.Review
-		if request.change.Number > 0 && (request.tab == tabChangeOverview || request.tab == tabChangeConversation) {
+		var draft *changes.Draft
+		if request.change.Number > 0 {
 			r, err := worker.loadReview(ctx, *request.change, request.fresh)
 			if err != nil {
 				r = changes.Review{Stale: "pull request detail unavailable: " + err.Error()}
+				r.Blocked = r.Stale
 			}
 			review = &r
+			if worker.changeDraft != nil {
+				d, err := worker.changeDraft(*request.change)
+				if err != nil {
+					result.draftErr = textutil.Line(err.Error())
+				} else {
+					draft = &d
+				}
+			}
 		}
 		var page rendered
 		if diff && err == nil {
 			page = worker.diffPage(ctx, *request.change, detail, request)
 		} else {
-			page = changeViewPage(*request.change, detail, review, request, worker.render)
+			page = changeViewPage(*request.change, detail, review, draft, result.draftErr, request, worker.render)
 		}
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
@@ -411,6 +426,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
+		result.review, result.draft = review, draft
 		return result
 	}
 	if request.tab == tabChanges {

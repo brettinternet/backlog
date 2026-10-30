@@ -21,15 +21,19 @@ const (
 )
 
 // Review is a pull request's description, checks, reviewers, and
-// conversation, read for the item shown, never on a list refresh. Stale says
-// why one kept from an earlier read may be out of date.
+// conversation, read for the item shown, never on a list refresh. ID is the
+// forge's own pull request ID, which writes name. Stale says why one kept
+// from an earlier read may be out of date, and Blocked why the account can't
+// post reviews (D10).
 type Review struct {
+	ID        string     `json:"id,omitempty"`
 	Head      string     `json:"head"`
 	Body      string     `json:"body,omitempty"`
 	Checks    []Check    `json:"checks,omitempty"`
 	Reviewers []Reviewer `json:"reviewers,omitempty"`
 	Comments  []Comment  `json:"comments,omitempty"`
 	Threads   []Thread   `json:"threads,omitempty"`
+	Blocked   string     `json:"blocked,omitempty"`
 	Stale     string     `json:"-"`
 }
 
@@ -56,8 +60,10 @@ type Comment struct {
 	Time   time.Time `json:"time"`
 }
 
-// Thread is a review thread on a file line, its comments oldest first.
+// Thread is a review thread on a file line, its comments oldest first. ID
+// is the forge's, which a reply names.
 type Thread struct {
+	ID       string    `json:"id,omitempty"`
 	Path     string    `json:"path"`
 	Line     int       `json:"line,omitempty"`
 	Resolved bool      `json:"resolved,omitempty"`
@@ -121,6 +127,9 @@ func LoadReview(ctx context.Context, c Change, forges []Forge, fresh bool) (Revi
 			return Review{}, err
 		}
 		r.Stale = "pull request detail may be out of date: " + err.Error()
+	}
+	if _, ok := f.(ReviewWriter); !ok {
+		r.Blocked = f.Name() + " can't post reviews"
 	}
 	// Stale checks never read as passing: a kept read may be for another
 	// head, or the checks ran on another commit than the local branch head.

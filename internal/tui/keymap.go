@@ -43,6 +43,7 @@ var searchAliases = map[string]string{
 	"title":       "rename",
 	"description": "body",
 	"comment":     "reply",
+	"review":      "approve request changes pull request",
 	"note":        "plan",
 	"criterion":   "check acceptance",
 	"claim":       "lease lock unclaim",
@@ -114,6 +115,7 @@ func defaultKeymap() []action {
 		{id: "description", label: "Edit description", canonical: "e", bindings: []string{"e"}},
 		{id: "edit", label: "Edit all fields", canonical: "E", bindings: []string{"E"}},
 		{id: "comment", label: "Comment", canonical: "c", bindings: []string{"c"}},
+		{id: "review", label: "Submit review…", canonical: "r", bindings: []string{"r"}},
 		{id: "note", label: "Edit notes", canonical: "i", bindings: []string{"i"}},
 		{id: "criterion", label: "Toggle criterion", canonical: "x", bindings: []string{"x"}},
 		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
@@ -423,6 +425,9 @@ func (m Model) disabledReason(a action) string {
 	}
 	if a.id == "back" && (!m.detailFocus || m.change == nil && (m.detached == nil || len(m.detailHistory) == 0)) {
 		return "no previous item"
+	}
+	if a.id == "comment" && m.change != nil && m.detailFocus || a.id == "review" {
+		return m.reviewBlocked()
 	}
 	if a.id == "criterion" && (!m.detailFocus || m.detailTab != tabCriteria) {
 		return "open the Criteria tab"

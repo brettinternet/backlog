@@ -31,6 +31,7 @@ const maxLanded = 1000
 type Options struct {
 	Discovery project.Discovery
 	CacheDir  string
+	StateDir  string
 	Trailer   string
 	Git       bool
 	Forges    []Forge

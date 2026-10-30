@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/source/remote"
@@ -97,6 +98,20 @@ func TestOAuthInstallationPermissionGatedWrites(t *testing.T) {
 	current, err = apply("status", "closed")
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Reviews also need the write app's Pull requests write permission.
+	forge := &Forge{s: s}
+	f.review = map[string]any{"id": "PR_45", "headRefOid": "aaa"}
+	if r, err := forge.readReview(ctx, 45); err != nil || !strings.Contains(r.Blocked, "Pull requests: write") {
+		t.Fatalf("review without pull request write: %v %q", err, r.Blocked)
+	}
+	draft := changes.Draft{URL: "https://github.com/owner/repo/pull/45", Body: "LGTM"}
+	if _, err := forge.SubmitReview(ctx, 45, draft, changes.EventComment); err == nil || len(f.submitted) != 0 {
+		t.Fatalf("review posted without pull request write: %v", err)
+	}
+	f.pullPermission = "write"
+	if r, err := forge.readReview(ctx, 45); err != nil || r.Blocked != "" {
+		t.Fatalf("review with pull request write: %v %q", err, r.Blocked)
 	}
 	f.repositoryMissing = true
 	if _, err = apply("status", "open"); err == nil {

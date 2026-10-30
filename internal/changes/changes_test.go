@@ -266,3 +266,47 @@ func TestEnrichStaleChecks(t *testing.T) {
 		t.Fatalf("check runs %+v, kept %+v", got.CheckRuns, forge.review.Checks)
 	}
 }
+
+// Catches a draft lost or exposed across restarts, an edit of one line's
+// comment replacing another's, an emptied draft left on disk, and a stale or
+// orphaned part not reported as a conflict.
+func TestDraftPersistence(t *testing.T) {
+	state := t.TempDir()
+	url := "https://github.com/owner/repo/pull/45"
+	d, err := LoadDraft(state, url)
+	if err != nil || !d.Empty() || d.URL != url {
+		t.Fatalf("missing draft: %+v %v", d, err)
+	}
+	d = d.WithBody(" LGTM \n").
+		WithComment(LineComment{Head: "aaa", Path: "a.go", Line: 2, Body: "new side"}).
+		WithComment(LineComment{Head: "aaa", Path: "a.go", Old: true, Line: 2, Body: "old side"}).
+		WithComment(LineComment{Head: "aaa", Path: "a.go", Line: 2, Body: "edited"}).
+		WithReply(Reply{Thread: "T_1", Path: "b.go", Body: "done"})
+	if err := SaveDraft(state, d); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(draftPath(state, url)); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("draft file: %v %v", info, err)
+	}
+	got, err := LoadDraft(state, url)
+	if err != nil || got.Body != "LGTM" || len(got.Comments) != 2 || got.Comments[1].Body != "edited" || !got.Comments[0].Old || len(got.Replies) != 1 {
+		t.Fatalf("reloaded: %+v %v", got, err)
+	}
+	if reason := got.Conflict(Review{Head: "bbb", Threads: []Thread{{ID: "T_1"}}}); !strings.Contains(reason, "2 line comments") {
+		t.Fatalf("moved head: %q", reason)
+	}
+	if reason := got.Conflict(Review{Head: "aaa"}); !strings.Contains(reason, "b.go") {
+		t.Fatalf("gone thread: %q", reason)
+	}
+	got = got.WithBody("").WithReply(Reply{Thread: "T_1"})
+	for _, c := range got.Comments {
+		c.Body = ""
+		got = got.WithComment(c)
+	}
+	if err := SaveDraft(state, got); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(draftPath(state, url)); !os.IsNotExist(err) {
+		t.Fatalf("emptied draft kept: %v", err)
+	}
+}

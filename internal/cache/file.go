@@ -5,16 +5,16 @@ import (
 	"path/filepath"
 )
 
-// WriteFile replaces a disposable cache file through a temporary file and a
-// rename, so a reader never sees half of it. A failure leaves the old file,
-// since the cache is only ever a shortcut.
-func WriteFile(path string, data []byte) {
+// WriteFile replaces a file only its owner can read through a temporary file
+// and a rename, so a reader never sees half of it. A failure leaves the old
+// file; a disposable cache ignores the error, since it is only a shortcut.
+func WriteFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return
+		return err
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".cache-*")
 	if err != nil {
-		return
+		return err
 	}
 	_, err = f.Write(data)
 	if closeErr := f.Close(); err == nil {
@@ -26,4 +26,5 @@ func WriteFile(path string, data []byte) {
 	if err != nil {
 		_ = os.Remove(f.Name())
 	}
+	return err
 }
