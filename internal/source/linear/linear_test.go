@@ -400,8 +400,6 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 
 // Catches requesting Linear's rejected 251+ page size or silently truncating
 // a team with more issues than one provider page.
-// Prevents quota exhaustion from per-issue reads on every minute, unnoticed
-// relation-only edits, and change windows turning unchanged ready rows stale.
 // History pages forward, sorts oldest first, and skips rows whose changes
 // History doesn't show, such as an unchanged priority.
 func TestActivityHistory(t *testing.T) {
@@ -420,6 +418,8 @@ func TestActivityHistory(t *testing.T) {
 	}
 }
 
+// Prevents quota exhaustion from per-issue reads on every minute, unnoticed
+// relation-only edits, and change windows turning unchanged ready rows stale.
 func TestRefreshBudgetAndRetainedRows(t *testing.T) {
 	s, f := fixtureSource(t)
 	f.size = 1000

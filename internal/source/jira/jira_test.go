@@ -252,7 +252,6 @@ func reason(err error) string {
 	return ""
 }
 
-// A scoped token gateway must not silently bind the wrong site to claim keys.
 // A changelog past the bound skips ahead so the newest entries are kept, and
 // a multi-line or long value is summarized as changed.
 func TestActivityChangelog(t *testing.T) {
@@ -270,6 +269,7 @@ func TestActivityChangelog(t *testing.T) {
 	}
 }
 
+// A scoped token gateway must not silently bind the wrong site to claim keys.
 func TestScopedGatewaySiteBinding(t *testing.T) {
 	s, f, _ := setup(t, "cloud-1")
 	item := read(t, s)

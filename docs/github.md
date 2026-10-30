@@ -442,9 +442,9 @@ the account queue only when History opens, newest pages first, keeping the
 newest 1,000 entries, and are cached by item version. The `repo` scope (or
 `public_repo`) and the `bl-cli-read` app's Issues read permission suffice;
 project status changes use the `read:project` or `project` scope a project
-source already needs. Classic scopes were verified live
-([BL-140](github-verification.md#bl-140-live-verification)); the app relies on
-its documented Issues read permission.
+source already needs. A classic token with `repo` and `project` (among others) read it live
+([BL-140](github-verification.md#bl-140-live-verification)); `repo` alone and the app
+rely on documented permissions.
 
 ## This repository
 

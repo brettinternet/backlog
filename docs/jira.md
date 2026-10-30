@@ -123,8 +123,8 @@ History (`bl history`, the TUI History tab) adds the issue changelog,
 `GET /rest/api/3/issue/{id}/changelog`, one entry per change set, such as
 `status To Do → Done`. A long or multi-line value shows as `FIELD changed`.
 Requests go through the account queue only when History opens, keeping the
-newest 1,000 change sets, and are cached by item version. `read:jira-work`
-covers it; an unscoped API token read it live (BL-140: `TestLiveActivity`
+newest 1,000 change sets, and are cached by item version. Atlassian documents
+the endpoint under `read:jira-work`; only an unscoped API token was tested live (BL-140: `TestLiveActivity`
 created a synthetic issue, transitioned it, read
 `resolution ∅ → Done; status To Do → Done`, and deleted it, 404 verified).
 

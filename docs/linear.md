@@ -257,8 +257,9 @@ description edits, are skipped. Linear folds one actor's edits made close
 together into one record, even into the creation. Requests go through the
 account queue only when History opens, keeping the first 1,000 records Linear
 returns, and are
-cached by item version. A key or login with `read` suffices, verified live
-([BL-140](linear-verification.md#bl-140-history-read-pass)).
+cached by item version. Read access suffices: a read-only personal API key read it live
+([BL-140](linear-verification.md#bl-140-history-read-pass)); OAuth `read`
+wasn't tested live.
 
 ## Tests
 
