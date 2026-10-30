@@ -54,7 +54,7 @@ read-only:
 | App | Client ID | Permissions | Used by |
 | --- | --- | --- | --- |
 | `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses: read | `bl auth login` |
-| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects: read/write; Metadata, Pull requests, Checks, Commit statuses: read | `bl auth login --write` |
+| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects, Pull requests: read/write; Metadata, Checks, Commit statuses: read | `bl auth login --write` |
 
 1. Declare the account with `oauth: true` instead of `credential` or `env`:
 
