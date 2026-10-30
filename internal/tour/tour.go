@@ -30,6 +30,8 @@ const (
 	maxDescription = 16 << 10
 	maxTitle       = 1 << 10
 	maxPath        = 4 << 10
+	// MaxRange bounds the lines a step's selection covers.
+	MaxRange = 500
 	// storedBytes bounds a stored tour, which JSON escapes of control
 	// characters can make up to six times its file.
 	storedBytes = 6*MaxBytes + 4<<10
@@ -51,16 +53,39 @@ type Tour struct {
 	Steps       []Step `json:"steps"`
 }
 
-// Step is one stop: a line of a file, on the new side unless Side is old,
-// with a Markdown description and, optionally, the acceptance criterion it
-// shows met, by its one-based index.
+// Step is one stop: a line of a file, or with Selection a range of whole
+// lines starting at Line, on the new side unless Side is old, with a Markdown
+// description and, optionally, the acceptance criterion it shows met, by its
+// one-based index.
 type Step struct {
-	File        string `json:"file"`
-	Line        int    `json:"line"`
-	Description string `json:"description"`
-	Title       string `json:"title,omitempty"`
-	Criterion   int    `json:"criterion,omitempty"`
-	Side        string `json:"side,omitempty"`
+	File        string     `json:"file"`
+	Line        int        `json:"line,omitempty"`
+	Selection   *Selection `json:"selection,omitempty"`
+	Description string     `json:"description"`
+	Title       string     `json:"title,omitempty"`
+	Criterion   int        `json:"criterion,omitempty"`
+	Side        string     `json:"side,omitempty"`
+}
+
+// Selection is CodeTour's range, with 1-based lines; bl highlights whole
+// lines and ignores the characters.
+type Selection struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
+
+// Position is a 1-based line and character.
+type Position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+// End is the step's last line.
+func (s Step) End() int {
+	if s.Selection != nil {
+		return s.Selection.End.Line
+	}
+	return s.Line
 }
 
 // Stored is a tour as bl keeps it: the item and change it attaches to.
@@ -86,7 +111,16 @@ func Parse(data []byte) (Tour, error) {
 	if _, err := decoder.Token(); err != io.EOF {
 		return Tour{}, errors.New("tour holds more than one JSON value")
 	}
-	return t, t.validate()
+	if err := t.validate(); err != nil {
+		return Tour{}, err
+	}
+	// A selection's first line is the step's line.
+	for i, s := range t.Steps {
+		if s.Selection != nil {
+			t.Steps[i].Line = s.Selection.Start.Line
+		}
+	}
+	return t, nil
 }
 
 func (t Tour) validate() error {
@@ -114,6 +148,19 @@ func (t Tour) validate() error {
 }
 
 func (s Step) validate() error {
+	if sel := s.Selection; sel != nil {
+		switch {
+		case sel.Start.Line < 1:
+			return errors.New("selection.start.line must be a positive line number")
+		case sel.End.Line < sel.Start.Line:
+			return errors.New("selection ends before it starts")
+		case sel.End.Line-sel.Start.Line >= MaxRange:
+			return fmt.Errorf("selection covers more than %d lines", MaxRange)
+		case s.Line != 0 && s.Line != sel.Start.Line:
+			return errors.New("line must equal selection.start.line")
+		}
+		s.Line = sel.Start.Line
+	}
 	switch {
 	case !validPath(s.File):
 		return errors.New("file must be a relative path inside the repository, with / separators")

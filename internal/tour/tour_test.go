@@ -15,7 +15,20 @@ func TestParse(t *testing.T) {
 	if got, err := Parse([]byte(valid)); err != nil || got.Steps[0].Side != SideOld || got.Steps[0].Criterion != 1 {
 		t.Fatalf("valid tour: %+v %v", got, err)
 	}
+	sel := func(line string, from, to string) string {
+		return `{"ref":"` + ref + `","steps":[{"file":"a.go",` + line + `"selection":{"start":{"line":` + from + `,"character":1},"end":{"line":` + to + `,"character":9}},"description":"x"}]}`
+	}
+	for _, data := range []string{sel("", "4", "9"), sel(`"line":4,`, "4", "503")} {
+		if got, err := Parse([]byte(data)); err != nil || got.Steps[0].Line != 4 || got.Steps[0].End() < 9 {
+			t.Fatalf("selection %s: %+v %v", data, got, err)
+		}
+	}
 	for _, c := range []struct{ data, want string }{
+		{sel(`"line":5,`, "4", "9"), "step 1: line must equal selection.start.line"},
+		{sel("", "9", "4"), "step 1: selection ends before it starts"},
+		{sel("", "4", "504"), "step 1: selection covers more than 500 lines"},
+		{sel("", "4.5", "9"), "cannot unmarshal number 4.5"},
+		{sel("", "0", "9"), "step 1: selection.start.line"},
 		{`{"ref":"` + ref + `","steps":[{"file":"a.go","line":1,"description":"x","criteria":1}]}`, "unknown field"},
 		{`{"ref":"HEAD","steps":[{"file":"a.go","line":1,"description":"x"}]}`, "full head commit SHA"},
 		{`{"ref":"` + ref + `","steps":[]}`, "no steps"},

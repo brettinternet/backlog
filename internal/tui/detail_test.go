@@ -1059,6 +1059,8 @@ func TestChangeTour(t *testing.T) {
 			{File: "a.go", Line: 30, Description: "Its caller."},
 			{File: "b.go", Line: 2, Side: tour.SideOld, Description: "Untouched."},
 			{File: "a.go", Line: 11, Side: tour.SideOld, Description: "What it replaced."},
+			{File: "a.go", Line: 11, Selection: &tour.Selection{Start: tour.Position{Line: 11}, End: tour.Position{Line: 16}}, Description: "The fix and what follows."},
+			{File: "a.go", Line: 39, Selection: &tour.Selection{Start: tour.Position{Line: 39}, End: tour.Position{Line: 42}}, Description: "Past the end."},
 		}}}, true, nil
 	}
 	m.width = 100
@@ -1071,7 +1073,7 @@ func TestChangeTour(t *testing.T) {
 	m, _ = detailKey(m, tea.KeyTab, 0)
 	m, _ = detailKey(m, tea.KeyTab, 0)
 	m = settleDetail(t, m)
-	if m.detailTab != tabChangeDiff || len(m.detailSteps) != 4 {
+	if m.detailTab != tabChangeDiff || len(m.detailSteps) != 6 {
 		t.Fatalf("Diff tab %d steps %v", m.detailTab, m.detailSteps)
 	}
 	for _, l := range m.detailLines {
@@ -1089,14 +1091,16 @@ func TestChangeTour(t *testing.T) {
 		{"]t", 1, lineAnchor{file: "a.go", side: sideNew, line: 30}, "Its caller."},
 		{"]t", 2, lineAnchor{file: "b.go", side: sideOld, line: 2}, "Untouched."},
 		{"]t", 3, lineAnchor{file: "a.go", side: sideOld, line: 11}, "What it replaced."},
+		{"]t", 4, lineAnchor{file: "a.go", side: sideNew, line: 11}, "The fix and what follows."},
+		{"[t", 3, lineAnchor{file: "a.go", side: sideOld, line: 11}, "What it replaced."},
 		{"[t", 2, lineAnchor{file: "b.go", side: sideOld, line: 2}, "Untouched."},
 	} {
 		for _, r := range step.keys {
 			m, _ = detailKey(m, r, 0)
 		}
-		top := m.detailSteps[step.index]
+		top := m.detailSteps[step.index].callout
 		callout := ansi.Strip(strings.Join(m.detailLines[top:m.detailEntries[m.entryCursor]], "\n"))
-		if top < m.detailScroll || m.detailEntries[m.entryCursor] >= m.detailScroll+m.detailVisible() || !strings.Contains(callout, fmt.Sprintf("Step %d/4", step.index+1)) || !strings.Contains(callout, step.text) {
+		if top < m.detailScroll || m.detailEntries[m.entryCursor] >= m.detailScroll+m.detailVisible() || !strings.Contains(callout, fmt.Sprintf("Step %d/6", step.index+1)) || !strings.Contains(callout, step.text) {
 			t.Fatalf("%s scrolled to %d (step at %d) under %q", step.keys, m.detailScroll, top, callout)
 		}
 		if !slices.ContainsFunc(m.cursorAnchors(), func(a lineAnchor) bool { a.head = ""; return a == step.anchor }) {
@@ -1106,6 +1110,40 @@ func TestChangeTour(t *testing.T) {
 			t.Fatalf("%s row %q", step.keys, row)
 		}
 	}
+	// A range marks each of its lines in the gutter on its side, brings the
+	// lines outside the hunk in with context, notes lines the file lacks, and
+	// stays in view when stepped to.
+	marks := func(m Model) {
+		t.Helper()
+		for n := 10; n <= 19; n++ {
+			row := ""
+			for _, line := range m.detailEntries {
+				if text := strings.TrimRight(ansi.Strip(m.detailLines[line]), " "); strings.HasSuffix(text, fmt.Sprintf("line %d", n)) {
+					row = text
+				}
+			}
+			if marked := strings.Contains(row, fmt.Sprintf("%d▎", n)); row == "" || marked != (n >= 11 && n <= 16) {
+				t.Fatalf("line %d row %q", n, row)
+			}
+		}
+	}
+	marks(m)
+	if !slices.ContainsFunc(m.detailLines, func(l string) bool { return ansi.Strip(l) == "Step 6: lines 41–42 aren't in this diff" }) {
+		t.Fatal("no note for the range's lines past the end of a.go")
+	}
+	m.height = 18
+	m, _ = detailKey(m, ']', 0)
+	m, _ = detailKey(m, 't', 0)
+	m, _ = detailKey(m, ']', 0)
+	m, _ = detailKey(m, 't', 0)
+	if span, cursor := m.detailSteps[4], m.detailEntries[m.entryCursor]; m.tourStep != 4 || cursor < m.detailScroll || span.last >= m.detailScroll+m.detailVisible() || span.last-cursor != 6 {
+		t.Fatalf("range step %+v cursor %d scroll %d visible %d", span, cursor, m.detailScroll, m.detailVisible())
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 400, Height: 24})
+	m = settleDetail(t, next.(Model))
+	marks(m)
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = settleDetail(t, next.(Model))
 	// Context lines past the hunk are numbered on both sides.
 	if anchors := m.anchorsAt(t, "line 30"); !slices.Contains(anchors, lineAnchor{file: "a.go", side: sideOld, line: 29}) {
 		t.Fatalf("line 30 resolves to %v", anchors)
