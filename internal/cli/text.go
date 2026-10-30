@@ -19,6 +19,7 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
+	"github.com/brettinternet/backlog/internal/tour"
 )
 
 // Human output is aligned and sanitized. Color is added only on a terminal,
@@ -340,6 +341,46 @@ func writeChanges(out io.Writer, result engine.ChangesResult) error {
 		b.WriteString(textutil.Line(strings.Join(fields, "  ")) + "\n")
 		if c.Reason != "" {
 			b.WriteString(p.paint("2", "  "+textutil.Line(c.Reason)) + "\n")
+		}
+	}
+	_, err := io.WriteString(out, b.String())
+	return err
+}
+
+func writeTours(out io.Writer, result engine.ToursResult) error {
+	p := paletteFor(out)
+	var b strings.Builder
+	if len(result.Tours) == 0 {
+		b.WriteString("No stored tours.\n")
+	}
+	for i, s := range result.Tours {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		head := fmt.Sprintf("%s  at %s  %d steps", s.Change, s.Ref[:7], len(s.Tour.Steps))
+		if s.Stale {
+			head += "  stale"
+		}
+		b.WriteString(p.paint("1", textutil.Line(head)) + "\n")
+		if s.Tour.Title != "" {
+			b.WriteString(textutil.Line(s.Tour.Title) + "\n")
+		}
+		if s.Tour.Description != "" {
+			b.WriteString(textutil.Sanitize(s.Tour.Description) + "\n")
+		}
+		for n, step := range s.Tour.Steps {
+			at := fmt.Sprintf("%d. %s:%d", n+1, step.File, step.Line)
+			if step.Side == tour.SideOld {
+				at += " (old)"
+			}
+			if step.Criterion > 0 {
+				at += fmt.Sprintf(" AC#%d", step.Criterion)
+			}
+			if step.Title != "" {
+				at += "  " + step.Title
+			}
+			b.WriteString(textutil.Line(at) + "\n")
+			b.WriteString("   " + strings.ReplaceAll(textutil.Sanitize(step.Description), "\n", "\n   ") + "\n")
 		}
 	}
 	_, err := io.WriteString(out, b.String())

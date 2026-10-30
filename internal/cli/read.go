@@ -252,13 +252,23 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return writeChanges(out, result)
 		}},
-		{Name: "tour", Usage: "Store a CodeTour file for the linked change whose head is its ref", ArgsUsage: "ID FILE", Action: func(ctx context.Context, cmd *urfave.Command) error {
-			if cmd.Args().Len() != 2 {
-				return &Error{Reason: "usage", Message: "tour requires ID and FILE"}
+		{Name: "tour", Usage: "Store a CodeTour file for the linked change whose head is its ref, or print the stored tours", ArgsUsage: "ID [FILE]", Action: func(ctx context.Context, cmd *urfave.Command) error {
+			if n := cmd.Args().Len(); n != 1 && n != 2 {
+				return &Error{Reason: "usage", Message: "tour requires ID and an optional FILE"}
 			}
 			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
 				return err
+			}
+			if cmd.Args().Len() == 1 {
+				result, err := engine.ReadTours(ctx, cfg, cmd.Args().First())
+				if err != nil {
+					return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+				}
+				if cmd.Bool("json") {
+					return success(out, "tour", result)
+				}
+				return writeTours(out, result)
 			}
 			result, err := engine.StoreTourFile(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
 			if err != nil {

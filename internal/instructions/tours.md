@@ -49,3 +49,9 @@ may use either path) and its line must be within the file. One refusal lists
 every bad step with its number, file, line, and the file's line count, so fix
 them all before storing again. A head your checkout doesn't hold, such as an
 unfetched pull request, can't be checked and is stored as is.
+
+Read back what is stored, and whether it is stale, with `bl tour ID --json`
+(MCP: the tour tool without file). Each entry is the stored tour plus change,
+ref, and stale; an item without one returns `"tours": []`. `bl changes ID
+--json` marks each change with a stored tour as `tour: {ref, steps, stale}`,
+so automation can skip changes whose tour is current.

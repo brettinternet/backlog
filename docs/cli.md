@@ -139,14 +139,15 @@ with the default branch, counting a worktree's uncommitted files), `worktree`,
 `dirty`, `ahead`, `behind`, an open pull request's `checkRuns` (`name`,
 `state`, `url`) and `unresolved` review thread count, `commits` (`sha`,
 `subject`, `time`),
-`events` (`kind`, `time`), and
-`updated`; `data.providers` lists `git` and each forge with its `state` and
+`events` (`kind`, `time`), `updated`, and `tour` (`ref`, `steps`, `stale`)
+when a tour is stored for the change, stale once its head is another commit;
+`data.providers` lists `git` and each forge with its `state` and
 `reason`. Diff text stays out of JSON. Pull requests come from the forge's
 cache, refreshed incrementally; Git is read from `.git` and never fetched.
 
-### `bl tour ID FILE`
+### `bl tour ID [FILE]`
 
-Stores a tour an agent wrote for the
+With FILE, stores a tour an agent wrote for the
 item's linked change whose head is the tour's `ref`, for the TUI Diff tab
 ([schema](schemas/tour.json)). It refuses, with the reason, a file over 1 MiB,
 an invalid tour, a step citing a criterion the item lacks, or a `ref` that
@@ -159,6 +160,12 @@ the change doesn't touch are accepted, and a `ref` the checkout doesn't hold
 is stored unchecked. A later tour for the same
 change replaces it. JSON returns `data.item`, `change`, `ref`, and `steps`.
 `bl` never writes a tour itself; `bl instructions tours` explains how to.
+
+Without FILE, prints the tour stored for each linked change: its change, ref,
+step count, whether it is stale (the change's head is now another commit), and
+its steps. JSON returns `data.tours`, each the stored tour (`item`, `change`,
+`stored`, and the CodeTour `tour`) plus `ref` and `stale`; an item without a
+stored tour returns an empty list.
 
 ### `bl next [QUERY] [-n N] [--explain] [--claim [--start]] [--workspace NAME]`
 
