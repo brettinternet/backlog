@@ -631,6 +631,11 @@ backlog (D14).
   macOS and Linux. A two-second stat sweep catches in-place edits, which don't
   signal a directory on macOS. `EMFILE`/`ENFILE` fall back to 50 ms stat
   polling. A partial or failed refresh never proves deletion.
+- On Windows, one overlapped `ReadDirectoryChangesW` handle per source reports
+  file name, size, and last-write changes, which include in-place edits, so
+  there's no sweep. A notification buffer overflow still signals, and the
+  refresh rescans the directory. If the watch fails to open or fails later,
+  the source falls back to 50 ms stat polling.
 
 To capture a real render without opening a pane:
 

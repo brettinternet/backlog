@@ -16,11 +16,19 @@ import (
 	"github.com/brettinternet/backlog/internal/testkit"
 )
 
+// failedWatch is a notification backend that fails after installing, as a
+// Windows directory handle does when its directory goes away.
+type failedWatch struct{}
+
+func (failedWatch) Wait(context.Context) error { return syscall.EMFILE }
+func (failedWatch) Close() error               { return nil }
+
 // These checks catch per-item descriptor growth, missed in-place writes, and
-// the resource-exhaustion fallback silently disabling external change signals.
+// a failed open or a failed watch silently disabling external change signals.
+// On Windows the native mode has no sweep, so the watcher alone must signal.
 func TestDirectoryWatchAndPollingFallback(t *testing.T) {
-	for _, polling := range []bool{false, true} {
-		t.Run(fmt.Sprint(polling), func(t *testing.T) {
+	for _, mode := range []string{"native", "open-failed", "watch-failed"} {
+		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			path := filepath.Join(root, "backlog")
 			if err := os.Mkdir(path, 0755); err != nil {
@@ -33,8 +41,11 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 			done := make(chan error, 1)
 			var fallback atomic.Int32
 			options := native.WatchOptions{SweepInterval: 10 * time.Millisecond, PollInterval: 10 * time.Millisecond, OnPolling: func(error) { fallback.Add(1) }}
-			if polling {
+			switch mode {
+			case "open-failed":
 				options.Open = func(string) (native.DirectoryWatch, error) { return nil, syscall.EMFILE }
+			case "watch-failed":
+				options.Open = func(string) (native.DirectoryWatch, error) { return failedWatch{}, nil }
 			}
 			go func() {
 				done <- s.WatchWithOptions(ctx, func() {
@@ -54,6 +65,18 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 					t.Fatal("missing signal")
 				}
 			}
+			// Drop signals left by the previous step, such as the fallback's own or a
+			// second notification for one write, so each wait observes its operation.
+			drain := func() {
+				time.Sleep(50 * time.Millisecond)
+				for {
+					select {
+					case <-signals:
+					default:
+						return
+					}
+				}
+			}
 			waitSignal() // Watch installed and baseline initialized.
 			file := filepath.Join(path, "BL-1.md")
 			for _, operation := range []func() error{
@@ -62,9 +85,7 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 				func() error { return os.Rename(file, filepath.Join(path, "BL-2.md")) },
 				func() error { return os.Remove(filepath.Join(path, "BL-2.md")) },
 			} {
-				// Sweep reconciliation, rather than a prior directory hint, must account
-				// for the current operation. The last operation is observed via a sweep
-				// even on hosts with no directory notification backend.
+				drain()
 				if err := operation(); err != nil {
 					t.Fatal(err)
 				}
@@ -79,7 +100,7 @@ func TestDirectoryWatchAndPollingFallback(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("watch leaked on cancellation")
 			}
-			if polling && fallback.Load() != 1 {
+			if want := map[bool]int32{true: 1}[mode != "native"]; fallback.Load() != want {
 				t.Fatalf("fallback count %d", fallback.Load())
 			}
 		})

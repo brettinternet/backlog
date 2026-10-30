@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -71,7 +72,7 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 			}
 		}()
 	}
-	baseline, err := s.watchStats()
+	baseline, err := s.watchStats(nil)
 	if err != nil {
 		return err
 	}
@@ -84,6 +85,9 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	if !polling && !sweepEdits {
+		ticker.Stop()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -93,7 +97,7 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 				if ctx.Err() != nil {
 					return nil
 				}
-				if !errors.Is(e, syscall.EMFILE) && !errors.Is(e, syscall.ENFILE) {
+				if !errors.Is(e, syscall.EMFILE) && !errors.Is(e, syscall.ENFILE) && !errors.Is(e, errPollingOnly) {
 					return e
 				}
 				polling = true
@@ -104,7 +108,7 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 			}
 			changed()
 		case <-ticker.C:
-			next, e := s.watchStats()
+			next, e := s.watchStats(baseline)
 			if e != nil {
 				return e
 			}
@@ -118,9 +122,16 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 
 var errPollingOnly = errors.New("directory notifications unavailable")
 
+// sweepEdits is true where directory notifications miss in-place edits (macOS
+// kqueue). Windows ReadDirectoryChangesW reports them, so it never sweeps.
+const sweepEdits = runtime.GOOS != "windows"
+
 type watchStat struct{ info os.FileInfo }
 
-func (s *Source) watchStats() (map[string]watchStat, error) {
+// watchStats keeps a path's previous stat when it can't be read (a Windows file
+// pending deletion fails with access denied), so a failed stat is never taken
+// as a deletion and never ends the watch. Load reports the failure.
+func (s *Source) watchStats(previous map[string]watchStat) (map[string]watchStat, error) {
 	paths, err := s.paths(false)
 	if err != nil {
 		return nil, err
@@ -132,7 +143,10 @@ func (s *Source) watchStats() (map[string]watchStat, error) {
 			continue
 		}
 		if e != nil {
-			return nil, e
+			if old, ok := previous[path]; ok {
+				out[path] = old
+			}
+			continue
 		}
 		out[path] = watchStat{stat}
 	}

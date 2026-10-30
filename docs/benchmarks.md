@@ -161,6 +161,29 @@ One hour at 10k after loading and a 10-second warm-up (BL-25):
 The remaining CPU is the two-second native stat sweep. The owner set the idle
 limit at ≤ 2% of one core, not host-normalized (D26).
 
+### Native watcher
+
+The production store over the native watcher at 10k, without a PTY, so it runs
+on Windows too (BL-106). Latency runs from just before the file operation until
+the store publishes the snapshot the TUI renders, n=20 each. The soak follows a
+10-second settle.
+
+```sh
+BL_WATCH_MEASURE=1 BL_WATCH_SOAK=1h task cli:test PKG=./internal/source/native -- -run '^TestWatchMeasurement$' -v -count=1 -timeout=75m
+```
+
+| p95, 10k | Reference host (30 s soak) | Windows |
+| --- | ---: | ---: |
+| Create | 66.2 ms | — |
+| In-place edit | 2,006 ms (sweep) | — |
+| Atomic rename | 40.8 ms | — |
+| Delete | 51.1 ms | — |
+| Idle CPU | 1.77% of one core | — |
+| Goroutines / post-GC heap | 6 → 6 / no growth | — |
+
+macOS sees in-place edits only through the two-second sweep. Windows has no
+sweep: `ReadDirectoryChangesW` reports the edit itself.
+
 ### Workspaces
 
 Five independent 10k projects with colliding source and item IDs, in a 120×40
