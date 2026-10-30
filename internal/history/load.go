@@ -15,7 +15,6 @@ import (
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
-	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -100,7 +99,7 @@ func activityProvider(cfg project.Config, item model.Item) (Provider, bool) {
 			entries = append(entries, Entry{ID: kind + ":" + a.ID, Time: a.Time, Kind: "activity", Actor: textutil.Line(a.Actor), Summary: kind + ": " + textutil.Line(a.Summary), Detail: textutil.Sanitize(a.Detail)})
 		}
 		if truncated {
-			return entries, PartialError(fmt.Errorf("showing %d entries", source.ActivityLimit))
+			return entries, PartialError(fmt.Errorf("showing %d entries", len(entries)))
 		}
 		return entries, nil
 	}}, true

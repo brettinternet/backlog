@@ -3,6 +3,8 @@ package github
 import (
 	"cmp"
 	"context"
+	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -77,6 +79,7 @@ func (s *Source) Activity(ctx context.Context, item model.Item) ([]model.Activit
 	vars := repoVars(repo)
 	vars["number"], vars["types"] = n, types
 	var events []timelineEvent
+	seen := map[string]bool{}
 	for {
 		var result struct {
 			Repository *struct {
@@ -91,7 +94,11 @@ func (s *Source) Activity(ctx context.Context, item model.Item) ([]model.Activit
 				}
 			}
 		}
-		if err := s.query(ctx, c, timelineQuery, vars, &result, "repository", "issue"); err != nil {
+		response, err := s.request(ctx, c, http.MethodPost, s.endpoint(), map[string]any{"query": timelineQuery, "variables": vars})
+		if err != nil {
+			return nil, false, err
+		}
+		if err := decodeAllowing(response.Body, &result, timelineError); err != nil {
 			return nil, false, err
 		}
 		if result.Repository == nil || result.Repository.Issue == nil {
@@ -102,11 +109,23 @@ func (s *Source) Activity(ctx context.Context, item model.Item) ([]model.Activit
 		if !page.PageInfo.HasPreviousPage {
 			return timelineActivity(events), false, nil
 		}
-		if len(events) >= source.ActivityLimit || page.PageInfo.StartCursor == "" {
+		if len(events) >= source.ActivityLimit || page.PageInfo.StartCursor == "" || seen[page.PageInfo.StartCursor] {
 			return timelineActivity(events[len(events)-min(len(events), source.ActivityLimit):]), true, nil
 		}
+		seen[page.PageInfo.StartCursor] = true
 		vars["before"] = page.PageInfo.StartCursor
 	}
+}
+
+// timelineError allows a missing issue, reported as not-found, and one
+// timeline node the token can't read, such as a cross-reference from a pull
+// request or another organization, which comes back null and is skipped.
+func timelineError(kind string, path []any) bool {
+	if kind == "NOT_FOUND" && fmt.Sprint(path) == "[repository issue]" {
+		return true
+	}
+	nested := len(path) > 4 && fmt.Sprint(path[:4]) == "[repository issue timelineItems nodes]"
+	return nested && (kind == "FORBIDDEN" || kind == "NOT_FOUND")
 }
 
 func timelineActivity(events []timelineEvent) []model.Activity {
