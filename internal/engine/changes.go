@@ -115,7 +115,12 @@ func forgePath(p project.Config, f project.ForgeConfig, account project.AccountC
 	if p.Paths.CacheDir == "" {
 		return ""
 	}
+	// GitHub repository names ignore case, so a source and origin spelled
+	// differently share one cache.
 	f.Account = ""
+	if f.Type == "github" {
+		f.Repo = strings.ToLower(f.Repo)
+	}
 	identity, _ := json.Marshal(struct {
 		Forge project.ForgeConfig
 		User  string
