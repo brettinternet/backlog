@@ -258,7 +258,7 @@ func (s *Source) safeError(err error) error {
 	}
 	var diagnostic *oauth.Diagnostic
 	if errors.As(err, &diagnostic) {
-		return oauth.Failure(diagnostic.Code, diagnostic.RetryAt)
+		return oauth.Sanitize(diagnostic)
 	}
 	var schedule ScheduleDiagnostic
 	if errors.As(err, &schedule) {

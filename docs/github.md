@@ -91,8 +91,8 @@ Permissions come from the App installations, not scopes; no `repo`,
 `public_repo`, or `project` scope is requested. Before use and before each
 write, `bl` rechecks installation and repository permissions, and GitHub
 enforces the intersection with your own. A read App with any write permission is
-refused. A write with a read grant is rejected with the `--write` login to
-run. Project writes also need `allowWrites: true` and the project's
+refused. A write with a read grant fails `insufficient-scope`, naming the
+`--write` login. Project writes also need `allowWrites: true` and the project's
 `viewerCanUpdate`. Organization policy or SSO can still deny access.
 
 Supported for github.com and organization Projects v2. Personal Projects v2 and

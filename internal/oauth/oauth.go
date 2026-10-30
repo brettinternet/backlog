@@ -91,11 +91,14 @@ var variants = map[string]string{
 	githubNotInstalled(GitHubWriteApp): CodeAppNotInstalled,
 }
 
-// scopeFailure gives the `--write` hint only when the grant lacks writes that
-// were required, the one insufficient-scope failure `--write` can fix.
+// WriteRequired reports a grant that can't make a required write, the one
+// insufficient-scope failure `--write` can fix.
+func WriteRequired() *Diagnostic {
+	return &Diagnostic{Code: CodeInsufficientScope, Message: writeRequired}
+}
 func scopeFailure(granted, required []string) *Diagnostic {
 	if hasScopes(required, []string{"write"}) && !hasScopes(granted, []string{"write"}) {
-		return &Diagnostic{Code: CodeInsufficientScope, Message: writeRequired}
+		return WriteRequired()
 	}
 	return Failure(CodeInsufficientScope, time.Time{})
 }
@@ -254,6 +257,9 @@ func hasScopes(granted, required []string) bool {
 	}
 	return true
 }
+
+// Sanitize keeps a diagnostic's code, retry time and only a fixed message.
+func Sanitize(diagnostic *Diagnostic) *Diagnostic { return safeProviderError(diagnostic) }
 
 func safeProviderError(err error) *Diagnostic {
 	var diagnostic *Diagnostic

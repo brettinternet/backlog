@@ -214,12 +214,12 @@ func unsent(err error) bool {
 	return errors.As(err, &limited) || errors.As(err, &diagnostic) && diagnostic.Code == oauth.CodeRateLimited
 }
 
-// writeGate refuses a write the source or its grant can't make. A read-only
-// OAuth grant names the `--write` login that enables writes.
+// writeGate refuses a write the source or its grant can't make. Only a
+// read-only OAuth grant gets the `--write` hint.
 func (s *Source) writeGate(c remote.Credential, appGrant bool) error {
 	switch {
 	case s.writable && s.o.Account.OAuth && !c.HasScope("write"):
-		return source.Refuse("rejected", "the OAuth grant is read-only; enable writes with `bl auth login github "+s.o.Account.Name+" --write`")
+		return oauth.WriteRequired()
 	case !s.writable || s.o.Account.OAuth && !appGrant:
 		return source.Refuse("rejected", "repository write capability unavailable")
 	}

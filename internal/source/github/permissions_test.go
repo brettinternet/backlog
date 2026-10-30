@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/oauth"
+	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
 // The HTTP fixture supplies live app permissions; this provider only seeds the
@@ -62,7 +64,9 @@ func TestOAuthInstallationPermissionGatedWrites(t *testing.T) {
 	apply := func(field string, value any) (model.Item, error) {
 		return s.Apply(ctx, model.Mutation{Ref: current.Ref, Op: model.Set, Field: field, Value: value, ExpectedVersion: current.Version})
 	}
-	if _, err = apply("status", "closed"); err == nil || !strings.Contains(err.Error(), "bl auth login github work --write") {
+	// The hint must survive the production wrapper's sanitizing.
+	wrapped := remote.New(s, cache.New(filepath.Join(t.TempDir(), "cache"), "project", "github", "scope"), s.o.Secrets)
+	if _, err = wrapped.Apply(ctx, model.Mutation{Ref: current.Ref, Op: model.Set, Field: "status", Value: "closed", ExpectedVersion: current.Version}); err == nil || !strings.Contains(err.Error(), "--write") {
 		t.Fatalf("read app wrote issue or omitted --write: %v", err)
 	}
 	if _, err = apply("status", "active"); err == nil {
