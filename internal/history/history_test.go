@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 )
 
@@ -24,7 +26,7 @@ func TestComposeIsolatesProvidersAndGroupsSessions(t *testing.T) {
 		Provider{Name: "events", Load: func(context.Context) ([]Entry, error) {
 			return []Entry{
 				{ID: "event:1", Time: at(1), Kind: "item.created", Summary: "created"},
-				{ID: "claim:c1:acquired", Time: at(2), Kind: "claim.acquired", Session: "s1", Summary: "claim acquired"},
+				{ID: "claim:c1:acquired", Time: at(2), Kind: "claim.acquired", Session: "s1", Summary: "acquired"},
 				{ID: "event:3", Time: at(3), Kind: "item.updated", Session: "s1", Summary: "status todo → doing"},
 			}, nil
 		}},
@@ -141,5 +143,42 @@ func TestGitHistoryFollowsRenamesAndHead(t *testing.T) {
 	git("commit", "-q", "-am", "edit")
 	if got := summaries(); !slices.Equal(got, []string{"edit", "rename", "create"}) {
 		t.Fatalf("history after HEAD moved %v", got)
+	}
+}
+
+// Catches an edit's summary or detail misreporting what changed: which
+// criterion was checked, which labels came and went, where appended notes
+// start, or category repeating status.
+func TestEditEntriesSayWhatChanged(t *testing.T) {
+	criteria := func(checked ...bool) []any {
+		var out []any
+		for i, c := range checked {
+			out = append(out, map[string]any{"text": fmt.Sprintf("criterion %d", i), "checked": c})
+		}
+		return out
+	}
+	entries := eventEntries([]hooks.Event{
+		{ID: "1", Type: "item.updated", Changes: map[string]hooks.Change{
+			"status":   {From: "todo", To: "in-progress"},
+			"category": {From: "todo", To: "active"},
+			"labels":   {From: []any{"a", "b"}, To: []any{"b", "c"}},
+		}},
+		{ID: "2", Type: "item.updated", Changes: map[string]hooks.Change{"criteria": {From: criteria(false, false), To: criteria(false, true, false)}}},
+		{ID: "3", Type: "item.updated", Changes: map[string]hooks.Change{
+			"notes": {From: "one\ntwo\nthree", To: "one\ntwo 2\nthree\nfour"},
+			"title": {From: "Short", To: "Shorter"},
+		}},
+	})
+	got := make([]string, 0, len(entries))
+	for _, e := range entries {
+		got = append(got, e.Summary+"\n"+e.Detail)
+	}
+	want := []string{
+		"labels +c -a; status todo → in-progress\n",
+		"criteria 0/2 → 1/3\n  [x] criterion 1\n  + [ ] criterion 2",
+		"notes changed; title Short → Shorter\nnotes\n  …\n  - two\n  + two 2\n  …\n  + four",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("entries\n got %q\nwant %q", got, want)
 	}
 }

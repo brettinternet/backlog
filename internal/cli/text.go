@@ -276,8 +276,8 @@ func writeShow(out io.Writer, cfg project.Config, i model.Item, detail itemjson.
 	return err
 }
 
-// writeHistory prints non-ok providers first, then one line per entry, with
-// group members indented under their head.
+// writeHistory prints non-ok providers first, then one line per entry with
+// its source label, with group members indented under their head.
 func writeHistory(out io.Writer, page history.Page) error {
 	p := paletteFor(out)
 	var b strings.Builder
@@ -291,7 +291,7 @@ func writeHistory(out io.Writer, page history.Page) error {
 		if e.Group != "" {
 			indent = "  "
 		}
-		line := indent + timestamp(e.Time) + "  " + e.Summary
+		line := indent + timestamp(e.Time) + "  " + fmt.Sprintf("%-*s", history.LabelWidth, history.Label(e)) + "  " + e.Summary
 		if e.Actor != "" && e.Span == nil {
 			line += "  " + e.Actor
 		}

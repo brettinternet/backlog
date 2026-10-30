@@ -586,14 +586,19 @@ stderr tail. See [Automation](automation.md#agent-sessions).
 Prints the item's history, oldest first: its events, claims (from Worklease,
 including other hosts), sessions folded from both, comments, and the commits
 that touched its file (native and Backlog.md sources, following renames), and
-provider activity (GitHub timeline, Linear history, Jira changelog), each
-summary prefixed with the source type, such as `github:`. A
-session's entries follow it, indented, and its row names live contact
-channels, looked up when read. A provider that can't answer is a dim
+provider activity (GitHub timeline, Linear history, Jira changelog). Each line
+reads time, source label (`item`, `claim`, `agent`, `handoff`, `comment`,
+`git`, `action`, `hook`, or the provider, such as `github`), and summary. An
+edit's summary names each changed field, such as `labels +windows -human` or
+`criteria 2/5 → 3/5`, and its `detail` holds what the summary abbreviates:
+per field, lines marked `+ ` or `- ` (`…` for skipped unchanged lines) and
+criteria marked `[x] ` or `[ ] `. A session's entries follow it, indented, and
+its row names live contact channels, looked up when read. A provider that can't answer is a dim
 line, never a failure. JSON returns `data.entries`, each with `id`, `time`,
 `kind`, `summary`, `provider`, and optional `actor`, `session`, `group` (the
 `id` of the entry it nests under), `span` (`start`, `end`, `state`, on group
-heads), and `detail`; `data.providers` lists each provider's `state` (`ok`,
+heads), `detail`, and `resumable` (on a session row `bl resume` can reopen);
+`data.providers` lists each provider's `state` (`ok`,
 `partial`, or `unavailable`) and `reason`. `--limit` pages; pass `data.cursor`
 back as `--cursor` while `data.more` is true. An unknown cursor is `not-found`.
 Commits come from `git log --follow` with external diff, textconv, and

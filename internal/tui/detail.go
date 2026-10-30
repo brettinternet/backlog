@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"container/list"
 	"context"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ type detailResult struct {
 	entries    []int             // line index of each criterion or relation, for the tab's cursor
 	targets    []engine.Relation // the relation each Relations entry opens
 	ids        []string          // the history entry each History entry is
+	hints      []string          // a key to show on each History entry when selected
 	truncated  bool
 	err        string
 }
@@ -112,6 +114,7 @@ type rendered struct {
 	entries   []int
 	targets   []engine.Relation
 	ids       []string
+	hints     []string // a key worth showing on each entry when it is selected
 	truncated bool
 	size      int
 }
@@ -340,7 +343,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		key.Open = request.open
 	}
 	if value, ok := worker.cache.render(key); ok && !request.fresh {
-		result.lines, result.entries, result.targets, result.ids, result.truncated = value.lines, value.entries, value.targets, value.ids, value.truncated
+		result.lines, result.entries, result.targets, result.ids, result.hints, result.truncated = value.lines, value.entries, value.targets, value.ids, value.hints, value.truncated
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
@@ -372,7 +375,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	key.Version = version
 	if value, ok := worker.cache.render(key); ok && !request.fresh {
 		result.identity.Version = version
-		result.lines, result.entries, result.targets, result.ids, result.truncated = value.lines, value.entries, value.targets, value.ids, value.truncated
+		result.lines, result.entries, result.targets, result.ids, result.hints, result.truncated = value.lines, value.entries, value.targets, value.ids, value.hints, value.truncated
 		return result
 	}
 	var page rendered
@@ -393,7 +396,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		page.lines = []string{request.theme.muted.render("Nothing here yet.")}
 	}
 	result.identity.Version = version
-	result.lines, result.entries, result.targets, result.ids, result.truncated = page.lines, page.entries, page.targets, page.ids, page.truncated
+	result.lines, result.entries, result.targets, result.ids, result.hints, result.truncated = page.lines, page.entries, page.targets, page.ids, page.hints, page.truncated
 	worker.cache.putRender(key, page)
 	return result
 }
@@ -421,8 +424,9 @@ const (
 )
 
 // historyLines draws non-ok providers first, then one row per entry, newest
-// last. Rows that head a group or carry detail expand in place; any group
-// kind renders the same way.
+// last: time, source label, summary, then member count and actor. Rows that
+// head a group, carry detail, or are cut off expand in place; any group kind
+// renders the same way.
 func historyLines(r history.Result, request detailRequest, width int) rendered {
 	t := request.theme
 	open := map[string]bool{}
@@ -456,19 +460,19 @@ func historyLines(r history.Result, request detailRequest, width int) rendered {
 		page.lines = append(page.lines, t.muted.render("… "+strconv.Itoa(len(shown)-limit)+" earlier entries"))
 		shown, page.truncated = shown[len(shown)-limit:], true
 	}
+	now := cmp.Or(request.now, time.Now())
+	// The label column goes first when the pane is too narrow for it.
+	labels := width >= 48
 	for _, e := range shown {
 		indent := ""
 		if e.Group != "" {
 			indent = "  "
 		}
-		marker := " "
-		if members[e.ID] > 0 || e.Detail != "" {
-			marker = "▸"
-			if open[e.ID] {
-				marker = "▾"
-			}
+		stamp := t.muted.render(historyTime(e.Time, now)) + "  "
+		if labels {
+			label := history.Label(e)
+			stamp += historyLabel(t, e).render(label) + blank(history.LabelWidth-ansi.StringWidth(label)) + "  "
 		}
-		head := indent + t.faint.render(marker) + " " + t.muted.render(e.Time.Local().Format("2006-01-02 15:04")) + "  "
 		tail := ""
 		if members[e.ID] > 0 {
 			tail = "  " + strconv.Itoa(members[e.ID])
@@ -476,17 +480,44 @@ func historyLines(r history.Result, request detailRequest, width int) rendered {
 		if e.Actor != "" && e.Span == nil {
 			tail += "  " + textutil.Line(e.Actor)
 		}
-		room := max(1, width-ansi.StringWidth(ansi.Strip(head))-ansi.StringWidth(tail))
-		summary := ansi.Truncate(textutil.Line(e.Summary), room, "…")
-		if e.Span != nil {
-			summary = t.bold.render(summary)
+		hint := ""
+		if e.Resumable {
+			hint = "! resume"
 		}
-		page.entries, page.ids = append(page.entries, len(page.lines)), append(page.ids, e.ID)
-		page.lines = append(page.lines, head+summary+t.muted.render(tail))
-		if open[e.ID] && e.Detail != "" {
-			for _, line := range strings.Split(ansi.Wrap(textutil.Sanitize(e.Detail), max(1, width-len(indent)-4), ""), "\n") {
-				page.lines = append(page.lines, indent+"    "+t.muted.render(textutil.Line(line)))
+		column := len(indent) + 2 + ansi.StringWidth(ansi.Strip(stamp))
+		// A row with a hint keeps room for it, so selecting it hides nothing.
+		room := max(1, width-column-ansi.StringWidth(tail)-hintWidth(hint))
+		summary := textutil.Line(e.Summary)
+		cut := ansi.StringWidth(summary) > room
+		marker := " "
+		if members[e.ID] > 0 || e.Detail != "" || cut {
+			marker = "▸"
+			if open[e.ID] {
+				marker = "▾"
 			}
+		}
+		// An open row shows its whole summary, wrapped under its first line.
+		parts := []string{ansi.Truncate(summary, room, "…")}
+		if open[e.ID] && cut {
+			parts = strings.Split(ansi.Wrap(summary, room, ""), "\n")
+		}
+		page.entries, page.ids, page.hints = append(page.entries, len(page.lines)), append(page.ids, e.ID), append(page.hints, hint)
+		for i, part := range parts {
+			if e.Span != nil {
+				part = t.bold.render(part)
+			}
+			if i == 0 {
+				page.lines = append(page.lines, indent+t.faint.render(marker)+" "+stamp+part+t.muted.render(tail))
+			} else {
+				page.lines = append(page.lines, blank(column)+part)
+			}
+		}
+		if open[e.ID] && e.Detail != "" {
+			// Narrow panes give the detail the width the columns would take.
+			if width-column < 32 {
+				column = len(indent) + 4
+			}
+			page.lines = append(page.lines, historyDetail(t, e, column, width)...)
 		}
 	}
 	for _, line := range page.lines {
@@ -494,6 +525,88 @@ func historyLines(r history.Result, request detailRequest, width int) rendered {
 	}
 	return page
 }
+
+// hintWidth is the room a row's key hint takes at its right end.
+func hintWidth(hint string) int {
+	if hint == "" {
+		return 0
+	}
+	return ansi.StringWidth(hint) + 2
+}
+
+// historyTime is a timestamp in 12 cells, like ls -l: the time for the last
+// six months, the year before that.
+func historyTime(at, now time.Time) string {
+	if at.IsZero() {
+		return blank(12)
+	}
+	at = at.Local()
+	if now.Sub(at) < 182*24*time.Hour && at.Before(now.Add(time.Hour)) {
+		return at.Format("Jan _2 15:04")
+	}
+	return at.Format("Jan _2  2006")
+}
+
+// historyLabel colors the sources a reader looks for: agents, commits,
+// comments, and remote activity. Edits and claims, the bulk, stay muted.
+func historyLabel(t theme, e history.Entry) paint {
+	switch {
+	case e.Kind == "session" || e.Kind == "session.handoff":
+		return t.accent
+	case e.Kind == "commit":
+		return t.yellow
+	case e.Kind == "comment":
+		return t.magenta
+	case e.Kind == "activity":
+		return t.cyan
+	}
+	return t.muted
+}
+
+// fieldLine matches the key of a "key: value" detail line, whose value hangs
+// under its first character.
+var fieldLine = regexp.MustCompile(`^[a-z][a-z ]{0,15}: +`)
+
+// historyDetail wraps an entry's detail from column, each line hanging under
+// its own indent, marker, or field key. An edit's detail names each field on its own
+// line, then marks its changes: "+ " added, "- " removed, "[x] " checked.
+func historyDetail(t theme, e history.Entry, column, width int) []string {
+	var out []string
+	for raw := range strings.SplitSeq(textutil.Sanitize(e.Detail), "\n") {
+		line := textutil.Line(raw)
+		lead := len(line) - len(strings.TrimLeft(line, " "))
+		style := t.muted
+		if field := fieldLine.FindString(line); field != "" {
+			lead = len(field)
+		}
+		if e.Kind == "item.updated" {
+			body := line[lead:]
+			switch {
+			case lead == 0:
+				style = paint{}
+			case strings.HasPrefix(body, "+ "):
+				style, lead = t.green, lead+2
+			case strings.HasPrefix(body, "- "):
+				style, lead = t.red, lead+2
+			case strings.HasPrefix(body, "[x] "):
+				style, lead = t.green, lead+4
+			case strings.HasPrefix(body, "[ ] "):
+				lead += 4
+			}
+		}
+		lead = min(lead, max(0, width-column-8))
+		parts := strings.Split(ansi.Wrap(line[lead:], max(1, width-column-lead), ""), "\n")
+		for i, part := range parts {
+			prefix := blank(lead)
+			if i == 0 {
+				prefix = line[:lead]
+			}
+			out = append(out, blank(column)+style.render(prefix+part))
+		}
+	}
+	return out
+}
+
 func detailDependency(row engine.Row, tab detailTab) string {
 	switch tab {
 	case tabOverview:
