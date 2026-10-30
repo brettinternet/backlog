@@ -282,8 +282,13 @@ Diff shows each file's header line, then its hunks: unified (old and new line
 numbers, sign, code) when the pane is under 120 columns, side by side at 120
 or wider. Code is highlighted by file type, changed lines are tinted green and
 red, and the changed words of a paired line are marked; high contrast marks
-them in reverse and no color leaves them plain. `]`/`[` jump to the next or
-previous file, `]c`/`[c` to the next or previous hunk, and `/` searches.
+them in reverse and no color leaves them plain. A cursor marks one line: `j`
+and `k` move it, scrolling keeps it on screen, and `]`/`[` move it to the next
+or previous file, `]c`/`[c` to the next or previous hunk, and `/` to each match.
+Each line is a file and line number on the old or new side at the change's
+head: a context line on both, a split row on each half, and a file or hunk
+header names only its file. The cursor stays on its line when a file expands or
+the layout changes.
 A file's diff over 32 KiB shows its size until `m` draws it; patches are cut
 at 128 KiB, saying so. A branch or worktree diffs against its merge base with
 the default branch, plus a worktree's uncommitted changes; a landed change

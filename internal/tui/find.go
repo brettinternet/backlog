@@ -92,6 +92,9 @@ func (m *Model) stepFind(forward bool) {
 		}
 	}
 	line, visible := m.find.lines[m.find.current], m.detailVisible()
+	if m.detailTab == tabChangeDiff {
+		m.diffCursorTo(line)
+	}
 	if line < m.detailScroll || line >= m.detailScroll+visible {
 		m.detailScroll = line - visible/2
 		m.scrollDetail(0)

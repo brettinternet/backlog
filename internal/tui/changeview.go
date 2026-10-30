@@ -59,17 +59,81 @@ func (m *Model) closeChange() tea.Cmd {
 	return cmd
 }
 
-// jumpDiff scrolls to the next or previous of lines, the Diff tab's file or
-// hunk headers.
+// jumpDiff moves the cursor to the next or previous of lines, the Diff tab's
+// file or hunk headers, and scrolls it to the top.
 func (m *Model) jumpDiff(lines []int, forward bool) {
+	from := m.detailScroll
+	if m.entryCursor >= 0 && m.entryCursor < len(m.detailEntries) {
+		from = m.detailEntries[m.entryCursor]
+	}
 	if forward {
-		if i, _ := slices.BinarySearch(lines, m.detailScroll+1); i < len(lines) {
+		if i, _ := slices.BinarySearch(lines, from+1); i < len(lines) {
 			m.detailScroll = lines[i]
 		}
-	} else if i, _ := slices.BinarySearch(lines, m.detailScroll); i > 0 {
+	} else if i, _ := slices.BinarySearch(lines, from); i > 0 {
 		m.detailScroll = lines[i-1]
 	}
+	m.diffCursorTo(m.detailScroll)
 	m.scrollDetail(0)
+}
+
+// diffCursorTo puts the Diff cursor on the entry at or after line.
+func (m *Model) diffCursorTo(line int) {
+	if i, _ := slices.BinarySearch(m.detailEntries, line); i < len(m.detailEntries) {
+		m.entryCursor = i
+	}
+}
+
+// diffCursorInView keeps the Diff cursor on screen as the page scrolls under
+// it, so j and k continue from what shows.
+func (m *Model) diffCursorInView() {
+	if m.entryCursor < 0 || m.entryCursor >= len(m.detailEntries) {
+		return
+	}
+	line, bottom := m.detailEntries[m.entryCursor], m.detailScroll+m.detailVisible()
+	if line < m.detailScroll {
+		m.diffCursorTo(m.detailScroll)
+	} else if line >= bottom {
+		if i, _ := slices.BinarySearch(m.detailEntries, bottom); i > 0 {
+			m.entryCursor = i - 1
+		}
+	}
+}
+
+// cursorAnchors resolves the Diff line under the cursor, new side first; see
+// diffRow.anchors.
+func (m Model) cursorAnchors() []lineAnchor {
+	if m.detailTab != tabChangeDiff || !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailRows) {
+		return nil
+	}
+	return m.detailRows[m.entryCursor].anchors(m.detailHead)
+}
+
+type anchorStatus byte
+
+const (
+	anchorFound   anchorStatus = iota
+	anchorStale                // the Diff shows another head
+	anchorOutside              // no hunk shows the line, or the diff has no such file
+)
+
+// gotoAnchor moves the Diff cursor to a's line, when the Diff shows it.
+func (m *Model) gotoAnchor(a lineAnchor) anchorStatus {
+	if m.detailTab != tabChangeDiff || !m.detailCurrent() || a.head != m.detailHead {
+		return anchorStale
+	}
+	n := diffRowOf(m.detailRows, a)
+	if n < 0 {
+		return anchorOutside
+	}
+	m.entryCursor = n
+	m.keepEntryVisible()
+	return anchorFound
+}
+
+// diffRowOf is the first of rows that shows a, or -1.
+func diffRowOf(rows []diffRow, a lineAnchor) int {
+	return slices.IndexFunc(rows, func(r diffRow) bool { return r.shows(a) })
 }
 
 // shownChange is the change view's change as the row has it now, so a

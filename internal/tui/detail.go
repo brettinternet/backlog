@@ -90,6 +90,8 @@ type detailResult struct {
 	hints      []string          // a key to show on each History entry when selected
 	files      []int             // the Diff tab's line of each file and hunk header
 	hunks      []int
+	rows       []diffRow // what each Diff entry shows
+	head       string    // the commit the Diff shows
 	truncated  bool
 	err        string
 }
@@ -138,6 +140,7 @@ type rendered struct {
 	hints     []string // a key worth showing on each entry when it is selected
 	files     []int    // the Diff tab's line of each file and hunk header
 	hunks     []int
+	rows      []diffRow // what each Diff entry, or each line of a file's diff, shows
 	truncated bool
 	size      int
 }
@@ -407,6 +410,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		}
 		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
+		result.rows, result.head = page.rows, request.change.Head
 		return result
 	}
 	if request.tab == tabChanges {

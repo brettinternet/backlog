@@ -42,6 +42,8 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 			page.lines = append(page.lines, "")
 		}
 		page.files = append(page.files, len(page.lines))
+		page.entries = append(page.entries, len(page.lines))
+		page.rows = append(page.rows, diffRow{file: f.Path})
 		page.lines = append(page.lines, fileLine(t, f, width))
 		large := len(f.Patch) > bodyLimit
 		key := renderKey{Version: c.Head, Width: width, Theme: t.key(), Tab: tabChangeDiff, Expanded: large && request.expanded, Dependency: f.Path + "\x00" + patchDigest(f.Patch)}
@@ -53,6 +55,10 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 		for _, h := range body.hunks {
 			page.hunks = append(page.hunks, len(page.lines)+h)
 		}
+		for i := range body.lines {
+			page.entries = append(page.entries, len(page.lines)+i)
+		}
+		page.rows = append(page.rows, body.rows...)
 		page.lines = append(page.lines, body.lines...)
 		page.truncated = page.truncated || large && !request.expanded
 	}
@@ -60,6 +66,59 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 		page.lines = append(page.lines, "", t.yellow.render(ansi.Truncate(textutil.Line(d.Reason), width, "…")))
 	}
 	return page
+}
+
+// diffRow is what a Diff line shows: a file, and the old and new line
+// numbers on it, or 0 for a side it doesn't show. A file or hunk header
+// shows neither, a unified line one side or both for context, and a split
+// row a line on each half.
+type diffRow struct {
+	file     string
+	old, new int
+}
+
+type diffSide byte
+
+const (
+	sideNew diffSide = iota
+	sideOld
+)
+
+// lineAnchor is a line on one side of a file in a change's diff at head; line
+// 0 is the file itself.
+type lineAnchor struct {
+	head, file string
+	side       diffSide
+	line       int
+}
+
+// anchors resolves r at head, new side first: one anchor per line it shows,
+// or its file.
+func (r diffRow) anchors(head string) []lineAnchor {
+	var out []lineAnchor
+	if r.new > 0 {
+		out = append(out, lineAnchor{head: head, file: r.file, side: sideNew, line: r.new})
+	}
+	if r.old > 0 {
+		out = append(out, lineAnchor{head: head, file: r.file, side: sideOld, line: r.old})
+	}
+	if len(out) == 0 && r.file != "" {
+		out = append(out, lineAnchor{head: head, file: r.file})
+	}
+	return out
+}
+
+// shows is whether r shows a's line, or is a's file's first row for line 0.
+func (r diffRow) shows(a lineAnchor) bool {
+	switch {
+	case r.file != a.file:
+		return false
+	case a.line == 0:
+		return r.old == 0 && r.new == 0
+	case a.side == sideOld:
+		return r.old == a.line
+	}
+	return r.new == a.line
 }
 
 func patchDigest(patch string) string {
@@ -133,6 +192,7 @@ func fileDiff(f changes.File, t theme, width int, expanded bool) rendered {
 	var out rendered
 	note := func(p paint, text string) {
 		out.lines = append(out.lines, p.render(ansi.Truncate(text, width, "…")))
+		out.rows = append(out.rows, diffRow{file: f.Path})
 	}
 	switch {
 	case f.Patch == "" && f.Cut != "":
@@ -158,7 +218,12 @@ func fileDiff(f changes.File, t theme, width int, expanded bool) rendered {
 	for _, h := range hunks {
 		out.hunks = append(out.hunks, len(out.lines))
 		note(t.cyan, textutil.Line(h.header))
-		out.lines = append(out.lines, hunkLines(h, lexer, t, width, digits, split)...)
+		lines, rows := hunkLines(h, lexer, t, width, digits, split)
+		out.lines = append(out.lines, lines...)
+		for _, r := range rows {
+			r.file = f.Path
+			out.rows = append(out.rows, r)
+		}
 	}
 	if f.Cut != "" {
 		note(t.yellow, f.Cut)
@@ -166,6 +231,8 @@ func fileDiff(f changes.File, t theme, width int, expanded bool) rendered {
 	for _, line := range out.lines {
 		out.size += len(line) + 1
 	}
+	// Each row's path is shared; count its two numbers.
+	out.size += 16 * len(out.rows)
 	return out
 }
 
@@ -182,8 +249,9 @@ type codeSpan struct {
 }
 
 // hunkLines highlights each side of a hunk as one text, so a construct that
-// spans lines colors correctly, then lays the lines out.
-func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split bool) []string {
+// spans lines colors correctly, then lays the lines out, with each line's
+// old and new line numbers.
+func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split bool) ([]string, []diffRow) {
 	lines := make([]codeLine, len(h.lines))
 	var oldSide, newSide []int
 	for i, l := range h.lines {
@@ -235,19 +303,24 @@ func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split
 		rows = append(rows, b)
 	}
 	var out []string
+	var numbers []diffRow
 	if !split {
 		code := max(1, width-2*digits-3)
+		unified := func(l codeLine) {
+			out = append(out, unifiedLine(t, l, digits, code))
+			numbers = append(numbers, diffRow{old: l.line.old, new: l.line.new})
+		}
 		for _, row := range rows {
 			indices, ok := row.(block)
 			if !ok {
-				out = append(out, unifiedLine(t, lines[row.(int)], digits, code))
+				unified(lines[row.(int)])
 				continue
 			}
 			for _, i := range append(indices.removed, indices.added...) {
-				out = append(out, unifiedLine(t, lines[i], digits, code))
+				unified(lines[i])
 			}
 		}
-		return out
+		return out, numbers
 	}
 	left := (width - 1) / 2
 	right := width - 1 - left
@@ -263,26 +336,31 @@ func hunkLines(h diffHunk, lexer chroma.Lexer, t theme, width, digits int, split
 				} else {
 					out = append(out, sideLine(t, l, digits, left, false)+divider+blank(right))
 				}
+				numbers = append(numbers, diffRow{})
 				continue
 			}
 			out = append(out, sideLine(t, l, digits, left, false)+divider+sideLine(t, l, digits, right, true))
+			numbers = append(numbers, diffRow{old: l.line.old, new: l.line.new})
 			continue
 		}
 		for j := range max(len(b.removed), len(b.added)) {
-			text := blank(left)
+			text, number := blank(left), diffRow{}
 			if j < len(b.removed) {
 				text = sideLine(t, lines[b.removed[j]], digits, left, false)
+				number.old = lines[b.removed[j]].line.old
 			}
 			text += divider
 			if j < len(b.added) {
 				text += sideLine(t, lines[b.added[j]], digits, right, true)
+				number.new = lines[b.added[j]].line.new
 			} else {
 				text += blank(right)
 			}
 			out = append(out, text)
+			numbers = append(numbers, number)
 		}
 	}
-	return out
+	return out, numbers
 }
 
 // unifiedLine is old and new line numbers, the sign, then the code.

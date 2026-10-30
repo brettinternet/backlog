@@ -154,10 +154,12 @@ type Model struct {
 	detailMasked             bool   // the loading placeholder covers the body
 	detailSubmitted          uint64 // the last generation sent to the worker
 	detailTruncated          bool
-	detailFiles, detailHunks []int    // the Diff tab's file and hunk header lines
-	diffOrigin               int      // the scroll before [ or ], which [c and ]c restore
-	detailLines              []string // the last body, kept while the next loads
-	detailEntries            []int    // detailLines index of each criterion or relation
+	detailFiles, detailHunks []int     // the Diff tab's file and hunk header lines
+	detailRows               []diffRow // what each Diff entry shows
+	detailHead               string    // the commit the Diff shows
+	diffOrigin, diffCursor   int       // the scroll and cursor before [ or ], which [c and ]c restore
+	detailLines              []string  // the last body, kept while the next loads
+	detailEntries            []int     // detailLines index of each criterion or relation
 	detailTargets            []engine.Relation
 	detailChanges            []changes.Change
 	detailIDs                []string        // the history entry of each History entry
@@ -893,9 +895,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.entryCursor = n
 				}
 			}
+			// The Diff keeps the cursor on its line as files expand or the
+			// layout changes.
+			var anchor []lineAnchor
+			if same && m.detailTab == tabChangeDiff && result.head == m.detailHead {
+				anchor = m.cursorAnchors()
+			}
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
 			m.detailChanges = result.changes
 			m.detailFiles, m.detailHunks = result.files, result.hunks
+			m.detailRows, m.detailHead = result.rows, result.head
+			if len(anchor) > 0 {
+				if n := diffRowOf(m.detailRows, anchor[0]); n >= 0 {
+					m.entryCursor = n
+				}
+			}
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
 			if !same {
@@ -914,6 +928,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if pinned {
 				m.detailScroll = len(m.detailLines)
+			}
+			if m.detailTab == tabChangeDiff {
+				// Scroll to the cursor before the scroll pulls it in.
+				m.keepEntryVisible()
 			}
 			m.scrollDetail(0)
 			if !same || !m.scrollsEntries() {
@@ -1222,7 +1240,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		if prefix := m.prefix; prefix == "[" || prefix == "]" {
 			m.prefix = ""
 			if s == "c" {
-				m.detailScroll = m.diffOrigin
+				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
 				m.jumpDiff(m.detailHunks, prefix == "]")
 				return m, nil
 			}
@@ -1230,7 +1248,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 		switch s {
 		case "[", "]":
 			if m.detailTab == tabChangeDiff {
-				m.diffOrigin = m.detailScroll
+				m.diffOrigin, m.diffCursor = m.detailScroll, m.entryCursor
 				m.jumpDiff(m.detailFiles, s == "]")
 				m.prefix = s
 				return m, nil
@@ -1543,6 +1561,7 @@ func (m *Model) closeDetail() {
 	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
 	m.detailChanges = nil
 	m.detailFiles, m.detailHunks = nil, nil
+	m.detailRows, m.detailHead = nil, ""
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	if m.change != nil {
@@ -1685,4 +1704,7 @@ func identityForSelected(m Model) detailIdentity {
 }
 func (m *Model) scrollDetail(delta int) {
 	m.detailScroll = max(0, min(m.detailScroll+delta, max(0, len(m.detailLines)-m.detailVisible())))
+	if m.detailTab == tabChangeDiff {
+		m.diffCursorInView()
+	}
 }
