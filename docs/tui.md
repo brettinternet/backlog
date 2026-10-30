@@ -200,7 +200,9 @@ selected session row in History.
 ## Detail
 
 The header (ID, status, priority, claim, title) and tab counts follow the
-selection immediately. The claim shows its holder (`mine` or `agent@host`) and
+selection immediately. A pane too narrow for every tab drops the counts, then
+scrolls the tabs to keep the active one visible, with `‹` and `›` marking the
+rest. The claim shows its holder (`mine` or `agent@host`) and
 remaining lease, such as `mine 12m` or `agent@host <1m`, or `expired`, from the
 polled claim list. The body loads once the selection rests for 50 ms; switching tabs
 or `m` renders at once. Another item's or tab's body stays until the new one is

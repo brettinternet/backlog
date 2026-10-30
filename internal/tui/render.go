@@ -653,34 +653,17 @@ func (m Model) tabs() (string, []span, int) {
 			labels[i] = "[" + name + "]"
 		}
 	}
-	// strip is the width of labels[from..to] with their separators.
-	strip := func(from, to int) int {
-		w := 0
-		for i := from; i <= to; i++ {
-			w += ansi.StringWidth(labels[i]) + 1
-		}
-		return w - 1
+	widths := make([]int, len(labels))
+	for i, label := range labels {
+		widths[i] = ansi.StringWidth(label)
 	}
-	first := 0
-	for first < m.view && 2*min(first, 1)+strip(first, m.view)+2 > m.width-x {
-		first++
-	}
+	first, end := tabWindow(widths, 1, m.view, m.width-x)
 	if first > 0 {
 		b.WriteString(t.faint.render("‹") + " ")
 		x += 2
 	}
 	spans := make([]span, len(m.views))
-	for i := first; i < len(m.views); i++ {
-		w, last := ansi.StringWidth(labels[i]), i == len(m.views)-1
-		reserve := 2 // room for a following › marker
-		if last {
-			reserve = 0
-		}
-		if i > m.view && x+w+reserve > m.width {
-			b.WriteString(t.faint.render("›"))
-			x++
-			break
-		}
+	for i := first; i < end; i++ {
 		switch {
 		case i == m.view && !t.color:
 			b.WriteString(labels[i])
@@ -689,14 +672,47 @@ func (m Model) tabs() (string, []span, int) {
 		default:
 			b.WriteString(t.muted.render(labels[i]))
 		}
-		spans[i] = span{x, x + w}
-		x += w
-		if !last {
+		spans[i] = span{x, x + widths[i]}
+		x += widths[i]
+		if i < len(labels)-1 {
 			b.WriteString(" ")
 			x++
 		}
 	}
+	if end < len(labels) {
+		b.WriteString(t.faint.render("›"))
+		x++
+	}
 	return b.String(), spans, x
+}
+
+// tabWindow picks the tabs [first, end) to show in width cells: the run that
+// keeps active visible, with two cells kept for each ‹ or › marking hidden
+// tabs. gap is the width between tabs.
+func tabWindow(widths []int, gap, active, width int) (first, end int) {
+	strip := func(from, to int) int {
+		w := 0
+		for i := from; i <= to; i++ {
+			w += widths[i] + gap
+		}
+		return w - gap
+	}
+	after := 2 * min(len(widths)-1-active, 1)
+	for first < active && 2*min(first, 1)+strip(first, active)+after > width {
+		first++
+	}
+	x := 2 * min(first, 1)
+	for end = first; end < len(widths); end++ {
+		reserve := 2
+		if end == len(widths)-1 {
+			reserve = 0
+		}
+		if end > active && x+widths[end]+reserve > width {
+			break
+		}
+		x += widths[end] + gap
+	}
+	return first, end
 }
 
 type sourceBadge struct {

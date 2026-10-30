@@ -215,30 +215,38 @@ func claimLease(row engine.Row, now time.Time) (label, remaining string) {
 }
 
 // detailTabBar renders the tabs with counts and their spans relative to the
-// pane's inner left edge. Too narrow for all tabs, it shows the active one.
+// pane's inner left edge. Too narrow for all tabs, it drops the counts, then
+// scrolls the tabs so the active one stays visible.
 func (m Model) detailTabBar(width int) (string, []span) {
 	t := m.theme
 	row, _ := m.selectedRow()
 	counts := tabCounts(row)
 	labels := make([]string, len(detailTabNames))
+	widths := make([]int, len(labels))
 	total := 0
 	for i, name := range detailTabNames {
-		label := name
+		labels[i] = name
 		if count := counts[i]; count != "" {
-			label += " " + count
+			labels[i] += " " + count
 		}
-		labels[i] = label
-		total += ansi.StringWidth(label) + 2
+		total += ansi.StringWidth(labels[i]) + 2
 	}
 	if total > width {
-		active := labels[m.detailTab]
-		text := t.faint.render("‹ ") + t.bold.render(active) + t.faint.render(" ›")
-		return text, nil
+		copy(labels, detailTabNames[:])
 	}
+	for i, label := range labels {
+		widths[i] = ansi.StringWidth(label) + 2
+	}
+	first, end := tabWindow(widths, 0, int(m.detailTab), width)
 	var b strings.Builder
 	spans := make([]span, len(labels))
 	x := 0
-	for i, label := range labels {
+	if first > 0 {
+		b.WriteString(t.faint.render("‹"))
+		x++
+	}
+	for i := first; i < end; i++ {
+		label := labels[i]
 		cell := " " + label + " "
 		switch {
 		case detailTab(i) != m.detailTab:
@@ -251,9 +259,11 @@ func (m Model) detailTabBar(width int) (string, []span) {
 		default:
 			b.WriteString(t.bold.render(cell))
 		}
-		w := ansi.StringWidth(cell)
-		spans[i] = span{x, x + w}
-		x += w
+		spans[i] = span{x, x + widths[i]}
+		x += widths[i]
+	}
+	if end < len(labels) {
+		b.WriteString(t.faint.render("›"))
 	}
 	return b.String(), spans
 }
