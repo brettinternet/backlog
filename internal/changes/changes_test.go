@@ -95,7 +95,7 @@ func TestWorktreeToLanded(t *testing.T) {
 	if enriched[0].Dirty != nil {
 		t.Fatalf("counted changes through a repository filter: %d", *enriched[0].Dirty)
 	}
-	if d, err := LoadDetail(context.Background(), c, nil); err != nil || d.Reason == "" || len(d.Files) != 4 {
+	if d, err := LoadDetail(context.Background(), c, nil, false); err != nil || d.Reason == "" || len(d.Files) != 4 {
 		t.Fatalf("detail through a repository filter: %+v %v", d, err)
 	}
 	if _, err := os.Stat(marker); err == nil {
@@ -105,7 +105,7 @@ func TestWorktreeToLanded(t *testing.T) {
 	if enriched = Enrich(context.Background(), []Change{c}); enriched[0].Dirty == nil {
 		t.Fatal("no dirty count without a repository filter")
 	}
-	detail, err := LoadDetail(context.Background(), c, nil)
+	detail, err := LoadDetail(context.Background(), c, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +119,34 @@ func TestWorktreeToLanded(t *testing.T) {
 	if !slices.Equal(detail.Files, want) || detail.Reason != "" || len(detail.Commits) != 1 || detail.Commits[0].Subject != "fix" || detail.Commits[0].Author != "Tester" {
 		t.Fatalf("worktree detail: %+v", detail)
 	}
+	// Patches never run an external diff, a textconv, or a filter that
+	// repository config names.
+	script := filepath.Join(t.TempDir(), "run.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git(repo, "config", "diff.external", script)
+	git(repo, "config", "diff.t.textconv", script)
+	write(filepath.Join(repo, ".git", "info"), "attributes", "* diff=t\n")
+	git(repo, "config", "filter.x.clean", script)
+	if d, err := LoadDetail(context.Background(), c, nil, true); err != nil || d.Reason == "" || !d.Patched || !strings.Contains(d.Files[0].Patch, "+a filter=x") {
+		t.Fatalf("patches through a repository filter: %+v %v", d, err)
+	}
+	git(repo, "config", "--unset", "filter.x.clean")
+	patched, err := LoadDetail(context.Background(), c, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a patch ran a command repository config names")
+	}
+	patches := map[string]string{}
+	for _, f := range patched.Files {
+		patches[f.Path] = f.Patch
+	}
+	if patches["a"] != "@@ -0,0 +1,2 @@\n+a\n+b\n" || patches["untracked"] != "@@ -0,0 +1,2 @@\n+x\n+y\n\\ No newline at end of file\n" || patches["bin"] != "" || patches["new"] != "" {
+		t.Fatalf("worktree patches: %q", patches)
+	}
 	if enriched[0].Additions != 5 || enriched[0].Deletions != 0 {
 		t.Fatalf("worktree size: +%d −%d", enriched[0].Additions, enriched[0].Deletions)
 	}
@@ -127,8 +155,24 @@ func TestWorktreeToLanded(t *testing.T) {
 	if c.Stage != StageLanded || c.State != StateMerged || c.Worktree == "" || len(c.Commits) != 1 {
 		t.Fatalf("after merge: %+v", c)
 	}
-	if d, err := LoadDetail(context.Background(), c, nil); err != nil || len(d.Files) != 4 || d.Files[3].Path != "new" || len(d.Commits) != 2 || d.Commits[1].Subject != "fix" {
+	if d, err := LoadDetail(context.Background(), c, nil, false); err != nil || len(d.Files) != 4 || d.Files[3].Path != "new" || len(d.Commits) != 2 || d.Commits[1].Subject != "fix" {
 		t.Fatalf("landed detail: %+v %v", d, err)
+	}
+	if d, err := LoadDetail(context.Background(), c, nil, true); err != nil || d.Files[1].Path != "a" || d.Files[1].Patch != "@@ -0,0 +1 @@\n+a\n" {
+		t.Fatalf("landed patches: %+v %v", d, err)
+	}
+	if d, err := LoadDetail(context.Background(), CommitChange(repo, c.Commits[0].SHA), nil, true); err != nil || len(d.Files) != 4 || len(d.Commits) != 2 {
+		t.Fatalf("commit patches: %+v %v", d, err)
+	}
+	root, err := exec.Command("git", "-C", repo, "rev-list", "--max-parents=0", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, err := LoadDetail(context.Background(), CommitChange(repo, strings.TrimSpace(string(root))), nil, true); err != nil || len(d.Files) == 0 || len(d.Commits) != 1 || d.Files[0].Patch == "" {
+		t.Fatalf("root commit patches: %+v %v", d, err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a landed patch ran a command repository config names")
 	}
 	git(repo, "worktree", "remove", "--force", worktree)
 	git(repo, "branch", "-q", "-d", "bl-12-fix")

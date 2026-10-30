@@ -4,36 +4,71 @@ import (
 	"cmp"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/changes"
+	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The change view replaces the item's tabs with one linked change's
-// Overview, Files, and Commits (design.md D43); backspace returns to the
-// Changes entry it opened from.
+// The change view replaces the item's tabs with one linked change's or
+// commit's Overview, Files, Diff, and Commits (design.md D43); backspace
+// returns to the Changes or History entry it opened from.
 
 // openChange opens the change view on c, from the Changes tab.
 func (m *Model) openChange(c changes.Change) tea.Cmd {
 	row, _ := m.selectedRow()
-	m.change, m.changeRef, m.changeCursor = &c, row.Ref, m.entryCursor
+	m.change, m.changeRef, m.changeTab, m.changeCursor = &c, row.Ref, tabChanges, m.entryCursor
 	m.find = findState{}
 	return m.switchDetailTab(tabChangeOverview)
 }
 
-// closeChange returns to the Changes entry the change view opened from.
+// openCommit opens the History commit under the cursor on the Diff tab; ok
+// is false when the entry isn't a commit.
+func (m *Model) openCommit() (tea.Cmd, bool) {
+	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailIDs) {
+		return nil, false
+	}
+	id := m.detailIDs[m.entryCursor]
+	sha, ok := history.CommitOf(id)
+	if !ok {
+		return nil, false
+	}
+	row, _ := m.selectedRow()
+	c := changes.CommitChange(cmp.Or(m.opts.EditorDir, "."), sha)
+	m.change, m.changeRef, m.changeTab, m.changeEntry = &c, row.Ref, tabHistory, id
+	m.find = findState{}
+	return m.switchDetailTab(tabChangeDiff), true
+}
+
+// closeChange returns to the entry the change view opened from.
 func (m *Model) closeChange() tea.Cmd {
-	cursor := m.changeCursor
+	cursor, tab := m.changeCursor, m.changeTab
 	m.change = nil
 	m.find = findState{}
-	cmd := m.switchDetailTab(tabChanges)
-	m.entryCursor = cursor
+	cmd := m.switchDetailTab(tab)
+	if tab == tabChanges {
+		m.entryCursor = cursor
+	}
 	return cmd
+}
+
+// jumpDiff scrolls to the next or previous of lines, the Diff tab's file or
+// hunk headers.
+func (m *Model) jumpDiff(lines []int, forward bool) {
+	if forward {
+		if i, _ := slices.BinarySearch(lines, m.detailScroll+1); i < len(lines) {
+			m.detailScroll = lines[i]
+		}
+	} else if i, _ := slices.BinarySearch(lines, m.detailScroll); i > 0 {
+		m.detailScroll = lines[i-1]
+	}
+	m.scrollDetail(0)
 }
 
 // shownChange is the change view's change as the row has it now, so a
@@ -66,7 +101,7 @@ func (m Model) cycleTab(delta int) detailTab {
 // itemTab is the item tab detail shows, or returns to from the change view.
 func (m Model) itemTab() detailTab {
 	if m.change != nil {
-		return tabChanges
+		return m.changeTab
 	}
 	return m.detailTab
 }

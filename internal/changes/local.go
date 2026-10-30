@@ -303,7 +303,7 @@ func Enrich(ctx context.Context, cs []Change) []Change {
 				}
 			}
 			if c.Stage == StageWorktree || c.Stage == StageBranch {
-				if files, _, err := localFiles(ctx, *c); err == nil {
+				if files, _, err := localFiles(ctx, *c, false); err == nil {
 					c.Additions, c.Deletions = Size(files)
 				}
 			}

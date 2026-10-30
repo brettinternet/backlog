@@ -301,7 +301,7 @@ func TestDetailTabGoldens(t *testing.T) {
 		t.Fatal("declared milestone name missing")
 	}
 	m.opts.Milestones = nil
-	m.detailWorker.cache = newDetailCache()
+	m.detailWorker.cache = newDetailCache(maxRenderEntries, maxRenderBytes)
 	_ = m.scheduleDetail()
 	m = settleDetail(t, m)
 	body := strings.Join(m.detailLines, "\n")
@@ -757,7 +757,7 @@ func TestChangeView(t *testing.T) {
 	for i := range files {
 		files[i] = changes.File{Path: fmt.Sprintf("internal/pkg%d/file.go", i), Status: changes.FileModified, Additions: i, Deletions: 1}
 	}
-	m.detailWorker.changeDetail = func(_ context.Context, c changes.Change) (changes.Detail, error) {
+	m.detailWorker.changeDetail = func(_ context.Context, c changes.Change, _ bool) (changes.Detail, error) {
 		if c.ID != change.ID {
 			return changes.Detail{}, errors.New("read another change")
 		}
@@ -815,5 +815,135 @@ func TestChangeView(t *testing.T) {
 	m = settleDetail(t, m)
 	if content := m.View().Content; !strings.Contains(content, "bl-1-old") || !strings.Contains(content, "read another change") {
 		t.Fatalf("failed read hid the change\n%s", content)
+	}
+}
+
+// Catches the Diff tab losing its unified and split layouts, [ ] and [c ]c
+// landing off the file or hunk, m not drawing a large file, enter on a History
+// commit not opening its diff or backspace not returning to that entry, and
+// held j over a 10,000-line diff beyond the §11 navigation budget, measured
+// with BL_TUI_MEASURE=1.
+func TestChangeDiff(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	change := changes.Change{ID: "branch:bl-1-fix", Stage: changes.StageBranch, State: changes.StateOpen, Branch: "bl-1-fix", Head: "abc"}
+	m.data.rows[len(m.data.rows)-1].row.Changes = []changes.Change{change}
+	hunk := func(start, n int) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@ func f() {\n", start, n, start, n)
+		for i := range n {
+			fmt.Fprintf(&b, "-\tx := %d\n+\tx := %d + 1\n", i, i)
+		}
+		return b.String()
+	}
+	file := func(path, patch string) changes.File {
+		return changes.File{Path: path, Status: changes.FileModified, Additions: strings.Count(patch, "\n+"), Deletions: strings.Count(patch, "\n-"), Patch: patch}
+	}
+	branch := []changes.File{file("a.go", hunk(1, 30)+hunk(80, 30)), file("b.go", hunk(1, 30)), file("big.go", hunk(1, 1500)), file("c.go", hunk(1, 30))}
+	var commit []changes.File
+	for i := range 100 {
+		commit = append(commit, file(fmt.Sprintf("pkg/f%d.go", i), hunk(1, 100)))
+	}
+	m.detailWorker.changeDetail = func(_ context.Context, c changes.Change, patch bool) (changes.Detail, error) {
+		files := branch
+		if c.ID == "commit:abc1234" {
+			files = commit
+		}
+		if !patch {
+			files = nil
+		}
+		return changes.Detail{Files: files, Patched: patch}, nil
+	}
+	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
+	m.detailWorker.history = func(context.Context, model.Item, []changes.Change) history.Result {
+		return history.Result{Entries: []history.Entry{
+			{ID: "git:abc1234", Time: at(1), Kind: "commit", Summary: "edit BL-1", Provider: "git"},
+			{ID: "event:1", Time: at(2), Kind: "item.updated", Summary: "title changed", Provider: "events"},
+		}}
+	}
+	line := func(m Model, text string) string {
+		for _, l := range m.detailLines {
+			if strings.Contains(l, text) {
+				return l
+			}
+		}
+		t.Fatalf("no line with %q", text)
+		return ""
+	}
+	m.width = 100
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	if m.detailTab != tabChangeDiff || len(m.detailFiles) != 4 || len(m.detailHunks) != 4 {
+		t.Fatalf("Diff tab %d files %v hunks %v", m.detailTab, m.detailFiles, m.detailHunks)
+	}
+	if l := line(m, "x := 7 + 1"); strings.Contains(l, "│") || !strings.Contains(l, "8 + ") {
+		t.Fatalf("unified line %q", l)
+	}
+	steps := []struct {
+		keys string
+		want func() int
+	}{
+		{"]", func() int { return m.detailFiles[1] }},
+		{"]", func() int { return m.detailFiles[2] }},
+		{"[", func() int { return m.detailFiles[1] }},
+		{"[c", func() int { return m.detailHunks[1] }},
+		{"[c", func() int { return m.detailHunks[0] }},
+		{"]c", func() int { return m.detailHunks[1] }},
+	}
+	for _, step := range steps {
+		for _, r := range step.keys {
+			m, _ = detailKey(m, r, 0)
+		}
+		if m.detailScroll != step.want() {
+			t.Fatalf("%s scrolled to %d, want %d", step.keys, m.detailScroll, step.want())
+		}
+	}
+	line(m, "KiB diff")
+	m, _ = detailKey(m, 'm', 0)
+	m = settleDetail(t, m)
+	line(m, "x := 1499 + 1")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 400, Height: 24})
+	m = settleDetail(t, next.(Model))
+	if m.detailWidth()-2*detailPad < splitDiffWidth {
+		t.Fatalf("detail width %d too narrow to split", m.detailWidth())
+	}
+	if l := line(m, "x := 7 + 1"); !strings.Contains(l, "│") || !strings.Contains(l, "x := 7 ") {
+		t.Fatalf("split line %q", l)
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabHistory)
+	m = settleDetail(t, m)
+	m.entryCursor = slices.Index(m.detailIDs, "git:abc1234")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if m.change == nil || m.change.ID != "commit:abc1234" || m.detailTab != tabChangeDiff || len(m.detailLines) < 10000 {
+		t.Fatalf("History enter opened %v on tab %d with %d lines", m.change, m.detailTab, len(m.detailLines))
+	}
+	samples := make([]time.Duration, 0, 2000)
+	for range 2000 {
+		start := time.Now()
+		m, _ = detailKey(m, 'j', 0)
+		_ = m.View()
+		samples = append(samples, time.Since(start))
+	}
+	if m.detailScroll != 2000 {
+		t.Fatalf("held j scrolled to %d", m.detailScroll)
+	}
+	if os.Getenv("BL_TUI_MEASURE") == "1" {
+		slices.Sort(samples)
+		t.Logf("held j in a %d-line diff Update+View p95=%s max=%s", len(m.detailLines), samples[(len(samples)*95-1)/100], samples[len(samples)-1])
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	if m.change != nil || m.detailTab != tabHistory || m.detailIDs[m.entryCursor] != "git:abc1234" {
+		t.Fatalf("backspace left tab %d cursor %d", m.detailTab, m.entryCursor)
 	}
 }

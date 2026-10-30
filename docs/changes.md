@@ -95,6 +95,11 @@ starting Git. It runs Git only where files can't answer:
   `status --porcelain` in each worktree. Refreshing the index runs any filter
   driver on changed files, so when the repository's own config defines a clean
   or process filter, the dirty count stays unknown and `status` doesn't run.
+- For the TUI change view's change, `log` of its commits and `diff --raw
+  --numstat`, plus `diff --patch --no-ext-diff --no-textconv` on its Diff tab
+  or for a History commit, against the merge base (and the working tree for a
+  worktree, unless a filter driver is configured) or a landed merge's first
+  parent.
 
 Every run passes `--no-pager --no-optional-locks --literal-pathspecs -c
 core.fsmonitor=false -c log.showSignature=false` with `GIT_NO_LAZY_FETCH=1`
@@ -124,7 +129,7 @@ change term load once per call.
 | --- | --- |
 | TUI list | The most advanced change, such as `⇡#45 ✓` ([TUI](tui.md#layout)) |
 | TUI Changes tab | Every change, furthest first, with its actions and URL ([TUI](tui.md#detail)) |
-| TUI change view | One change's overview, files with `+/−`, and commits ([TUI](tui.md#detail)) |
+| TUI change view | One change's overview, files with `+/−`, highlighted diff, and commits ([TUI](tui.md#detail)) |
 | History | One group per change: its span, events, and landed commits |
 | Queries | `has:change`, `change:`, `checks:`, `review:` ([Query](query.md#fields)) |
 | `bl changes ID` | The same list as text or JSON ([CLI](cli.md#bl-changes-id)) |

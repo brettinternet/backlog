@@ -950,14 +950,15 @@ func TestForgePullRequests(t *testing.T) {
 	if list, err := forge.PullRequests(context.Background()); err == nil || len(list) != 2 {
 		t.Fatalf("failed refresh: %v %+v", err, list)
 	}
-	f.pullFiles = `[{"filename":"new.go","previous_filename":"old.go","status":"renamed","additions":1,"deletions":2,"patch":"@@"},{"filename":"logo.png","status":"added"},{"filename":"gone.go","status":"removed","deletions":3,"patch":"@@"}]`
+	f.pullFiles = `[{"filename":"new.go","previous_filename":"old.go","status":"renamed","additions":1,"deletions":2,"patch":"@@"},{"filename":"logo.png","status":"added"},{"filename":"gone.go","status":"removed","deletions":3,"patch":"@@"},{"filename":"huge.go","status":"modified","additions":9000}]`
 	f.pullCommits = `[{"sha":"c1","commit":{"message":"first\n\nbody","author":{"name":"Ann"},"committer":{"date":"2026-01-01T00:00:00Z"}}},{"sha":"c2","commit":{"message":"second fake-secret","author":{"name":"Bo"},"committer":{"date":"2026-01-02T00:00:00Z"}}}]`
 	d, err := forge.Pull(context.Background(), 45)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []changes.File{{Path: "new.go", From: "old.go", Status: changes.FileRenamed, Additions: 1, Deletions: 2}, {Path: "logo.png", Status: changes.FileBinary}, {Path: "gone.go", Status: changes.FileDeleted, Deletions: 3}}
-	if !slices.Equal(d.Files, want) || len(d.Commits) != 2 || d.Commits[0].SHA != "c2" || strings.Contains(d.Commits[0].Subject, "fake-secret") || d.Commits[1].Subject != "first" || d.Commits[1].Author != "Ann" {
+	want := []changes.File{{Path: "new.go", From: "old.go", Status: changes.FileRenamed, Additions: 1, Deletions: 2, Patch: "@@"}, {Path: "logo.png", Status: changes.FileBinary}, {Path: "gone.go", Status: changes.FileDeleted, Deletions: 3, Patch: "@@"},
+		{Path: "huge.go", Status: changes.FileModified, Additions: 9000, Cut: "GitHub left out this file's diff"}}
+	if !slices.Equal(d.Files, want) || !d.Patched || len(d.Commits) != 2 || d.Commits[0].SHA != "c2" || strings.Contains(d.Commits[0].Subject, "fake-secret") || d.Commits[1].Subject != "first" || d.Commits[1].Author != "Ann" {
 		t.Fatalf("pull detail: %+v", d)
 	}
 }
