@@ -833,6 +833,9 @@ bl auth logout linear work         # delete local tokens and cache; revoke if su
 
 Works for accounts with `oauth: true` in user config, for `linear`
 ([PKCE](linear.md#oauth-login)) and `github` ([device login](github.md#oauth-login)).
+For a `github` account with no `credential`, `env`, or `oauth`, login first
+offers the [`gh` helper](github.md#setup) when `gh` has a token for the
+configured user and host, and writes it to user config after you confirm.
 Login needs a terminal; MCP, claims, hooks, and actions never start it. Logout
 says when you must revoke access manually in provider settings. Tokens live in
 owner-only XDG state. See [OAuth](oauth.md).
@@ -846,7 +849,8 @@ principal. Any account that can't authenticate exits 5 (`rejected`) and prints
 a fix; an unmatched filter exits 3. JSON `data.accounts` has `provider`,
 `account`, `user`, `method`, `ready`, `state`, `writes`, `expiresAt`, and `fix`.
 
-For login and logout, JSON returns `provider`, `account`, write-consent state, and for logout whether
+For login and logout, JSON returns `provider`, `account`, write-consent state
+(or `method: credential` when login configured the `gh` helper), and for logout whether
 revocation was remote or manual. Failures use the [OAuth reason codes](oauth.md#errors)
 and never include provider bodies or tokens.
 

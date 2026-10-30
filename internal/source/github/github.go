@@ -211,18 +211,41 @@ func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 				return "", err
 			}
 		}
-		response, err := s.request(ctx, c, http.MethodPost, s.endpoint(), map[string]any{"query": `query {viewer {login}}`})
-		if err != nil {
-			return "", err
-		}
-		var data struct{ Viewer struct{ Login string } }
-		if decode(response.Body, &data) != nil || data.Viewer.Login == "" {
-			return "", source.Refuse("unavailable", "invalid principal")
-		}
-		s.scopes = response.Header.Get("X-OAuth-Scopes")
-		return data.Viewer.Login, nil
+		return s.viewer(ctx, c)
 	})
 }
+
+// viewer returns the token's login and records its classic OAuth scopes.
+func (s *Source) viewer(ctx context.Context, c remote.Credential) (string, error) {
+	response, err := s.request(ctx, c, http.MethodPost, s.endpoint(), map[string]any{"query": `query {viewer {login}}`})
+	if err != nil {
+		return "", err
+	}
+	var data struct{ Viewer struct{ Login string } }
+	if decode(response.Body, &data) != nil || data.Viewer.Login == "" {
+		return "", source.Refuse("unavailable", "invalid principal")
+	}
+	s.scopes = response.Header.Get("X-OAuth-Scopes")
+	return data.Viewer.Login, nil
+}
+
+// Principal resolves a helper or environment account's token and returns the
+// login it authenticates as, or "" when no token could be verified. A login
+// other than the account's user comes back with an error.
+func Principal(ctx context.Context, account project.AccountConfig, credentials *remote.Credentials) (string, error) {
+	if account.Host == "" {
+		account.Host = "github.com"
+	}
+	s := &Source{o: Options{Host: account.Host, Account: account, Credentials: credentials}, client: remote.Client{Host: apiHost(account.Host), Account: account.User, Secrets: credentials.Secrets}}
+	login := ""
+	_, err := credentials.Resolve(ctx, account, func(ctx context.Context, c remote.Credential) (string, error) {
+		var err error
+		login, err = s.viewer(ctx, c)
+		return login, err
+	})
+	return login, err
+}
+
 func (s *Source) query(ctx context.Context, c remote.Credential, query string, variables any, out any, missing ...string) error {
 	response, err := s.request(ctx, c, http.MethodPost, s.endpoint(), map[string]any{"query": query, "variables": variables})
 	if err != nil {

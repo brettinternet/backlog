@@ -420,3 +420,30 @@ func TestIdentitiesPerSource(t *testing.T) {
 		t.Fatalf("identities = %v, want %v", got, want)
 	}
 }
+
+// bl auth login writes a gh helper into hand-edited user config: it must land
+// in the right account, in block or flow style, without disturbing other bytes.
+func TestSetAccountCredential(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	put(t, path, "# mine\naccounts:\n  github:\n    - name: work # keep\n      user: alice\n\n    - {name: home, host: ghe.example, user: bob }\nui: {highContrast: true}\n")
+	helper := []string{"gh", "auth", "token", "--user", "alice"}
+	if err := project.SetAccountCredential(path, "github", "work", helper); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SetAccountCredential(path, "github", "home", []string{"gh", "auth", "token", "--user", "bob"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SetAccountCredential(path, "github", "work", helper); err == nil {
+		t.Fatal("second helper for the same account was accepted")
+	}
+	raw, _ := os.ReadFile(path)
+	want := "# mine\naccounts:\n  github:\n    - name: work # keep\n      user: alice\n      credential: [gh, auth, token, --user, alice]\n\n    - {name: home, host: ghe.example, user: bob, credential: [gh, auth, token, --user, bob] }\nui: {highContrast: true}\n"
+	if string(raw) != want {
+		t.Fatalf("got:\n%s", raw)
+	}
+	cfg, err := project.Load(project.Paths{ConfigFile: path}, nil)
+	if err != nil || !reflect.DeepEqual(cfg.Accounts["github"][0].Credential, helper) {
+		t.Fatalf("reloaded: %+v, %v", cfg.Accounts, err)
+	}
+}

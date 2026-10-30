@@ -363,3 +363,66 @@ func TestOAuthSourceReportsStructuredProviderDiagnostic(t *testing.T) {
 		t.Fatalf("OAuth diagnostic leaked token data: %s", out)
 	}
 }
+
+// A gh token for someone other than the configured user must never be written
+// to user config; a matching one is written only after consent.
+func TestAuthLoginOffersGHHelperForConfiguredUser(t *testing.T) {
+	testkit.Isolate(t)
+	login := "mallory"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/graphql" || r.Header.Get("Authorization") != "Bearer gh-token" {
+			http.Error(w, "unexpected", http.StatusUnauthorized)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"data":{"viewer":{"login":%q}}}`, login)
+	}))
+	defer server.Close()
+	originalTransport := http.DefaultTransport
+	transport := &http.Transport{
+		Proxy: nil, TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+		},
+	}
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+		transport.CloseIdleConnections()
+	})
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\necho gh-token\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := "accounts:\n  github:\n    - {name: work, host: github.fake, user: alice}\n"
+	if err = os.MkdirAll(filepath.Dir(paths.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(paths.ConfigFile, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	account := oauth.Account{Provider: "github", Name: "work", Host: "github.fake", User: "alice"}
+
+	_, err = cli.OfferGHHelper(context.Background(), paths.ConfigFile, account, strings.NewReader("y\n"), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "mallory") {
+		t.Fatalf("mismatched principal: %v", err)
+	}
+	login = "alice"
+	if configured, err := cli.OfferGHHelper(context.Background(), paths.ConfigFile, account, strings.NewReader("n\n"), io.Discard); configured || err != nil {
+		t.Fatalf("declined: %v, %v", configured, err)
+	}
+	if raw, _ := os.ReadFile(paths.ConfigFile); string(raw) != original {
+		t.Fatalf("config changed without consent:\n%s", raw)
+	}
+	if configured, err := cli.OfferGHHelper(context.Background(), paths.ConfigFile, account, strings.NewReader("y\n"), io.Discard); !configured || err != nil {
+		t.Fatalf("consented: %v, %v", configured, err)
+	}
+	cfg, err := project.Load(paths, nil)
+	if err != nil || strings.Join(cfg.Accounts["github"][0].Credential, " ") != "gh auth token --hostname github.fake --user alice" {
+		t.Fatalf("helper: %+v, %v", cfg.Accounts, err)
+	}
+}

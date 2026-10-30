@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -15,12 +16,13 @@ import (
 
 	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source/github"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
 func authCommands(directory *string, in io.Reader, out, errOut io.Writer) *urfave.Command {
 	login := &urfave.Command{
-		Name: "login", Usage: "Authorize an OAuth account from user config",
+		Name: "login", Usage: "Authorize an OAuth account, or set up gh for a GitHub account, from user config",
 		ArgsUsage: "PROVIDER ACCOUNT",
 		Flags:     []urfave.Flag{&urfave.BoolFlag{Name: "write", Usage: "Also request provider write scopes"}},
 		Action: func(ctx context.Context, cmd *urfave.Command) error {
@@ -37,6 +39,18 @@ func authCommands(directory *string, in io.Reader, out, errOut io.Writer) *urfav
 			account, err := configuredOAuthAccount(cfg, cmd.Args().Get(0), cmd.Args().Get(1))
 			if err != nil {
 				return err
+			}
+			if account.Provider == "github" && !account.OptIn && !account.HasLegacyCredential {
+				configured, err := offerGHHelper(ctx, cfg.Paths.ConfigFile, account, in, errOut)
+				if err != nil {
+					return err
+				}
+				if configured {
+					if cmd.Bool("json") {
+						return success(out, "auth login", map[string]any{"provider": account.Provider, "account": account.Name, "method": "credential"})
+					}
+					return writeLine(out, "Configured the gh credential helper for github account "+account.Name+".")
+				}
 			}
 			manager := oauthManager(cfg)
 			interaction := oauth.Interaction{In: in, Out: errOut}
@@ -191,6 +205,32 @@ func accountStatusFor(manager *oauth.Manager, provider string, account project.A
 		s.Method, s.State, s.Fix = "none", "no credential", "Set one of credential, env, or oauth: true in user config"
 	}
 	return s
+}
+
+// offerGHHelper configures `gh auth token` for a GitHub account with no
+// credential once the user consents, which needs no App installation. It
+// reports false when gh has no token for the account or the user declines.
+func offerGHHelper(ctx context.Context, configFile string, account oauth.Account, in io.Reader, out io.Writer) (bool, error) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return false, nil
+	}
+	argv := []string{"gh", "auth", "token", "--hostname", account.Host, "--user", account.User}
+	login, _ := github.Principal(ctx, project.AccountConfig{Name: account.Name, Host: account.Host, User: account.User, Credential: argv, Provider: "github"}, &remote.Credentials{Secrets: remote.ProcessSecrets})
+	if login == "" {
+		return false, nil
+	}
+	if login != account.User {
+		return false, &Error{Reason: "rejected", Message: fmt.Sprintf("gh's token for %s on %s authenticates as %s; fix gh or the account's user", account.User, account.Host, login)}
+	}
+	fmt.Fprintf(out, "gh is signed in to %s as %s. Its token can write wherever you can, limited only by bl's write gates.\nUse it for account %s? [y/N] ", account.Host, login, account.Name)
+	answer, _ := bufio.NewReader(in).ReadString('\n')
+	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+		return false, nil
+	}
+	if err := project.SetAccountCredential(configFile, "github", account.Name, argv); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func oauthManager(cfg project.Config) *oauth.Manager {

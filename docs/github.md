@@ -16,7 +16,8 @@ statuses:
   - {key: closed, name: Closed, category: done}
 ```
 
-User config (`~/.config/backlog/config.yaml`), with a `gh` credential helper:
+User config (`~/.config/backlog/config.yaml`), with the recommended `gh`
+credential helper:
 
 ```yaml
 accounts:
@@ -27,7 +28,15 @@ accounts:
       credential: [gh, auth, token, --hostname, github.com, --user, alice]
 ```
 
-Or use [device login](#oauth-login). Then run `bl trust`.
+It needs no App installation and reaches every organization and repository
+`gh` can. To have bl write it, declare the account with only `name`, `host`, and
+`user`, then run `bl auth login github personal` in a terminal. If `gh` has a
+token for `user` on `host`, bl asks before adding the helper; a token that
+authenticates as anyone else is refused. Then run `bl trust`.
+
+A `repo`-scoped token can write, so on this path bl's write gates (`--write`,
+`allowWrites`) are the only limit. For a token that can't write, use
+[device login](#oauth-login) instead.
 
 The helper's token must belong to `user`. Classic OAuth scopes from
 `gh auth login`:
@@ -48,8 +57,9 @@ Enterprise hosts use `/api/graphql` and `/api/v3` over HTTPS.
 
 ## OAuth login
 
-Device login uses two owner-approved GitHub Apps, so read-only access is truly
-read-only:
+Device login is the strict option: it uses two owner-approved GitHub Apps, so
+read-only access is truly read-only. Their tokens reach only repositories where
+the App is installed, which organization members often can't do themselves.
 
 | App | Client ID | Permissions | Used by |
 | --- | --- | --- | --- |

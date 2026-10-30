@@ -48,7 +48,8 @@ accounts:
     - {name: personal, host: github.com, user: alice, env: GITHUB_TOKEN}
 ```
 
-Or log in with a read-only GitHub App ([details](../../docs/github.md#oauth-login)):
+Or, for a token that can't write, log in with a read-only GitHub App installed
+on the repository ([details](../../docs/github.md#oauth-login)):
 
 ```yaml
 accounts:
