@@ -217,7 +217,9 @@ func (l *linker) prefix(s string) string {
 }
 
 var (
-	pullURL   = regexp.MustCompile(`^https?://([^/]+)/([^/]+/[^/]+)/pull/(\d+)`)
+	// pullURL is a GitHub pull request or a GitLab merge request, whose
+	// project path may nest groups.
+	pullURL   = regexp.MustCompile(`^https?://([^/]+)/([^/]+/[^/]+/pull|.+?/-/merge_requests)/(\d+)`)
 	commitURL = regexp.MustCompile(`^https?://[^/]+/.+/commit/([0-9a-fA-F]{7,40})(?:[/?#]|$)`)
 )
 
@@ -389,21 +391,30 @@ func closingTokens(body string) []string {
 	return out
 }
 
-// Label is a change's short name: #45, or its branch, or a commit's SHA.
+// Label is a change's short name: #45, or !45 for a GitLab merge request,
+// or its branch, or a commit's SHA.
 func Label(c Change) string {
 	switch {
 	case c.Number > 0:
-		return "#" + strconv.Itoa(c.Number)
+		return number(c.URL) + strconv.Itoa(c.Number)
 	case c.Branch != "":
 		return c.Branch
 	case len(c.Commits) > 0:
 		return short(c.Commits[0].SHA)
 	}
 	if m := pullURL.FindStringSubmatch(c.URL); m != nil {
-		return "#" + m[3]
+		return number(c.URL) + m[3]
 	}
 	if m := commitURL.FindStringSubmatch(c.URL); m != nil {
 		return short(strings.ToLower(m[1]))
 	}
 	return c.ID
+}
+
+// number is the prefix that numbers url's pull or merge request.
+func number(url string) string {
+	if strings.Contains(url, "/-/merge_requests/") {
+		return "!"
+	}
+	return "#"
 }

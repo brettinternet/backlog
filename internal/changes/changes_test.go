@@ -183,7 +183,8 @@ func TestWorktreeToLanded(t *testing.T) {
 
 // Catches a link that reads as merged or passing when it is ambiguous, stale,
 // for another commit, or another repository's pull request with the merged
-// one's number, and a refs URL that vanishes when bl can't resolve it.
+// one's number, a refs URL that vanishes when bl can't resolve it, and a
+// GitLab merge request in a nested group that a refs URL misses.
 func TestLinkStates(t *testing.T) {
 	ref := func(source, id string) model.Ref { return model.Ref{Source: source, ID: id} }
 	day := func(n int) time.Time { return time.Date(2026, 1, n, 0, 0, 0, 0, time.UTC) }
@@ -191,6 +192,7 @@ func TestLinkStates(t *testing.T) {
 		{Ref: ref("a", "BL-12")}, {Ref: ref("a", "BL-7")}, {Ref: ref("a", "BL-9")}, {Ref: ref("b", "BL-9")},
 		{Ref: ref("a", "BL-30"), Refs: []string{"https://github.com/acme/app/pull/99"}},
 		{Ref: ref("a", "BL-31"), NodeID: "I_31"}, {Ref: ref("a", "BL-20")},
+		{Ref: ref("a", "BL-40"), Refs: []string{"https://gitlab.com/grp/sub/app/-/merge_requests/7"}},
 	}
 	merge := Commit{SHA: "c1", Subject: "Merge pull request #52 from acme/bl-12-y", Time: day(5)}
 	merge.Branch, merge.PR = MergedBranch(merge.Subject)
@@ -212,6 +214,7 @@ func TestLinkStates(t *testing.T) {
 			{Repo: "acme/app", Number: 48, URL: "https://github.com/acme/app/pull/48", State: StateMerged, Head: "bl-7-old", Checks: ChecksPassing, Stale: "github refresh failed: boom", Created: day(1), Updated: day(1)},
 			{Repo: "acme/app", Number: 50, URL: "https://github.com/acme/app/pull/50", State: StateOpen, Head: "z", Closes: []string{"I_31"}, Created: day(1), Updated: day(1)},
 			{Repo: "acme/lib", Number: 52, URL: "https://github.com/acme/lib/pull/52", State: StateOpen, Head: "x", Title: "BL-20 new API", Created: day(1), Updated: day(1)},
+			{Repo: "grp/sub/app", Number: 7, URL: "https://gitlab.com/grp/sub/app/-/merge_requests/7", State: StateOpen, Head: "w", Created: day(1), Updated: day(1)},
 		},
 		Landed: []Commit{merge},
 	}
@@ -229,6 +232,7 @@ func TestLinkStates(t *testing.T) {
 		ref("a", "BL-30"): {"#99 pr unknown  ref"},
 		ref("a", "BL-31"): {"#50 pr open  provider"},
 		ref("a", "BL-20"): {"#52 pr open  title"},
+		ref("a", "BL-40"): {"!7 pr open  ref"},
 	}
 	for r, w := range want {
 		if !slices.Equal(got[r], w) {

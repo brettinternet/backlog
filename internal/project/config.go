@@ -550,6 +550,10 @@ var trailerKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 
 var ownerRepo = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
+// projectPath is a GitLab project's path: a namespace, any subgroups, and the
+// project.
+var projectPath = regexp.MustCompile(`^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+$`)
+
 func validateSettings(node *yaml.Node) error {
 	fail := func(n *yaml.Node, key, message string) error {
 		return fmt.Errorf("line %d: key %s: %s", n.Line, key, message)
@@ -575,11 +579,15 @@ func validateSettings(node *yaml.Node) error {
 	}
 	if forges := field(field(node, "changes"), "forges"); forges != nil {
 		for i, entry := range forges.Content {
-			if n := field(entry, "type"); n == nil || n.Value != "github" {
-				return fail(entry, fmt.Sprintf("changes.forges[%d].type", i), "must be github")
+			kind := field(entry, "type")
+			if kind == nil || kind.Value != "github" && kind.Value != "gitlab" {
+				return fail(entry, fmt.Sprintf("changes.forges[%d].type", i), "must be github or gitlab")
 			}
-			if n := field(entry, "repo"); n == nil || !ownerRepo.MatchString(n.Value) {
+			if n := field(entry, "repo"); kind.Value == "github" && (n == nil || !ownerRepo.MatchString(n.Value)) {
 				return fail(entry, fmt.Sprintf("changes.forges[%d].repo", i), "must be owner/repo")
+			}
+			if n := field(entry, "repo"); kind.Value == "gitlab" && (n == nil || !projectPath.MatchString(n.Value)) {
+				return fail(entry, fmt.Sprintf("changes.forges[%d].repo", i), "must be group/project")
 			}
 		}
 	}

@@ -138,7 +138,7 @@ func LoadReview(ctx context.Context, c Change, forges []Forge, fresh bool) (Revi
 // forgeFor is the forge whose web URL c's pull request is under.
 func forgeFor(c Change, forges []Forge) Forge {
 	for _, f := range forges {
-		if web := f.Web(); web != "" && strings.HasPrefix(strings.ToLower(c.URL), strings.ToLower(web)+"/pull/") {
+		if web := f.Web(); web != "" && strings.HasPrefix(strings.ToLower(c.URL), strings.ToLower(web)+"/") {
 			return f
 		}
 	}

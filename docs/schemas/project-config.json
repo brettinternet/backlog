@@ -311,17 +311,17 @@
           "default": true
         },
         "forges": {
-          "description": "Repositories whose pull requests link to items. Unset uses a GitHub origin when exactly one account is configured for its host. Project-layer forges need trust.",
+          "description": "Repositories whose pull or merge requests link to items. Unset uses a GitHub or GitLab origin when exactly one account of that type is configured for its host. Project-layer forges need trust.",
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["type", "repo"],
             "properties": {
-              "type": {"enum": ["github"]},
-              "host": {"type": "string", "default": "github.com"},
-              "repo": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
-              "account": {"description": "A configured account name; defaults to a GitHub source's for the same repository, else the only account for the host.", "type": "string"}
+              "type": {"enum": ["github", "gitlab"]},
+              "host": {"description": "Default github.com or gitlab.com.", "type": "string"},
+              "repo": {"description": "owner/repo, or a GitLab group/project path, which may nest subgroups.", "type": "string", "pattern": "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$"},
+              "account": {"description": "A configured account name; defaults to a GitHub source's for the same repository, else the only account of the forge's type for the host.", "type": "string"}
             }
           }
         }

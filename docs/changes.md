@@ -13,13 +13,14 @@ A change is one line of work, shown at its furthest stage:
 | --- | --- |
 | `worktree` | A local branch checked out in a worktree, not pushed |
 | `branch` | A local branch without a worktree, or one on an already-fetched remote |
-| `pr` | A pull request |
+| `pr` | A pull request, or a GitLab merge request |
 | `landed` | Commits on the default branch's first-parent history |
 
 A worktree, its branch, the pull request from that branch, and the merge that
 landed it are one change, so it moves from `worktree` to `landed` and collapses
 once merged. A pull request whose merge commit, squash, or rebase GitHub
-records on the default branch is landed.
+records on the default branch is landed. Merge requests ([GitLab](gitlab.md))
+read as pull requests throughout, labelled `!N` rather than `#N`.
 
 | State | Meaning |
 | --- | --- |
@@ -49,7 +50,7 @@ or `stale`), and `url`, and `unresolved`, its unresolved review thread count.
 | `provider` | GitHub reports that the pull request closes a GitHub-source item |
 | `trailer` | A landed commit's `history.commitTrailer` value is an item ID |
 | `merge` | A first-parent merge subject names the branch: `Merge branch 'X'`, `Merge remote-tracking branch 'origin/X'`, or `Merge pull request #N from owner/X` |
-| `ref` | The item's `refs` lists the pull request or commit URL |
+| `ref` | The item's `refs` lists the pull request, merge request, or commit URL |
 
 The `{branch}` placeholder already names branches this way, so a worktree
 created with `wt switch --create {branch}` links at once. An ID that names more
@@ -76,15 +77,17 @@ changes:
 | Field | Meaning |
 | --- | --- |
 | `git` | Read local branches, worktrees, and landed commits (default `true`) |
-| `forges[].type` | `github` |
-| `forges[].host` | Default `github.com` |
-| `forges[].repo` | `owner/repo` |
-| `forges[].account` | A configured account; default the account of a GitHub source reading the same repository, else the only account for the host |
+| `forges[].type` | `github` or `gitlab` |
+| `forges[].host` | Default `github.com` or `gitlab.com` |
+| `forges[].repo` | `owner/repo`, or a GitLab project path such as `group/subgroup/app` |
+| `forges[].account` | A configured account; default the account of a GitHub source reading the same repository, else the only account of the forge's type for the host |
 
-Without `forges`, a GitHub `origin` remote is the forge when exactly one GitHub
-account is configured for its host. Forges reuse accounts, credentials, request
-queues, and redaction from [GitHub sources](github.md#linked-changes), and
-project-declared forges do nothing until `bl trust`.
+Without `forges`, a GitHub or GitLab `origin` remote is the forge when exactly
+one account of that type is configured for its host. Forges reuse accounts,
+credentials, request queues, and redaction from [GitHub
+sources](github.md#linked-changes); a GitLab account with a `read_api` token
+serves only its forge ([GitLab](gitlab.md)). Project-declared forges do nothing
+until `bl trust`.
 
 ## Git
 
@@ -119,8 +122,8 @@ touching its update time, and every other one updated since the last refresh,
 through the account's request queue. The newest 1,000 updated are kept,
 redacted, in a `.pulls.json` file beside the account's provider cache. A failed
 refresh keeps the cached list and marks it stale. The token needs read access
-to pull requests; a pull request whose checks or closing references it can't
-read still links by branch, title, and body.
+to pull requests, or GitLab's `read_api` scope; a pull request whose checks or
+closing references it can't read still links by branch, title, and body.
 
 A pull request's detail (description, checks, reviewers, comments, and review
 threads) is read for the item shown, never on a list refresh: in the Changes

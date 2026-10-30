@@ -76,6 +76,7 @@ Sources:
 - [Remote sources](docs/remote.md) and [OAuth](docs/oauth.md)
 - [GitHub](docs/github.md) ([live verification](docs/github-verification.md))
 - [Linear](docs/linear.md) ([live verification](docs/linear-verification.md))
+- [GitLab](docs/gitlab.md) merge requests for linked changes
 - [Jira Cloud](docs/jira.md) ([API probe](docs/providers/jira.md))
 - [External adapter protocol v1](docs/external-adapter-protocol.md) ([schema](docs/external-adapter/v1/schema.json))
 

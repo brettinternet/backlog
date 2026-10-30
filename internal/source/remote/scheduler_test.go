@@ -193,3 +193,17 @@ func TestHTTPAccountSerializationAndIsolation(t *testing.T) {
 		t.Fatalf("account concurrency=%d", maxActive.Load())
 	}
 }
+
+// Catches GitLab's Unix-time RateLimit-Reset read as seconds, which would
+// back off an account for decades, while the standard seconds form still
+// counts from now.
+func TestRateLimitResetForms(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	for reset, want := range map[string]time.Time{fmt.Sprint(now.Add(time.Minute).Unix()): now.Add(time.Minute), "30": now.Add(30 * time.Second)} {
+		header := http.Header{"Ratelimit-Remaining": {"0"}, "Ratelimit-Reset": {reset}}
+		if got := retryDeadline(header, now); !got.Equal(want) {
+			t.Errorf("reset %s: %v, want %v", reset, got, want)
+		}
+	}
+}

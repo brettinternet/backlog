@@ -2,7 +2,6 @@ package history
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/brettinternet/backlog/internal/changes"
@@ -86,7 +85,7 @@ func changeEvent(c changes.Change, kind string) string {
 		return "branch " + textutil.Line(c.Branch)
 	case "opened":
 		if c.Number > 0 {
-			return "opened #" + strconv.Itoa(c.Number)
+			return "opened " + changes.Label(c)
 		}
 	}
 	return kind

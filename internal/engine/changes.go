@@ -11,6 +11,7 @@ import (
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source/github"
+	"github.com/brettinternet/backlog/internal/source/gitlab"
 )
 
 // ChangesOptions are each project's change providers, keyed by project ID
@@ -34,29 +35,31 @@ func TrackChanges(ctx context.Context, cfg project.Config) *changes.Tracker {
 }
 
 // forges are p's configured forges, which need trust like sources, else the
-// GitHub origin when exactly one account is configured for its host.
+// GitHub or GitLab origin when exactly one account of that type is configured
+// for its host.
 func forges(p project.Config) []changes.Forge {
 	configs := p.Changes.Forges
 	explicit := len(configs) > 0
 	if !explicit {
 		host, repo := project.Origin(p.Discovery)
-		accounts := 0
-		for _, a := range p.Accounts["github"] {
-			if a.Host == host {
-				accounts++
-			}
-		}
-		if host == "" || accounts != 1 {
+		if host == "" {
 			return nil
 		}
-		configs = []project.ForgeConfig{{Type: "github", Host: host, Repo: repo}}
+		for _, kind := range []string{"github", "gitlab"} {
+			if len(hostAccounts(p, kind, host)) == 1 {
+				configs = append(configs, project.ForgeConfig{Type: kind, Host: host, Repo: repo})
+			}
+		}
+		if len(configs) != 1 {
+			return nil
+		}
 	}
 	var out []changes.Forge
 	for i, f := range configs {
 		if f.Host == "" {
-			f.Host = "github.com"
+			f.Host = map[string]string{"github": "github.com", "gitlab": "gitlab.com"}[f.Type]
 		}
-		name := "github " + f.Repo
+		name := f.Type + " " + f.Repo
 		if explicit {
 			if err := p.RequireTrusted(fmt.Sprintf("changes.forges[%d]", i)); err != nil {
 				out = append(out, failedForge{name, err})
@@ -73,7 +76,7 @@ func forges(p project.Config) []changes.Forge {
 	return out
 }
 
-func newForge(p project.Config, f project.ForgeConfig) (*github.Forge, error) {
+func newForge(p project.Config, f project.ForgeConfig) (changes.Forge, error) {
 	account, err := forgeAccount(p, f)
 	if err != nil {
 		return nil, err
@@ -87,35 +90,45 @@ func newForge(p project.Config, f project.ForgeConfig) (*github.Forge, error) {
 	if p.Paths.CacheDir != "" {
 		path = strings.TrimSuffix(providerCache(p, id, string(identity), account).Path, ".sqlite") + ".pulls.json"
 	}
+	if f.Type == "gitlab" {
+		return gitlab.NewForge(gitlab.Options{Host: f.Host, Repo: f.Repo, Account: account, Secrets: providerSecrets, Credentials: providerCredentialsFor(p)}, path)
+	}
 	return github.NewForge(github.Options{ID: id, Host: f.Host, Repo: f.Repo, Account: account, Secrets: providerSecrets, Credentials: providerCredentialsFor(p)}, path)
 }
 
 // forgeAccount is the named account, else that of a GitHub source reading
-// the same repository, else the only account for the forge's host.
+// the same repository, else the only account of the forge's type for its
+// host.
 func forgeAccount(p project.Config, f project.ForgeConfig) (project.AccountConfig, error) {
 	if f.Account != "" {
-		return p.SourceAccount(project.SourceConfig{ID: "forge", Type: "github", Host: f.Host, Account: f.Account})
+		return p.SourceAccount(project.SourceConfig{ID: "forge", Type: f.Type, Host: f.Host, Account: f.Account})
 	}
 	for _, s := range p.Sources {
 		host := s.Host
 		if host == "" {
 			host = "github.com"
 		}
-		if s.Type == "github" && host == f.Host && strings.EqualFold(s.Repo, f.Repo) {
+		if f.Type == "github" && s.Type == "github" && host == f.Host && strings.EqualFold(s.Repo, f.Repo) {
 			return p.SourceAccount(s)
 		}
 	}
-	var found []project.AccountConfig
-	for _, a := range p.Accounts["github"] {
-		if a.Host == f.Host {
-			found = append(found, a)
+	found := hostAccounts(p, f.Type, f.Host)
+	if len(found) != 1 {
+		return project.AccountConfig{}, fmt.Errorf("name one of the %s accounts for %s", map[string]string{"github": "GitHub", "gitlab": "GitLab"}[f.Type], f.Host)
+	}
+	found[0].Provider = f.Type
+	return found[0], nil
+}
+
+// hostAccounts are p's accounts of kind for host.
+func hostAccounts(p project.Config, kind, host string) []project.AccountConfig {
+	var out []project.AccountConfig
+	for _, a := range p.Accounts[kind] {
+		if a.Host == host {
+			out = append(out, a)
 		}
 	}
-	if len(found) != 1 {
-		return project.AccountConfig{}, fmt.Errorf("name one of the GitHub accounts for %s", f.Host)
-	}
-	found[0].Provider = "github"
-	return found[0], nil
+	return out
 }
 
 // failedForge reports why a forge couldn't be built as its refresh failure.

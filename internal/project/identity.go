@@ -16,10 +16,10 @@ func CanonicalJiraSite(site string) string {
 }
 
 // SourceAccount is the user account a provider source authenticates as. Its
-// User is the provider's own form of an assignee: GitHub login, Linear viewer
-// UUID, or Jira accountId.
+// User is the provider's own form of an assignee: GitHub login, GitLab
+// username, Linear viewer UUID, or Jira accountId.
 func (cfg Config) SourceAccount(c SourceConfig) (AccountConfig, error) {
-	label := map[string]string{"github": "GitHub", "linear": "Linear", "jira": "Jira"}[c.Type]
+	label := map[string]string{"github": "GitHub", "gitlab": "GitLab", "linear": "Linear", "jira": "Jira"}[c.Type]
 	if label == "" {
 		return AccountConfig{}, errors.New("source " + c.ID + " has no provider account")
 	}
@@ -29,6 +29,10 @@ func (cfg Config) SourceAccount(c SourceConfig) (AccountConfig, error) {
 		if host == "" {
 			host = "github.com"
 		}
+	case "gitlab":
+		if host == "" {
+			host = "gitlab.com"
+		}
 	case "jira":
 		host = CanonicalJiraSite(c.Site)
 	}
@@ -37,7 +41,7 @@ func (cfg Config) SourceAccount(c SourceConfig) (AccountConfig, error) {
 		if candidate.Name != c.Account && candidate.User != c.Account {
 			continue
 		}
-		if c.Type == "github" && candidate.Host != host || c.Type == "jira" && (host == "" || CanonicalJiraSite(candidate.Host) != host) {
+		if (c.Type == "github" || c.Type == "gitlab") && candidate.Host != host || c.Type == "jira" && (host == "" || CanonicalJiraSite(candidate.Host) != host) {
 			continue
 		}
 		if account != nil {

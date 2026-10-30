@@ -5,34 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
-
-// maxPulls bounds the pull requests a forge keeps, the newest updated.
-const maxPulls = 1000
 
 // Forge lists a repository's pull requests for linked changes (design.md
 // D43), through the account's request queue like the source it reuses. Each
 // refresh reads every open pull request, whose checks change without touching
 // its update time, and any other updated since the last refresh.
 type Forge struct {
-	s     *Source
-	cache string
-	mu    sync.Mutex
-	// reviews are the pull request reviews read, by number; reviewMu keeps a
-	// review read from waiting on a list refresh.
-	reviews  map[int]reviewEntry
-	reviewMu sync.Mutex
+	s       *Source
+	cache   string
+	mu      sync.Mutex
+	reviews *changes.Reviews
 }
 
 // NewForge reads o.Repo's pull requests, caching them redacted at cachePath.
@@ -44,17 +36,11 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 	if o.Repo == "" {
 		return nil, source.Refuse("rejected", "a GitHub forge needs owner/repo")
 	}
-	return &Forge{s: s, cache: cachePath}, nil
+	return &Forge{s: s, cache: cachePath, reviews: changes.NewReviews(cachePath, o.Repo)}, nil
 }
 
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }
 func (f *Forge) Web() string  { return "https://" + f.s.o.Host + "/" + f.s.o.Repo }
-
-type pullCache struct {
-	Repo   string
-	Cursor time.Time
-	Pulls  []changes.PullRequest
-}
 
 const pullsQuery = `query($owner:String!,$repo:String!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:50,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid mergeCommit{oid} additions deletions reviewDecision closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
 
@@ -84,56 +70,22 @@ type pullNode struct {
 func (f *Forge) PullRequests(ctx context.Context) ([]changes.PullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var cached pullCache
-	if data, err := os.ReadFile(f.cache); err == nil && json.Unmarshal(data, &cached) == nil && cached.Repo != f.s.o.Repo {
-		cached = pullCache{}
-	}
-	c, err := f.s.authenticate(ctx)
-	if err != nil {
-		return cached.Pulls, err
-	}
-	open, _, err := f.fetch(ctx, c, []string{"OPEN"}, time.Time{})
-	if err != nil {
-		return cached.Pulls, err
-	}
-	updated, cursor, err := f.fetch(ctx, c, nil, cached.Cursor)
-	if err != nil {
-		return cached.Pulls, err
-	}
-	// The later read wins: a pull request merged between the two reads is
-	// merged.
-	seen := map[int]bool{}
-	var merged []changes.PullRequest
-	for _, list := range [][]changes.PullRequest{updated, open, cached.Pulls} {
-		for _, pr := range list {
-			if !seen[pr.Number] {
-				seen[pr.Number] = true
-				merged = append(merged, pr)
-			}
+	return changes.RefreshPulls(f.cache, f.s.o.Repo, f.s.o.Secrets.Redact, func(since time.Time) ([]changes.PullRequest, []changes.PullRequest, time.Time, error) {
+		c, err := f.s.authenticate(ctx)
+		if err != nil {
+			return nil, nil, since, err
 		}
-	}
-	slices.SortStableFunc(merged, func(a, b changes.PullRequest) int { return b.Updated.Compare(a.Updated) })
-	merged = merged[:min(len(merged), maxPulls)]
-	data, err := json.Marshal(pullCache{Repo: f.s.o.Repo, Cursor: cursor, Pulls: merged})
-	if err == nil {
-		// Redact before anything is kept or shown, as provider activity is.
-		data = []byte(f.s.o.Secrets.Redact(string(data)))
-		var redacted pullCache
-		if err = json.Unmarshal(data, &redacted); err == nil {
-			merged = redacted.Pulls
+		open, _, err := f.fetch(ctx, c, []string{"OPEN"}, time.Time{})
+		if err != nil {
+			return nil, nil, since, err
 		}
-	}
-	if err != nil {
-		return nil, source.Refuse("rejected", "invalid pull request data")
-	}
-	if f.cache != "" {
-		cache.WriteFile(f.cache, data)
-	}
-	return merged, nil
+		updated, cursor, err := f.fetch(ctx, c, nil, since)
+		return open, updated, cursor, err
+	})
 }
 
 // fetch pages newest updated first, in states or all, until it reaches since
-// or maxPulls. The cursor is the newest update time read.
+// or changes.MaxPulls. The cursor is the newest update time read.
 func (f *Forge) fetch(ctx context.Context, c remote.Credential, states []string, since time.Time) ([]changes.PullRequest, time.Time, error) {
 	vars := f.s.variables()
 	vars["states"] = states
@@ -172,7 +124,7 @@ func (f *Forge) fetch(ctx context.Context, c remote.Credential, states []string,
 			}
 			out = append(out, n.pull(f.s.o.Repo))
 		}
-		if !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == "" || len(out) >= maxPulls {
+		if !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == "" || len(out) >= changes.MaxPulls {
 			return out, cursor, nil
 		}
 		vars["after"] = page.PageInfo.EndCursor

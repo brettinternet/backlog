@@ -214,7 +214,9 @@ func retryDeadline(header http.Header, now time.Time) time.Time {
 		if header.Get(prefix+"Remaining") == "0" {
 			if reset, err := strconv.ParseInt(header.Get(prefix+"Reset"), 10, 64); err == nil {
 				deadline := time.Unix(reset, 0)
-				if prefix == "RateLimit-" {
+				// RateLimit-Reset is seconds, except GitLab's, a Unix time: no
+				// real window lasts decades.
+				if prefix == "RateLimit-" && reset < now.Unix()/2 {
 					deadline = now.Add(time.Duration(reset) * time.Second)
 				}
 				if deadline.After(until) {

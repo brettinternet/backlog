@@ -41,6 +41,8 @@ type Options struct {
 // error.
 type Forge interface {
 	Name() string
+	// Web is the URL its pull request, commit, and tree pages hang off:
+	// the repository's, or with /- appended for GitLab.
 	Web() string
 	PullRequests(ctx context.Context) ([]PullRequest, error)
 	// Pull reads one pull request's files and commits.
@@ -79,7 +81,7 @@ func LoadLocal(ctx context.Context, o Options, previous Data) Data {
 	host, repo := project.Origin(o.Discovery)
 	d := Data{Directory: o.Discovery.CheckoutRoot, Repo: repo}
 	for _, f := range o.Forges {
-		if repo != "" && strings.EqualFold(f.Web(), "https://"+host+"/"+repo) {
+		if repo != "" && strings.EqualFold(strings.TrimSuffix(f.Web(), "/-"), "https://"+host+"/"+repo) {
 			d.Web = f.Web()
 		}
 	}

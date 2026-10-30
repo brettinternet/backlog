@@ -5,36 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/brettinternet/backlog/internal/cache"
 	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
-
-const (
-	// reviewAge is how long a review read for one head is reused, as often
-	// as the pull request list refreshes.
-	reviewAge = time.Minute
-	// maxReviews bounds the reviews the cache keeps, the newest read.
-	maxReviews = 200
-)
-
-// reviewEntry is a review read for the head its caller named.
-type reviewEntry struct {
-	Head    string
-	Fetched time.Time
-	Review  changes.Review
-}
-
-type reviewCache struct {
-	Repo    string
-	Reviews map[int]reviewEntry
-}
 
 const reviewQuery = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){body headRefOid
 reviewRequests(first:50){nodes{requestedReviewer{__typename ... on User{login} ... on Bot{login} ... on Mannequin{login} ... on Team{slug}}}}
@@ -205,42 +182,7 @@ func reviewError(kind string, path []any) bool {
 // kept or shown. A read for the same head in the last minute is reused unless
 // fresh; a failed read returns the last one kept with the error.
 func (f *Forge) Review(ctx context.Context, number int, head string, fresh bool) (changes.Review, bool, error) {
-	f.reviewMu.Lock()
-	defer f.reviewMu.Unlock()
-	if f.reviews == nil {
-		var kept reviewCache
-		if data, err := os.ReadFile(f.reviewPath()); err == nil && json.Unmarshal(data, &kept) == nil && kept.Repo == f.s.o.Repo {
-			f.reviews = kept.Reviews
-		}
-		if f.reviews == nil {
-			f.reviews = map[int]reviewEntry{}
-		}
-	}
-	kept, ok := f.reviews[number]
-	if ok && !fresh && kept.Head == head && time.Since(kept.Fetched) < reviewAge {
-		return kept.Review, true, nil
-	}
-	r, err := f.readReview(ctx, number)
-	if err != nil {
-		return kept.Review, ok, err
-	}
-	f.reviews[number] = reviewEntry{Head: head, Fetched: time.Now(), Review: r}
-	if len(f.reviews) > maxReviews {
-		numbers := make([]int, 0, len(f.reviews))
-		for n := range f.reviews {
-			numbers = append(numbers, n)
-		}
-		slices.SortFunc(numbers, func(a, b int) int { return f.reviews[b].Fetched.Compare(f.reviews[a].Fetched) })
-		for _, n := range numbers[maxReviews:] {
-			delete(f.reviews, n)
-		}
-	}
-	if path := f.reviewPath(); path != "" {
-		if data, err := json.Marshal(reviewCache{Repo: f.s.o.Repo, Reviews: f.reviews}); err == nil {
-			cache.WriteFile(path, data)
-		}
-	}
-	return r, true, nil
+	return f.reviews.Get(number, head, fresh, func() (changes.Review, error) { return f.readReview(ctx, number) })
 }
 
 func (f *Forge) readReview(ctx context.Context, number int) (changes.Review, error) {
@@ -273,12 +215,4 @@ func (f *Forge) readReview(ctx context.Context, number int) (changes.Review, err
 		return changes.Review{}, source.Refuse("rejected", "invalid pull request data")
 	}
 	return r, nil
-}
-
-// reviewCache is where reviews are kept, beside the pull request list.
-func (f *Forge) reviewPath() string {
-	if f.cache == "" {
-		return ""
-	}
-	return strings.TrimSuffix(f.cache, ".pulls.json") + ".reviews.json"
 }

@@ -922,7 +922,7 @@ func TestActivityTimeline(t *testing.T) {
 func TestForgePullRequests(t *testing.T) {
 	s, f := newFixture(t)
 	cache := filepath.Join(t.TempDir(), "forge.pulls.json")
-	forge := &Forge{s: s, cache: cache}
+	forge := &Forge{s: s, cache: cache, reviews: changes.NewReviews(cache, s.o.Repo)}
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	rollup := func(state string) map[string]any {
 		return map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"state": state}}}}}
@@ -1019,7 +1019,7 @@ func TestForgePullRequests(t *testing.T) {
 	if entries := r.Conversation(); entries[0].Thread == nil || entries[0].Thread.Path != "b.go" || entries[len(entries)-1].Thread == nil || !entries[len(entries)-1].Thread.Resolved {
 		t.Fatalf("conversation order: %+v", entries)
 	}
-	if data, err := os.ReadFile(forge.reviewPath()); err != nil || strings.Contains(string(data), "fake-secret") {
+	if data, err := os.ReadFile(forge.reviews.Path()); err != nil || strings.Contains(string(data), "fake-secret") {
 		t.Fatalf("review cache: %v %s", err, data)
 	}
 	// The same head reuses the read; a new head reads again, and a failed
