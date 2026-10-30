@@ -341,6 +341,23 @@ func ItemFile(ctx context.Context, cfg project.Config, ref model.Ref) (path stri
 	return "", false, source.Refuse("not-found", "unknown source "+ref.Source)
 }
 
+// ActivityReader is the provider activity reader for ref's source. ok is
+// false for a source without the read-activity capability.
+func ActivityReader(cfg project.Config, ref model.Ref) (reader source.ActivityReader, kind string, ok bool, err error) {
+	for _, c := range cfg.Sources {
+		if c.ID != ref.Source {
+			continue
+		}
+		backend, err := rawSource(cfg, c)
+		if err != nil {
+			return nil, c.Type, false, err
+		}
+		reader, ok = backend.(source.ActivityReader)
+		return reader, c.Type, ok && backend.Info().Capabilities.Allows(model.ReadActivity), nil
+	}
+	return nil, "", false, source.Refuse("not-found", "unknown source "+ref.Source)
+}
+
 // ReadDetail resolves shorthand without parsing or ranking the entire backlog.
 // It returns every match instead of guessing and includes explicitly named archives.
 func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.Item, error) {

@@ -431,6 +431,21 @@ failure after the issue exists also names the issue. A project-only source has n
 draft converted on GitHub disappears from `bl` and its issue appears when the
 next refresh sees it.
 
+## Activity
+
+History (`bl history`, the TUI History tab) adds the issue timeline from the
+issue's own repository: labels, assignees, close and reopen (with the state
+reason), renames, cross-references, linked pull requests, and referencing
+commits. A source bound to a project also reads Projects v2 status changes.
+Comments come from the item and drafts have no timeline. Requests go through
+the account queue only when History opens, newest pages first, keeping the
+newest 1,000 entries, and are cached by item version. The `repo` scope (or
+`public_repo`) and the `bl-cli-read` app's Issues read permission suffice;
+project status changes use the `read:project` or `project` scope a project
+source already needs. Classic scopes were verified live
+([BL-140](github-verification.md#bl-140-live-verification)); the app relies on
+its documented Issues read permission.
+
 ## This repository
 
 The `issues` source uses Projects v2 board
@@ -490,6 +505,14 @@ gh project delete NUMBER --owner OWNER
 
 The label must already exist. Logs include artifact IDs, never credentials. See
 the [recorded run](github-verification.md).
+
+`TestLiveActivity` is read-only: it reads an existing issue's timeline.
+
+```sh
+BL_PROVIDER_TESTS=1 BL_GITHUB_TEST_REPO=OWNER/REPO BL_GITHUB_TEST_USER=OWNER \
+BL_GITHUB_TEST_ISSUE=NUMBER \
+task cli:test PKG=./internal/source/github -- -run TestLiveActivity -count=1 -v
+```
 
 `TestLiveLabelStatus` needs only the repository and user. It creates three
 uniquely named `bl-test-*` labels and one issue, moves the issue through label

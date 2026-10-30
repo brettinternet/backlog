@@ -2,8 +2,12 @@ package remote
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -156,6 +160,70 @@ func (s *Source) StatusChoices(ctx context.Context, item model.Item) ([]model.St
 	choices, ok, err := chooser.StatusChoices(ctx, item)
 	return choices, ok, s.safeError(err)
 }
+
+type activityCache struct {
+	Version   string
+	Truncated bool
+	Activity  []model.Activity
+}
+
+// Activity reads item's provider activity through the backend, whose requests
+// share the account's serialized queue. The redacted result is cached beside
+// the source's rows, under the same principal, once per item version.
+func (s *Source) Activity(ctx context.Context, item model.Item) ([]model.Activity, bool, error) {
+	reader, ok := s.backend.(source.ActivityReader)
+	if !ok || !s.backend.Info().Capabilities.Allows(model.ReadActivity) {
+		return nil, false, source.Refuse("unavailable", "source has no provider activity")
+	}
+	path := ""
+	if s.cache.Path != "" && item.Version != "" {
+		sum := sha256.Sum256([]byte(item.Ref.ID))
+		path = filepath.Join(strings.TrimSuffix(s.cache.Path, ".sqlite")+".activity", hex.EncodeToString(sum[:16])+".json")
+		var cached activityCache
+		if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &cached) == nil && cached.Version == item.Version {
+			return cached.Activity, cached.Truncated, nil
+		}
+	}
+	activity, truncated, err := reader.Activity(ctx, item)
+	if err != nil {
+		return nil, false, s.safeError(err)
+	}
+	data, err := json.Marshal(activity)
+	if err == nil {
+		err = json.Unmarshal([]byte(s.secrets.Redact(string(data))), &activity)
+	}
+	if err != nil {
+		return nil, false, source.Refuse("rejected", "invalid provider activity")
+	}
+	if path != "" {
+		if data, err := json.Marshal(activityCache{item.Version, truncated, activity}); err == nil {
+			writeFile(path, data)
+		}
+	}
+	return activity, truncated, nil
+}
+
+// writeFile replaces path atomically, best effort: the cache is disposable.
+func writeFile(path string, data []byte) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".activity-*")
+	if err != nil {
+		return
+	}
+	_, err = f.Write(data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+}
+
 func (s *Source) Watch(ctx context.Context, notify func()) error {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()

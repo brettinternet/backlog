@@ -72,7 +72,7 @@ func uuid(s string) bool {
 }
 func (s *Source) Info() source.Info {
 	writes := s.o.AllowWrites && (!s.o.Account.OAuth || s.writeScope.Load())
-	return source.Info{ID: s.o.ID, Kind: "linear", Display: s.o.Team, Capabilities: model.Capabilities{model.Create: writes, model.Set: writes, model.AppendComment: writes, model.Archive: writes, model.Unarchive: writes}}
+	return source.Info{ID: s.o.ID, Kind: "linear", Display: s.o.Team, Capabilities: model.Capabilities{model.Create: writes, model.Set: writes, model.AppendComment: writes, model.Archive: writes, model.Unarchive: writes, model.ReadActivity: true}}
 }
 func (s *Source) query(ctx context.Context, c remote.Credential, q string, v any, out any) error {
 	raw, err := json.Marshal(map[string]any{"query": q, "variables": v})

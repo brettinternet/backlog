@@ -35,15 +35,19 @@ type fixture struct {
 	tokens                                                []string
 	denied, empty, limited, badToken, required, failWrite bool
 	limitWrite                                            bool
-	cloudID                                               string
-	wrongSite                                             bool
-	writes, searches                                      int
-	lastPath                                              string
-	now                                                   time.Time
-	last                                                  map[string]any
-	sprints, boardSprints                                 []any
-	agileDown                                             bool
-	fieldCalls, boardCalls                                int
+	// changelog is the issue's changelog length; changelogStarts records
+	// each page's startAt.
+	changelog              int
+	changelogStarts        []int
+	cloudID                string
+	wrongSite              bool
+	writes, searches       int
+	lastPath               string
+	now                    time.Time
+	last                   map[string]any
+	sprints, boardSprints  []any
+	agileDown              bool
+	fieldCalls, boardCalls int
 }
 
 func doc(text string) map[string]any {
@@ -144,6 +148,14 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"id": "customfield_10001", "name": "Sprint", "schema": map[string]string{"custom": "com.example:sprint-lookalike"}},
 			map[string]any{"id": "customfield_10020", "name": "Iteration", "schema": map[string]string{"custom": "com.pyxis.greenhopper.jira:gh-sprint"}},
 		}
+	case strings.HasSuffix(path, "/changelog"):
+		start, _ := strconv.Atoi(r.URL.Query().Get("startAt"))
+		f.changelogStarts = append(f.changelogStarts, start)
+		values := []any{}
+		for n := start; n < min(start+100, f.changelog); n++ {
+			values = append(values, map[string]any{"id": strconv.Itoa(n), "author": map[string]string{"displayName": "Ann"}, "created": "2026-01-01T00:00:00.000+0000", "items": []any{map[string]string{"field": "status", "fromString": "To Do", "toString": "In Progress"}, map[string]string{"field": "description", "fromString": "old\ntext", "toString": "new"}}})
+		}
+		result = map[string]any{"startAt": start, "maxResults": 100, "total": f.changelog, "isLast": start+len(values) >= f.changelog, "values": values}
 	case path == "myself":
 		result = map[string]any{"accountId": "user-1", "active": true}
 	case path == "search/jql":
@@ -241,6 +253,23 @@ func reason(err error) string {
 }
 
 // A scoped token gateway must not silently bind the wrong site to claim keys.
+// A changelog past the bound skips ahead so the newest entries are kept, and
+// a multi-line or long value is summarized as changed.
+func TestActivityChangelog(t *testing.T) {
+	s, f, _ := setup(t)
+	f.changelog = source.ActivityLimit + 2
+	activity, truncated, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "jira", ID: "10001"}})
+	if err != nil || !truncated || len(activity) != source.ActivityLimit {
+		t.Fatalf("activity: %d entries truncated=%v: %v", len(activity), truncated, err)
+	}
+	if f.changelogStarts[0] != 0 || f.changelogStarts[1] != 2 || activity[0].ID != "2" {
+		t.Fatalf("starts %v, first %s", f.changelogStarts[:2], activity[0].ID)
+	}
+	if a := activity[0]; a.Actor != "Ann" || a.Summary != "status To Do → In Progress; description changed" || !a.Time.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("entry %+v", a)
+	}
+}
+
 func TestScopedGatewaySiteBinding(t *testing.T) {
 	s, f, _ := setup(t, "cloud-1")
 	item := read(t, s)

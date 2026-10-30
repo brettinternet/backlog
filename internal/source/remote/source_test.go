@@ -247,6 +247,59 @@ func TestCredentialCanaryAcrossSourceSinks(t *testing.T) {
 	}
 }
 
+type activityProvider struct {
+	provider
+	activity []model.Activity
+	calls    int
+}
+
+func (p *activityProvider) Info() source.Info {
+	return source.Info{ID: "remote", Capabilities: model.Capabilities{model.ReadActivity: true}}
+}
+func (p *activityProvider) Activity(context.Context, model.Item) ([]model.Activity, bool, error) {
+	p.calls++
+	return p.activity, false, p.err
+}
+
+// Activity is read once per item version, redacted before it is returned or
+// cached, and a quota refusal keeps its retry time for the status line.
+func TestRemoteActivityCachedByVersion(t *testing.T) {
+	t.Parallel()
+	const canary = "credential-canary-activity"
+	secrets := &Secrets{}
+	secrets.add(canary)
+	p := &activityProvider{activity: []model.Activity{{ID: "1", Summary: "labeled " + canary}}}
+	store := remoteStore(t)
+	s := New(p, store, secrets)
+	item := row("A", "todo")
+	for range 2 {
+		activity, _, err := s.Activity(context.Background(), item)
+		if err != nil || len(activity) != 1 || strings.Contains(activity[0].Summary, canary) {
+			t.Fatalf("activity %+v: %v", activity, err)
+		}
+	}
+	if p.calls != 1 {
+		t.Fatalf("provider read %d times for one version", p.calls)
+	}
+	cached, _ := filepath.Glob(strings.TrimSuffix(store.Path, ".sqlite") + ".activity/*.json")
+	if len(cached) != 1 {
+		t.Fatalf("activity cache files %v", cached)
+	}
+	if data, err := os.ReadFile(cached[0]); err != nil || strings.Contains(string(data), canary) {
+		t.Fatalf("cached activity unsafe: %v", err)
+	}
+	item.Version = "v2"
+	retry := time.Now().Add(time.Minute)
+	p.err = ScheduleDiagnostic{Code: "rate-limited", RetryAt: retry}
+	var limited ScheduleDiagnostic
+	if _, _, err := s.Activity(context.Background(), item); !errors.As(err, &limited) || !limited.RetryAt.Equal(retry) || p.calls != 2 {
+		t.Fatalf("new version: %v after %d calls", err, p.calls)
+	}
+	if _, _, err := New(&provider{}, store, secrets).Activity(context.Background(), item); err == nil {
+		t.Fatal("source without read-activity returned activity")
+	}
+}
+
 // Comments must prepare for TUI edits and before hooks without fabricating an
 // inverse that could replay an append. Preserve author/time and Text fallback.
 func TestRemoteCommentPreparationAndApply(t *testing.T) {

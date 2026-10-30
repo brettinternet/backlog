@@ -492,3 +492,30 @@ func TestLiveProjectOnly(t *testing.T) {
 	}
 	await(func(i model.Item) bool { return i.Category == model.Active })
 }
+
+// Opt-in and read-only: reads one existing issue's timeline with the helper
+// token's existing scopes, without a project binding.
+func TestLiveActivity(t *testing.T) {
+	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
+		t.Skip("set BL_PROVIDER_TESTS=1 and explicit GitHub test inputs")
+	}
+	repo, user, issue := liveRequired(t, "BL_GITHUB_TEST_REPO"), liveRequired(t, "BL_GITHUB_TEST_USER"), liveRequired(t, "BL_GITHUB_TEST_ISSUE")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	secrets := &remote.Secrets{}
+	s, err := New(Options{ID: "gh", Repo: repo, Account: project.AccountConfig{Host: "github.com", User: user, Credential: []string{"gh", "auth", "token", "--hostname", "github.com", "--user", user}}, Secrets: secrets, Credentials: &remote.Credentials{Secrets: secrets}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity, truncated, err := s.Activity(ctx, model.Item{Ref: model.Ref{Source: "gh", ID: issue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activity) == 0 {
+		t.Fatal("no timeline activity; pick an issue with labels, assignees, or a close")
+	}
+	for _, a := range activity {
+		t.Logf("%s %s %s", a.Time.Format(time.RFC3339), a.Actor, a.Summary)
+	}
+	t.Logf("%d entries, truncated=%v", len(activity), truncated)
+}

@@ -109,6 +109,17 @@ type ItemFiler interface {
 	ItemFile(context.Context, string) (string, error)
 }
 
+// ActivityReader is a source that reads an item's provider-recorded activity,
+// oldest first (design.md D40). It is read-only and runs only on demand, never
+// during sync. truncated reports activity beyond the adapter's bound.
+type ActivityReader interface {
+	Activity(context.Context, model.Item) (activity []model.Activity, truncated bool, err error)
+}
+
+// ActivityLimit bounds one item's provider activity. Adapters keep the newest
+// where the provider can page from the end.
+const ActivityLimit = 1000
+
 // Error carries a stable machine-readable refusal reason. Created names the
 // item a create left behind when a later step failed: callers must report it
 // and never repeat the create.

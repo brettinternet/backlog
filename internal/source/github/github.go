@@ -161,7 +161,7 @@ func (s *Source) Info() source.Info {
 	if s.projectOnly() {
 		creatable, deletable = s.o.Project.AllowWrites, s.o.Project.AllowWrites
 	}
-	return source.Info{ID: s.o.ID, Kind: "github", Display: display, Capabilities: model.Capabilities{model.Create: creatable, model.Delete: deletable, model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true}}
+	return source.Info{ID: s.o.ID, Kind: "github", Display: display, Capabilities: model.Capabilities{model.Create: creatable, model.Delete: deletable, model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true, model.ReadActivity: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
 	var body *bytes.Reader

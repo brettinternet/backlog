@@ -65,6 +65,14 @@ deleted explicitly, comments removed with their issues):
 No existing issues, labels, states, or team settings changed, and no cleanup is
 outstanding. Linear may keep deleted issues in its trash under normal retention.
 
+## BL-140 history read: PASS
+
+`TestLiveActivity` passed in 242 s against the Test team with the Keychain
+key: it created TEST-58, moved it to In Progress after the wait, read
+`state Backlog → In Progress`, and deleted it. Reading history right after
+quick edits returned only the creation record with no changes, which is why the
+test waits.
+
 ## Scope
 
 The adapter and its tests live in `internal/source/linear`. Supporting changes:

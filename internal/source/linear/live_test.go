@@ -20,9 +20,10 @@ import (
 	"github.com/brettinternet/backlog/internal/source/remote"
 )
 
-// Only the explicitly authorized Test team is accepted. The test creates and
-// deletes its own synthetic issues, relation and comment, never existing data.
-func TestLiveRoundTrip(t *testing.T) {
+// liveSource gates on explicit Test team authorization and returns a source
+// for it, with the viewer and organization it discovered.
+func liveSource(ctx context.Context, t *testing.T, allowWrites bool) (s *Source, team, viewer, org string) {
+	t.Helper()
 	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
 		t.Skip("set BL_PROVIDER_TESTS=1 and BL_LINEAR_TEST_TEAM=Test")
 	}
@@ -35,8 +36,6 @@ func TestLiveRoundTrip(t *testing.T) {
 			t.Fatal("invalid helper argv JSON")
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-	defer cancel()
 	// Bootstrap discovers non-secret immutable identity. The credential never
 	// leaves memory or enters diagnostics. All adapter operations use Credentials.
 	token, err := exec.CommandContext(ctx, helper[0], helper[1:]...).Output()
@@ -72,7 +71,6 @@ func TestLiveRoundTrip(t *testing.T) {
 		Teams connection[struct{ ID, Name string }]
 	}
 	bootstrap(`query{viewer{id organization{id}} teams(first:250){nodes{id name} pageInfo{hasNextPage endCursor}}}`, &identity)
-	team := ""
 	for _, candidate := range identity.Teams.Nodes {
 		if candidate.Name == "Test" {
 			if team != "" {
@@ -86,10 +84,19 @@ func TestLiveRoundTrip(t *testing.T) {
 	}
 	clear(token)
 	secrets := &remote.Secrets{}
-	s, err := New(Options{ID: "linear-test", Organization: identity.Viewer.Organization.ID, Team: team, Account: project.AccountConfig{User: identity.Viewer.ID, Credential: helper}, AllowWrites: true, Secrets: secrets, Credentials: &remote.Credentials{Secrets: secrets}})
+	s, err = New(Options{ID: "linear-test", Organization: identity.Viewer.Organization.ID, Team: team, Account: project.AccountConfig{User: identity.Viewer.ID, Credential: helper}, AllowWrites: allowWrites, Secrets: secrets, Credentials: &remote.Credentials{Secrets: secrets}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	return s, team, identity.Viewer.ID, identity.Viewer.Organization.ID
+}
+
+// Only the explicitly authorized Test team is accepted. The test creates and
+// deletes its own synthetic issues, relation and comment, never existing data.
+func TestLiveRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	s, team, viewer, org := liveSource(ctx, t, true)
 	c, err := s.authenticate(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +187,7 @@ func TestLiveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := model.Item{Title: "bl-provider-test BL-39 roundtrip", Description: "bl-provider-test body", Status: todo, Assignees: []string{identity.Viewer.ID}, Priority: model.Medium, Labels: []string{label}}
+	template := model.Item{Title: "bl-provider-test BL-39 roundtrip", Description: "bl-provider-test body", Status: todo, Assignees: []string{viewer}, Priority: model.Medium, Labels: []string{label}}
 	for _, sprint := range catalog.Sprints {
 		if sprint.State != model.SprintClosed {
 			template.Sprint = sprint.Key
@@ -193,7 +200,7 @@ func TestLiveRoundTrip(t *testing.T) {
 	first := struct{ ID, Identifier string }{fmt.Sprint(item.Fields["uuid"]), item.Ref.ID}
 	deleteAfter(first)
 	t.Logf("created issue %s uuid=%s through the source (cycle %q)", first.Identifier, first.ID, template.Sprint)
-	if item.Title != template.Title || item.Description != template.Description || item.Status != todo || len(item.Assignees) != 1 || item.Assignees[0] != identity.Viewer.ID || item.Priority != model.Medium || len(item.Labels) != 1 || item.Labels[0] != label || item.Sprint != template.Sprint {
+	if item.Title != template.Title || item.Description != template.Description || item.Status != todo || len(item.Assignees) != 1 || item.Assignees[0] != viewer || item.Priority != model.Medium || len(item.Labels) != 1 || item.Labels[0] != label || item.Sprint != template.Sprint {
 		t.Fatalf("create roundtrip failed: %+v", item)
 	}
 	blocker := create("bl-provider-test BL-39 blocker")
@@ -208,8 +215,8 @@ func TestLiveRoundTrip(t *testing.T) {
 	if item.Category != model.Active {
 		t.Fatal("state roundtrip failed")
 	}
-	apply("assignees", []string{identity.Viewer.ID})
-	if len(item.Assignees) != 1 || item.Assignees[0] != identity.Viewer.ID {
+	apply("assignees", []string{viewer})
+	if len(item.Assignees) != 1 || item.Assignees[0] != viewer {
 		t.Fatal("assignee roundtrip failed")
 	}
 	apply("priority", "high")
@@ -332,5 +339,67 @@ func TestLiveRoundTrip(t *testing.T) {
 	if child.Parent == nil || child.Parent.ID != first.Identifier || len(child.BlockedBy) != 1 || child.BlockedBy[0].ID != blocker.Identifier {
 		t.Fatalf("linked create roundtrip failed: parent=%v blockedBy=%v", child.Parent, child.BlockedBy)
 	}
-	t.Logf("roundtrip passed in Test team=%s org=%s; relation fingerprint conflict rejected; archive and unarchive round-tripped", team, identity.Viewer.Organization.ID)
+	t.Logf("roundtrip passed in Test team=%s org=%s; relation fingerprint conflict rejected; archive and unarchive round-tripped", team, org)
+}
+
+// Linear folds an actor's quick edits into one history record, even the
+// creation, so this waits before the edit it reads back. It creates and
+// deletes one synthetic Test team issue.
+func TestLiveActivity(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	s, team, _, _ := liveSource(ctx, t, true)
+	c, err := s.authenticate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var states struct {
+		Team struct {
+			States connection[struct{ ID, Type string }]
+		}
+	}
+	if err := s.query(ctx, c, statesQuery, map[string]any{"team": team, "count": 250}, &states); err != nil {
+		t.Fatal(err)
+	}
+	active := ""
+	for _, state := range states.Team.States.Nodes {
+		if state.Type == "started" {
+			active = state.ID
+		}
+	}
+	item, err := s.Apply(ctx, model.Mutation{Ref: model.Ref{Source: s.o.ID}, Op: model.Create, Item: &model.Item{Title: "bl-provider-test BL-140 activity"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uuid := fmt.Sprint(item.Fields["uuid"])
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		var out struct{ IssueDelete struct{ Success bool } }
+		if err := s.query(cleanupCtx, c, `mutation($id:String!){issueDelete(id:$id){success}}`, map[string]any{"id": uuid}, &out); err != nil || !out.IssueDelete.Success {
+			t.Errorf("cleanup failed for %s", item.Ref.ID)
+		} else {
+			t.Logf("deleted issue %s", item.Ref.ID)
+		}
+	})
+	t.Logf("created issue %s", item.Ref.ID)
+	time.Sleep(4 * time.Minute)
+	if item, err = s.Apply(ctx, model.Mutation{Ref: item.Ref, ExpectedVersion: item.Version, Op: model.Set, Field: "status", Value: active}); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(time.Minute); ; time.Sleep(5 * time.Second) {
+		activity, truncated, err := s.Activity(ctx, item)
+		if err != nil || truncated {
+			t.Fatalf("activity read failed: truncated=%v err=%v", truncated, err)
+		}
+		for _, a := range activity {
+			if strings.HasPrefix(a.Summary, "state ") {
+				t.Logf("%d entries; %q", len(activity), a.Summary)
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no state change in %d entries", len(activity))
+		}
+	}
 }

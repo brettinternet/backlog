@@ -211,7 +211,7 @@ new version) keeps its body and shows loading on the header row.
 | Notes | Plan, notes, summary |
 | Comments | Comments |
 | Relations | Blockers → item → what it blocks, then parent, children with progress, duplicate of, related, each with live status. Blocking, children, and related include inbound links; related omits items linked by blocks. |
-| History | Events, claims, sessions, comments, and commits to the item file, oldest first (design.md D40) |
+| History | Events, claims, sessions, comments, commits to the item file, and provider activity (`github:`, `linear:`, `jira:`), oldest first (design.md D40) |
 
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and
@@ -229,7 +229,7 @@ and `Fork` for that session, each disabled with its reason when refused. A provi
 dim line at the top, such as `claims: unavailable (coordination not
 configured)`. History shows the newest 200 entries; `m` raises it to 2,000.
 It loads on a worker when the tab opens and is cached by item version and
-event-log position.
+event-log position. Provider activity is fetched only then, never during sync.
 
 Bodies render up to 32 KiB; `m` raises the limit to 128 KiB. An indicator shows
 when content is still cut off.

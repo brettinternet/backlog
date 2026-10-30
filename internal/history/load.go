@@ -14,6 +14,7 @@ import (
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -30,7 +31,7 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 	var events []hooks.Event
 	var claims []model.ClaimEpoch
 	eventsDone, claimsDone := make(chan struct{}), make(chan struct{})
-	return Compose(ctx,
+	providers := []Provider{
 		Provider{Name: "events", Load: func(ctx context.Context) ([]Entry, error) {
 			defer close(eventsDone)
 			if cfg.Paths.StateDir == "" {
@@ -70,7 +71,38 @@ func Load(ctx context.Context, cfg project.Config, coordinator model.Coordinator
 			}
 			return gitHistory(ctx, cfg.Paths.CacheDir, item.Version, path)
 		}},
-	)
+	}
+	if p, ok := activityProvider(cfg, item); ok {
+		providers = append(providers, p)
+	}
+	return Compose(ctx, providers...)
+}
+
+// activityProvider reads the activity a remote provider recorded, when item's
+// source has the read-activity capability. Its entries are labelled with the
+// provider, beside local events for the same change.
+func activityProvider(cfg project.Config, item model.Item) (Provider, bool) {
+	reader, kind, ok, err := engine.ActivityReader(cfg, item.Ref)
+	if err != nil {
+		return Provider{Name: cmp.Or(kind, "activity"), Load: func(context.Context) ([]Entry, error) { return nil, err }}, true
+	}
+	if !ok {
+		return Provider{}, false
+	}
+	return Provider{Name: kind, Load: func(ctx context.Context) ([]Entry, error) {
+		activity, truncated, err := reader.Activity(ctx, item)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]Entry, 0, len(activity))
+		for _, a := range activity {
+			entries = append(entries, Entry{ID: kind + ":" + a.ID, Time: a.Time, Kind: "activity", Actor: textutil.Line(a.Actor), Summary: kind + ": " + textutil.Line(a.Summary), Detail: textutil.Sanitize(a.Detail)})
+		}
+		if truncated {
+			return entries, PartialError(fmt.Errorf("showing %d entries", source.ActivityLimit))
+		}
+		return entries, nil
+	}}, true
 }
 
 func eventEntries(events []hooks.Event) []Entry {

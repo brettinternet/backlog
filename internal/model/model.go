@@ -56,6 +56,14 @@ type Comment struct {
 	Time         time.Time
 	Author, Body string
 }
+
+// Activity is one change a provider recorded on an item, by anyone: a label,
+// assignee, or status change, or a cross-reference. ID is the provider's own,
+// stable across reads.
+type Activity struct {
+	ID, Actor, Summary, Detail string
+	Time                       time.Time
+}
 type Item struct {
 	Project                              string // Present in composed workspace views, never written to providers.
 	Ref                                  Ref
@@ -133,6 +141,8 @@ const (
 	// sends it. Apply returns an item without a version when it deleted the
 	// item, or the item it kept instead.
 	Delete Operation = "delete"
+	// ReadActivity is read-only: the source implements source.ActivityReader.
+	ReadActivity Operation = "read-activity"
 )
 
 // Mutation targets a field or section. Index is one-based. Apply binds an

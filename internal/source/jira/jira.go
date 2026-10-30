@@ -75,7 +75,7 @@ func New(o Options) (*Source, error) {
 	return &Source{o: o, base: base, client: remote.Client{Host: u.Host, Account: o.Account.User, BasicUser: o.Account.Email, HTTP: o.HTTP, Scheduler: o.Scheduler, Secrets: o.Secrets}}, nil
 }
 func (s *Source) Info() source.Info {
-	return source.Info{ID: s.o.ID, Kind: "jira", Display: s.o.Site, Capabilities: model.Capabilities{model.Set: s.o.AllowWrites, model.AppendComment: s.o.AllowWrites, model.Batch: s.o.AllowWrites}}
+	return source.Info{ID: s.o.ID, Kind: "jira", Display: s.o.Site, Capabilities: model.Capabilities{model.Set: s.o.AllowWrites, model.AppendComment: s.o.AllowWrites, model.Batch: s.o.AllowWrites, model.ReadActivity: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, path string, body, out any) error {
 	var buf bytes.Buffer

@@ -249,6 +249,17 @@ Claims use Worklease's `linear` key from the organization UUID and issue UUID,
 so they survive renames, team moves, and status changes. Use the `resource` from
 `bl show --json`.
 
+## Activity
+
+History (`bl history`, the TUI History tab) adds the issue's history: state,
+assignee, label, priority, cycle, and parent changes. Other changes, such as
+description edits, are skipped. Linear folds one actor's edits made close
+together into one record, even into the creation. Requests go through the
+account queue only when History opens, keeping the first 1,000 records Linear
+returns, and are
+cached by item version. A key or login with `read` suffices, verified live
+([BL-140](linear-verification.md#bl-140-history-read-pass)).
+
 ## Tests
 
 ```sh
@@ -270,6 +281,15 @@ least one label, and changes no team settings or existing data:
 ```sh
 BL_PROVIDER_TESTS=1 BL_LINEAR_TEST_TEAM=Test \
   task cli:test PKG=./internal/source/linear -- -run '^TestLiveRoundTrip$' -count=1 -v
+```
+
+`TestLiveActivity` creates one issue in the Test team, waits four minutes so
+the edit isn't folded into the creation, moves it to an active state, reads its
+history, and deletes it:
+
+```sh
+BL_PROVIDER_TESTS=1 BL_LINEAR_TEST_TEAM=Test \
+  task cli:test PKG=./internal/source/linear -- -run '^TestLiveActivity$' -count=1 -v
 ```
 
 It uses the Keychain helper above; `BL_LINEAR_TEST_HELPER` may hold another JSON

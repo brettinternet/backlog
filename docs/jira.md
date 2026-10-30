@@ -117,6 +117,23 @@ sprint starting is seen without an issue update. If the Agile API fails, the
 `jira-agile-unavailable` warning is reported and sprint states come from issues.
 Sprint keys are `SITE/sprint/ID`.
 
+## Activity
+
+History (`bl history`, the TUI History tab) adds the issue changelog,
+`GET /rest/api/3/issue/{id}/changelog`, one entry per change set, such as
+`status To Do → Done`. A long or multi-line value shows as `FIELD changed`.
+Requests go through the account queue only when History opens, keeping the
+newest 1,000 change sets, and are cached by item version. `read:jira-work`
+covers it; an unscoped API token read it live (BL-140: `TestLiveActivity`
+created a synthetic issue, transitioned it, read
+`resolution ∅ → Done; status To Do → Done`, and deleted it, 404 verified).
+
+```sh
+BL_PROVIDER_TESTS=1 BL_JIRA_TEST_SITE=https://SITE.atlassian.net \
+BL_JIRA_TEST_EMAIL=EMAIL BL_JIRA_TEST_PROJECT=KEY \
+task cli:test PKG=./internal/source/jira -- -run '^TestLiveActivity$' -count=1 -v
+```
+
 ## Writes
 
 Enable `allowWrites: true` deliberately. Supported operations are one status

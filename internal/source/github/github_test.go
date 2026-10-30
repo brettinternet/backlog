@@ -66,6 +66,8 @@ type fixture struct {
 	draftTitle, draftBody string
 	draftAssignees        []string
 	converted             int
+	// timelineTypes records the item types the last timeline query asked for.
+	timelineTypes string
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -292,6 +294,25 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		return input
 	}
 	switch {
+	case strings.Contains(q, "timelineItems("):
+		// Two pages read newest first: before names the older page.
+		types, _ := v["types"].([]any)
+		f.timelineTypes = fmt.Sprint(types)
+		actor := map[string]string{"login": "bob"}
+		at := func(day int) string { return time.Date(2026, 1, day, 0, 0, 0, 0, time.UTC).Format(time.RFC3339) }
+		nodes := []any{
+			map[string]any{"__typename": "LabeledEvent", "id": "LE_1", "createdAt": at(1), "actor": actor, "label": map[string]string{"name": "bug"}},
+			map[string]any{"__typename": "CrossReferencedEvent", "id": "CR_1", "createdAt": at(2), "actor": actor, "source": map[string]any{"number": 7, "title": "Fix it", "repository": map[string]string{"nameWithOwner": "other/lib"}}},
+		}
+		info := map[string]any{"hasPreviousPage": false, "startCursor": "c1"}
+		if v["before"] == nil {
+			nodes = []any{
+				map[string]any{"__typename": "ProjectV2ItemStatusChangedEvent", "id": "PS_1", "createdAt": at(3), "actor": actor, "previousStatus": "Todo", "status": "In Progress", "project": map[string]string{"title": "Board"}},
+				map[string]any{"__typename": "ClosedEvent", "id": "CE_1", "createdAt": at(4), "actor": actor, "stateReason": "NOT_PLANNED"},
+			}
+			info = map[string]any{"hasPreviousPage": true, "startCursor": "c2"}
+		}
+		emit(map[string]any{"repository": map[string]any{"issue": map[string]any{"timelineItems": map[string]any{"pageInfo": info, "nodes": nodes}}}})
 	case strings.Contains(q, "updateProjectV2DraftIssue("):
 		emit(map[string]any{"updateProjectV2DraftIssue": map[string]any{"draftIssue": map[string]any{"id": draftInput()["draftIssueId"]}}})
 	case strings.Contains(q, "addProjectV2DraftIssue("):
@@ -787,6 +808,36 @@ func TestReadAbsentIssue(t *testing.T) {
 	}
 	if _, err := s.Read(ctx, "404"); !reason(err, "not-found") {
 		t.Fatalf("missing issue: %v", err)
+	}
+}
+
+// The timeline pages backward from the newest events, maps each kind to one
+// summary, and asks for Projects v2 status changes only with a project binding.
+func TestActivityTimeline(t *testing.T) {
+	s, f := newFixture(t)
+	activity, truncated, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "gh", ID: "1"}})
+	if err != nil || truncated {
+		t.Fatalf("activity: %v truncated=%v", err, truncated)
+	}
+	var got []string
+	for _, a := range activity {
+		got = append(got, a.ID+" "+a.Actor+" "+a.Summary+" | "+a.Detail)
+	}
+	want := []string{
+		"LE_1 bob labeled bug | ",
+		"CR_1 bob referenced from other/lib#7 | Fix it",
+		"PS_1 bob status Todo → In Progress | project: Board",
+		"CE_1 bob closed as not planned | ",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("activity:\n%s", strings.Join(got, "\n"))
+	}
+	if !strings.Contains(f.timelineTypes, "PROJECT_V2_ITEM_STATUS_CHANGED_EVENT") || strings.Contains(f.timelineTypes, "ISSUE_COMMENT") {
+		t.Fatalf("types %s", f.timelineTypes)
+	}
+	s, f = newFixture(t, func(o *Options) { o.Project = nil })
+	if _, _, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "gh", ID: "1"}}); err != nil || strings.Contains(f.timelineTypes, "PROJECT_V2") {
+		t.Fatalf("repository-only types %s: %v", f.timelineTypes, err)
 	}
 }
 

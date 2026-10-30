@@ -153,6 +153,18 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		f.t.Errorf("page cap not 250: %v", v["count"])
 	}
 	switch q {
+	case historyQuery:
+		at := func(day int) string { return time.Date(2026, 1, day, 0, 0, 0, 0, time.UTC).Format(time.RFC3339) }
+		if v["after"] == nil {
+			emit(map[string]any{"issue": map[string]any{"history": conn([]any{
+				map[string]any{"id": "h3", "createdAt": at(3), "actor": map[string]string{"name": "Bob"}, "fromPriority": 0, "toPriority": 2, "addedLabels": []any{map[string]string{"name": "bug"}}},
+				map[string]any{"id": "h2", "createdAt": at(2), "fromPriority": 2, "toPriority": 2},
+			}, "page-2")}})
+			return
+		}
+		emit(map[string]any{"issue": map[string]any{"history": conn([]any{
+			map[string]any{"id": "h1", "createdAt": at(1), "actor": map[string]string{"name": "Ann"}, "fromState": map[string]string{"name": "Todo"}, "toState": map[string]string{"name": "In Progress"}, "toAssignee": map[string]string{"name": "Ann"}},
+		}, "")}})
 	case identityQuery:
 		org := orgID
 		if f.wrongOrg {
@@ -390,6 +402,24 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 // a team with more issues than one provider page.
 // Prevents quota exhaustion from per-issue reads on every minute, unnoticed
 // relation-only edits, and change windows turning unchanged ready rows stale.
+// History pages forward, sorts oldest first, and skips rows whose changes
+// History doesn't show, such as an unchanged priority.
+func TestActivityHistory(t *testing.T) {
+	s, _ := fixtureSource(t)
+	activity, truncated, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "lin", ID: "TEST-1"}})
+	if err != nil || truncated {
+		t.Fatalf("activity: %v truncated=%v", err, truncated)
+	}
+	var got []string
+	for _, a := range activity {
+		got = append(got, a.ID+" "+a.Actor+" "+a.Summary)
+	}
+	want := []string{"h1 Ann state Todo → In Progress; assignee ∅ → Ann", "h3 Bob labeled bug; priority none → high"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("activity:\n%s", strings.Join(got, "\n"))
+	}
+}
+
 func TestRefreshBudgetAndRetainedRows(t *testing.T) {
 	s, f := fixtureSource(t)
 	f.size = 1000

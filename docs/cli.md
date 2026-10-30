@@ -577,7 +577,9 @@ stderr tail. See [Automation](automation.md#agent-sessions).
 
 Prints the item's history, oldest first: its events, claims (from Worklease,
 including other hosts), sessions folded from both, comments, and the commits
-that touched its file (native and Backlog.md sources, following renames). A
+that touched its file (native and Backlog.md sources, following renames), and
+provider activity (GitHub timeline, Linear history, Jira changelog), each
+summary prefixed with the source type, such as `github:`. A
 session's entries follow it, indented, and its row names live contact
 channels, looked up when read. A provider that can't answer is a dim
 line, never a failure. JSON returns `data.entries`, each with `id`, `time`,

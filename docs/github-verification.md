@@ -148,3 +148,12 @@ item's `updatedAt` (23:05:21 to 23:05:25), so the change window sees draft
 edits. The converted item kept its ID, `PVTI_lAHOAT55tM4BpCfGzhECWqo`, so the
 status follow-up targets the same item. The probe deleted issue #6 and the
 project.
+
+## BL-140 live verification
+
+`TestLiveActivity` read a closed and reopened issue in the owner's repository
+with the classic `gh` token (`repo`, `project`, `read:org`, and unrelated
+scopes) and passed: three entries, oldest first (`closed as completed`,
+`reopened`, `closed as completed`). A direct GraphQL read with the same token
+returned `ProjectV2ItemStatusChangedEvent` entries (`Ready → In progress`)
+for an issue on a project board. Nothing was written.
