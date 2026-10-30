@@ -51,7 +51,7 @@ by the configured source IDs and types for `source:` filters.
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `history` | `id`, `limit` (0 or omitted: all), `cursor` | `bl history` |
 | `changes` | `id` | `bl changes` |
-| `tour` | `id`, and `file` to store | `bl tour` |
+| `tour` | `id`, and `file` to store, or `remove` and optional `change` | `bl tour`, `bl tour --remove` |
 | `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
@@ -107,7 +107,9 @@ forge itself.
 `tour` stores a tour file for the item's linked change whose head is its `ref`
 and returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;
 `bl instructions tours` describes the format. Without `file` it returns
-`tours`, like `bl tour ID --json`.
+`tours`, like `bl tour ID --json`. With `remove`, it deletes the tour stored
+for `change`, or for the only linked change with one, and returns `item`,
+`change`, and `removed`, like `bl tour ID --remove --json`.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
 coordination, `resource`, `claims`, and `claimsError`, plus `sessions` with

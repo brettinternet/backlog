@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -192,6 +193,57 @@ func ReadTours(ctx context.Context, cfg project.Config, id string) (ToursResult,
 		}
 	}
 	return result, nil
+}
+
+// RemoveTourResult is the change whose tour RemoveTour deleted, if any.
+type RemoveTourResult struct {
+	Item    string `json:"item"`
+	Change  string `json:"change,omitempty"`
+	Removed bool   `json:"removed"`
+}
+
+// RemoveTour deletes the tour kept for item id's linked change, or without
+// change for the one linked change that has a tour, refusing when several do.
+// Removing a tour that isn't stored succeeds with Removed false.
+func RemoveTour(ctx context.Context, cfg project.Config, id, change string) (RemoveTourResult, error) {
+	item, err := tourItem(ctx, cfg, id)
+	if err != nil {
+		return RemoveTourResult{}, err
+	}
+	result := RemoveTourResult{Item: item.Ref.Source + ":" + item.Ref.ID, Change: change}
+	linked, err := ItemChanges(ctx, cfg, item.Ref)
+	if err != nil {
+		return result, err
+	}
+	var ids, stored []string
+	for _, c := range linked.Changes {
+		ids = append(ids, c.ID)
+		// A tour that no longer loads is still one to remove.
+		if _, ok, err := LoadTour(cfg, item.Ref, c.ID); ok || err != nil {
+			stored = append(stored, c.ID)
+		}
+	}
+	switch {
+	case change != "" && !slices.Contains(ids, change):
+		reason := change + " is not a change linked to " + item.Ref.ID
+		if len(ids) > 0 {
+			reason += "; linked changes: " + strings.Join(ids, ", ")
+		}
+		return result, source.Refuse("rejected", reason)
+	case change != "":
+	case len(stored) == 0:
+		return result, nil
+	case len(stored) > 1:
+		return result, source.Refuse("rejected", item.Ref.ID+" has tours for several changes; name one: "+strings.Join(stored, ", "))
+	default:
+		result.Change = stored[0]
+	}
+	stateDir, projectID, key := tourKey(cfg, item.Ref)
+	if !filepath.IsAbs(stateDir) {
+		return result, nil
+	}
+	result.Removed, err = tour.Remove(stateDir, projectID, key, result.Change)
+	return result, err
 }
 
 func tourItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {

@@ -252,12 +252,30 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return writeChanges(out, result)
 		}},
-		{Name: "tour", Usage: "Store a CodeTour file for the linked change whose head is its ref, or print the stored tours", ArgsUsage: "ID [FILE]", Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "tour", Usage: "Store a CodeTour file for the linked change whose head is its ref, or print or remove the stored tours", ArgsUsage: "ID [FILE | CHANGE]", Flags: []urfave.Flag{&urfave.BoolFlag{Name: "remove", Usage: "Remove the tour stored for CHANGE, or for the only linked change with one"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if n := cmd.Args().Len(); n != 1 && n != 2 {
-				return &Error{Reason: "usage", Message: "tour requires ID and an optional FILE"}
+				return &Error{Reason: "usage", Message: "tour requires ID and an optional FILE, or with --remove an optional CHANGE"}
 			}
 			cfg, err := loadConfig(cmd, *directory)
 			if err != nil {
+				return err
+			}
+			if cmd.Bool("remove") {
+				result, err := engine.RemoveTour(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
+				if err != nil {
+					return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+				}
+				if cmd.Bool("json") {
+					return success(out, "tour", result)
+				}
+				switch {
+				case result.Removed:
+					_, err = fmt.Fprintf(out, "Removed the tour for %s on %s.\n", result.Item, textutil.Line(result.Change))
+				case result.Change != "":
+					_, err = fmt.Fprintf(out, "No tour is stored for %s on %s.\n", result.Item, textutil.Line(result.Change))
+				default:
+					_, err = fmt.Fprintf(out, "No tour is stored for %s.\n", result.Item)
+				}
 				return err
 			}
 			if cmd.Args().Len() == 1 {

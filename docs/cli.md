@@ -167,6 +167,12 @@ its steps. JSON returns `data.tours`, each the stored tour (`item`, `change`,
 `stored`, and the CodeTour `tour`) plus `ref` and `stale`; an item without a
 stored tour returns an empty list.
 
+`bl tour ID --remove [CHANGE]` deletes the tour stored for the linked change
+CHANGE, or without CHANGE for the only linked change with one, refusing when
+several have one or CHANGE isn't linked. Nothing to remove succeeds and says
+so. JSON returns `data.item`, `change`, and `removed`; the TUI Diff drops the
+tour on its next render.
+
 ### `bl next [QUERY] [-n N] [--explain] [--claim [--start]] [--workspace NAME]`
 
 Returns ready items in [ranking order](readiness.md). QUERY narrows the

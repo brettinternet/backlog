@@ -228,6 +228,16 @@ func Store(stateDir, projectID string, s Stored) error {
 	return project.WriteStateFile(Path(stateDir, projectID, s.Item, s.Change), data)
 }
 
+// Remove deletes the tour kept for an item's change; ok is false when there
+// was none.
+func Remove(stateDir, projectID, item, change string) (bool, error) {
+	err := os.Remove(Path(stateDir, projectID, item, change))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // Load reads the tour kept for an item's change; ok is false when there is
 // none.
 func Load(stateDir, projectID, item, change string) (Stored, bool, error) {
