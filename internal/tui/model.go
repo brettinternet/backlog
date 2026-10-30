@@ -832,6 +832,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailLoading = false
 			m.detailError = result.err
 			m.detailLines = result.lines
+			// History keeps the cursor on its entry: expanding a group or a new
+			// entry shifts the rows, and the newest-first window drops some.
+			if same && m.detailTab == tabHistory && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
+				if n := slices.Index(result.ids, m.detailIDs[m.entryCursor]); n >= 0 {
+					m.entryCursor = n
+				}
+			}
 			m.detailEntries, m.detailTargets, m.detailIDs = result.entries, result.targets, result.ids
 			m.detailTruncated = result.truncated
 			m.detailShownRef, m.detailShownTab = result.identity.Ref, m.detailTab
