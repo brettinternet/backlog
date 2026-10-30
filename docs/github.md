@@ -54,7 +54,7 @@ read-only:
 | App | Client ID | Permissions | Used by |
 | --- | --- | --- | --- |
 | `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses: read | `bl auth login` |
-| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects: read/write; Metadata, Pull requests, Checks, Commit statuses: read | `bl auth login --write` |
+| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects, Pull requests: read/write; Metadata, Checks, Commit statuses: read | `bl auth login --write` |
 
 1. Declare the account with `oauth: true` instead of `credential` or `env`:
 
@@ -77,15 +77,16 @@ read-only:
    can see, login fails with `app-not-installed` and the App's install URL;
    install it and log in again.
 
-3. For writes, install `bl-cli` and approve its permissions, then:
+3. For writes, install `bl-cli` instead and approve its permissions, then:
 
    ```sh
    bl auth login github personal --write
    ```
 
-   This authorizes `bl-cli` separately and checks it's the same GitHub user. If
-   it fails, the read grant stays. Running plain login again switches back to
-   read-only locally without revoking `bl-cli` on GitHub.
+   This authorizes only `bl-cli` and checks it's the configured GitHub user, and
+   the same user as any existing grant. If it fails, an existing read grant
+   stays. Running plain login again switches back to read-only locally without
+   revoking `bl-cli` on GitHub.
 
 Permissions come from the App installations, not scopes; no `repo`,
 `public_repo`, or `project` scope is requested. Before use and before each
@@ -465,6 +466,13 @@ after `--write`
 organization won't install the app, use a `gh auth token` credential account
 instead ([Setup](#setup)). A pull request whose checks or closing issues the
 token can't read still links by branch, title, and body.
+
+The TUI's change view posts pull request reviews ([TUI](tui.md)): a review
+with its comment, line comments, and approve or request changes, plus replies
+to review threads, in one GraphQL call that is never retried. A classic token
+needs `repo` (or `public_repo`). Device login needs `--write` and `bl-cli`'s
+Pull requests read/write permission, an owner step (BL-155): the owner grants
+it on the app and each installation approves it. Until then `c` and `r` are disabled, naming the missing permission.
 
 ## This repository
 

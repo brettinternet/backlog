@@ -303,6 +303,24 @@ side when split. A step on a line outside every hunk brings that line in with
 three lines of context; one on a line the file lacks says so under the file's
 header. A tour written for another head, or whose step is on a file with uncommitted
 changes, shows only that it is stale.
+
+A pull request's change view drafts a pending review. `c` opens `$EDITOR` on
+the comment for the Diff line under the cursor, on a reply to the
+Conversation thread under it, on the Overview draft entry under it, and
+otherwise on the review's comment; saving a blank buffer removes that part.
+A line of an uncommitted file can't be commented on, since it may be another
+line at the head.
+Drafts are kept per pull request under the state directory's `reviews/`, so
+they survive restarts, and Overview lists them under Draft. `r` opens the
+submit prompt: `c` comment, `a` approve, `r` request changes, `d` discard. The
+forge rereads the pull request first and refuses while a line comment was
+drafted on another head (marked `stale`, never posted onto other lines) or a
+reply's thread is gone; it then sends the review and the replies in one call
+that is never retried. Parts the forge refused stay in the draft with its
+reasons. When the call's outcome is unknown, the draft says so and `r` offers
+only discard: check the pull request before drafting again. Without a forge
+that posts reviews or an account that may write ([GitHub](github.md)), `c`
+and `r` are disabled with the reason.
 `enter` on a commit in History opens that commit's Diff in the change view;
 `backspace` returns to the commit's entry.
 
@@ -637,6 +655,7 @@ keys:
 | `description` | `e` | Edit description |
 | `edit` | `E` | Edit all fields |
 | `comment` | `c` | Comment |
+| `review` | `r` | Submit review… |
 | `note` | `i` | Edit notes |
 | `criterion` | `x` | Toggle criterion |
 | `claim` | `C` | Claim / release |

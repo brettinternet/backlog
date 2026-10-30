@@ -2,6 +2,7 @@ package changes
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sync/atomic"
 	"time"
@@ -94,6 +95,40 @@ func (t *Tracker) Review(ctx context.Context, c Change, fresh bool) (Review, err
 // Enrich adds Git's and the forges' facts to one item's changes.
 func (t *Tracker) Enrich(ctx context.Context, cs []Change, fresh bool) []Change {
 	return Enrich(ctx, cs, t.forges(), fresh)
+}
+
+// Draft reads c's pending review from the state directory.
+func (t *Tracker) Draft(c Change) (Draft, error) {
+	return LoadDraft(t.stateDir(), c.URL)
+}
+
+// SaveDraft keeps d, or removes it once it has nothing left.
+func (t *Tracker) SaveDraft(d Draft) error {
+	return SaveDraft(t.stateDir(), d)
+}
+
+// Submit sends c's pending review with event and keeps what is left of it,
+// with the outcome, in the state directory.
+func (t *Tracker) Submit(ctx context.Context, c Change, event string) (Draft, error) {
+	d, err := t.Draft(c)
+	if err != nil {
+		return d, err
+	}
+	// A draft that can't be saved after an unknown outcome could be sent
+	// again, so its failure is always reported.
+	d, err = SubmitReview(ctx, c, t.forges(), d, event)
+	return d, errors.Join(err, t.SaveDraft(d))
+}
+
+func (t *Tracker) stateDir() string {
+	if t != nil {
+		for _, o := range t.projects {
+			if o.StateDir != "" {
+				return o.StateDir
+			}
+		}
+	}
+	return ""
 }
 
 func (t *Tracker) forges() []Forge {

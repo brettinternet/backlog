@@ -73,7 +73,7 @@ terminal:
 
 ```sh
 bl auth login linear work
-bl auth login linear work --write  # adds write after read consent
+bl auth login linear work --write  # read and write in one consent
 bl auth logout linear work
 ```
 

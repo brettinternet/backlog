@@ -23,7 +23,7 @@ func ChangesOptions(cfg project.Config) map[string]changes.Options {
 	}
 	out := map[string]changes.Options{}
 	for _, p := range projects {
-		out[p.Project.ID] = changes.Options{Discovery: p.Discovery, CacheDir: p.Paths.CacheDir, Trailer: p.History.CommitTrailer, Git: p.Changes.Git, Forges: forges(p)}
+		out[p.Project.ID] = changes.Options{Discovery: p.Discovery, CacheDir: p.Paths.CacheDir, StateDir: p.Paths.StateDir, Trailer: p.History.CommitTrailer, Git: p.Changes.Git, Forges: forges(p)}
 	}
 	return out
 }

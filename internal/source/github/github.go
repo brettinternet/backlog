@@ -57,6 +57,7 @@ type Source struct {
 	// source lock: create is offered until a check shows it can't be written.
 	readOnly        atomic.Bool
 	issueWrite      bool
+	pullWrite       bool
 	projectGrants   map[string]bool
 	projectWritable bool
 	// created maps issues this source created to the version create returned,

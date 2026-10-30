@@ -82,9 +82,11 @@ func TestOAuthCLIAuthLifecycleHelper(t *testing.T) {
 			t.Fatalf("CLI command %v exited %d", args, code)
 		}
 	}
+	// A fresh --write is one write grant; after plain login, --write upgrades it.
+	run("auth", "login", "cli-fake", "work", "--write")
 	run("auth", "login", "cli-fake", "work")
 	run("auth", "login", "cli-fake", "work", "--write")
-	if len(provider.authorized) != 3 || strings.Join(provider.authorized[0], ",") != "read" || strings.Join(provider.authorized[1], ",") != "read" || strings.Join(provider.authorized[2], ",") != "read,write" {
+	if len(provider.authorized) != 3 || strings.Join(provider.authorized[0], ",") != "read,write" || strings.Join(provider.authorized[1], ",") != "read" || strings.Join(provider.authorized[2], ",") != "read,write" {
 		t.Fatalf("authorization scopes: %v", provider.authorized)
 	}
 	paths, err := project.UserPaths()
@@ -154,7 +156,7 @@ func TestOAuthPublicCLIAuthLifecycle(t *testing.T) {
 	}
 	defer session.Close()
 	for _, prompt := range []string{
-		"authorize request 1 scopes=read",
+		"authorize request 1 scopes=read,write",
 		"authorize request 2 scopes=read",
 		"authorize request 3 scopes=read,write",
 	} {

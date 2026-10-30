@@ -243,7 +243,7 @@ func (m Model) itemTab() detailTab {
 // changeViewPage draws one change view tab: Overview's properties, checks,
 // reviewers, and description, one entry per file or commit, or the
 // Conversation. Checks and Conversation entries carry the URL O opens.
-func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, request detailRequest, render func(string, int, string) (string, error)) rendered {
+func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, draft *changes.Draft, draftErr string, request detailRequest, render func(string, int, string) (string, error)) rendered {
 	t, width := request.theme, max(1, request.width)
 	now := cmp.Or(request.now, time.Now())
 	var page rendered
@@ -276,7 +276,7 @@ func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, reque
 	case tabChangeConversation:
 		page = conversationLines(r, request)
 	default:
-		page = changeOverview(c, d, r, request, render)
+		page = changeOverview(c, d, r, draft, draftErr, request, render)
 	}
 	if request.tab != tabChangeConversation && d.Reason != "" {
 		page.lines = append(page.lines, "", t.yellow.render(ansi.Truncate(textutil.Line(d.Reason), width, "…")))
@@ -285,8 +285,8 @@ func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, reque
 }
 
 // changeOverview is the change's property sheet, with a pull request's
-// checks as entries, its reviewers, and its description.
-func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, request detailRequest, render func(string, int, string) (string, error)) rendered {
+// checks as entries, its reviewers, its pending review, and its description.
+func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft *changes.Draft, draftErr string, request detailRequest, render func(string, int, string) (string, error)) rendered {
 	t, width := request.theme, max(1, request.width)
 	var page rendered
 	add := func(label, value string) {
@@ -335,6 +335,11 @@ func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, reque
 			}
 			page.lines = append(page.lines, property(t, label, ansi.Truncate(textutil.Line(reviewer.Login)+"  "+reviewerState(t, reviewer.State), max(1, width-propertyWidth), "…")))
 		}
+		pending := draftLines(t, draft, draftErr, cmp.Or(r.Head, c.Head), width)
+		for i, entry := range pending.entries {
+			page.entries, page.ids = append(page.entries, len(page.lines)+entry), append(page.ids, pending.ids[i])
+		}
+		page.lines = append(page.lines, pending.lines...)
 	}
 	additions, deletions := changes.Size(d.Files)
 	if len(d.Files) > 0 {

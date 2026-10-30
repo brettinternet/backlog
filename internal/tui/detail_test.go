@@ -1127,7 +1127,7 @@ func TestChangeViewReview(t *testing.T) {
 		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}},
 		Threads: []changes.Thread{
 			{Path: "a.go", Line: 3, Resolved: true, Comments: []changes.Comment{{Author: "ann", Body: "settled", Time: at.Add(2 * time.Hour)}}},
-			{Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this? " + strings.Repeat("and this ", 400), Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
+			{ID: "T_b", Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this? " + strings.Repeat("and this ", 400), Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
 		},
 	}
 	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
@@ -1172,4 +1172,86 @@ func TestChangeViewReview(t *testing.T) {
 	if m, _ = detailKey(m, 'j', 0); m.detailScroll != 1 || m.entryCursor != 0 {
 		t.Fatalf("j on a tall thread: scroll %d, cursor %d", m.detailScroll, m.entryCursor)
 	}
+
+	// c on a thread drafts a reply to it, into the review draft rather than
+	// the item's comments, and r submits the draft with the chosen event.
+	drafts := &fakeReviewer{draft: changes.Draft{URL: pr.URL}}
+	m.reviewer, m.detailWorker.changeDraft = drafts, drafts.Draft
+	m.submitDetail(true)
+	m = settleDetail(t, m)
+	m, cmd := detailKey(m, 'c', 0)
+	prepared, ok := cmd().(reviewPreparedMsg)
+	if !ok || prepared.err != nil || prepared.edit.reply == nil || prepared.edit.reply.Thread != "T_b" {
+		t.Fatalf("c on a thread prepared %+v", prepared)
+	}
+	t.Cleanup(func() { _ = os.Remove(prepared.edit.path) })
+	next, _ := m.Update(prepared)
+	if err := os.WriteFile(prepared.edit.path, []byte("fixed in abc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, cmd = next.Update(editFinishedMsg{})
+	next, _ = next.Update(cmd())
+	m = settleDetail(t, next.(Model))
+	if d := drafts.saved(); len(d.Replies) != 1 || d.Replies[0].Body != "fixed in abc" || d.Replies[0].Path != "b.go" {
+		t.Fatalf("saved draft %+v", d)
+	}
+	_ = m.switchDetailTab(tabChangeOverview)
+	if m = settleDetail(t, m); !strings.Contains(m.View().Content, "1 reply") {
+		t.Fatalf("Overview lacks the draft\n%s", m.View().Content)
+	}
+	// A Diff line comment anchors to the head's line, never to an
+	// uncommitted file's, whose lines may be other lines at head.
+	diff := m
+	diff.detailTab, diff.detailRows, diff.detailDirty, diff.entryCursor = tabChangeDiff, []diffRow{{file: "a.go", old: 2, new: 3}}, []string{"a.go"}, 0
+	if next, cmd := detailKey(diff, 'c', 0); cmd != nil || !strings.Contains(next.notice, "uncommitted") {
+		t.Fatalf("c on an uncommitted line: %q", next.notice)
+	}
+	diff.detailDirty = nil
+	_, cmd = detailKey(diff, 'c', 0)
+	line, ok := cmd().(reviewPreparedMsg)
+	t.Cleanup(func() { _ = os.Remove(line.edit.path) })
+	if !ok || line.edit.comment == nil || line.edit.comment.Line != 3 || line.edit.comment.Old || line.edit.comment.Path != "a.go" {
+		t.Fatalf("c on a Diff line prepared %+v", line)
+	}
+	m, _ = detailKey(m, 'r', 0)
+	if !m.review.prompt || !strings.Contains(m.View().Content, "Request changes") {
+		t.Fatalf("r opened no submit prompt\n%s", m.View().Content)
+	}
+	m, cmd = detailKey(m, 'a', 0)
+	submitted, ok := cmd().(reviewSubmittedMsg)
+	if !ok || submitted.err != nil || drafts.event != changes.EventApprove {
+		t.Fatalf("a submitted %q: %+v", drafts.event, submitted)
+	}
+	review.Blocked = "bl-cli lacks Pull requests: write"
+	next, _ = m.Update(submitted)
+	m = settleDetail(t, next.(Model))
+	if m, cmd = detailKey(m, 'c', 0); cmd != nil || !strings.Contains(m.notice, "Pull requests: write") {
+		t.Fatalf("blocked c: %q", m.notice)
+	}
+}
+
+// fakeReviewer keeps one draft in memory and records the submitted event.
+type fakeReviewer struct {
+	mu    sync.Mutex
+	draft changes.Draft
+	event string
+}
+
+func (f *fakeReviewer) Draft(changes.Change) (changes.Draft, error) { return f.saved(), nil }
+func (f *fakeReviewer) saved() changes.Draft {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.draft
+}
+func (f *fakeReviewer) SaveDraft(d changes.Draft) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.draft = d
+	return nil
+}
+func (f *fakeReviewer) Submit(_ context.Context, _ changes.Change, event string) (changes.Draft, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.event = event
+	return changes.Draft{URL: f.draft.URL}, nil
 }

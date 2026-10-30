@@ -162,6 +162,7 @@ type Model struct {
 	detailSteps              []int     // the Diff line of each tour step's callout
 	detailTour               string    // why the change's tour is hidden
 	tourStep                 int       // the tour step ]t and [t last went to
+	detailDirty              []string  // the Diff's uncommitted files
 	diffOrigin, diffCursor   int       // the scroll and cursor before [ or ], which [c and ]c restore
 	detailLines              []string  // the last body, kept while the next loads
 	detailEntries            []int     // detailLines index of each criterion or relation
@@ -225,6 +226,8 @@ type Model struct {
 	changeTab    detailTab
 	changeCursor int
 	changeEntry  string
+	reviewer     reviewer
+	review       reviewState
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -250,8 +253,12 @@ func New(opts Options) Model {
 		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
 		if tracker := opts.Changes; tracker != nil {
 			model.detailWorker.changeDetail, model.detailWorker.changeReview, model.detailWorker.enrich = tracker.Detail, tracker.Review, tracker.Enrich
+			model.detailWorker.changeDraft = tracker.Draft
 		}
 		model.detailWorker.tour = opts.Tour
+	}
+	if opts.Changes != nil {
+		model.reviewer = opts.Changes
 	}
 	model.initViews()
 	model.shown, _ = query.Parse(model.query, query.Options{})
@@ -911,7 +918,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = result.entries, result.targets, result.ids, result.hints
 			m.detailChanges = result.changes
 			m.detailFiles, m.detailHunks = result.files, result.hunks
-			m.detailRows, m.detailHead = result.rows, result.head
+			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
+			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
 			m.detailSteps, m.detailTour = result.steps, result.tour
 			if !keep {
 				m.tourStep = -1
@@ -991,7 +999,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editPreparedMsg:
 		return m.editorPrepared(msg)
 	case editFinishedMsg:
+		if m.review.edit != nil {
+			return m.reviewEditorFinished(msg)
+		}
 		return m.editorFinished(msg)
+	case reviewPreparedMsg:
+		return m.reviewPrepared(msg)
+	case reviewSavedMsg:
+		return m.reviewSaved(msg)
+	case reviewSubmittedMsg:
+		return m.reviewSubmitted(msg)
 	case editSavedMsg:
 		return m.editorSaved(msg)
 	case editResultMsg:
@@ -1012,7 +1029,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg = tea.KeyPressMsg{Code: code}
 			s = msg.String()
 		}
-		if s == "ctrl+c" && (m.longEdit.choice != "" || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.find.open || m.editor.open) {
+		if s == "ctrl+c" && (m.longEdit.choice != "" || m.review.prompt || m.capture.open || m.picker.open || m.archiveConfirm || m.actionConfirm != nil || m.save.open || m.find.open || m.editor.open) {
 			return m, tea.Quit
 		}
 		if m.actionConfirm != nil {
@@ -1031,6 +1048,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.longEdit.choice != "" {
 			return m, m.updateLongEdit(s)
+		}
+		if m.review.prompt {
+			return m, m.updateReviewPrompt(s)
 		}
 		if m.capture.open {
 			return m, m.updateCapture(s)
@@ -1073,14 +1093,14 @@ var emacsInputKeys = map[string]rune{"ctrl+g": tea.KeyEscape, "ctrl+n": tea.KeyD
 
 // modalOpen reports an input or prompt that takes every key and the mouse.
 func (m Model) modalOpen() bool {
-	return m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.editor.open || m.save.open || m.find.open || m.archiveConfirm || m.actionConfirm != nil
+	return m.launcher.open || m.picker.open || m.capture.open || m.longEdit.choice != "" || m.review.prompt || m.editor.open || m.save.open || m.find.open || m.archiveConfirm || m.actionConfirm != nil
 }
 
 // plainField reports that keys go to a text field without a list to move
 // through. It follows Update's modal order.
 func (m Model) plainField() bool {
 	switch {
-	case m.actionConfirm != nil, m.launcher.open, m.longEdit.choice != "":
+	case m.actionConfirm != nil, m.launcher.open, m.longEdit.choice != "", m.review.prompt:
 		return false
 	case m.capture.open:
 		return !m.capture.choosing
@@ -1260,6 +1280,13 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				m.stepTour(prefix == "]")
 				return m, nil
 			}
+		}
+		// The change view drafts and submits a pull request review.
+		if m.change != nil && (s == "c" || s == "r") {
+			if s == "c" {
+				return m, m.beginReviewDraft()
+			}
+			return m, m.beginSubmitReview()
 		}
 		switch s {
 		case "[", "]":

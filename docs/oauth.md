@@ -27,14 +27,15 @@ with `oauth-provider-unavailable` before contacting anything.
 
 ```sh
 bl auth login linear work          # read
-bl auth login linear work --write  # read, then a separate write grant
+bl auth login linear work --write  # read and write
 bl auth logout linear work
 bl auth status linear work         # offline: grant, scopes, expiry
 ```
 
-- **Login** needs a terminal. It always gets read access first and verifies it;
-  `--write` then asks for write separately (on GitHub, by authorizing a second
-  App). MCP, hooks, actions, and claims never start a login.
+- **Login** needs a terminal. Plain login gets read access. `--write` is one
+  separate consent for read and write (on GitHub, the write App), checked
+  against the configured user and any existing grant's user. MCP, hooks,
+  actions, and claims never start a login.
 - **Storage:** tokens and granted scopes live in owner-only XDG state (0700
   directory, 0600 records written atomically and fsynced; on Windows, a
   protected DACL granting only the current user). Never in config,

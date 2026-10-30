@@ -29,7 +29,7 @@ func (s *Source) appPermissions(ctx context.Context, c remote.Credential, repo s
 	if c.HasScope("write") {
 		expected = oauth.GitHubWriteApp
 	}
-	s.issueWrite = false
+	s.issueWrite, s.pullWrite = false, false
 	s.projectWritable = false
 	s.projectGrants = map[string]bool{}
 	readable := false
@@ -75,6 +75,7 @@ func (s *Source) appPermissions(ctx context.Context, c remote.Credential, repo s
 				if strings.EqualFold(entry.FullName, repo) {
 					readable = true
 					s.issueWrite = i.Permissions["issues"] == "write"
+					s.pullWrite = i.Permissions["pull_requests"] == "write"
 				}
 			}
 			if len(seen) == total {

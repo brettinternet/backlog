@@ -801,7 +801,7 @@ nothing about commits. A config that fails to load is ignored here.
 ```sh
 bl auth status                     # every account in user config
 bl auth login linear work          # read access
-bl auth login linear work --write  # read, then a separate write grant
+bl auth login linear work --write  # read and write
 bl auth logout linear work         # delete local tokens and cache; revoke if supported
 ```
 
