@@ -30,8 +30,8 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\bl-install.ps1
 
 It installs `bl.exe` to `%LOCALAPPDATA%\Programs\bl` and prints the command
 that adds it to your `PATH`. Set the same variables with `$env:BL_VERSION =
-'v1.2.3'` before running it. Claims are unavailable on Windows until Worklease
-supports it.
+'v1.2.3'` before running it. Claims on Windows need Worklease 1.13.0 or
+later.
 
 To build from source, see [Development](development.md#setup).
 

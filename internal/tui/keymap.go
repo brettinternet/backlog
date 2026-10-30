@@ -306,7 +306,7 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 	switch a.id {
 	case "actions":
 		m.actionSession = ""
-		if m.detailOpen && m.detailTab == tabHistory && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
+		if m.detailOpen && m.detailCurrent() && m.detailTab == tabHistory && m.entryCursor >= 0 && m.entryCursor < len(m.detailIDs) {
 			if session, ok := history.SessionOf(m.detailIDs[m.entryCursor]); ok {
 				m.actionSession = session
 			}

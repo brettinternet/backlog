@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,10 @@ type Coordinator struct {
 		sync.Mutex
 		known, builtin bool
 		name           string
+	}
+	support struct {
+		sync.Mutex
+		ok bool
 	}
 }
 
@@ -121,8 +126,8 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 func (c *Coordinator) call(ctx context.Context, caller model.CallerContext, args ...string) (envelope, error) {
-	if Unsupported != "" {
-		return envelope{}, errors.New(Unsupported)
+	if message := c.Unsupported(); message != "" {
+		return envelope{}, errors.New(message)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -436,8 +441,25 @@ func (c *Coordinator) List(ctx context.Context) ([]model.ClaimInfo, error) {
 	return claims, nil
 }
 
-// Unsupported is non-empty on platforms where Worklease cannot run.
-func (c *Coordinator) Unsupported() string { return Unsupported }
+// Unsupported is non-empty when the installed Worklease cannot claim here.
+// Only Windows probes, since support began at MinimumVersion there; elsewhere
+// an old or missing Worklease fails per call. Only success is cached, so a
+// slow first spawn or a later install doesn't need a restart.
+func (c *Coordinator) Unsupported() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	c.support.Lock()
+	defer c.support.Unlock()
+	if !c.support.ok {
+		_, err := Probe(context.Background(), c.Config.Discovery.ControlRoot)
+		c.support.ok = err == nil
+	}
+	if !c.support.ok {
+		return "claims on Windows need Worklease " + MinimumVersion + " or later"
+	}
+	return ""
+}
 
 // History reads the resource's retained epochs. An open epoch takes its lease
 // expiry from the active claim list when that list is readable.

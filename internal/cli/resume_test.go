@@ -18,8 +18,9 @@ import (
 
 // Catches an agent command that runs through a shell, outside the recorded
 // checkout, or with the wrong session; a refusal that hides its reason; a
-// closed item that extends a finished transcript; and a failure that hides
-// the agent's exit status and stderr.
+// closed item that extends a finished transcript; a second bl session on a
+// claimed agent conversation that resumes it while it runs; and a failure that
+// hides the agent's exit status and stderr.
 func TestResumeRecordedSessions(t *testing.T) {
 	root := writeFixture(t)
 	enableCoordination(t, root)
@@ -67,6 +68,8 @@ esac
 		{ID: "remote", Agent: "probe", AgentSession: "a-remote", Host: "elsewhere", CWD: work},
 		{ID: "unknown", Agent: "other", AgentSession: "a-unknown", Host: host, CWD: work},
 		{ID: "held", Agent: "probe", AgentSession: "a-held", Host: host, CWD: work},
+		// A PR-phase handoff session on the claimed loop's conversation.
+		{ID: "handoff", Agent: "probe", AgentSession: "a-held", Host: host, CWD: work},
 		{ID: "running", Agent: "probe", AgentSession: "a-running", Host: host, CWD: work},
 		{ID: "fail", Agent: "failing", AgentSession: "a-fail", Host: host, CWD: work},
 		{ID: "tui:me", Agent: "probe", AgentSession: "a-tui", Host: host, CWD: work},
@@ -94,13 +97,14 @@ esac
 			}
 		}
 	}
-	if err := json.Unmarshal([]byte(out), &ambiguous); err != nil || len(ambiguous.Error.Details.Candidates) != 7 {
+	if err := json.Unmarshal([]byte(out), &ambiguous); err != nil || len(ambiguous.Error.Details.Candidates) != 8 {
 		t.Fatalf("candidates: %v %s", err, out)
 	}
 	for session, want := range map[string]string{
 		"gone":    `"reason":"checkout-removed","message":"checkout no longer exists: ` + filepath.Join(work, "removed"),
 		"remote":  `"reason":"other-host"`,
-		"a-held":  `"reason":"live","message":"session still holds its claim; message it instead via pane p1`,
+		"held":    `"reason":"live","message":"session held still holds its claim; message it instead via pane p1`,
+		"handoff": `"reason":"live","message":"session held still holds its claim`,
 		"running": `"reason":"live","message":"agent is still running; message it instead via pane p1`,
 		"unknown": `"reason":"no-agent-config"`,
 	} {

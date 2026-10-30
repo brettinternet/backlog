@@ -13,4 +13,4 @@ powershell = "7.6.9"
 staticcheck = "0.8.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 # Claims for parallel agents and the D20 integration.
-"github:brettinternet/worklease" = "1.10.1"
+"github:brettinternet/worklease" = "1.13.0"

@@ -68,6 +68,9 @@ type fixture struct {
 	converted             int
 	// timelineTypes records the item types the last timeline query asked for.
 	timelineTypes string
+	// timelineStuck answers every timeline page with the same cursor.
+	timelineStuck bool
+	timelineCalls int
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -298,6 +301,14 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		// Two pages read newest first: before names the older page.
 		types, _ := v["types"].([]any)
 		f.timelineTypes = fmt.Sprint(types)
+		if f.timelineCalls++; f.timelineStuck {
+			if f.timelineCalls > 10 {
+				w.WriteHeader(500)
+				return
+			}
+			emit(map[string]any{"repository": map[string]any{"issue": map[string]any{"timelineItems": map[string]any{"pageInfo": map[string]any{"hasPreviousPage": true, "startCursor": "c2"}, "nodes": []any{}}}}})
+			return
+		}
 		actor := map[string]string{"login": "bob"}
 		at := func(day int) string { return time.Date(2026, 1, day, 0, 0, 0, 0, time.UTC).Format(time.RFC3339) }
 		nodes := []any{
@@ -305,6 +316,14 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"__typename": "CrossReferencedEvent", "id": "CR_1", "createdAt": at(2), "actor": actor, "source": map[string]any{"number": 7, "title": "Fix it", "repository": map[string]string{"nameWithOwner": "other/lib"}}},
 		}
 		info := map[string]any{"hasPreviousPage": false, "startCursor": "c1"}
+		if v["before"] != nil {
+			// A reference from a pull request the token can't read.
+			nodes = append(nodes, map[string]any{"__typename": "CrossReferencedEvent", "id": "CR_2", "createdAt": at(2), "actor": actor, "source": nil})
+			page := map[string]any{"pageInfo": info, "nodes": nodes}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"repository": map[string]any{"issue": map[string]any{"timelineItems": page}}},
+				"errors": []any{map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "issue", "timelineItems", "nodes", 2, "source"}, "message": "Resource not accessible by integration"}}})
+			return
+		}
 		if v["before"] == nil {
 			nodes = []any{
 				map[string]any{"__typename": "ProjectV2ItemStatusChangedEvent", "id": "PS_1", "createdAt": at(3), "actor": actor, "previousStatus": "Todo", "status": "In Progress", "project": map[string]string{"title": "Board"}},
@@ -812,7 +831,9 @@ func TestReadAbsentIssue(t *testing.T) {
 }
 
 // The timeline pages backward from the newest events, maps each kind to one
-// summary, and asks for Projects v2 status changes only with a project binding.
+// summary, skips a node the token can't read rather than failing the timeline,
+// stops on a cursor that doesn't advance, and asks for Projects v2 status
+// changes only with a project binding.
 func TestActivityTimeline(t *testing.T) {
 	s, f := newFixture(t)
 	activity, truncated, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "gh", ID: "1"}})
@@ -834,6 +855,11 @@ func TestActivityTimeline(t *testing.T) {
 	}
 	if !strings.Contains(f.timelineTypes, "PROJECT_V2_ITEM_STATUS_CHANGED_EVENT") || strings.Contains(f.timelineTypes, "ISSUE_COMMENT") {
 		t.Fatalf("types %s", f.timelineTypes)
+	}
+	s, f = newFixture(t)
+	f.timelineStuck = true
+	if _, truncated, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "gh", ID: "1"}}); err != nil || !truncated || f.timelineCalls != 2 {
+		t.Fatalf("stuck cursor: %v truncated=%v after %d pages", err, truncated, f.timelineCalls)
 	}
 	s, f = newFixture(t, func(o *Options) { o.Project = nil })
 	if _, _, err := s.Activity(context.Background(), model.Item{Ref: model.Ref{Source: "gh", ID: "1"}}); err != nil || strings.Contains(f.timelineTypes, "PROJECT_V2") {

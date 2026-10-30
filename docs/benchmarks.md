@@ -182,7 +182,9 @@ BL_WATCH_MEASURE=1 BL_WATCH_SOAK=1h task cli:test PKG=./internal/source/native -
 | Goroutines / post-GC heap | 6 → 6 / no growth | — |
 
 macOS sees in-place edits only through the two-second sweep. Windows has no
-sweep: `ReadDirectoryChangesW` reports the edit itself.
+sweep: `ReadDirectoryChangesW` reports the edit itself. Windows isn't timed
+yet: the owner accepted windows-latest CI, which runs the watcher tests with
+the sweep off, in place of a Windows host run.
 
 ### Workspaces
 

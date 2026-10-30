@@ -279,48 +279,27 @@ func cacheCheck(ctx context.Context, cfg project.Config) doctorCheck {
 }
 
 func workleaseCheck(ctx context.Context, cfg project.Config) doctorCheck {
-	c := doctorCheck{"worklease", "pass", "Worklease supports schema v2 and is at least 1.10.1", "No action needed"}
-	if worklease.Unsupported != "" {
-		c.Status, c.Message, c.Fix = "skip", worklease.Unsupported, "No action needed"
-		if cfg.Coordination.Enabled() {
-			c.Status, c.Fix = "fail", "Remove coordination from backlog.yaml, or claim work from macOS or Linux"
-		}
-		return c
-	}
-	path, err := exec.LookPath("worklease")
-	if err != nil {
+	c := doctorCheck{"worklease", "pass", "Worklease supports schema v2 and is at least " + worklease.MinimumVersion, "No action needed"}
+	if _, err := exec.LookPath("worklease"); err != nil {
 		c.Status = "warn"
 		if cfg.Coordination.Enabled() {
 			c.Status = "fail"
 		}
 		c.Message = "Worklease is not installed"
-		c.Fix = "Install Worklease >= 1.10.1 and add it to PATH"
+		c.Fix = "Install Worklease >= " + worklease.MinimumVersion + " and add it to PATH"
 		return c
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	command := exec.CommandContext(probeCtx, path, "version", "--json")
-	command.Dir = cfg.Discovery.ControlRoot
-	output, err := command.Output()
-	var version struct {
-		OK      bool   `json:"ok"`
-		Schema  int    `json:"schemaVersion"`
-		Version string `json:"version"`
-	}
-	if err == nil {
-		err = json.Unmarshal(output, &version)
-	}
-	valid := worklease.CompatibleVersion(version.Version)
-	if err != nil || !version.OK || version.Schema != 2 || !valid {
+	version, err := worklease.Probe(ctx, cfg.Discovery.ControlRoot)
+	if err != nil {
 		c.Status = "fail"
 		c.Message = "Worklease version probe failed or is incompatible"
-		c.Fix = "Install Worklease >= 1.10.1 with schema v2 support"
-	} else {
-		c.Message = "Worklease " + version.Version + " (schema v2)"
-		if cfg.Coordination.Enabled() {
-			if conflict := worklease.New(cfg).HostLocalConflict(ctx); conflict != "" {
-				c.Status, c.Message, c.Fix = "fail", conflict, "Set project.id in backlog.yaml, or select a local Worklease profile"
-			}
+		c.Fix = "Install Worklease >= " + worklease.MinimumVersion + " with schema v2 support"
+		return c
+	}
+	c.Message = "Worklease " + version + " (schema v2)"
+	if cfg.Coordination.Enabled() {
+		if conflict := worklease.New(cfg).HostLocalConflict(ctx); conflict != "" {
+			c.Status, c.Message, c.Fix = "fail", conflict, "Set project.id in backlog.yaml, or select a local Worklease profile"
 		}
 	}
 	return c

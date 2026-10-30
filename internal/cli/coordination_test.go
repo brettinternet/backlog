@@ -1,7 +1,3 @@
-// Claims need Worklease, which does not run on Windows yet (BL-109).
-
-//go:build unix
-
 package cli_test
 
 import (
@@ -9,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,12 +23,14 @@ import (
 
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/testkit"
 	"github.com/brettinternet/backlog/internal/worklease"
 )
 
 // The fake CLI changes the source AFTER acquire, simulating a concurrent editor.
 // A failed version-bound status write must retain the separately committed claim.
 func TestClaimThenFailedStatusKeepsOwnership(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	script := `#!/bin/sh
@@ -69,6 +69,7 @@ esac
 	}
 }
 func TestClaimContentionAndShowResource(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	script := `#!/bin/sh
@@ -207,6 +208,7 @@ func linkedCoordinationFixture(t *testing.T, root string) string {
 // Worklease's actual handle root is checkout-scoped. This fake asserts cwd and
 // stripped selectors on every call while bl resolves linked-worktree metadata.
 func TestClaimHeartbeatDoneUseControlRoot(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	for _, replace := range []bool{false, true} {
 		t.Run(map[bool]string{false: "released", true: "replacement-retained"}[replace], func(t *testing.T) {
 			testClaimHeartbeatDoneUseControlRoot(t, replace)
@@ -217,6 +219,7 @@ func TestClaimHeartbeatDoneUseControlRoot(t *testing.T) {
 // A blocking command longer than the TTL (BL-91's `task ci`) must keep the
 // claim renewed until it exits, and its exit status must reach the caller.
 func TestHeartbeatRenewsWhileCommandRuns(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	bin := t.TempDir()
@@ -426,9 +429,65 @@ func assertProviderBuild(t *testing.T) {
 	t.Logf("provider build: %s", output)
 }
 
+// The test binary stands in for an old Worklease on every platform,
+// including Windows, which can't run the shell-script fakes.
+func init() {
+	if version := os.Getenv("BL_FAKE_WORKLEASE_VERSION"); version != "" {
+		fmt.Printf(`{"schemaVersion":2,"ok":true,"version":%q}`+"\n", version)
+		os.Exit(0)
+	}
+}
+
+// Regression: Windows support began at a later Worklease, so an older one
+// there must refuse claims rather than run, and doctor must name the minimum.
+func TestOldWorkleaseNamesMinimumVersion(t *testing.T) {
+	root := writeFixture(t)
+	enableCoordination(t, root)
+	bin, name := t.TempDir(), "worklease"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	put(t, filepath.Join(bin, name), get(t, os.Args[0]))
+	if err := os.Chmod(filepath.Join(bin, name), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BL_FAKE_WORKLEASE_VERSION", "1.10.0")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, out, _ := writeRun(root, "", "doctor")
+	var result struct {
+		Data struct {
+			Checks []struct{ Name, Status, Fix string }
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	named := false
+	for _, c := range result.Data.Checks {
+		named = named || c.Name == "worklease" && c.Status == "fail" && strings.Contains(c.Fix, worklease.MinimumVersion)
+	}
+	if !named {
+		t.Fatalf("doctor does not name Worklease %s: %s", worklease.MinimumVersion, out)
+	}
+	if runtime.GOOS != "windows" {
+		return
+	}
+	before := get(t, filepath.Join(root, "items/BL-012.md"))
+	for _, args := range [][]string{{"claim", "12"}, {"start", "12"}, {"next", "--claim", "--start"}} {
+		code, out, _ := writeRun(root, "", args...)
+		if code == 0 || !strings.Contains(out, `"unavailable"`) || !strings.Contains(out, worklease.MinimumVersion) {
+			t.Fatalf("%v with old Worklease: %d %s", args, code, out)
+		}
+	}
+	if get(t, filepath.Join(root, "items/BL-012.md")) != before {
+		t.Fatal("refused claim wrote item")
+	}
+}
+
 // A host-local project key must never reach a remote authority, where every
 // host derives a different key and claims silently never contend.
 func TestHostLocalClaimRefusedWithRemoteProfile(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	script := `#!/bin/sh
@@ -636,6 +695,7 @@ func decodeNext(t *testing.T, out string) remoteNext {
 // remote TLS authority: claims contend, renew, release, and an acquire whose
 // reply is lost when the authority stops replays exactly after restart.
 func TestProviderRemoteAuthority(t *testing.T) {
+	testkit.Unix(t, "per-host HOME isolation for a remote authority")
 	if os.Getenv("BL_PROVIDER_TESTS") != "1" {
 		t.Skip("set BL_PROVIDER_TESTS=1 for Worklease 1.10.1")
 	}

@@ -1,7 +1,3 @@
-// Claims need Worklease, which does not run on Windows yet (BL-109).
-
-//go:build unix
-
 package cli_test
 
 import (
@@ -17,6 +13,7 @@ import (
 	blmcp "github.com/brettinternet/backlog/internal/mcp"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/testkit"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -64,6 +61,7 @@ func nextClient(t *testing.T, root string) (context.Context, *sdk.ClientSession)
 // A session is a hard authorization boundary: neither transport may consult
 // Worklease or inherit an MCP server's ambient caller when it is omitted.
 func TestNextClaimRequiresSessionAcrossTransports(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	state := nextFake(t, root)
@@ -110,6 +108,7 @@ func testNextClaimConcurrentCLIAndMCP(t *testing.T, real bool) {
 		selectProviderBinary(t, providerBinary)
 		assertProviderBuild(t)
 	} else {
+		testkit.Unix(t, "a shell-script Worklease fake")
 		state = nextFake(t, root)
 		t.Setenv("BL_FAKE_BARRIER", "1")
 	}
@@ -188,6 +187,7 @@ func testNextClaimConcurrentCLIAndMCP(t *testing.T, real bool) {
 // A lost acquire reply survives process/request restart. Only the bare retained
 // handle replay can confirm it; still-unknown replay must not try item two.
 func TestNextClaimPendingRestart(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	for _, unknown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "confirmed", true: "still-unknown"}[unknown], func(t *testing.T) {
 			root := writeFixture(t)
@@ -239,6 +239,7 @@ func TestNextClaimPendingRestart(t *testing.T) {
 }
 
 func TestNextClaimDoneThenNextCLI(t *testing.T) {
+	testkit.Unix(t, "a shell-script Worklease fake")
 	root := writeFixture(t)
 	enableCoordination(t, root)
 	nextItems(t, root)
