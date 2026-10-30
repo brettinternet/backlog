@@ -188,7 +188,21 @@ func (s *Source) request(ctx context.Context, c remote.Credential, method, endpo
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
+	// Callers read the body, but a 304 answering the scheduler's If-None-Match
+	// has none and the scheduler keeps none to reuse.
+	req.Header.Set("Cache-Control", "no-cache")
 	return s.client.Do(ctx, req, c)
+}
+
+// hint sends a conditional GET whose body is never read, so a 304 is enough.
+func (s *Source) hint(ctx context.Context, c remote.Credential, endpoint string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return source.Refuse("unavailable", "invalid endpoint")
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	_, err = s.client.Do(ctx, req, c)
+	return err
 }
 func (s *Source) authenticate(ctx context.Context) (remote.Credential, error) {
 	return s.o.Credentials.Resolve(ctx, s.o.Account, func(ctx context.Context, c remote.Credential) (string, error) {
@@ -397,7 +411,7 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 // project-only edits and removed edges show up whatever their timestamps.
 func (s *Source) reconcile(ctx context.Context, c remote.Credential, sprints bool) (source.Delta, error) {
 	// A 304 validates this hint only, never the complete issue or project snapshot.
-	if _, err := s.request(ctx, c, http.MethodGet, s.base()+"/repos/"+s.o.Repo+"/issues?state=all&sort=updated&direction=desc&per_page=1", nil); err != nil {
+	if err := s.hint(ctx, c, s.base()+"/repos/"+s.o.Repo+"/issues?state=all&sort=updated&direction=desc&per_page=1"); err != nil {
 		return source.Delta{}, err
 	}
 	projects, drafts, catalog, err := s.projects(ctx, c, sprints)

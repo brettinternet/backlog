@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -194,13 +195,24 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("X-OAuth-Scopes", "repo, project")
+	// Like GitHub, a repeated GET whose content is unchanged gets an empty 304.
+	conditional := func(body []byte) {
+		etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		_, _ = w.Write(body)
+	}
 	if r.Method == http.MethodGet {
 		if r.URL.Path == "/user/installations" {
 			permissions := map[string]string{"issues": f.issuePermission, "organization_projects": f.projectPermission}
 			if f.pullPermission != "" {
 				permissions["pull_requests"] = f.pullPermission
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 1, "installations": []any{map[string]any{"id": 42, "app_slug": f.oauthApp, "account": map[string]string{"login": "owner", "type": "Organization"}, "permissions": permissions}}})
+			body, _ := json.Marshal(map[string]any{"total_count": 1, "installations": []any{map[string]any{"id": 42, "app_slug": f.oauthApp, "account": map[string]string{"login": "owner", "type": "Organization"}, "permissions": permissions}}})
+			conditional(body)
 			return
 		}
 		if r.URL.Path == "/user/installations/42/repositories" {
@@ -208,7 +220,8 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			if !f.repositoryMissing {
 				repos = append(repos, map[string]any{"id": 1, "full_name": "owner/repo"})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(repos), "repositories": repos})
+			body, _ := json.Marshal(map[string]any{"total_count": len(repos), "repositories": repos})
+			conditional(body)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/repos/owner/repo/pulls/45/") {
@@ -216,7 +229,7 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Query().Get("page") != "1" || list == "" {
 				list = "[]"
 			}
-			fmt.Fprint(w, list)
+			conditional([]byte(list))
 			return
 		}
 		f.hints++
