@@ -252,6 +252,24 @@ func readCommands(directory *string, out, errOut io.Writer) []*urfave.Command {
 			}
 			return writeChanges(out, result)
 		}},
+		{Name: "tour", Usage: "Store a CodeTour file for the linked change whose head is its ref", ArgsUsage: "ID FILE", Action: func(ctx context.Context, cmd *urfave.Command) error {
+			if cmd.Args().Len() != 2 {
+				return &Error{Reason: "usage", Message: "tour requires ID and FILE"}
+			}
+			cfg, err := loadConfig(cmd, *directory)
+			if err != nil {
+				return err
+			}
+			result, err := engine.StoreTourFile(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
+			if err != nil {
+				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
+			}
+			if cmd.Bool("json") {
+				return success(out, "tour", result)
+			}
+			_, err = fmt.Fprintf(out, "Stored a %d-step tour for %s on %s at %s.\n", result.Steps, result.Item, textutil.Line(result.Change), result.Ref[:7])
+			return err
+		}},
 		{Name: "next", Usage: "Rank ready items", ArgsUsage: "[QUERY]", Flags: []urfave.Flag{limitFlag(1), &urfave.BoolFlag{Name: "explain", Usage: "Explain every included and excluded item"}, &urfave.BoolFlag{Name: "claim", Usage: "Claim the top ready item for --session, resuming its claim first"}, &urfave.BoolFlag{Name: "start", Usage: "Start the claimed item"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Int("n") < 0 {
 				return &Error{Reason: "usage", Message: "-n must be nonnegative"}

@@ -3,12 +3,14 @@ package hooks_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -275,6 +277,41 @@ func TestResultFilePrecedenceAndBound(t *testing.T) {
 	finished = finishedEvents(t, cfg)
 	if len(finished) != 1 || finished[0].Outcome != "failed" || finished[0].Result != nil {
 		t.Fatalf("oversized result accepted: %+v", finished)
+	}
+}
+
+// A {"tour": PATH} result reaches the tour intake for the event's item,
+// relative to the run's cwd, and a refused tour fails the run with the reason.
+func TestTourResult(t *testing.T) {
+	testkit.Unix(t, "shell-script hooks")
+	root := t.TempDir()
+	hook := filepath.Join(root, "tour-result")
+	executable(t, hook, "#!/bin/sh\nprintf '%s\\n' '{\"tour\":\"change.tour\"}' > \"$BL_RESULT\"\n")
+	var got []string
+	refuse := false
+	original := hooks.TourIntake
+	t.Cleanup(func() { hooks.TourIntake = original })
+	hooks.TourIntake = func(_ context.Context, _ project.Config, ref, path string) error {
+		got = append(got, ref, path)
+		if refuse {
+			return errors.New("tour ref 0000000 is the head of no change linked to BL-12")
+		}
+		return nil
+	}
+	cfg := runnerConfig(t, project.HookConfig{Name: "tour", On: "item.created", Run: []string{hook}})
+	if err := hooks.RunEvent(context.Background(), cfg, automationEvent("event-tour", "item.created"), root); err != nil {
+		t.Fatal(err)
+	}
+	if finished := finishedEvents(t, cfg); len(finished) != 1 || finished[0].Outcome != "ok" || !slices.Equal(got, []string{"tasks:BL-12", filepath.Join(root, "change.tour")}) {
+		t.Fatalf("tour result: %v %+v", got, finished)
+	}
+	refuse = true
+	cfg = runnerConfig(t, project.HookConfig{Name: "tour", On: "item.created", Run: []string{hook}})
+	if err := hooks.RunEvent(context.Background(), cfg, automationEvent("event-stale-tour", "item.created"), root); err != nil {
+		t.Fatal(err)
+	}
+	if finished := finishedEvents(t, cfg); len(finished) != 1 || finished[0].Outcome != "failed" || !strings.Contains(finished[0].Message, "head of no change") {
+		t.Fatalf("refused tour: %+v", finished)
 	}
 }
 

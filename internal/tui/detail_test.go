@@ -19,6 +19,7 @@ import (
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
+	"github.com/brettinternet/backlog/internal/tour"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -1030,6 +1031,122 @@ func TestChangeDiff(t *testing.T) {
 	if m.change != nil || m.detailTab != tabHistory || m.detailIDs[m.entryCursor] != "git:abc1234" {
 		t.Fatalf("backspace left tab %d cursor %d", m.detailTab, m.entryCursor)
 	}
+}
+
+// ]t and [t step through a change's tour in its order, each step's callout
+// above its line, a step outside every hunk or on an untouched file showing
+// its line with context, and a tour for another head showing only that it is
+// stale.
+func TestChangeTour(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	head := strings.Repeat("ab", 20)
+	change := changes.Change{ID: "branch:bl-1-fix", Stage: changes.StageBranch, State: changes.StateOpen, Branch: "bl-1-fix", Head: head}
+	m.data.rows[len(m.data.rows)-1].row.Changes = []changes.Change{change}
+	patch := "@@ -10,2 +10,3 @@\n line 10\n-old 11\n+line 11\n+line 12\n"
+	m.detailWorker.changeDetail = func(_ context.Context, _ changes.Change, withPatch bool) (changes.Detail, error) {
+		return changes.Detail{Files: []changes.File{{Path: "a.go", Status: changes.FileModified, Additions: 2, Deletions: 1, Patch: patch}}, Patched: withPatch}, nil
+	}
+	var content strings.Builder
+	for i := range 40 {
+		fmt.Fprintf(&content, "line %d\n", i+1)
+	}
+	m.detailWorker.fileAt = func(context.Context, changes.Change, string) ([]byte, error) { return []byte(content.String()), nil }
+	ref := head
+	m.detailWorker.tour = func(model.Ref, string) (tour.Stored, bool, error) {
+		return tour.Stored{Tour: tour.Tour{Ref: ref, Steps: []tour.Step{
+			{File: "a.go", Line: 11, Description: "The fix.\x1b]52;c;cHduZWQ=\x07", Criterion: 1},
+			{File: "a.go", Line: 30, Description: "Its caller."},
+			{File: "b.go", Line: 2, Side: tour.SideOld, Description: "Untouched."},
+			{File: "a.go", Line: 11, Side: tour.SideOld, Description: "What it replaced."},
+		}}}, true, nil
+	}
+	m.width = 100
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	if m.detailTab != tabChangeDiff || len(m.detailSteps) != 4 {
+		t.Fatalf("Diff tab %d steps %v", m.detailTab, m.detailSteps)
+	}
+	for _, l := range m.detailLines {
+		if strings.Contains(l, "\x1b]52") {
+			t.Fatalf("tour text kept a control sequence: %q", l)
+		}
+	}
+	for _, step := range []struct {
+		keys   string
+		index  int
+		anchor lineAnchor
+		text   string
+	}{
+		{"]t", 0, lineAnchor{file: "a.go", side: sideNew, line: 11}, "Keep input responsive"},
+		{"]t", 1, lineAnchor{file: "a.go", side: sideNew, line: 30}, "Its caller."},
+		{"]t", 2, lineAnchor{file: "b.go", side: sideOld, line: 2}, "Untouched."},
+		{"]t", 3, lineAnchor{file: "a.go", side: sideOld, line: 11}, "What it replaced."},
+		{"[t", 2, lineAnchor{file: "b.go", side: sideOld, line: 2}, "Untouched."},
+	} {
+		for _, r := range step.keys {
+			m, _ = detailKey(m, r, 0)
+		}
+		top := m.detailSteps[step.index]
+		callout := ansi.Strip(strings.Join(m.detailLines[top:m.detailEntries[m.entryCursor]], "\n"))
+		if top < m.detailScroll || m.detailEntries[m.entryCursor] >= m.detailScroll+m.detailVisible() || !strings.Contains(callout, fmt.Sprintf("Step %d/4", step.index+1)) || !strings.Contains(callout, step.text) {
+			t.Fatalf("%s scrolled to %d (step at %d) under %q", step.keys, m.detailScroll, top, callout)
+		}
+		if !slices.ContainsFunc(m.cursorAnchors(), func(a lineAnchor) bool { a.head = ""; return a == step.anchor }) {
+			t.Fatalf("%s left the cursor on %v, want %v", step.keys, m.cursorAnchors(), step.anchor)
+		}
+		if row := ansi.Strip(m.detailLines[m.detailEntries[m.entryCursor]]); step.anchor.side == sideNew && !strings.Contains(row, fmt.Sprintf("line %d", step.anchor.line)) {
+			t.Fatalf("%s row %q", step.keys, row)
+		}
+	}
+	// Context lines past the hunk are numbered on both sides.
+	if anchors := m.anchorsAt(t, "line 30"); !slices.Contains(anchors, lineAnchor{file: "a.go", side: sideOld, line: 29}) {
+		t.Fatalf("line 30 resolves to %v", anchors)
+	}
+	ref = strings.Repeat("cd", 20)
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, ']', 0)
+	m, _ = detailKey(m, 't', 0)
+	if len(m.detailSteps) != 0 || !strings.Contains(m.notice, "Tour is stale: written for cdcdcdc, the change is now at ababab") || !strings.Contains(ansi.Strip(m.detailLines[0]), "Tour is stale") {
+		t.Fatalf("stale tour: steps %v notice %q first line %q", m.detailSteps, m.notice, m.detailLines[0])
+	}
+	// Uncommitted edits to a step's file move its lines off the tour's ref.
+	ref = head
+	d := changes.Detail{Files: []changes.File{{Path: "a.go", Status: changes.FileUncommitted, Patch: patch}}}
+	if view := m.detailWorker.loadTour(context.Background(), detailRequest{}, change, &d); view == nil || !strings.Contains(view.stale, "a.go has uncommitted changes") {
+		t.Fatalf("uncommitted tour: %+v", view)
+	}
+}
+
+// anchorsAt is what the Diff row containing text resolves to.
+func (m Model) anchorsAt(t *testing.T, text string) []lineAnchor {
+	t.Helper()
+	for i, line := range m.detailEntries {
+		if strings.Contains(ansi.Strip(m.detailLines[line]), text) {
+			m.entryCursor = i
+			var out []lineAnchor
+			for _, a := range m.cursorAnchors() {
+				a.head = ""
+				out = append(out, a)
+			}
+			return out
+		}
+	}
+	t.Fatalf("no Diff row with %q", text)
+	return nil
 }
 
 // A pull request's change view lists each check as an entry O opens, its

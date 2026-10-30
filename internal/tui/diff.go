@@ -15,6 +15,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/textutil"
+	"github.com/brettinternet/backlog/internal/tour"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -30,15 +31,39 @@ const (
 )
 
 // diffPage draws every file of a change's diff, each from the render cache
-// when its head, patch, width, and theme are unchanged.
-func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d changes.Detail, request detailRequest) rendered {
+// when its head, patch, width, and theme are unchanged, with the change's
+// tour steps above their lines.
+func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d changes.Detail, view *tourView, request detailRequest) rendered {
 	t, width := request.theme, max(1, request.width)
 	var page rendered
 	if c.IsCommit() {
 		page = commitMessage(c, d, request)
 	}
+	if view != nil && view.stale != "" {
+		page.tour = textutil.Line(view.stale)
+		page.lines = append(page.lines, t.yellow.render(ansi.Truncate(page.tour, width, "…")), "")
+		view = nil
+	}
+	if view != nil {
+		page.steps = make([]int, len(view.steps))
+	}
 	if len(d.Files) == 0 && d.Reason == "" {
 		page.lines = append(page.lines, t.muted.render("No changed files."))
+	}
+	left := (width - 1) / 2
+	callouts := func(i int, note string, whole bool) {
+		page.steps[i] = len(page.lines)
+		indent, room := 0, width
+		if width >= splitDiffWidth && !whole {
+			if view.steps[i].Side == tour.SideOld {
+				room = left
+			} else {
+				indent, room = left+1, width-1-left
+			}
+		}
+		for _, line := range callout(t, view, i, room, note, worker.render) {
+			page.lines = append(page.lines, blank(indent)+line)
+		}
 	}
 	for i, f := range d.Files {
 		if ctx.Err() != nil {
@@ -58,14 +83,34 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 			body = fileDiff(f, t, width, key.Expanded)
 			worker.diffs.putRender(key, body)
 		}
-		for _, h := range body.hunks {
-			page.hunks = append(page.hunks, len(page.lines)+h)
+		// Each step sits above the row showing its line, or under the file's
+		// header saying why none does.
+		at := map[int][]int{}
+		if view != nil {
+			for n, s := range view.steps {
+				if s.File != f.Path && (s.File != f.From || f.From == "" || s.Side != tour.SideOld) {
+					continue
+				}
+				if row := diffRowOf(body.rows, stepAnchor(f.Path, s)); row >= 0 {
+					at[row] = append(at[row], n)
+					continue
+				}
+				note := cmp.Or(view.unread[s.File], "line "+strconv.Itoa(s.Line)+" isn't in this diff")
+				callouts(n, note, true)
+			}
 		}
-		for i := range body.lines {
-			page.entries = append(page.entries, len(page.lines)+i)
+		hunks := body.hunks
+		for j, line := range body.lines {
+			for _, n := range at[j] {
+				callouts(n, "", false)
+			}
+			if len(hunks) > 0 && hunks[0] == j {
+				page.hunks, hunks = append(page.hunks, len(page.lines)), hunks[1:]
+			}
+			page.entries = append(page.entries, len(page.lines))
+			page.lines = append(page.lines, line)
 		}
 		page.rows = append(page.rows, body.rows...)
-		page.lines = append(page.lines, body.lines...)
 		page.truncated = page.truncated || large && !request.expanded
 	}
 	if d.Reason != "" {

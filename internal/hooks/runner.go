@@ -408,9 +408,36 @@ func executeWithOutput(ctx context.Context, cfg project.Config, hook project.Hoo
 			}
 		} else if present {
 			result.result = parsed
+			if err := intakeTour(ctx, cfg, event, runCWD, parsed); err != nil && result.outcome == "ok" {
+				result.outcome, result.message = "failed", err.Error()
+			}
 		}
 	}
 	return result
+}
+
+// TourIntake stores a tour file for an item; the engine sets it, since hooks
+// can't import the engine.
+var TourIntake func(ctx context.Context, cfg project.Config, ref, path string) error
+
+// intakeTour stores the tour a result's "tour" key names, relative to the
+// run's directory, failing the run with the reason a tour is refused.
+func intakeTour(ctx context.Context, cfg project.Config, event Event, dir string, result map[string]any) error {
+	value, ok := result["tour"]
+	if !ok {
+		return nil
+	}
+	path, ok := value.(string)
+	if !ok || path == "" {
+		return errors.New("tour: result key must be a file path")
+	}
+	if TourIntake == nil {
+		return errors.New("tour: intake is unavailable")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	return TourIntake(ctx, cfg, event.Ref, path)
 }
 
 func hookEnvironment(cfg project.Config, event Event, resultPath string) []string {

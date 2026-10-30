@@ -286,9 +286,10 @@ func (m Model) dispatchKey(key string) (tea.Model, tea.Cmd) {
 		m.inputSerial++
 		return m, nil
 	}
-	// On the Diff tab [ and ] jump files, and c after one jumps hunks instead.
+	// On the Diff tab [ and ] jump files, and c after one jumps hunks
+	// instead, t tour steps.
 	if prefix := m.prefix; prefix == "[" || prefix == "]" {
-		if key == "c" && m.detailFocus && m.detailTab == tabChangeDiff {
+		if (key == "c" || key == "t") && m.detailFocus && m.detailTab == tabChangeDiff {
 			return m.canonicalKey(key)
 		}
 		m.prefix = ""

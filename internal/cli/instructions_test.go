@@ -52,7 +52,7 @@ func TestInstructionsTopics(t *testing.T) {
 				Markdown string
 			}
 		}
-		if err := json.Unmarshal([]byte(body), &result); err != nil || code != 0 || stderr != "" || !result.OK || result.Data.Topic != topic || result.Data.Markdown != markdown || len(result.Data.Topics) != 5 {
+		if err := json.Unmarshal([]byte(body), &result); err != nil || code != 0 || stderr != "" || !result.OK || result.Data.Topic != topic || result.Data.Markdown != markdown || len(result.Data.Topics) != 6 {
 			t.Fatalf("%s JSON: %d %s %s", topic, code, body, stderr)
 		}
 	}
@@ -74,7 +74,7 @@ func TestInstructionsTopics(t *testing.T) {
 			Details struct{ Topics []string }
 		}
 	}
-	if err := json.Unmarshal([]byte(out), &failure); err != nil || code != 2 || stderr != "" || failure.Error.Reason != "usage" || len(failure.Error.Details.Topics) != 5 {
+	if err := json.Unmarshal([]byte(out), &failure); err != nil || code != 2 || stderr != "" || failure.Error.Reason != "usage" || len(failure.Error.Details.Topics) != 6 {
 		t.Fatalf("unknown JSON: %d %s %s", code, out, stderr)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
+	"github.com/brettinternet/backlog/internal/tour"
 )
 
 type Options struct {
@@ -30,6 +31,7 @@ type Options struct {
 	Store                      *engine.Store
 	Projector                  *engine.Projector
 	Changes                    *changes.Tracker // nil when no project reads changes
+	Tour                       func(model.Ref, string) (tour.Stored, bool, error)
 	Context                    context.Context
 	Sources                    []string
 	Statuses                   []project.StatusConfig
@@ -157,6 +159,9 @@ type Model struct {
 	detailFiles, detailHunks []int     // the Diff tab's file and hunk header lines
 	detailRows               []diffRow // what each Diff entry shows
 	detailHead               string    // the commit the Diff shows
+	detailSteps              []int     // the Diff line of each tour step's callout
+	detailTour               string    // why the change's tour is hidden
+	tourStep                 int       // the tour step ]t and [t last went to
 	detailDirty              []string  // the Diff's uncommitted files
 	diffOrigin, diffCursor   int       // the scroll and cursor before [ or ], which [c and ]c restore
 	detailLines              []string  // the last body, kept while the next loads
@@ -255,6 +260,7 @@ func New(opts Options) Model {
 			model.detailWorker.changeDetail, model.detailWorker.changeReview, model.detailWorker.enrich = tracker.Detail, tracker.Review, tracker.Enrich
 			model.detailWorker.changeDraft = tracker.Draft
 		}
+		model.detailWorker.tour = opts.Tour
 	}
 	if opts.Changes != nil {
 		model.reviewer = opts.Changes
@@ -919,6 +925,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
+			m.detailSteps, m.detailTour = result.steps, result.tour
+			if !keep {
+				m.tourStep = -1
+			}
 			if keep {
 				if n := place.find(m.detailRows); n >= 0 {
 					m.entryCursor = n
@@ -1265,9 +1275,14 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 	if m.detailOpen && m.detailFocus {
 		if prefix := m.prefix; prefix == "[" || prefix == "]" {
 			m.prefix = ""
-			if s == "c" {
+			switch s {
+			case "c":
 				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
 				m.jumpDiff(m.detailHunks, prefix == "]")
+				return m, nil
+			case "t":
+				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
+				m.stepTour(prefix == "]")
 				return m, nil
 			}
 		}
@@ -1595,6 +1610,7 @@ func (m *Model) closeDetail() {
 	m.detailChanges, m.detailCommits = nil, nil
 	m.detailFiles, m.detailHunks = nil, nil
 	m.detailRows, m.detailHead = nil, ""
+	m.detailSteps, m.detailTour, m.tourStep = nil, "", -1
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	if m.change != nil {

@@ -51,6 +51,7 @@ by the configured source IDs and types for `source:` filters.
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `history` | `id`, `limit` (0 or omitted: all), `cursor` | `bl history` |
 | `changes` | `id` | `bl changes` |
+| `tour` | `id`, `file` | `bl tour` |
 | `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
 
@@ -102,6 +103,10 @@ An unknown `cursor` returns `not-found`.
 agent can see whether its pull request is open, green, and approved, which
 checks fail, and how many review threads are unresolved, without calling the
 forge itself.
+
+`tour` stores a tour file for the item's linked change whose head is its `ref`
+and returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;
+`bl instructions tours` describes the format.
 
 `show` returns `item`, `metadata`, `sections`, `criteria`, `dod`, and, with
 coordination, `resource`, `claims`, and `claimsError`, plus `sessions` with

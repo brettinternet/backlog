@@ -47,6 +47,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, linked changes, and Git commits, oldest first, with each provider's status."}, s.history)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status."}, s.changes)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "tour", Description: "Store a CodeTour file for the item's linked change whose head equals the tour's ref, for the TUI Diff tab. The format is in bl instructions tours."}, s.tour)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "append", Description: "Append a note or comment to one backlog item."}, s.append)
@@ -131,6 +132,11 @@ type ShowArgs struct {
 
 type ChangesArgs struct {
 	ID string `json:"id"`
+}
+
+type TourArgs struct {
+	ID   string `json:"id"`
+	File string `json:"file" jsonschema:"Path to a CodeTour .tour file; see bl instructions tours."`
 }
 
 type HistoryArgs struct {
@@ -368,6 +374,16 @@ func (s *Server) changes(ctx context.Context, _ *mcp.CallToolRequest, args Chang
 		return failed[any](reason(err), err.Error())
 	}
 	result, err := engine.ItemChanges(ctx, s.cfg, item.Ref)
+	if err != nil {
+		return failed[any](reason(err), engine.ErrorMessage(err))
+	}
+	return nil, result, nil
+}
+func (s *Server) tour(ctx context.Context, _ *mcp.CallToolRequest, args TourArgs) (*mcp.CallToolResult, any, error) {
+	if args.ID == "" || args.File == "" {
+		return failed[any]("usage", "id and file are required")
+	}
+	result, err := engine.StoreTourFile(ctx, s.cfg, args.ID, args.File)
 	if err != nil {
 		return failed[any](reason(err), engine.ErrorMessage(err))
 	}
