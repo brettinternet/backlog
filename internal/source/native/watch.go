@@ -90,6 +90,11 @@ func (s *Source) WatchWithOptions(ctx context.Context, changed func(), o WatchOp
 	// keeps watching a directory moved away (Explorer delete moves it to the
 	// Recycle Bin) without completing a read, so a replacement would go unseen.
 	directory, _ := os.Stat(s.options.Path)
+	if directory != nil {
+		// Windows resolves a FileInfo's file ID lazily, by path, on first compare;
+		// resolve it now, or a later compare reads the replacement's ID.
+		os.SameFile(directory, directory)
+	}
 	fallback := func(e error) {
 		polling = true
 		if o.OnPolling != nil {
