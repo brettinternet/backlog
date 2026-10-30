@@ -107,8 +107,8 @@ func (s *Source) create(ctx context.Context, item *model.Item) (model.Item, erro
 	if err = s.identity(ctx, c); err != nil {
 		return model.Item{}, err
 	}
-	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !s.issueWrite) {
-		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
+	if err = s.writeGate(c, s.issueWrite); err != nil {
+		return model.Item{}, err
 	}
 	if option != "" {
 		// Discovery confirms the option still exists and sets OAuth project grants.
@@ -225,8 +225,8 @@ func (s *Source) delete(ctx context.Context, m model.Mutation) (model.Item, erro
 	if m.ExpectedVersion == "" || current.Version != m.ExpectedVersion {
 		return model.Item{}, source.Refuse("conflict", "issue, relations or project status changed")
 	}
-	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !s.issueWrite) {
-		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
+	if err = s.writeGate(c, s.issueWrite); err != nil {
+		return model.Item{}, err
 	}
 	created := s.created[m.Ref.ID]
 	delete(s.created, m.Ref.ID)

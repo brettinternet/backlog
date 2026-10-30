@@ -137,8 +137,8 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if m.ExpectedVersion == "" || current.Version != m.ExpectedVersion {
 		return model.Item{}, source.Refuse("conflict", "issue, relations or project status changed")
 	}
-	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !projectWrite && !s.issueWrite) {
-		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
+	if err = s.writeGate(c, projectWrite || s.issueWrite); err != nil {
+		return model.Item{}, err
 	}
 	if closed := current.Category == model.Done || current.Category == model.Canceled; labelStatus == "open" && closed {
 		payload = map[string]any{"state": "open", "state_reason": "reopened"}
@@ -212,6 +212,18 @@ func unsent(err error) bool {
 	var limited remote.ScheduleDiagnostic
 	var diagnostic *oauth.Diagnostic
 	return errors.As(err, &limited) || errors.As(err, &diagnostic) && diagnostic.Code == oauth.CodeRateLimited
+}
+
+// writeGate refuses a write the source or its grant can't make. A read-only
+// OAuth grant names the `--write` login that enables writes.
+func (s *Source) writeGate(c remote.Credential, appGrant bool) error {
+	switch {
+	case s.writable && s.o.Account.OAuth && !c.HasScope("write"):
+		return source.Refuse("rejected", "the OAuth grant is read-only; enable writes with `bl auth login github "+s.o.Account.Name+" --write`")
+	case !s.writable || s.o.Account.OAuth && !appGrant:
+		return source.Refuse("rejected", "repository write capability unavailable")
+	}
+	return nil
 }
 
 // projectScope reports whether the credential may write Projects v2 fields.

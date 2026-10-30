@@ -256,8 +256,12 @@ func (p *githubProvider) installations(ctx context.Context, token, slug string) 
 	if err != nil {
 		return nil, err
 	}
+	// An app user token lists only its own app's installations.
+	if len(all) == 0 && slug != "" {
+		return nil, GitHubNotInstalled(slug)
+	}
 	if len(all) == 0 {
-		return nil, Failure(CodeInsufficientScope, time.Time{})
+		return nil, Failure(CodeAppNotInstalled, time.Time{})
 	}
 	active := false
 	for _, i := range all {

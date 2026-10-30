@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,7 @@ type githubAuthFixture struct {
 	slug, errorCode, login string
 	polls, refreshes       int
 	grantWriteToRead       bool
+	uninstalled            bool
 }
 
 func githubTestProvider(t *testing.T) (*githubProvider, *githubAuthFixture) {
@@ -88,6 +90,10 @@ func githubTestProvider(t *testing.T) (*githubProvider, *githubAuthFixture) {
 			}
 			emit(map[string]any{"id": 42, "login": f.login})
 		case "/user/installations":
+			if f.uninstalled {
+				emit(map[string]any{"total_count": 0, "installations": []any{}})
+				return
+			}
 			permission := "read"
 			if f.slug == GitHubWriteApp || f.grantWriteToRead {
 				permission = "write"
@@ -175,6 +181,21 @@ func TestGitHubDeviceLoginUpgradeAndRotation(t *testing.T) {
 	}
 	if _, err = manager.Resolve(ctx, account, func(context.Context, Tokens) (string, error) { return "alice", nil }); err == nil {
 		t.Fatal("logout retained credentials")
+	}
+}
+
+// BL-147 was misled by an empty installation list reported as a missing
+// --write: the diagnostic must survive sanitizing and name the App to install.
+func TestGitHubLoginNamesMissingInstallation(t *testing.T) {
+	t.Parallel()
+	p, f := githubTestProvider(t)
+	f.uninstalled = true
+	account := Account{Provider: "github", Name: "work", Host: "github.com", User: "alice", OptIn: true}
+	manager := NewManager(Store{StateDir: filepath.Join(t.TempDir(), "state")}, "", Registry{"github": p}, nil)
+	err := manager.Login(context.Background(), account, Interaction{In: strings.NewReader(""), Out: io.Discard})
+	var d *Diagnostic
+	if !errors.As(err, &d) || d.Code != CodeAppNotInstalled || !strings.Contains(d.Message, "https://github.com/apps/bl-cli-read/installations/new") || strings.Contains(d.Message, "--write") {
+		t.Fatalf("%v", err)
 	}
 }
 

@@ -199,8 +199,8 @@ func (s *Source) promote(ctx context.Context, c remote.Credential, current model
 	if err := s.identity(ctx, c); err != nil {
 		return model.Item{}, err
 	}
-	if !s.writable || s.o.Account.OAuth && (!c.HasScope("write") || !s.issueWrite) {
-		return model.Item{}, source.Refuse("rejected", "repository write capability unavailable")
+	if err := s.writeGate(c, s.issueWrite); err != nil {
+		return model.Item{}, err
 	}
 	draft := current.Ref.ID
 	var result struct {

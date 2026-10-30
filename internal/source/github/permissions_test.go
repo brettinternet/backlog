@@ -62,8 +62,8 @@ func TestOAuthInstallationPermissionGatedWrites(t *testing.T) {
 	apply := func(field string, value any) (model.Item, error) {
 		return s.Apply(ctx, model.Mutation{Ref: current.Ref, Op: model.Set, Field: field, Value: value, ExpectedVersion: current.Version})
 	}
-	if _, err = apply("status", "closed"); err == nil {
-		t.Fatal("read app wrote issue")
+	if _, err = apply("status", "closed"); err == nil || !strings.Contains(err.Error(), "bl auth login github work --write") {
+		t.Fatalf("read app wrote issue or omitted --write: %v", err)
 	}
 	if _, err = apply("status", "active"); err == nil {
 		t.Fatal("classic project header bypassed read app")
@@ -86,8 +86,8 @@ func TestOAuthInstallationPermissionGatedWrites(t *testing.T) {
 		t.Fatal("revoked project write grant still allowed")
 	}
 	f.issuePermission = "read"
-	if _, err = apply("status", "closed"); err == nil {
-		t.Fatal("revoked issue write grant still allowed")
+	if _, err = apply("status", "closed"); err == nil || strings.Contains(err.Error(), "--write") {
+		t.Fatalf("revoked issue write grant still allowed or blamed --write: %v", err)
 	}
 	f.issuePermission = "write"
 	current, err = apply("status", "closed")

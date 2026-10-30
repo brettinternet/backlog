@@ -54,7 +54,8 @@ bl auth status linear work         # offline: grant, scopes, expiry
 | `authentication-required` | No grant yet; run `bl auth login` |
 | `token-expired` | The access token expired and couldn't refresh; log in again |
 | `grant-revoked` | The grant was revoked; log in again |
-| `insufficient-scope` | The grant lacks permission; use `--write` or fix App permissions |
+| `insufficient-scope` | The grant lacks permission; fix App permissions, or use `--write` if it can't write |
+| `app-not-installed` | The App has no installation visible to you; install it from the URL shown |
 | `principal-mismatch` | The token belongs to someone else; the source is disabled until fixed |
 | `sso-required` | The organization requires SSO or SAML authorization for the app |
 | `rate-limited` | Retry after the reported time |

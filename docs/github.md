@@ -73,7 +73,9 @@ read-only:
    bl auth login github personal
    ```
 
-   Open the URL shown and enter the code.
+   Open the URL shown and enter the code. If the App has no installation you
+   can see, login fails with `app-not-installed` and the App's install URL;
+   install it and log in again.
 
 3. For writes, install `bl-cli` and approve its permissions, then:
 
@@ -89,7 +91,8 @@ Permissions come from the App installations, not scopes; no `repo`,
 `public_repo`, or `project` scope is requested. Before use and before each
 write, `bl` rechecks installation and repository permissions, and GitHub
 enforces the intersection with your own. A read App with any write permission is
-refused. Project writes also need `allowWrites: true` and the project's
+refused. A write with a read grant is rejected with the `--write` login to
+run. Project writes also need `allowWrites: true` and the project's
 `viewerCanUpdate`. Organization policy or SSO can still deny access.
 
 Supported for github.com and organization Projects v2. Personal Projects v2 and

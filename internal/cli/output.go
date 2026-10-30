@@ -43,7 +43,7 @@ func (e *Error) ExitCode() int {
 		return 4
 	case "rejected", "invalid-config", "invalid-value", "oauth-not-opted-in":
 		return 5
-	case "unavailable", "unknown-outcome", "authentication-required", "oauth-provider-unavailable", "token-expired", "grant-revoked", "insufficient-scope", "sso-required", "rate-limited", "provider-unavailable", "principal-mismatch", "credential-store-unavailable", "interactive-login-required":
+	case "unavailable", "unknown-outcome", "authentication-required", "oauth-provider-unavailable", "token-expired", "grant-revoked", "insufficient-scope", "app-not-installed", "sso-required", "rate-limited", "provider-unavailable", "principal-mismatch", "credential-store-unavailable", "interactive-login-required":
 		return 6
 	case "contention":
 		return 7

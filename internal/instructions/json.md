@@ -30,8 +30,8 @@ Exit codes and reasons:
 - 5: rejected, invalid-config, or oauth-not-opted-in.
 - 6: unavailable (unsupported source or incomplete load), unknown-outcome (a
   write that may have applied), and provider reasons such as
-  authentication-required, token-expired, insufficient-scope, rate-limited, and
-  provider-unavailable.
+  authentication-required, token-expired, insufficient-scope, app-not-installed,
+  rate-limited, and provider-unavailable.
 - 7: contention (claimed by another holder).
 
 Login reasons need a person to run `bl auth login`; rate-limited reports

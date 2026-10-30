@@ -21,6 +21,7 @@ const (
 	CodeTokenExpired           = "token-expired"
 	CodeGrantRevoked           = "grant-revoked"
 	CodeInsufficientScope      = "insufficient-scope"
+	CodeAppNotInstalled        = "app-not-installed"
 	CodeSSORequired            = "sso-required"
 	CodeRateLimited            = "rate-limited"
 	CodeProviderDown           = "provider-unavailable"
@@ -59,7 +60,8 @@ var messages = map[string]string{
 	CodeProviderUnavailable:    "this provider has no registered native OAuth flow in this build; use its configured credential helper or environment account",
 	CodeTokenExpired:           "the OAuth access token expired; run `bl auth login PROVIDER ACCOUNT`",
 	CodeGrantRevoked:           "the OAuth grant was revoked; run `bl auth login PROVIDER ACCOUNT`",
-	CodeInsufficientScope:      "the OAuth grant lacks required permissions; enable writes explicitly with `bl auth login PROVIDER ACCOUNT --write`",
+	CodeInsufficientScope:      "the OAuth grant lacks required permissions; check the app's installation and permissions",
+	CodeAppNotInstalled:        "the OAuth app has no installation visible to this user; install it, then run `bl auth login PROVIDER ACCOUNT`",
 	CodeSSORequired:            "the provider requires SSO/SAML authorization for this account; authorize the app in the provider organization",
 	CodeRateLimited:            "the provider rate-limited OAuth; retry after the reported time",
 	CodeProviderDown:           "the provider OAuth service is unavailable; retry later",
@@ -77,6 +79,34 @@ func Failure(code string, retryAt time.Time) *Diagnostic {
 		code, message = CodeProviderDown, messages[CodeProviderDown]
 	}
 	return &Diagnostic{Code: code, Message: message, RetryAt: retryAt}
+}
+
+const writeRequired = "the OAuth grant can't write; enable writes explicitly with `bl auth login PROVIDER ACCOUNT --write`"
+
+// variants are fixed alternatives to a code's message that sanitizing keeps.
+// They name only built-in apps, never provider data.
+var variants = map[string]string{
+	writeRequired:                      CodeInsufficientScope,
+	githubNotInstalled(GitHubReadApp):  CodeAppNotInstalled,
+	githubNotInstalled(GitHubWriteApp): CodeAppNotInstalled,
+}
+
+// scopeFailure gives the `--write` hint only when the grant lacks writes that
+// were required, the one insufficient-scope failure `--write` can fix.
+func scopeFailure(granted, required []string) *Diagnostic {
+	if hasScopes(required, []string{"write"}) && !hasScopes(granted, []string{"write"}) {
+		return &Diagnostic{Code: CodeInsufficientScope, Message: writeRequired}
+	}
+	return Failure(CodeInsufficientScope, time.Time{})
+}
+
+// GitHubNotInstalled names the built-in App, GitHubReadApp or GitHubWriteApp,
+// that has no installation visible to the user.
+func GitHubNotInstalled(slug string) *Diagnostic {
+	return &Diagnostic{Code: CodeAppNotInstalled, Message: githubNotInstalled(slug)}
+}
+func githubNotInstalled(slug string) string {
+	return fmt.Sprintf("GitHub App %s has no installation visible to you; install it at https://github.com/apps/%s/installations/new, then log in again", slug, slug)
 }
 
 // Account is a user-configured identity. OptIn is only set from user config;
@@ -228,6 +258,9 @@ func hasScopes(granted, required []string) bool {
 func safeProviderError(err error) *Diagnostic {
 	var diagnostic *Diagnostic
 	if errors.As(err, &diagnostic) && diagnostic != nil {
+		if code, ok := variants[diagnostic.Message]; ok && code == diagnostic.Code {
+			return &Diagnostic{Code: code, Message: diagnostic.Message, RetryAt: diagnostic.RetryAt}
+		}
 		return Failure(diagnostic.Code, diagnostic.RetryAt)
 	}
 	return Failure(CodeProviderDown, time.Time{})

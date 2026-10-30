@@ -467,8 +467,17 @@ func TestOAuthErrorsAndPrincipalVerification(t *testing.T) {
 			t.Fatalf("unattended login: %v", err)
 		}
 		fixture.grantScopes = []string{}
-		if err := manager.Login(context.Background(), account, Interaction{In: strings.NewReader("ok"), Out: io.Discard}); !errors.As(err, &diagnostic) || diagnostic.Code != CodeInsufficientScope {
+		if err := manager.Login(context.Background(), account, Interaction{In: strings.NewReader("ok"), Out: io.Discard}); !errors.As(err, &diagnostic) || diagnostic.Code != CodeInsufficientScope || strings.Contains(diagnostic.Message, "--write") {
 			t.Fatalf("scope denial: %v", err)
+		}
+		// Only a grant missing required writes points at --write.
+		fixture.grantScopes = nil
+		if err := manager.Login(context.Background(), account, Interaction{In: strings.NewReader("ok"), Out: io.Discard}); err != nil {
+			t.Fatal(err)
+		}
+		fixture.grantScopes = []string{"read"}
+		if err := manager.EnableWrites(context.Background(), account, Interaction{In: strings.NewReader("ok"), Out: io.Discard}); !errors.As(err, &diagnostic) || diagnostic.Code != CodeInsufficientScope || !strings.Contains(diagnostic.Message, "--write") {
+			t.Fatalf("write denial: %v", err)
 		}
 		account.OptIn = false
 		if err := manager.Login(context.Background(), account, Interaction{In: strings.NewReader("ok"), Out: io.Discard}); !errors.As(err, &diagnostic) || diagnostic.Code != CodeNotOptedIn {

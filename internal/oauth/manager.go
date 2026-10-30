@@ -80,7 +80,7 @@ func (m *Manager) Login(ctx context.Context, account Account, interaction Intera
 			return current, false, err
 		}
 		if !hasScopes(principal.Scopes, scopes) {
-			return current, false, Failure(CodeInsufficientScope, time.Time{})
+			return current, false, scopeFailure(principal.Scopes, scopes)
 		}
 		if err = provider.Rediscover(ctx, account, tokens.AccessToken); err != nil {
 			return current, false, safeError(err)
@@ -130,7 +130,7 @@ func (m *Manager) EnableWrites(ctx context.Context, account Account, interaction
 			return current, false, err
 		}
 		if !hasScopes(principal.Scopes, scopes) {
-			return current, false, Failure(CodeInsufficientScope, time.Time{})
+			return current, false, scopeFailure(principal.Scopes, scopes)
 		}
 		if err = provider.Rediscover(ctx, account, tokens.AccessToken); err != nil {
 			return current, false, safeError(err)
@@ -174,7 +174,7 @@ func (m *Manager) Resolve(ctx context.Context, account Account, verify func(cont
 				return err
 			}
 			if !hasScopes(principal.Scopes, current.Scopes) {
-				return Failure(CodeInsufficientScope, time.Time{})
+				return scopeFailure(principal.Scopes, current.Scopes)
 			}
 			if err = provider.Rediscover(ctx, account, tokens.AccessToken); err != nil {
 				return safeError(err)
@@ -349,7 +349,7 @@ func verifyGrant(ctx context.Context, provider Provider, account Account, tokens
 	principal, err := provider.Verify(ctx, account, tokens.AccessToken)
 	if err == nil && tokens.GrantedScopes != nil {
 		if principal.Scopes != nil && !hasScopes(principal.Scopes, tokens.GrantedScopes) {
-			return Principal{}, Failure(CodeInsufficientScope, time.Time{})
+			return Principal{}, scopeFailure(principal.Scopes, tokens.GrantedScopes)
 		}
 		principal.Scopes = ScopeSet(tokens.GrantedScopes)
 	}
