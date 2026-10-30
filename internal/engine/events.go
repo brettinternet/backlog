@@ -410,7 +410,11 @@ func eventRecords(cfg project.Config, deltas map[string]source.Delta) []eventRec
 func eventTransaction(ctx context.Context, cfg project.Config, fn func(*hooks.Transaction, *sql.DB) error) ([]hooks.Event, error) {
 	var appended []hooks.Event
 	err := hooks.New(cfg.Paths.StateDir, cfg.Project.ID).Update(ctx, func(log *hooks.Transaction) error {
-		key := sha256.Sum256([]byte(cfg.Project.ID))
+		// The log is shared by project ID, but the diff baseline belongs to the
+		// control root that built it. A copy of backlog.yaml in another
+		// directory, or a root: checkout worktree, keeps its own baseline, and
+		// its first full snapshot builds it without emitting events.
+		key := sha256.Sum256([]byte(cfg.Project.ID + "\x00" + cfg.Discovery.ControlRoot))
 		dir := filepath.Join(cfg.Paths.CacheDir, "events")
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err
@@ -421,10 +425,7 @@ func eventTransaction(ctx context.Context, cfg project.Config, fn func(*hooks.Tr
 		}
 		defer db.Close()
 		db.SetMaxOpenConns(1)
-		if _, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS event_records (ref TEXT PRIMARY KEY, version TEXT NOT NULL, archived INTEGER NOT NULL, item BLOB NOT NULL, graph BLOB NOT NULL); CREATE TABLE IF NOT EXISTS event_metadata (initialized INTEGER NOT NULL, revision TEXT NOT NULL DEFAULT '', root TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS event_edges (item TEXT NOT NULL, owner TEXT NOT NULL, target TEXT NOT NULL); CREATE INDEX IF NOT EXISTS event_edge_target ON event_edges(target); CREATE INDEX IF NOT EXISTS event_edge_owner ON event_edges(owner); CREATE INDEX IF NOT EXISTS event_edge_item ON event_edges(item);`); err != nil {
-			return err
-		}
-		if err := claimEventBaseline(ctx, db, cfg.Discovery.ControlRoot); err != nil {
+		if _, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS event_records (ref TEXT PRIMARY KEY, version TEXT NOT NULL, archived INTEGER NOT NULL, item BLOB NOT NULL, graph BLOB NOT NULL); CREATE TABLE IF NOT EXISTS event_metadata (initialized INTEGER NOT NULL, revision TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS event_edges (item TEXT NOT NULL, owner TEXT NOT NULL, target TEXT NOT NULL); CREATE INDEX IF NOT EXISTS event_edge_target ON event_edges(target); CREATE INDEX IF NOT EXISTS event_edge_owner ON event_edges(owner); CREATE INDEX IF NOT EXISTS event_edge_item ON event_edges(item);`); err != nil {
 			return err
 		}
 		if err := fn(log, db); err != nil {
@@ -434,33 +435,6 @@ func eventTransaction(ctx context.Context, cfg project.Config, fn func(*hooks.Tr
 		return nil
 	})
 	return appended, err
-}
-
-// claimEventBaseline keeps the diff baseline to the control root that built
-// it. Any directory holding a copy of backlog.yaml shares the project's event
-// log, so a snapshot from another root would otherwise report every difference
-// between two directories as item changes. A new root clears the baseline, and
-// the next full snapshot rebuilds it without emitting events.
-func claimEventBaseline(ctx context.Context, db *sql.DB, root string) error {
-	var columns int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('event_metadata') WHERE name='root'`).Scan(&columns); err != nil {
-		return err
-	}
-	if columns == 0 {
-		if _, err := db.ExecContext(ctx, `ALTER TABLE event_metadata ADD COLUMN root TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	var prior string
-	err := db.QueryRowContext(ctx, `SELECT root FROM event_metadata`).Scan(&prior)
-	if err == sql.ErrNoRows || err == nil && prior == root {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	_, err = db.ExecContext(ctx, `DELETE FROM event_metadata; DELETE FROM event_records; DELETE FROM event_edges;`)
-	return err
 }
 
 type eventIdentity struct {
@@ -559,7 +533,7 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 	}
 	if len(transitions) == 0 {
 		if initialized == 0 && full {
-			if _, err = tx.ExecContext(ctx, `INSERT INTO event_metadata(initialized,root) VALUES(1,?)`, cfg.Discovery.ControlRoot); err != nil {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO event_metadata(initialized) VALUES(1)`); err != nil {
 				return err
 			}
 		}
@@ -690,7 +664,7 @@ func reconcileEvents(ctx context.Context, cfg project.Config, log *hooks.Transac
 		}
 	}
 	if initialized == 0 && full {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO event_metadata(initialized,root) VALUES(1,?)`, cfg.Discovery.ControlRoot); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO event_metadata(initialized) VALUES(1)`); err != nil {
 			return err
 		}
 	}
