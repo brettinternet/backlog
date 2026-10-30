@@ -287,19 +287,24 @@ names the event. A source that can't comment records locally.
 absent otherwise.
 
 A skill or hook that works an item without claiming it, such as PR follow-up
-or review, can record a handoff for the item its branch names
-(`bl-12-fix-login` is `BL-12`). It does nothing outside a `bl` project:
+or review, can record a handoff for the item its PR's head branch names
+(`bl-12-fix-login` is `BL-12`). Run it in a checkout of the PR's repository. It
+does nothing outside a `bl` project:
 
 ```sh
-top=$(git rev-parse --show-toplevel) || exit 0
-id=$(git branch --show-current | sed -nE 's/^([A-Za-z]+-[0-9]+).*/\1/p' | tr '[:lower:]' '[:upper:]')
+top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+branch=$(gh pr view 41 --json headRefName --jq .headRefName)
+id=$(printf '%s\n' "$branch" | sed -nE 's/^([A-Za-z]+-[0-9]+).*/\1/p' | tr '[:lower:]' '[:upper:]')
 if [ -f "$top/backlog.yaml" ] && [ -n "$id" ]; then
   printf '%s\n' "Reviewed PR 41; asked for a retry test. Next: rerun task ci after the fix." |
     bl handoff "$id" - --session "${CLAUDE_CODE_SESSION_ID:?}"
 fi
 ```
 
-Pass your harness's own session ID, as for a claimed loop.
+Read the PR's head branch, not the current one: a review may run from another
+branch, and a worktree at the PR head may be detached. A branch that names no
+item exits 3 and records nothing. Pass your harness's own session ID, as for a
+claimed loop.
 
 ### `bl ac ID ...`
 
