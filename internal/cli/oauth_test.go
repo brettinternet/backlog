@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -390,7 +391,17 @@ func TestAuthLoginOffersGHHelperForConfiguredUser(t *testing.T) {
 		transport.CloseIdleConnections()
 	})
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\necho gh-token\n"), 0o700); err != nil {
+	if runtime.GOOS == "windows" {
+		// A shebang fake is not executable on Windows. Build the same token
+		// helper there so principal and consent checks still run end to end.
+		source := filepath.Join(t.TempDir(), "gh.go")
+		if err := os.WriteFile(source, []byte("package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"gh-token\") }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "gh.exe"), source).CombinedOutput(); err != nil {
+			t.Fatalf("build gh fake: %v\n%s", err, out)
+		}
+	} else if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\necho gh-token\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

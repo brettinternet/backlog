@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -294,8 +295,13 @@ func TestDraftPersistence(t *testing.T) {
 	if err := SaveDraft(state, d); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(draftPath(state, url)); err != nil || info.Mode().Perm() != 0o600 {
+	info, err := os.Stat(draftPath(state, url))
+	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("draft file: %v %v", info, err)
+	}
+	// Windows reports writable files as 0666; Unix mode bits do not apply.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("draft permissions: %v", info.Mode())
 	}
 	got, err := LoadDraft(state, url)
 	if err != nil || got.Body != "LGTM" || len(got.Comments) != 2 || got.Comments[1].Body != "edited" || !got.Comments[0].Old || len(got.Replies) != 1 {
