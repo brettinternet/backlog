@@ -95,8 +95,9 @@ func (m *Manager) Login(ctx context.Context, account Account, interaction Intera
 }
 
 // EnableWrites requests read plus write scopes only after a separate explicit
-// user action, verifies the same principal, and asks the provider to rediscover
-// current account capabilities before persisting the upgraded grant.
+// user action. An existing grant must belong to the same principal; without
+// one, the write grant alone is verified against the configured account. The
+// provider rediscovers current capabilities before the grant is persisted.
 func (m *Manager) EnableWrites(ctx context.Context, account Account, interaction Interaction) error {
 	if !interactive(interaction) {
 		return Failure(CodeInteractionRequired, time.Time{})
@@ -110,11 +111,13 @@ func (m *Manager) EnableWrites(ctx context.Context, account Account, interaction
 		return Failure(CodeProviderUnavailable, time.Time{})
 	}
 	err := m.store.withRecord(ctx, tokenKey(account), func(current *storedRecord, _ func(*storedRecord) error) (*storedRecord, bool, error) {
-		if !recordMatches(account, current) {
-			return current, false, Failure(CodeAuthenticationRequired, time.Time{})
+		var previous *Tokens
+		principalID := ""
+		if recordMatches(account, current) {
+			value := tokensFrom(current)
+			previous, principalID = &value, current.PrincipalID
 		}
-		previous := tokensFrom(current)
-		tokens, err := provider.Authorize(ctx, account, scopes, &previous, interaction)
+		tokens, err := provider.Authorize(ctx, account, scopes, previous, interaction)
 		if err != nil {
 			return current, false, safeError(err)
 		}
@@ -126,7 +129,7 @@ func (m *Manager) EnableWrites(ctx context.Context, account Account, interaction
 		if err != nil {
 			return current, false, safeError(err)
 		}
-		if err = verifyPrincipal(account, principal, current.PrincipalID); err != nil {
+		if err = verifyPrincipal(account, principal, principalID); err != nil {
 			return current, false, err
 		}
 		if !hasScopes(principal.Scopes, scopes) {

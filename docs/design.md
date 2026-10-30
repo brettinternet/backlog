@@ -493,7 +493,7 @@ reading private files or inventing request inputs.
 
 Port the adapter code from `internal/queue` at that tag.
 
-**OAuth** (D17) is opt-in per user account. Linear uses user authorization with S256 PKCE and a loopback callback; github.com uses device login with separate read-only and write GitHub Apps. Both request read access first and write only after explicit consent. Jira stays on helpers because its 3LO needs a client secret; external adapters own their authentication. [oauth.md](oauth.md) holds the provider evidence; [linear.md](linear.md#oauth-login) and [github.md](github.md#oauth-login) cover setup.
+**OAuth** (D17) is opt-in per user account. Linear uses user authorization with S256 PKCE and a loopback callback; github.com uses device login with separate read-only and write GitHub Apps. Plain login requests read access; write needs the explicit `--write` consent, which needs no prior read login. Jira stays on helpers because its 3LO needs a client secret; external adapters own their authentication. [oauth.md](oauth.md) holds the provider evidence; [linear.md](linear.md#oauth-login) and [github.md](github.md#oauth-login) cover setup.
 
 ## 11. Performance
 

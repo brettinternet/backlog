@@ -40,13 +40,13 @@ func authCommands(directory *string, in io.Reader, out, errOut io.Writer) *urfav
 			}
 			manager := oauthManager(cfg)
 			interaction := oauth.Interaction{In: in, Out: errOut}
-			if err := manager.Login(ctx, account, interaction); err != nil {
-				return err
-			}
 			if cmd.Bool("write") {
-				if err := manager.EnableWrites(ctx, account, interaction); err != nil {
-					return err
-				}
+				err = manager.EnableWrites(ctx, account, interaction)
+			} else {
+				err = manager.Login(ctx, account, interaction)
+			}
+			if err != nil {
+				return err
 			}
 			if cmd.Bool("json") {
 				return success(out, "auth login", map[string]any{"provider": account.Provider, "account": account.Name, "writeScopes": cmd.Bool("write")})

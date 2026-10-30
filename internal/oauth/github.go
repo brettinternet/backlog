@@ -56,18 +56,15 @@ func waitGitHubPoll(ctx context.Context, delay time.Duration) error {
 		return ctx.Err()
 	}
 }
-func (p *githubProvider) Authorize(ctx context.Context, a Account, scopes []string, previous *Tokens, interaction Interaction) (Tokens, error) {
+func (p *githubProvider) Authorize(ctx context.Context, a Account, scopes []string, _ *Tokens, interaction Interaction) (Tokens, error) {
 	if err := githubAccount(a); err != nil {
 		return Tokens{}, err
 	}
 	if !interactive(interaction) {
 		return Tokens{}, Failure(CodeInteractionRequired, time.Time{})
 	}
+	// --write authorizes the write App separately, never an OAuth scope escalation.
 	clientID, slug := githubApp(scopes)
-	// --write is a separate device authorization, never an OAuth scope escalation.
-	if slug == GitHubWriteApp && previous == nil {
-		return Tokens{}, Failure(CodeAuthenticationRequired, time.Time{})
-	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if _, err := fmt.Fprintf(interaction.Out, "Install %s on selected repositories first: https://github.com/apps/%s/installations/new\n", slug, slug); err != nil {
