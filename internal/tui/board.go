@@ -19,6 +19,7 @@ const (
 	boardGap          = 2
 	boardMinWidth     = 28
 	boardNoItemsWidth = 11 // cursor, two spaces, "No items"
+	boardRuleWidth    = 3  // the shortest header rule and the space before it
 )
 
 // Column offsets and flattened rows are prepared in a command, just like lists.
@@ -116,7 +117,8 @@ func (m Model) boardWidth() int {
 
 // boardColumns returns the widths of the columns shown from left. A column
 // without cards is only as wide as its header or No items line; columns with
-// cards share the rest, each at least boardMinWidth cells.
+// cards share the rest, each at least boardMinWidth cells. Every header keeps
+// room for a rule, so even an all-empty board has one.
 func (m Model) boardColumns(left int) []int {
 	total := m.boardWidth()
 	var widths []int
@@ -125,7 +127,7 @@ func (m Model) boardColumns(left int) []int {
 		width := boardMinWidth
 		empty := m.boardEnd(c) == m.data.starts[c]+1
 		if empty {
-			width = max(boardNoItemsWidth, ansi.StringWidth(m.boardHeader(c, false)))
+			width = max(boardNoItemsWidth, ansi.StringWidth(m.boardHeader(c, false))+boardRuleWidth)
 		}
 		if len(widths) > 0 {
 			if used+boardGap+width > total {
