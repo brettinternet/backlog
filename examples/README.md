@@ -20,7 +20,7 @@ A `config.yaml` belongs in `~/.config/backlog/config.yaml`; merge it into yours.
 | [05-agent-loop](05-agent-loop) | Native | Worklease claims for parallel agents |
 | [06-backlog-md](06-backlog-md) | Backlog.md | An existing Backlog.md folder |
 | [07-beads](07-beads) | Beads | An existing `bd` database |
-| [08-github-issues](08-github-issues) | GitHub | Issues through `gh auth token` |
+| [08-github-issues](08-github-issues) | GitHub | Issues and unlinked pull requests through `gh auth token` |
 | [09-github-project](09-github-project) | GitHub | Status from a Projects v2 board |
 | [10-linear](10-linear) | Linear | A team through an API key |
 | [11-jira](11-jira) | Jira Cloud | A JQL query through an API token |
