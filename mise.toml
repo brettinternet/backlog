@@ -2,9 +2,9 @@
 staticcheck = "go:honnef.co/go/tools/cmd/staticcheck"
 
 [tools]
-go = "1.27.3"
+go = "1.27.4"
 git-cliff = "2.14.2"
-betterleaks = "1.9.0"
+betterleaks = "1.10.0"
 lefthook = "2.2.2"
 task = "3.54.0"
 worktrunk = "0.81.0"
