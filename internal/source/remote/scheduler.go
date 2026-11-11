@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,10 @@ type ScheduleDiagnostic struct {
 }
 
 func (e ScheduleDiagnostic) Error() string { return e.Code }
+
+// errUnauthorized is a 401 for a helper or environment credential, which
+// renewing that credential fixes.
+var errUnauthorized = errors.New("remote HTTP: provider rejected the credential")
 
 type accountQueue struct {
 	slot    chan struct{}
@@ -182,6 +187,9 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 				}
 			}
 			return Response{}, oauth.Failure(code, time.Time{})
+		}
+		if response.StatusCode == http.StatusUnauthorized {
+			return Response{}, errUnauthorized
 		}
 		return fail("provider refused request")
 	}

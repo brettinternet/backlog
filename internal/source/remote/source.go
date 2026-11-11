@@ -276,7 +276,9 @@ func (s *Source) safeError(err error) error {
 		}
 		switch refusal.Reason {
 		case "conflict", "not-found", "invalid-id", "unavailable", "rejected", "unknown-outcome":
-			return source.Refuse(refusal.Reason, "remote source refused operation")
+			// Adapters write refusal messages, so they name the cause; redaction
+			// is the same boundary rows and findings cross.
+			return source.Refuse(refusal.Reason, s.secrets.Redact(refusal.Message))
 		}
 	}
 	return source.Refuse("unavailable", "remote source failed")

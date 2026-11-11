@@ -35,10 +35,14 @@ Each account uses exactly one of:
 | `oauth: true` | `bl auth login`; see [OAuth](oauth.md). Never falls back to the other methods. |
 
 The credential must authenticate as `user`; it's checked against the provider's
-identity endpoint and refreshed before writes. Credentials stay in memory,
-print as `[REDACTED]`, and are left out of JSON. Rows, findings, and errors are
-redacted before reaching the cache, events, or hooks; a cursor containing a
-credential is refused. Hook environments never get account variables.
+identity endpoint on every load and refreshed before writes, so a renewed
+credential takes effect at the next refresh without restarting. A token the
+provider rejects reports `credentials: the provider rejected the token; renew
+it`. Credentials stay in memory, print as `[REDACTED]`, and are left out of
+JSON. Rows, findings, and errors are redacted before reaching the cache,
+events, or hooks, and errors keep bl's message naming the cause; a cursor
+containing a credential is refused. Hook environments never get account
+variables.
 
 ## HTTP
 

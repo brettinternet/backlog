@@ -3,6 +3,9 @@ package remote
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,5 +77,27 @@ func TestCredentialsBoundedPrivateAndVerified(t *testing.T) {
 	account.Env = "GH_TOKEN"
 	if _, err = resolver.Resolve(context.Background(), account, verify); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Catches an expired helper token surfacing as a generic source failure,
+// indistinguishable from an outage, instead of asking for renewal.
+func TestRejectedTokenNamesRenewal(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	parsed, _ := url.Parse(server.URL)
+	secrets := &Secrets{}
+	client := Client{Host: parsed.Host, Account: "alice", HTTP: server.Client(), Scheduler: NewScheduler(), Secrets: secrets}
+	account := project.AccountConfig{User: "alice", Credential: helper(t, "printf 'expired-token\\n'\n")}
+	_, err := (&Credentials{Secrets: secrets}).Resolve(context.Background(), account, func(ctx context.Context, c Credential) (string, error) {
+		req, _ := http.NewRequest(http.MethodPost, server.URL, nil)
+		_, err := client.Do(ctx, req, c)
+		return "", err
+	})
+	err = (&Source{secrets: secrets}).safeError(err)
+	if err == nil || err.Error() != "unavailable: credentials: the provider rejected the token; renew it" {
+		t.Fatalf("rejected token: %v", err)
 	}
 }

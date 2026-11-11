@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/brettinternet/backlog/internal/oauth"
 	"github.com/brettinternet/backlog/internal/proctree"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 )
 
 // Secrets holds credentials only in memory. Share one instance across the
@@ -104,7 +104,10 @@ type Credentials struct {
 // credentials. The provider must verify the supplied token's principal. Resolve
 // again immediately before writes. Neither helper nor verifier errors escape.
 func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig, verify func(context.Context, Credential) (string, error)) (Credential, error) {
-	fail := func(message string) (Credential, error) { return Credential{}, fmt.Errorf("credentials: %s", message) }
+	// Messages are fixed, so they cross the source boundary to name the cause.
+	fail := func(message string) (Credential, error) {
+		return Credential{}, source.Refuse("unavailable", "credentials: "+message)
+	}
 	if h.Secrets == nil || account.User == "" || verify == nil {
 		return fail("expected user, secret store and verifier required")
 	}
@@ -180,6 +183,9 @@ func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig
 		var diagnostic ScheduleDiagnostic
 		if errors.As(err, &diagnostic) {
 			return Credential{}, diagnostic
+		}
+		if errors.Is(err, errUnauthorized) {
+			return fail("the provider rejected the token; renew it")
 		}
 		return fail("cannot verify authenticated principal")
 	}

@@ -240,6 +240,12 @@ func TestCredentialCanaryAcrossSourceSinks(t *testing.T) {
 	if err == nil || strings.Contains(fmt.Sprint(err), canary) {
 		t.Fatalf("unsafe load error: %v", err)
 	}
+	// A refusal keeps its cause, redacted.
+	p.err = source.Refuse("unavailable", "invalid data near "+canary)
+	_, err = s.Load(context.Background(), source.Cursor{})
+	if err == nil || err.Error() != "unavailable: invalid data near [REDACTED]" {
+		t.Fatalf("refusal lost its cause or leaked: %v", err)
+	}
 	p.err = nil
 	p.delta.Cursor.Value = canary
 	if _, err = s.Load(context.Background(), source.Cursor{}); err == nil || strings.Contains(fmt.Sprint(err), canary) {
