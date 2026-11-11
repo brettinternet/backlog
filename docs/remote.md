@@ -30,7 +30,7 @@ Each account uses exactly one of:
 
 | Method | Notes |
 | --- | --- |
-| `credential: [argv]` | Helper runs without a shell, minimal environment, 15 s timeout, 4 KiB output limits. Its output is never echoed. |
+| `credential: [argv]` | Helper runs without a shell, minimal environment, 15 s timeout, 4 KiB output limits. Its output is never echoed; a failure reports only its exit code. |
 | `env: NAME` | Read from that variable |
 | `oauth: true` | `bl auth login`; see [OAuth](oauth.md). Never falls back to the other methods. |
 

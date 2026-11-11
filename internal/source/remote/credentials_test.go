@@ -73,6 +73,11 @@ func TestCredentialsBoundedPrivateAndVerified(t *testing.T) {
 			t.Fatalf("unsafe helper failure: %v", err)
 		}
 	}
+	// A locked keychain exits nonzero; the code tells it apart from a timeout.
+	account.Credential = helper(t, "exit 36\n")
+	if _, err = resolver.Resolve(context.Background(), account, verify); err == nil || err.Error() != "unavailable: credentials: helper exited 36" {
+		t.Fatalf("helper exit status lost: %v", err)
+	}
 	account.Credential = nil
 	account.Env = "GH_TOKEN"
 	if _, err = resolver.Resolve(context.Background(), account, verify); err != nil {

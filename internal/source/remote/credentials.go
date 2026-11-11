@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -166,11 +167,24 @@ func (h *Credentials) Resolve(ctx context.Context, account project.AccountConfig
 		cmd.Stdout, cmd.Stderr = output, stderr
 		tree, err := proctree.Start(cmd)
 		defer tree.Kill()
-		if err == nil {
-			err = cmd.Wait()
+		if err != nil {
+			return fail("helper could not start")
 		}
-		if err != nil || output.exceeded || stderr.exceeded {
-			return fail("helper failed or exceeded 15s/4KiB")
+		err = cmd.Wait()
+		// The exit code is the one helper detail safe to report: a locked
+		// keychain and a missing secret fail differently, never with output.
+		var exit *exec.ExitError
+		switch {
+		case output.exceeded || stderr.exceeded:
+			return fail("helper output exceeded 4KiB")
+		case ctx.Err() != nil:
+			return fail("canceled waiting for helper")
+		case bounded.Err() != nil:
+			return fail("helper timed out after 15s")
+		case errors.As(err, &exit) && exit.ExitCode() >= 0:
+			return fail(fmt.Sprintf("helper exited %d", exit.ExitCode()))
+		case err != nil:
+			return fail("helper failed")
 		}
 		token = strings.TrimSpace(output.buffer.String())
 	}
