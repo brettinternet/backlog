@@ -55,6 +55,10 @@ variables.
   and Linear's `X-RateLimit-Requests/Complexity-Remaining/Reset` set a retry
   deadline, even on success. Until then, requests fail fast with a
   `ScheduleDiagnostic` carrying `RetryAt`; nothing sleeps or retries writes.
+- A `429`, or a `403` that says "rate limit", without a usable one of those
+  headers, such as GitHub's secondary rate limit, holds the account for 60 s.
+  Each further such response before a non-limited one doubles the wait, up to
+  16 minutes; any non-limited response resets it to 60 s.
 - ETags are memory-only, per account, credential, URL, and `Accept`. A `304` is
   not an empty list: the adapter reuses its data or enumerates anyway.
 
