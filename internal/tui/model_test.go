@@ -329,6 +329,28 @@ func BenchmarkShellNavigation50k(b *testing.B) {
 		_ = m.View()
 	}
 }
+
+// Catches the criteria column counting definition-of-done items, which the
+// detail tab's total includes, or leaking into the narrow built-in tabs.
+func TestCriteriaColumn(t *testing.T) {
+	t.Parallel()
+	row := engine.Row{Ref: model.Ref{Source: "tasks", ID: "BL-1"}, Title: "Item", Status: "Active"}
+	row.SetCounts(model.Item{
+		Criteria: []model.Criterion{{Checked: true}, {}},
+		DoD:      []model.Criterion{{Checked: true}, {}, {}},
+	})
+	m := New(Options{NoColor: true, Project: "fixture"})
+	m.groups = []engine.RowGroup{{Value: "Active", Rows: []engine.Row{row}}}
+	m.data = prepareRows(m.groups, nil)
+	for view, want := range map[int]bool{0: false, 1: true} {
+		m.view = view
+		line := ansi.Strip(m.listRow(1, m.layout(120)))
+		if strings.Contains(line, "☑ 1/2") != want || strings.Contains(line, "☑ 2/5") {
+			t.Fatalf("%s: %q", m.views[view].ID, line)
+		}
+	}
+}
+
 func TestShellMeasurement(t *testing.T) {
 	if os.Getenv("BL_TUI_MEASURE") != "1" {
 		return
