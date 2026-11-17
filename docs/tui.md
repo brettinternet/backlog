@@ -71,8 +71,9 @@ its base, `●` checks running, `○` review required, `✓` ready. A draft, or 
 pull request whose merge state is unknown, shows its checks glyph. Help lists
 these under Change column. As the pane narrows,
 columns drop in this order so the title keeps at least two-fifths of the width:
-updated, assignee, children, criteria, and change, blockers, claim, then the status name
-(the icon stays).
+updated, assignee, children and criteria, then blockers, claim, and the status name
+(the icon stays). The change column shrinks to its stage glyph and verdict, such
+as `⇡ ✓`, when children drop, and drops with blockers.
 Grouping by status shows only the icon. Opaque provider IDs (Linear states and
 users, Jira accountIds, GitHub Projects options) show the provider's name
 everywhere, including group headers and detail; a configured status name wins

@@ -77,6 +77,10 @@ func verdictGlyph(t theme, c changes.Change) string {
 
 // changeCell is the list column: the most advanced change's stage, label, and
 // verdict, such as ⇡#45 ✓, padded to width.
+// compactChangeWidth fits the stage glyph and merge verdict without the label,
+// so narrow lists still show which items have pull requests.
+const compactChangeWidth = 3
+
 func changeCell(t theme, cs []changes.Change, width int) string {
 	c, ok := changes.Furthest(cs)
 	if !ok {
@@ -88,7 +92,11 @@ func changeCell(t theme, cs []changes.Change, width int) string {
 		room -= 2
 		verdict = " " + verdict
 	}
-	return stageGlyph(t, c) + t.muted.render(cell(textutil.Line(changes.Label(c)), max(0, room))) + verdict
+	label := textutil.Line(changes.Label(c))
+	if width <= compactChangeWidth {
+		label = ""
+	}
+	return stageGlyph(t, c) + t.muted.render(cell(label, max(0, room))) + verdict
 }
 
 // changeWidth is the width changeCell needs for cs.
