@@ -2,6 +2,7 @@
 """Capture bl's alternate screen in a private tmux server, never the user's panes."""
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -52,9 +53,11 @@ def main():
         capture = ['capture-pane', '-p', '-t', 'snapshot:0.0'] + (['-e'] if args.ansi else [])
         while time.monotonic() < deadline:
             pane = tmux(*capture).stdout
+            # Match text without --ansi's escapes, which split styled runs.
+            text = re.sub(r'\x1b\[[0-9;:]*m', '', pane)
             # Settled: painted, with nothing loading, syncing or searching.
-            ready = pane.strip() != '' and not any(busy in pane for busy in ('Loading', '\u21bb', 'Searching'))
-            ready = ready and (not first or args.wait in pane)
+            ready = text.strip() != '' and not any(busy in text for busy in ('Loading', '\u21bb', 'Searching'))
+            ready = ready and (not first or args.wait in text)
             if ready and first and groups:
                 tmux('send-keys', '-t', 'snapshot:0.0', *groups.pop(0))
                 first = False
