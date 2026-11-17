@@ -78,9 +78,12 @@ type detailRequest struct {
 	theme      theme
 	now        time.Time
 	fresh      bool            // R: reread from the source, bypassing both caches
+	poll       bool            // a forge refresh: reread only the shown pull requests' reviews
 	change     *changes.Change // the change view's change
 	checksOpen bool            // the Overview shows passing and skipped checks
 	check      *changes.Check  // the check view's check, on the Overview tab
+	threads    string          // review threads toggled from their default, one key per line
+	resolved   bool            // Conversation shows its resolved threads
 }
 type detailResult struct {
 	generation uint64
@@ -98,6 +101,7 @@ type detailResult struct {
 	rows       []diffRow  // what each Diff entry shows
 	head       string     // the commit the Diff shows
 	steps      []stepSpan // where the Diff shows each tour step, in tour order
+	threads    []int      // the Diff's entry of each unresolved review thread
 	tour       string     // why the Diff shows no tour steps, when it has a tour
 	dirty      []string   // the change's uncommitted files, which aren't at head
 	review     *changes.Review
@@ -157,6 +161,7 @@ type rendered struct {
 	hunks     []int
 	rows      []diffRow  // what each Diff entry, or each line of a file's diff, shows
 	steps     []stepSpan // where each tour step shows, in tour order
+	threads   []int      // the Diff's entry of each unresolved review thread
 	tour      string     // why a change's tour shows no steps
 	truncated bool
 	size      int
@@ -303,6 +308,7 @@ type historyCache struct {
 type changeCache struct {
 	key    string
 	detail changes.Detail
+	err    error
 }
 
 type detailWorker struct {
@@ -446,7 +452,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		var review *changes.Review
 		var draft *changes.Draft
 		if request.change.Number > 0 {
-			r, err := worker.loadReview(ctx, *request.change, request.fresh)
+			r, err := worker.loadReview(ctx, *request.change, request.fresh || request.poll)
 			if err != nil {
 				r = changes.Review{Stale: "pull request detail unavailable: " + err.Error()}
 				r.Blocked = r.Stale
@@ -478,9 +484,9 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			if err == nil {
 				view = worker.loadTour(ctx, request, *request.change, &detail)
 			}
-			page = worker.diffPage(ctx, *request.change, detail, view, request)
+			page = worker.diffPage(ctx, *request.change, detail, view, review, draft, request)
 		} else {
-			page = changeViewPage(*request.change, detail, review, draft, result.draftErr, request, worker.render)
+			page = changeViewPage(*request.change, detail, review, draft, result.draftErr, request, worker.render, worker.commentRender)
 		}
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
@@ -489,7 +495,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		result.lines, result.entries, result.ids, result.links = page.lines, page.entries, page.ids, page.links
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
-		result.steps, result.tour = page.steps, page.tour
+		result.steps, result.tour, result.threads = page.steps, page.tour, page.threads
 		if request.tab == tabChangeCommits {
 			result.commits = detail.Commits
 		}
@@ -511,7 +517,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 				return changes.Enrich(ctx, cs, nil, fresh)
 			}
 		}
-		page := changeLines(enrich(ctx, request.row.Changes, request.fresh), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
+		page := changeLines(enrich(ctx, request.row.Changes, request.fresh || request.poll), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
 			return result
@@ -606,7 +612,8 @@ func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, li
 
 // loadChange reads a change's files and commits each time, as the Changes
 // tab does, except one without a worktree is kept until its head or update
-// time moves, so a pull request isn't fetched again on every tab. The Diff
+// time moves, so a pull request isn't fetched again on every tab or forge
+// refresh; a failed read is kept the same way until R. The Diff
 // tab asks for patches, which a kept detail without them can't serve.
 func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fresh, patch bool) (changes.Detail, error) {
 	if worker.changeDetail == nil {
@@ -615,13 +622,13 @@ func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fr
 	key := ""
 	if c.Worktree == "" {
 		key = strings.Join([]string{c.ID, c.Stage, c.State, c.Head, c.Updated.String()}, "\x00")
-		if cached := worker.recentChange; cached.key == key && !fresh && (cached.detail.Patched || !patch) {
-			return worker.recentChange.detail, nil
+		if cached := worker.recentChange; cached.key == key && !fresh && (cached.err != nil || cached.detail.Patched || !patch) {
+			return cached.detail, cached.err
 		}
 	}
 	detail, err := worker.changeDetail(ctx, c, patch)
-	if err == nil && key != "" && ctx.Err() == nil {
-		worker.recentChange = changeCache{key, detail}
+	if key != "" && ctx.Err() == nil {
+		worker.recentChange = changeCache{key, detail, err}
 	}
 	return detail, err
 }

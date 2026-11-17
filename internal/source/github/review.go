@@ -23,7 +23,7 @@ reviewRequests(first:50){nodes{requestedReviewer{__typename ... on User{login} .
 latestReviews(first:50){nodes{author{login} state submittedAt commit{oid}}}
 reviews(first:100){nodes{author{login} body state submittedAt url}}
 comments(first:100){nodes{author{login} body createdAt url}}
-reviewThreads(first:100){nodes{id isResolved isOutdated path line originalLine comments(first:50){nodes{author{login} body createdAt url}}}}
+reviewThreads(first:100){nodes{id isResolved isOutdated path line originalLine diffSide comments(first:50){nodes{author{login} body createdAt url diffHunk}}}}
 commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{id name status conclusion detailsUrl url databaseId startedAt completedAt} ... on StatusContext{context state targetUrl description}}}}}}}}}}`
 
 type reviewAuthor struct{ Login string }
@@ -70,9 +70,14 @@ type reviewNode struct {
 		Nodes []struct {
 			ID                     string
 			IsResolved, IsOutdated bool
-			Path                   string
+			Path, DiffSide         string
 			Line, OriginalLine     *int
-			Comments               struct{ Nodes []reviewComment }
+			Comments               struct {
+				Nodes []struct {
+					reviewComment
+					DiffHunk string
+				}
+			}
 		}
 	}
 	Commits struct {
@@ -165,11 +170,14 @@ func (n reviewNode) review() changes.Review {
 		r.Comments = append(r.Comments, n.comment())
 	}
 	for _, n := range n.ReviewThreads.Nodes {
-		t := changes.Thread{ID: n.ID, Path: textutil.Line(n.Path), Resolved: n.IsResolved, Outdated: n.IsOutdated}
+		t := changes.Thread{ID: n.ID, Path: textutil.Line(n.Path), Old: n.DiffSide == "LEFT", Resolved: n.IsResolved, Outdated: n.IsOutdated}
 		if line := cmp.Or(n.Line, n.OriginalLine); line != nil {
 			t.Line = *line
 		}
-		for _, c := range n.Comments.Nodes {
+		for i, c := range n.Comments.Nodes {
+			if i == 0 {
+				t.Hunk = textutil.Sanitize(c.DiffHunk)
+			}
 			t.Comments = append(t.Comments, c.comment())
 		}
 		r.Threads = append(r.Threads, t)

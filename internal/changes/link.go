@@ -76,7 +76,7 @@ func Link(items []Item, d Data) map[model.Ref][]Change {
 		if origin {
 			prByNumber[pr.Number] = ln
 		}
-		prByURL[pullKey(pr.URL)] = ln
+		prByURL[PullKey(pr.URL)] = ln
 		if !local {
 			l.branchIDs(ln, pr.Head, "branch")
 		}
@@ -223,8 +223,9 @@ var (
 	commitURL = regexp.MustCompile(`^https?://[^/]+/.+/commit/([0-9a-fA-F]{7,40})(?:[/?#]|$)`)
 )
 
-// pullKey identifies a pull request URL whatever its case or suffix.
-func pullKey(raw string) string {
+// PullKey identifies a pull or merge request URL whatever its case or suffix,
+// or is "" for any other URL.
+func PullKey(raw string) string {
 	m := pullURL.FindStringSubmatch(strings.TrimSpace(raw))
 	if m == nil {
 		return ""
@@ -238,7 +239,7 @@ func (l *linker) explicit(ref model.Ref, raw string, prs map[string]*line, commi
 	if u, err := url.Parse(strings.TrimSpace(raw)); err != nil || u.Scheme != "https" && u.Scheme != "http" {
 		return
 	}
-	if key := pullKey(raw); key != "" {
+	if key := PullKey(raw); key != "" {
 		if ln := prs[key]; ln != nil {
 			ln.link(ref, evidence{kind: "ref"})
 			return
@@ -313,7 +314,7 @@ func (l *linker) change(ln *line) Change {
 	}
 	if pr != nil {
 		c.Title, c.URL, c.Repo, c.Number = pr.Title, pr.URL, pr.Repo, pr.Number
-		c.Additions, c.Deletions, c.Review, c.Checks = pr.Additions, pr.Deletions, pr.Review, pr.Checks
+		c.Additions, c.Deletions, c.Review, c.Checks, c.MergeState = pr.Additions, pr.Deletions, pr.Review, pr.Checks, pr.MergeState
 		c.Head = cmp.Or(c.Head, pr.HeadSHA)
 		c.Events = append(c.Events, Event{Kind: "opened", Time: pr.Created})
 		if !pr.Merged.IsZero() {

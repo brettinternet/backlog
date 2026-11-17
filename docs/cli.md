@@ -133,7 +133,9 @@ change is unknown or stale. JSON returns `data.changes`, each with `id`,
 `stage` (`worktree`, `branch`, `pr`, `landed`), `state` (`open`, `draft`,
 `merged`, `closed`, `unknown`, `stale`), `link` (how it was found: `branch`,
 `title`, `closes`, `provider`, `trailer`, `merge`, `ref`), and optional
-`reason`, `checks`, `review`, `branch`, `head`, `title`, `url`, `repo`,
+`reason`, `checks`, `review`, `mergeState` (the forge's lowercased merge state
+from its list read, such as `clean`, `behind`, or `dirty`; GitHub only),
+`branch`, `head`, `title`, `url`, `repo`,
 `number`, `additions`, `deletions` (a branch or worktree's from its merge base
 with the default branch, counting a worktree's uncommitted files), `worktree`,
 `dirty`, `ahead`, `behind`, an open pull request's `checkRuns` (`name`,
@@ -149,7 +151,9 @@ cache, refreshed incrementally; Git is read from `.git` and never fetched.
 state; `verdict`; and `reasons`, each with `kind`, `text`, and the `check` or
 `login` it names, in fix-first order), each check run's exact `status`, `run`,
 `startedAt`, and `completedAt`, and `reviewers` (`login`, `state`,
-`submittedAt`, `outdated`) ([Changes](changes.md)). The first five failing
+`submittedAt`, `outdated`), and `threads` (`id`, `path`, `line`, `old` when on
+the old side, `resolved`, `outdated`, `hunk`, and `comments` with `author`,
+`body`, `time`, and `url`) ([Changes](changes.md)). The first five failing
 check runs of each open pull request also carry their node `id`,
 `workflowRun` (the Actions run), `steps` (`number`, `name`, `status`, `url`),
 `annotations` (`path`, `line`, `level`, `title`, `message`, `url`), and either

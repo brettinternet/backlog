@@ -56,12 +56,13 @@ var searchAliases = map[string]string{
 	"adopt":       "create add pull request",
 	"actions":     "run",
 	"open-url":    "browser link",
+	"open-pull":   "change view merge request pr",
 	"quit":        "exit",
 }
 
 // itemAction reports whether an action acts on the selected item.
 func itemAction(id string) bool {
-	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url", "adopt"}, id)
+	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url", "adopt", "open-pull"}, id)
 }
 
 func defaultKeymap() []action {
@@ -88,9 +89,12 @@ func defaultKeymap() []action {
 		{id: "next-hunk", label: "Next hunk", canonical: "] c", follows: "next-group", bindings: []string{"] c"}},
 		{id: "previous-tour-step", label: "Previous tour step", canonical: "[ t", follows: "previous-group", bindings: []string{"[ t"}},
 		{id: "next-tour-step", label: "Next tour step", canonical: "] t", follows: "next-group", bindings: []string{"] t"}},
+		{id: "previous-thread", label: "Previous unresolved thread", canonical: "[ u", follows: "previous-group", bindings: []string{"[ u"}},
+		{id: "next-thread", label: "Next unresolved thread", canonical: "] u", follows: "next-group", bindings: []string{"] u"}},
 		{id: "left", label: "Back / parent / left", canonical: "h", bindings: []string{"h", "left"}},
 		{id: "right", label: "Open / child / right", canonical: "l", bindings: []string{"l", "right"}},
 		{id: "go-to", label: "Go to item", bindings: []string{"ctrl+p"}},
+		{id: "open-pull", label: "Open pull request", bindings: []string{"g p"}},
 		{group: "Detail", id: "detail", label: "Toggle detail", canonical: "enter", bindings: []string{"enter"}},
 		{id: "next-detail-tab", label: "Next tab", canonical: "tab", bindings: []string{"tab"}},
 		{id: "previous-detail-tab", label: "Previous tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
@@ -394,6 +398,8 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 		return m.openConfiguredActions()
 	case "go-to":
 		return m.openGoTo()
+	case "open-pull":
+		return m, m.openPull()
 	case "help", "palette":
 		return m.openActions(a.id == "help")
 	case "quit-now":
@@ -515,6 +521,15 @@ func (m Model) disabledReason(a action) string {
 			return "select an item"
 		}
 		return m.pickerCapability(row.Ref, picker)
+	}
+	if a.id == "open-pull" {
+		row, ok := m.selectedRow()
+		if !ok {
+			return "select an item"
+		}
+		if _, _, n := furthestPull(row.Changes); n == 0 {
+			return "no open pull request"
+		}
 	}
 	if a.id == "new" || a.id == "new-child" || a.id == "adopt" {
 		if m.opts.Store == nil {

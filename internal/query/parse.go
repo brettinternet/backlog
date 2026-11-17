@@ -72,7 +72,7 @@ func (q Query) Scope() (open, archived bool) {
 	return open, archived
 }
 
-var fields = strings.Fields("id status category priority assignee label type milestone sprint source parent blocked-by blocks created updated due text claimed is has change checks review changed hook action outcome sort group")
+var fields = strings.Fields("id status category priority assignee label type milestone sprint source parent blocked-by blocks created updated due text claimed is has change checks review merge changed hook action outcome sort group")
 var sortKeys = strings.Fields("next priority rank updated created due id title status")
 var groupKeys = strings.Fields("status category priority assignee label milestone sprint type parent source none")
 var isValues = strings.Fields("open closed ready blocked waiting unknown mine claimed archived pending")
@@ -80,6 +80,7 @@ var hasValues = strings.Fields("parent children blockers assignee due criteria c
 var changeValues = strings.Fields("open draft merged closed unknown stale")
 var checksValues = strings.Fields("passing failing pending stale")
 var reviewValues = strings.Fields("approved changes requested")
+var mergeValues = strings.Fields("ready unstable blocked behind conflicts")
 var categories = strings.Fields("backlog todo active done canceled")
 var priorities = strings.Fields("none low medium high urgent")
 var outcomes = strings.Fields("ok failed timeout refused")
@@ -87,7 +88,9 @@ var outcomes = strings.Fields("ok failed timeout refused")
 func hookField(s string) bool {
 	return slices.Contains([]string{"changed", "hook", "action", "outcome"}, s)
 }
-func changeField(s string) bool { return s == "change" || s == "checks" || s == "review" }
+func changeField(s string) bool {
+	return s == "change" || s == "checks" || s == "review" || s == "merge"
+}
 
 // offered reports whether a field may appear in this parsing mode: hook terms
 // only in hooks, and change terms never there.
@@ -212,6 +215,8 @@ func validateValue(field string, v Value) error {
 		allowed = checksValues
 	case "review":
 		allowed = reviewValues
+	case "merge":
+		allowed = mergeValues
 	case "outcome":
 		allowed = outcomes
 	case "sort":

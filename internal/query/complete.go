@@ -119,8 +119,8 @@ func (s Snapshot) valuesPrefix(ctx context.Context, field, prefix string) []Cand
 		for _, v := range outcomes {
 			add(v, "")
 		}
-	case "change", "checks", "review":
-		for _, v := range map[string][]string{"change": changeValues, "checks": checksValues, "review": reviewValues}[field] {
+	case "change", "checks", "review", "merge":
+		for _, v := range map[string][]string{"change": changeValues, "checks": checksValues, "review": reviewValues, "merge": mergeValues}[field] {
 			add(v, "")
 		}
 	case "sort":

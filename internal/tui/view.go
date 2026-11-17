@@ -234,7 +234,11 @@ func (m Model) detailTabBar(width int) (string, []span) {
 	names, counts := detailTabNames[:], tabs[:]
 	start, _ := m.tabRange()
 	if m.change != nil {
-		names, counts = changeTabNames[:], nil
+		names, counts = changeTabNames[:], make([]string, len(changeTabNames))
+		// Conversation counts the review threads still to resolve.
+		if r := m.review.read; r != nil && r.Unresolved() > 0 {
+			counts[tabChangeConversation-tabChangeOverview] = strconv.Itoa(r.Unresolved())
+		}
 	}
 	labels := make([]string, len(names))
 	widths := make([]int, len(labels))
