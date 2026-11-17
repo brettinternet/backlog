@@ -101,7 +101,8 @@ func TestAddFailures(t *testing.T) {
 	cs := []Change{{URL: "https://github.com/o/r/pull/1", CheckRuns: checks}}
 	AddFailures(context.Background(), cs, []Forge{checkForge{reads: &reads}})
 	got := cs[0].CheckRuns
-	if reads != maxFailures || !strings.Contains(got[0].LogUnavailable, "rate limited") || got[1].Log == "" || got[5].Log != "" || got[7].Log != "" {
+	// The forge's kept review shares checks; its runs must stay as read.
+	if reads != maxFailures || !strings.Contains(got[0].LogUnavailable, "rate limited") || got[1].Log == "" || got[5].Log != "" || got[7].Log != "" || checks[1].Log != "" {
 		t.Fatalf("%d reads: %+v", reads, got)
 	}
 	data, err := json.Marshal(got[1])

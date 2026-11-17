@@ -85,6 +85,8 @@ const maxFailures = 5
 func AddFailures(ctx context.Context, cs []Change, forges []Forge) {
 	for i := range cs {
 		c := &cs[i]
+		// CheckRuns is the forge's kept review; detail goes on a copy.
+		c.CheckRuns = slices.Clone(c.CheckRuns)
 		read := 0
 		for j := range c.CheckRuns {
 			check := &c.CheckRuns[j]

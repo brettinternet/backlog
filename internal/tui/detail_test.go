@@ -1289,7 +1289,7 @@ func TestChangeViewReview(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	review := changes.Review{
 		Body:      "Closes BL-1 with **care**",
-		Checks:    []changes.Check{{Name: "test", State: changes.ChecksPassing, URL: "https://ci/test"}, {Name: "lint", State: changes.ChecksFailing, URL: "https://ci/lint"}},
+		Checks:    []changes.Check{{Name: "test", State: changes.ChecksPassing, URL: "https://ci/test"}, {ID: "CR_push", Name: "lint", State: changes.ChecksPassing, URL: "https://ci/lint-push"}, {ID: "CR_pr", Name: "lint", State: changes.ChecksFailing, URL: "https://ci/lint"}},
 		Reviewers: []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved}, {Login: "bo", State: changes.ReviewChanges}},
 		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}, {Author: "bo", State: changes.ReviewChanges, Body: "please fix", Time: at.Add(30 * time.Minute), URL: "https://github.com/o/r/pull/45#review-2"}},
 		Threads: []changes.Thread{
@@ -1331,13 +1331,14 @@ func TestChangeViewReview(t *testing.T) {
 		}
 		last += 1 + i
 	}
-	// Entries: the three reasons, the two checks, then the two reviewers.
+	// Entries: the three reasons, the three checks, then the two reviewers.
 	// Enter on the failing check's reason opens its check view one level
 	// under Overview, whose log yl copies and whose steps O opens; backspace
 	// returns to the reason.
 	m.detailWorker.changeCheck = func(_ context.Context, _ changes.Change, check changes.Check, _ bool) (changes.CheckDetail, error) {
-		if check.Name != "lint" {
-			return changes.CheckDetail{}, errors.New("read " + check.Name)
+		// The passing push run shares the failing check's name.
+		if check.ID != "CR_pr" {
+			return changes.CheckDetail{}, errors.New("read " + check.ID)
 		}
 		return changes.CheckDetail{Steps: []changes.Step{{Number: 1, Name: "Run lint", Status: changes.CheckFailed, URL: "https://ci/lint#step:1:1"}},
 			Annotations: []changes.Annotation{{Path: "a.go", Line: 3, Level: "failure", Message: "unused x"}}, Log: "lint ./...\n##[error]Process completed with exit code 1."}, nil
@@ -1372,8 +1373,9 @@ func TestChangeViewReview(t *testing.T) {
 	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/test" {
 		t.Fatalf("O opened %q, not the check under the cursor", opened)
 	}
-	m, _ = detailKey(m, 'j', 0)
-	m, _ = detailKey(m, 'j', 0)
+	for range 3 {
+		m, _ = detailKey(m, 'j', 0)
+	}
 	m, _ = detailKey(m, tea.KeyEnter, 0)
 	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#review-2" {
 		t.Fatalf("enter on bo opened tab %d at %d of %q", m.detailTab, m.entryCursor, m.detailIDs)
@@ -1406,7 +1408,7 @@ func TestChangeViewReview(t *testing.T) {
 	review.MergeState = "dirty"
 	_ = m.switchDetailTab(tabChangeOverview)
 	m = settleDetail(t, m)
-	if content := m.View().Content; !strings.Contains(content, "✓ 7 passing") || strings.Contains(content, "unit-0") || !strings.Contains(content, "⚠ Conflicts") {
+	if content := m.View().Content; !strings.Contains(content, "✓ 8 passing") || strings.Contains(content, "unit-0") || !strings.Contains(content, "⚠ Conflicts") {
 		t.Fatalf("Overview didn't fold passing checks\n%s", content)
 	}
 	fold := slices.Index(m.detailLinks, linkFold)

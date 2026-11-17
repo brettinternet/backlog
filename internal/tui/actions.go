@@ -193,7 +193,7 @@ func (m Model) prepareConfiguredAction(name string) (tea.Model, tea.Cmd) {
 	}
 	var change *hooks.LinkedChange
 	if c, ok := m.selectedChange(); ok {
-		change = new(linkedChange(c))
+		change = new(m.actionTarget(c))
 	}
 	return m.prepareConfiguredActionForID(name, row.Ref.Source+":"+row.Ref.ID, change)
 }

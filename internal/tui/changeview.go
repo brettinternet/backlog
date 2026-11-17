@@ -420,15 +420,19 @@ func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft
 		merge := changes.Verdict(c, *r)
 		section("Merge", verdictLabel(t, merge.Verdict))
 		urls, links := map[string]string{}, map[string]string{}
+		// A reason cites a check by name; checks sharing one, such as a
+		// job on push and pull_request, are told apart by state.
 		for _, check := range r.Checks {
-			urls[check.Name] = cmp.Or(urls[check.Name], check.URL)
-			links[check.Name] = cmp.Or(links[check.Name], checkLink(check))
+			key := check.State + " " + check.Name
+			urls[key] = cmp.Or(urls[key], check.URL)
+			links[key] = cmp.Or(links[key], checkLink(check))
 		}
 		for _, reason := range merge.Reasons {
 			id, link := c.URL, ""
 			switch reason.Kind {
 			case changes.ReasonFailing, changes.ReasonPending:
-				id, link = cmp.Or(urls[reason.Check], c.URL), links[reason.Check]
+				key := reason.Kind + " " + reason.Check
+				id, link = cmp.Or(urls[key], c.URL), links[key]
 			case changes.ReasonChanges:
 				id, link = cmp.Or(reviewURL(r, reason.Login), c.URL), linkReview+reason.Login
 			case changes.ReasonThreads:
@@ -1101,6 +1105,9 @@ func checkPage(check changes.Check, readErr error, request detailRequest, render
 		}
 		if strings.TrimSpace(check.Summary) != "" {
 			body := cappedBody{limit: bodyLimit}
+			if request.expanded {
+				body.limit = bodyMoreLimit
+			}
 			body.write(check.Summary)
 			page.truncated = body.full
 			page.lines = append(page.lines, markdownLines(body.builder.String(), width, t, render)...)
