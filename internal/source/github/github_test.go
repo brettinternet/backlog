@@ -1615,13 +1615,16 @@ func TestForgeCheck(t *testing.T) {
 		"annotations": nodes(map[string]any{"path": "a.go", "location": map[string]any{"start": map[string]any{"line": 3}}, "annotationLevel": "FAILURE",
 			"message": "unused x fake-secret", "blobUrl": "https://github.com/owner/repo/blob/aaa/a.go"}),
 	}
-	f.log = "2026-01-01T00:00:00Z setup\n2026-01-01T00:00:01Z token fake-secret \x1b[31mred\x1b[0m\n2026-01-01T00:00:02Z ##[error]exit 1\nafter\n"
+	// The long line is cut as read mid-secret; stripping its escapes leaves
+	// the fragment inside the kept 2 KiB.
+	long := strings.Repeat("\x1b[0m", 100) + strings.Repeat("y", 1707)
+	f.log = "2026-01-01T00:00:00Z setup\n2026-01-01T00:00:01Z token fake-secret \x1b[31mred\x1b[0m\n" + long + "fake-secret\n2026-01-01T00:00:02Z ##[error]exit 1\nafter\n"
 	check := changes.Check{ID: "CR_11", Run: 11, URL: "https://github.com/owner/repo/actions/runs/99/job/11"}
 	d, err := forge.Check(ctx, check, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Log != "setup\ntoken [REDACTED] red\n##[error]exit 1" || d.LogUnavailable != "" || d.Workflow != 99 || len(f.blobAuth) != 1 || f.blobAuth[0] != "" {
+	if d.Log != "setup\ntoken [REDACTED] red\n"+strings.Repeat("y", 1707)+"…\n##[error]exit 1" || d.LogUnavailable != "" || d.Workflow != 99 || len(f.blobAuth) != 1 || f.blobAuth[0] != "" {
 		t.Fatalf("log %q (%q), workflow %d, blob auth %q", d.Log, d.LogUnavailable, d.Workflow, f.blobAuth)
 	}
 	if len(d.Steps) != 1 || d.Steps[0].Status != "failed" || d.Steps[0].URL != check.URL+"#step:3:1" ||
