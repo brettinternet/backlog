@@ -89,7 +89,7 @@ func ResolveForges(p project.Config) (out []ResolvedForge, gap *ForgeGap) {
 			} else if len(found) > 1 && gap == nil {
 				gap = &ForgeGap{Type: kind, Host: host, Repo: repo}
 				for _, a := range found {
-					gap.Accounts = append(gap.Accounts, a.Name)
+					gap.Accounts = append(gap.Accounts, cmp.Or(a.Name, a.User))
 				}
 			}
 		}

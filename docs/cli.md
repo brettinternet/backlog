@@ -836,7 +836,8 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
   references the token can't read, or `fail` when it can't read pull
   requests. It also shows the cache's sync state: pull requests kept, the last
   refresh, and whether older ones are still being read. A GitHub or GitLab
-  `origin` with no forge warns why: no account for its host, with a user
+  `origin` with no forge warns why: no account for its host (`github.com` or
+  `gitlab.com`; another host is known only by its accounts), with a user
   config snippet and `bl auth login`, or several, naming them and a
   `changes.forges` entry that picks one. An explicit forge that can't be
   built, such as an untrusted one or one with an unknown account, fails. Any

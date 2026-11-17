@@ -91,7 +91,7 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, sources, and accounts", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, sources, accounts, and forges", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, configErr := loadConfig(cmd, *directory)
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
 			var forgeReports []forgeReport
