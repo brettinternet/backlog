@@ -76,7 +76,7 @@ var fields = strings.Fields("id status category priority assignee label type mil
 var sortKeys = strings.Fields("next priority rank updated created due id title status")
 var groupKeys = strings.Fields("status category priority assignee label milestone sprint type parent source none")
 var isValues = strings.Fields("open closed ready blocked waiting unknown mine claimed archived pending")
-var hasValues = strings.Fields("parent children blockers assignee due criteria claim change")
+var hasValues = strings.Fields("parent children blockers assignee due criteria claim change pr")
 var changeValues = strings.Fields("open draft merged closed unknown stale")
 var checksValues = strings.Fields("passing failing pending stale")
 var reviewValues = strings.Fields("approved changes requested")
@@ -165,8 +165,8 @@ func Parse(input string, options Options) (Query, error) {
 			if err = validateValue(t.Field, v); err != nil {
 				return q, err
 			}
-			if t.Field == "has" && strings.EqualFold(v.Text, "change") && options.Hook {
-				return q, fail(v.Pos, "has:change is not allowed in hook if:")
+			if t.Field == "has" && (strings.EqualFold(v.Text, "change") || strings.EqualFold(v.Text, "pr")) && options.Hook {
+				return q, fail(v.Pos, "has:"+strings.ToLower(v.Text)+" is not allowed in hook if:")
 			}
 			t.Values = append(t.Values, v)
 			if t.Field == "" || p.i == len(input) || input[p.i] != ',' {

@@ -351,6 +351,28 @@ func TestCriteriaColumn(t *testing.T) {
 	}
 }
 
+// Catches the change column dropping before blockers, which hides which items
+// have pull requests on narrow panes.
+func TestChangeColumnOutlastsBlockers(t *testing.T) {
+	t.Parallel()
+	row := engine.Row{Ref: model.Ref{Source: "tasks", ID: "BL-1"}, Title: "Item", Status: "Active", OpenBlockers: 1,
+		Changes: []changes.Change{{Stage: changes.StagePR, State: changes.StateOpen, Number: 45, MergeState: "clean"}}}
+	m := New(Options{NoColor: true, Project: "fixture"})
+	m.groups = []engine.RowGroup{{Value: "Active", Rows: []engine.Row{row}}}
+	m.data = prepareRows(m.groups, nil)
+	compact := false
+	for width := 120; width >= 30; width-- {
+		line := ansi.Strip(m.listRow(1, m.layout(width)))
+		if strings.Contains(line, "⊘ 1") && !strings.Contains(line, " ✓") {
+			t.Fatalf("width %d: blockers without change verdict: %q", width, line)
+		}
+		compact = compact || strings.Contains(line, "⊘ 1") && !strings.Contains(line, "#45")
+	}
+	if !compact {
+		t.Fatal("change column never compacted")
+	}
+}
+
 func TestShellMeasurement(t *testing.T) {
 	if os.Getenv("BL_TUI_MEASURE") != "1" {
 		return

@@ -83,7 +83,7 @@ snapshot.
 | `field.NAME` | Exact string form of a raw scalar, or membership in a raw list. `none` matches missing or null. Not ordered. |
 | `claimed` | `me`, `others`, `none` (needs coordination) |
 | `is` | `open` (backlog, todo, or active), `closed`, `ready`, `blocked`, `waiting`, `unknown`, `mine`, `claimed`, `archived`, `pending` (unconfirmed local edit) |
-| `has` | `parent`, `children`, `blockers`, `assignee`, `due`, `criteria`, `claim`, `change` |
+| `has` | `parent`, `children`, `blockers`, `assignee`, `due`, `criteria`, `claim`, `change`, `pr` |
 | `change` | `open`, `draft`, `merged`, `closed`, `unknown`, `stale`: the state of any linked change ([Changes](changes.md)) |
 | `checks` | `passing`, `failing`, `pending`, `stale`: any linked change's checks |
 | `review` | `approved`, `changes` (changes requested), `requested`: any linked change's review decision |
@@ -107,7 +107,9 @@ Notes:
 - Change terms match when any of the item's linked changes does, so
   `is:active checks:failing` lists active items with a failing pull request and
   `is:closed -has:change` lists closed items with nothing linked. A landed
-  change is `merged`. `merge:` reads only open, non-draft pull requests whose
+  change is `merged`. A worktree or branch is `open` too, so `has:pr` narrows
+  to items with a linked pull or merge request in any state, including one
+  that landed. `merge:` reads only open, non-draft pull requests whose
   forge reports a merge state (GitLab doesn't), and `merge:ready` never
   matches stale checks. `bl ls` and MCP `query` load changes only when the
   query names a change term; the TUI keeps them current on a worker.

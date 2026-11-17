@@ -226,7 +226,10 @@ func (m Model) layout(width int) listLayout {
 	type spec struct {
 		kind        columnKind
 		width, drop int // drop: lower values are dropped first; 0 never
-		right, name bool
+		// compact, when set, replaces dropping at drop: the column shrinks to
+		// this width (status loses its name) and then drops at then (0 never).
+		compact, then int
+		right, name   bool
 	}
 	var specs []spec
 	add := func(s spec) { specs = append(specs, s) }
@@ -243,7 +246,7 @@ func (m Model) layout(width int) listLayout {
 			case "priority":
 				add(spec{kind: colPriority, width: 2})
 			case "status":
-				add(spec{kind: colStatus, width: 2 + w.status, name: true, drop: 6})
+				add(spec{kind: colStatus, width: 2 + w.status, name: true, drop: 6, compact: 1})
 			case "blockers":
 				add(spec{kind: colBlockers, width: 4, right: true, drop: 4})
 			case "children":
@@ -251,7 +254,7 @@ func (m Model) layout(width int) listLayout {
 			case "criteria":
 				add(spec{kind: colCriteria, width: 7, right: true, drop: 3})
 			case "changes":
-				add(spec{kind: colChanges, width: max(6, w.changes), drop: 3})
+				add(spec{kind: colChanges, width: max(6, w.changes), drop: 3, compact: compactChangeWidth, then: 4})
 			case "claim":
 				add(spec{kind: colClaim, width: max(5, w.claim), drop: 5})
 			case "assignee":
@@ -268,7 +271,7 @@ func (m Model) layout(width int) listLayout {
 		if statusGrouped || w.status == 0 {
 			add(spec{kind: colStatus, width: 1})
 		} else {
-			add(spec{kind: colStatus, width: 2 + w.status, name: true, drop: 6})
+			add(spec{kind: colStatus, width: 2 + w.status, name: true, drop: 6, compact: 1})
 		}
 		add(spec{kind: colTitle})
 		if w.blockers {
@@ -282,7 +285,7 @@ func (m Model) layout(width int) listLayout {
 			add(spec{kind: colCriteria, width: 7, right: true, drop: 3})
 		}
 		if w.changes > 0 {
-			add(spec{kind: colChanges, width: w.changes, drop: 3})
+			add(spec{kind: colChanges, width: w.changes, drop: 3, compact: compactChangeWidth, then: 4})
 		}
 		if coordination {
 			add(spec{kind: colClaim, width: max(5, w.claim), drop: 5})
@@ -312,8 +315,8 @@ func (m Model) layout(width int) listLayout {
 	for level := 1; level <= 6 && width-total() < minTitle; level++ {
 		kept := specs[:0]
 		for _, s := range specs {
-			if s.drop == level && s.name && s.kind == colStatus {
-				s.width, s.name, s.drop = 1, false, 0
+			if s.drop == level && s.compact > 0 {
+				s.width, s.name, s.drop, s.compact = s.compact, false, s.then, 0
 			} else if s.drop == level {
 				continue
 			}
