@@ -63,11 +63,11 @@ the App is installed, which organization members often can't do themselves.
 
 | App | Client ID | Permissions | Used by |
 | --- | --- | --- | --- |
-| `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses: read | `bl auth login` |
-| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects, Pull requests: read/write; Metadata, Checks, Commit statuses: read | `bl auth login --write` |
+| `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses, Actions: read | `bl auth login` |
+| `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects, Pull requests: read/write; Metadata, Checks, Commit statuses, Actions: read | `bl auth login --write` |
 
-A failed Actions job's log excerpt also needs Actions: read. Until an
-installation grants it, the check view and `--detail` say which App lacks it
+Actions: read covers a failed Actions job's log excerpt. On an installation
+that hasn't approved it, the check view and `--detail` say which App lacks it
 and `O` opens the job on GitHub. A token reads logs with its own access.
 
 1. Declare the account with `oauth: true` instead of `credential` or `env`:
@@ -81,7 +81,8 @@ and `O` opens the job on GitHub. A token reads logs with its own access.
          oauth: true
    ```
 
-2. Install `bl-cli-read` on the repositories you need, then:
+2. Install `bl-cli-read` on the repositories you need and approve its
+   permissions, including Actions: read, then:
 
    ```sh
    bl auth login github personal
@@ -91,7 +92,8 @@ and `O` opens the job on GitHub. A token reads logs with its own access.
    can see, login fails with `app-not-installed` and the App's install URL;
    install it and log in again.
 
-3. For writes, install `bl-cli` instead and approve its permissions, then:
+3. For writes, install `bl-cli` instead and approve its permissions,
+   including Actions: read, then:
 
    ```sh
    bl auth login github personal --write
