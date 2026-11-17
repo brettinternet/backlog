@@ -178,24 +178,7 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 	}
 	refused := response.StatusCode >= 300 && response.StatusCode != http.StatusNotModified
 	if refused && (!c.Refusals || response.StatusCode == http.StatusUnauthorized) {
-		if c.OAuth {
-			code := oauth.CodeProviderDown
-			if response.StatusCode == 401 {
-				code = oauth.CodeGrantRevoked
-			}
-			if response.StatusCode == 403 {
-				code = oauth.CodeInsufficientScope
-				text := strings.ToLower(string(raw))
-				if strings.Contains(text, "saml") || strings.Contains(text, "sso") {
-					code = oauth.CodeSSORequired
-				}
-			}
-			return Response{}, oauth.Failure(code, time.Time{})
-		}
-		if response.StatusCode == http.StatusUnauthorized {
-			return Response{}, errUnauthorized
-		}
-		return fail("provider refused request")
+		return Response{}, c.Refusal(response.StatusCode, raw)
 	}
 	if cacheable && response.StatusCode == http.StatusOK {
 		if len(q.etags) >= 128 {
@@ -215,6 +198,30 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 	}
 	return Response{Status: response.StatusCode, Header: headers, Body: []byte(c.Secrets.Redact(string(raw)))}, nil
 }
+
+// Refusal is the error Do returns for a refusal with status and body, for a
+// caller with Refusals that reads some refusals itself.
+func (c Client) Refusal(status int, body []byte) error {
+	if c.OAuth {
+		code := oauth.CodeProviderDown
+		if status == http.StatusUnauthorized {
+			code = oauth.CodeGrantRevoked
+		}
+		if status == http.StatusForbidden {
+			code = oauth.CodeInsufficientScope
+			text := strings.ToLower(string(body))
+			if strings.Contains(text, "saml") || strings.Contains(text, "sso") {
+				code = oauth.CodeSSORequired
+			}
+		}
+		return oauth.Failure(code, time.Time{})
+	}
+	if status == http.StatusUnauthorized {
+		return errUnauthorized
+	}
+	return errors.New("remote HTTP: provider refused request")
+}
+
 func retryDeadline(header http.Header, now time.Time) time.Time {
 	var until time.Time
 	if seconds, err := strconv.ParseInt(header.Get("Retry-After"), 10, 32); err == nil && seconds >= 0 {

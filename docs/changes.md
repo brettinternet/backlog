@@ -154,9 +154,15 @@ Each refresh reads every open pull request, whose checks change without
 touching its update time, and every other one updated since the last refresh,
 through the account's request queue. The newest 1,000 updated are kept,
 redacted, in a `.pulls.json` file beside the account's provider cache. A failed
-refresh keeps the cached list and marks it stale. The token needs read access
-to pull requests, or GitLab's `read_api` scope; a pull request whose checks or
-closing references it can't read still links by branch, title, and body.
+refresh keeps the cached list, plus whatever it read, and marks it stale. On
+GitHub, a page that fails with a server error, as slow pages on a large
+repository do, is read again at half the size, down to 12, and an interrupted
+read resumes after its last page on the next refresh, so a first refresh of
+thousands of pull requests converges. Only the open pass reads the merge state,
+which doubles a page's time and means nothing once closed. The token needs read
+access to pull requests, or GitLab's `read_api` scope; a pull request whose
+checks or closing references it can't read still links by branch, title, and
+body.
 
 A pull request's detail (description, merge state, checks with their exact
 state and timing, reviewers with their latest review, comments, and review
