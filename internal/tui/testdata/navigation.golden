@@ -402,24 +402,24 @@
  fixture  [Next]  Active   Mine   Open   Board                          ✓ tasks 
  Keys  › ▏                                                                      
                                                                                 
-  Navigate                               Select                                 
-  j ↓ ctrl+n      Move down              space           Mark                   
-  k ↑             Move up                V               Visual range           
-  J               Next item              ctrl+a          Mark all               
-  K               Previous item          esc ctrl+g      Cancel / clear         
-  gg home alt+<   First row                                                     
-  G end alt+>     Last row, or row N     Copy                                   
-  H               Top of screen          yy              Copy ID                
-  M               Middle of screen       yt              Copy title             
-  L               Bottom of screen       yb              Copy branch            
-  ctrl+d pgdn     Half page down         yu              Copy URL               
-  ctrl+u pgup     Half page up           ym              Copy Markdown link     
-  ctrl+f ctrl+v   Page down              yp              Copy change URL        
-  ctrl+b alt+v    Page up                ys              Copy commit SHA        
-  [               Previous group / file                                         
-  ]               Next group / file      General                                
-  [c              Previous hunk          ?               Help                   
-  ]c              Next hunk              : alt+x         Commands               
-  [t              Previous tour step     q               Quit / back            
+  Navigate                               Copy                                   
+  j ↓ ctrl+n      Move down              yy              Copy ID                
+  k ↑             Move up                yt              Copy title             
+  J               Next item              yb              Copy branch            
+  K               Previous item          yu              Copy URL               
+  gg home alt+<   First row              ym              Copy Markdown link     
+  G end alt+>     Last row, or row N     yp              Copy change URL        
+  H               Top of screen          ys              Copy commit SHA        
+  M               Middle of screen       yl              Copy log excerpt       
+  L               Bottom of screen                                              
+  ctrl+d pgdn     Half page down         General                                
+  ctrl+u pgup     Half page up           ?               Help                   
+  ctrl+f ctrl+v   Page down              : alt+x         Commands               
+  ctrl+b alt+v    Page up                q               Quit / back            
+  [               Previous group / file  ctrl+c          Quit now               
+  ]               Next group / file                                             
+  [c              Previous hunk          Filter                                 
+  ]c              Next hunk              fs              Status                 
+  [t              Previous tour step     fp              Priority               
                                                                              ↓  
  is:ready sort:next                                            ● 3  ! 3    5/60 

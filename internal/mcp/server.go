@@ -46,7 +46,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "query", Description: "Search backlog items using the bl query language."}, s.query)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, linked changes, and Git commits, oldest first, with each provider's status."}, s.history)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status; detail adds each open pull request's merge verdict and reasons, check timing, and reviewers."}, s.changes)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status; detail adds each open pull request's merge verdict and reasons, check timing, reviewers, and review threads."}, s.changes)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "tour", Description: "Store a CodeTour, from file or the inline tour object, for the item's linked change whose head equals the tour's ref, for the TUI Diff tab, or, with neither, read the tours stored for its linked changes, or with remove delete one. The format is in bl instructions tours."}, s.tour)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
@@ -135,7 +135,7 @@ type ShowArgs struct {
 
 type ChangesArgs struct {
 	ID     string `json:"id"`
-	Detail bool   `json:"detail,omitempty" jsonschema:"Add each open pull request's merge verdict and reasons, check status and timing, and reviewers, as bl changes --detail does."`
+	Detail bool   `json:"detail,omitempty" jsonschema:"Add each open pull request's merge verdict and reasons, check status and timing, reviewers, and review threads, as bl changes --detail does."`
 }
 
 type TourArgs struct {
@@ -191,6 +191,7 @@ type CreateArgs struct {
 	Refs        []string `json:"refs,omitempty" jsonschema:"Reference URLs or paths, such as a pull request URL to adopt it."`
 	Source      string   `json:"source,omitempty"`
 	Sprint      string   `json:"sprint,omitempty" jsonschema:"current, next, or a sprint name or key (Linear)."`
+	Force       bool     `json:"force,omitempty" jsonschema:"Create even when an open item in the source has the same title; otherwise that refuses with matches."`
 }
 type UpdateArgs struct {
 	WriteArgs
@@ -461,6 +462,12 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	sourceID, err := engine.CreateSource(ctx, s.cfg, args.Source, "", nil)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
+	}
+	if !args.Force {
+		if err := engine.DuplicateTitle(ctx, s.cfg, sourceID, args.Title); err != nil {
+			b, _ := json.Marshal(map[string]any{"reason": reason(err), "message": engine.ErrorMessage(err), "matches": engine.ErrorMatches(err)})
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+		}
 	}
 	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Refs: args.Refs, Sprint: args.Sprint}
 	if args.Parent != "" {

@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -93,6 +95,22 @@ type fixture struct {
 	// answers it, or a 502 after dispatch when empty.
 	submitted   []map[string]any
 	submitReply string
+	// resolved records each thread resolve or unresolve as its mutation
+	// name and thread ID; resolveReply answers it, or a 502 after dispatch
+	// when empty.
+	resolved     []string
+	resolveReply string
+	// check is the check run node the detail query reads, counted by
+	// checkReads. Its job log redirects to /blob/log, which serves log, or
+	// 33 MiB when hugeLog, and records each request's Authorization in
+	// blobAuth; logStatus refuses the log instead.
+	check             map[string]any
+	checkReads        int
+	log               string
+	hugeLog           bool
+	logStatus         int
+	blobAuth          []string
+	actionsPermission string
 }
 
 // draftItem is the project's draft item, holding its issue once converted.
@@ -190,6 +208,18 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests++
+	if r.URL.Path == "/blob/log" {
+		f.blobAuth = append(f.blobAuth, r.Header.Get("Authorization"))
+		if !f.hugeLog {
+			_, _ = io.WriteString(w, f.log)
+			return
+		}
+		chunk := strings.Repeat(strings.Repeat("x", 1023)+"\n", 1024)
+		for range 33 {
+			_, _ = io.WriteString(w, chunk)
+		}
+		return
+	}
 	if r.Header.Get("Authorization") != "Bearer fake-secret" {
 		w.WriteHeader(401)
 		return
@@ -211,6 +241,9 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			if f.pullPermission != "" {
 				permissions["pull_requests"] = f.pullPermission
 			}
+			if f.actionsPermission != "" {
+				permissions["actions"] = f.actionsPermission
+			}
 			body, _ := json.Marshal(map[string]any{"total_count": 1, "installations": []any{map[string]any{"id": 42, "app_slug": f.oauthApp, "account": map[string]string{"login": "owner", "type": "Organization"}, "permissions": permissions}}})
 			conditional(body)
 			return
@@ -222,6 +255,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			body, _ := json.Marshal(map[string]any{"total_count": len(repos), "repositories": repos})
 			conditional(body)
+			return
+		}
+		if r.URL.Path == "/repos/owner/repo/actions/jobs/11/logs" {
+			if f.logStatus != 0 {
+				w.WriteHeader(f.logStatus)
+				return
+			}
+			w.Header().Set("Location", "https://blob.example/blob/log?sig=signed")
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/repos/owner/repo/pulls/45/") {
@@ -342,6 +384,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		return input
 	}
+	if name, _, ok := strings.Cut(q, "ReviewThread("); ok && strings.HasPrefix(q, "mutation") {
+		f.resolved = append(f.resolved, name[strings.LastIndex(name, "{")+1:]+"ReviewThread "+fmt.Sprint(v["id"]))
+		if f.resolveReply == "" {
+			w.WriteHeader(502)
+			return
+		}
+		fmt.Fprint(w, f.resolveReply)
+		return
+	}
 	if strings.Contains(q, "addPullRequestReview") {
 		f.submitted = append(f.submitted, v)
 		if f.submitReply == "" {
@@ -352,6 +403,9 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case strings.Contains(q, "... on CheckRun{status"):
+		f.checkReads++
+		emit(map[string]any{"node": f.check})
 	case strings.Contains(q, "pullRequest(number"):
 		f.reviews++
 		if f.reviewFail {
@@ -1026,7 +1080,7 @@ func TestForgePullRequests(t *testing.T) {
 		"comments":       nodes(comment("cy", "looks good")),
 		"reviewThreads": nodes(
 			map[string]any{"isResolved": true, "path": "a.go", "line": 3, "comments": nodes(comment("ann", "done"))},
-			map[string]any{"isResolved": false, "path": "b.go", "line": nil, "originalLine": 7, "comments": nodes(comment("bo", "why?"))},
+			map[string]any{"isResolved": false, "path": "b.go", "line": nil, "originalLine": 7, "diffSide": "LEFT", "comments": nodes(map[string]any{"author": map[string]any{"login": "bo"}, "body": "why?", "diffHunk": "@@ -7 +7 @@\n-\x1b[2Jfake-secret", "createdAt": at}, comment("ann", "because"))},
 		),
 		"commits": nodes(map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": nodes(
 			map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://ci/1", "databaseId": 11, "startedAt": at, "completedAt": at.Add(252 * time.Second)},
@@ -1054,7 +1108,7 @@ func TestForgePullRequests(t *testing.T) {
 		!slices.EqualFunc(r.Reviewers, wantReviewers, func(a, b changes.Reviewer) bool {
 			return a.SubmittedAt.Equal(b.SubmittedAt) && a.Login == b.Login && a.State == b.State && a.Outdated == b.Outdated
 		}) ||
-		r.MergeState != "blocked" || r.Mergeable != "mergeable" || r.Fetched.IsZero() || r.Unresolved() != 1 || r.Threads[1].Line != 7 || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
+		r.MergeState != "blocked" || r.Mergeable != "mergeable" || r.Fetched.IsZero() || r.Unresolved() != 1 || r.Threads[1].Line != 7 || !r.Threads[1].Old || r.Threads[0].Old || r.Threads[1].Hunk != "@@ -7 +7 @@\n-[REDACTED]" || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
 		t.Fatalf("review: %+v", r)
 	}
 	if strings.Contains(r.Body, "fake-secret") || strings.ContainsAny(r.Body, "\x1b\x07") {
@@ -1073,7 +1127,7 @@ func TestForgePullRequests(t *testing.T) {
 		t.Fatalf("reused review: %v %d reads", err, f.reviews-reads)
 	}
 	f.reviewFail = true
-	if kept, ok, err := forge.Review(context.Background(), 45, "bbb", false); err == nil || !ok || !slices.Equal(kept.Checks, wantChecks) || f.reviews != reads+1 {
+	if kept, ok, err := forge.Review(context.Background(), 45, "bbb", false); err == nil || !ok || !reflect.DeepEqual(kept.Checks, wantChecks) || f.reviews != reads+1 {
 		t.Fatalf("failed review read: %v %v %+v", ok, err, kept)
 	}
 }
@@ -1121,6 +1175,28 @@ func TestForgeSubmitReview(t *testing.T) {
 	pr := changes.Change{URL: draft.URL, Number: 45}
 	if _, err := changes.SubmitReview(ctx, pr, []changes.Forge{forge}, left, changes.EventComment); err == nil || !strings.Contains(err.Error(), "unknown") || len(f.submitted) != 2 {
 		t.Fatalf("unknown draft resent: %v sent=%d", err, len(f.submitted))
+	}
+}
+
+// Catches a thread write retried after dispatch, which would toggle the
+// thread back, an unknown outcome reported as a refusal, and a refusal that
+// drops GitHub's reason or leaks a secret in it.
+func TestForgeResolveThread(t *testing.T) {
+	s, f := newFixture(t)
+	forge := &Forge{s: s}
+	ctx := context.Background()
+	f.resolveReply = `{"data":{"resolveReviewThread":{"thread":{"id":"T_1","isResolved":true}}}}`
+	if err := forge.ResolveThread(ctx, "T_1", true); err != nil || !slices.Equal(f.resolved, []string{"resolveReviewThread T_1"}) {
+		t.Fatalf("resolve: %v %v", err, f.resolved)
+	}
+	f.resolveReply = ""
+	if err := forge.ResolveThread(ctx, "T_1", false); !reason(err, "unknown-outcome") || !slices.Equal(f.resolved, []string{"resolveReviewThread T_1", "unresolveReviewThread T_1"}) {
+		t.Fatalf("unknown outcome: %v %v", err, f.resolved)
+	}
+	f.resolveReply = `{"data":{"unresolveReviewThread":null},"errors":[{"message":"thread is locked fake-secret"}]}`
+	err := forge.ResolveThread(ctx, "T_1", false)
+	if !reason(err, "rejected") || !strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "fake-secret") || len(f.resolved) != 3 {
+		t.Fatalf("refusal: %v %v", err, f.resolved)
 	}
 }
 
@@ -1556,4 +1632,60 @@ func FuzzProviderJSON(f *testing.F) {
 		}
 		_ = decode(raw, &data)
 	})
+}
+
+// A failed Actions job's log excerpt must come from signed storage without
+// the account's credential, redacted and stripped, stopping at the error; a
+// completed run is kept without secrets, a running one is read again, and a
+// huge log is refused rather than read whole.
+func TestForgeCheck(t *testing.T) {
+	s, f := newFixture(t)
+	ctx := context.Background()
+	cache := filepath.Join(t.TempDir(), "forge.pulls.json")
+	forge := &Forge{s: s, cache: cache, reviews: changes.NewReviews(cache, s.o.Repo), checks: changes.NewChecks(cache, s.o.Repo)}
+	nodes := func(v ...any) map[string]any { return map[string]any{"nodes": v} }
+	f.check = map[string]any{
+		"status": "COMPLETED", "conclusion": "FAILURE", "title": "lint failed", "summary": "1 error",
+		"checkSuite": map[string]any{"app": map[string]any{"slug": "github-actions"}, "workflowRun": map[string]any{"databaseId": 99}},
+		"steps":      nodes(map[string]any{"number": 3, "name": "Run lint", "status": "COMPLETED", "conclusion": "FAILURE"}),
+		"annotations": nodes(map[string]any{"path": "a.go", "location": map[string]any{"start": map[string]any{"line": 3}}, "annotationLevel": "FAILURE",
+			"message": "unused x fake-secret", "blobUrl": "https://github.com/owner/repo/blob/aaa/a.go"}),
+	}
+	// The long line is cut as read mid-secret; stripping its escapes leaves
+	// the fragment inside the kept 2 KiB.
+	long := strings.Repeat("\x1b[0m", 100) + strings.Repeat("y", 1707)
+	f.log = "2026-01-01T00:00:00Z setup\n2026-01-01T00:00:01Z token fake-secret \x1b[31mred\x1b[0m\n" + long + "fake-secret\n2026-01-01T00:00:02Z ##[error]exit 1\nafter\n"
+	check := changes.Check{ID: "CR_11", Run: 11, URL: "https://github.com/owner/repo/actions/runs/99/job/11"}
+	d, err := forge.Check(ctx, check, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Log != "setup\ntoken [REDACTED] red\n"+strings.Repeat("y", 1707)+"…\n##[error]exit 1" || d.LogUnavailable != "" || d.Workflow != 99 || len(f.blobAuth) != 1 || f.blobAuth[0] != "" {
+		t.Fatalf("log %q (%q), workflow %d, blob auth %q", d.Log, d.LogUnavailable, d.Workflow, f.blobAuth)
+	}
+	if len(d.Steps) != 1 || d.Steps[0].Status != "failed" || d.Steps[0].URL != check.URL+"#step:3:1" ||
+		len(d.Annotations) != 1 || d.Annotations[0].URL != "https://github.com/owner/repo/blob/aaa/a.go#L3" || strings.Contains(d.Annotations[0].Message, "fake-secret") {
+		t.Fatalf("steps %+v annotations %+v", d.Steps, d.Annotations)
+	}
+	reads := f.checkReads
+	if again, err := forge.Check(ctx, check, false); err != nil || f.checkReads != reads || again.Log != d.Log {
+		t.Fatalf("completed run not reused: %v %d", err, f.checkReads)
+	}
+	if data, err := os.ReadFile(strings.TrimSuffix(cache, ".pulls.json") + ".checks.json"); err != nil || strings.Contains(string(data), "fake-secret") {
+		t.Fatalf("kept checks: %v", err)
+	}
+	f.hugeLog = true
+	if d, err = forge.Check(ctx, check, true); err != nil || d.Log != "" || !strings.Contains(d.LogUnavailable, "over 32 MiB") {
+		t.Fatalf("huge log: %v %q", err, d.LogUnavailable)
+	}
+	f.check["status"], f.check["conclusion"] = "IN_PROGRESS", nil
+	running := changes.Check{ID: "CR_12", Run: 12}
+	for range 2 {
+		if d, err = forge.Check(ctx, running, false); err != nil || !strings.Contains(d.LogUnavailable, "still running") {
+			t.Fatalf("running: %v %q", err, d.LogUnavailable)
+		}
+	}
+	if f.checkReads != reads+3 {
+		t.Fatalf("running job kept: %d reads", f.checkReads-reads)
+	}
 }

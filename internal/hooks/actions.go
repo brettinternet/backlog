@@ -31,27 +31,42 @@ type ActionInvocation struct {
 
 // LinkedChange fills the {change.*} placeholders, which only an action run on
 // a change has. Base is the default branch ref the change is compared with.
+// CheckRun and CheckURL fill {check.run}, the GitHub Actions run ID, and
+// {check.url}, which only an action run from a check view has.
 type LinkedChange struct {
-	Number string `json:"number,omitempty"`
-	URL    string `json:"url,omitempty"`
-	Branch string `json:"branch,omitempty"`
-	Head   string `json:"head,omitempty"`
-	Base   string `json:"base,omitempty"`
-	Path   string `json:"path,omitempty"`
+	Number   string `json:"number,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Head     string `json:"head,omitempty"`
+	Base     string `json:"base,omitempty"`
+	Path     string `json:"path,omitempty"`
+	CheckRun string `json:"checkRun,omitempty"`
+	CheckURL string `json:"checkUrl,omitempty"`
 }
 
 func (c LinkedChange) values() map[string]string {
 	return map[string]string{"change.number": c.Number, "change.url": c.URL, "change.branch": c.Branch,
-		"change.head": c.Head, "change.base": c.Base, "change.path": c.Path}
+		"change.head": c.Head, "change.base": c.Base, "change.path": c.Path, "check.run": c.CheckRun, "check.url": c.CheckURL}
 }
 
-// UsesChange reports whether an action names a {change.*} placeholder, so it
-// runs only on a change.
+// UsesChange reports whether an action names a {change.*} or {check.*}
+// placeholder, so it runs only on a change.
 func UsesChange(action project.ActionConfig) bool {
+	return usesPlaceholder(action, func(key string) bool { return strings.HasPrefix(key, "change.") || strings.HasPrefix(key, "check.") })
+}
+
+// MissingCheck reports whether an action names a {check.*} placeholder that
+// c leaves empty, so it runs only from a check view that sets it.
+func MissingCheck(action project.ActionConfig, c LinkedChange) bool {
+	values := c.values()
+	return usesPlaceholder(action, func(key string) bool { return strings.HasPrefix(key, "check.") && values[key] == "" })
+}
+
+func usesPlaceholder(action project.ActionConfig, match func(string) bool) bool {
 	for _, value := range append(append([]string(nil), action.Run...), action.CWD) {
 		uses := false
 		scanPlaceholders(value, func(key string) (string, error) {
-			uses = uses || strings.HasPrefix(key, "change.")
+			uses = uses || match(key)
 			return "", nil
 		})
 		if uses {

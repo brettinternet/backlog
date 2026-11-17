@@ -76,7 +76,7 @@ func Link(items []Item, d Data) map[model.Ref][]Change {
 		if origin {
 			prByNumber[pr.Number] = ln
 		}
-		prByURL[pullKey(pr.URL)] = ln
+		prByURL[PullKey(pr.URL)] = ln
 		if !local {
 			l.branchIDs(ln, pr.Head, "branch")
 		}
@@ -190,30 +190,50 @@ func (l *linker) addID(ln *line, token, kind string, prose bool) {
 	}
 }
 
-// branchIDs links a branch whose name, or last "/" segment, starts with an
-// item's lowercase ID followed by "-" or the end: bl-12-slug and
-// feat/bl-12-slug link to BL-12.
+// branchIDs links a branch to every item it names (see branchTokens).
 func (l *linker) branchIDs(ln *line, name, kind string) {
+	for _, token := range branchTokens(name, l.ids) {
+		l.addID(ln, token, kind, false)
+	}
+}
+
+// BranchItems is each item a branch names under the linking rule, once.
+func BranchItems(refs []model.Ref, branch string) []model.Ref {
+	ids := map[string][]model.Ref{}
+	for _, ref := range refs {
+		id := strings.ToLower(ref.ID)
+		ids[id] = append(ids[id], ref)
+	}
+	var out []model.Ref
+	for _, token := range branchTokens(branch, ids) {
+		for _, ref := range ids[token] {
+			if !slices.Contains(out, ref) {
+				out = append(out, ref)
+			}
+		}
+	}
+	return out
+}
+
+// branchTokens are the lowercase item IDs a branch names: its name, or last
+// "/" segment, starting with an ID followed by "-" or the end, so bl-12-slug
+// and feat/bl-12-slug name BL-12. Each form takes its longest such ID.
+func branchTokens(name string, ids map[string][]model.Ref) []string {
 	name = strings.ToLower(name)
 	forms := []string{name}
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		forms = append(forms, name[i+1:])
 	}
+	var tokens []string
 	for _, form := range forms {
-		if token := l.prefix(form); token != "" {
-			l.addID(ln, token, kind, false)
+		for end := len(form); end > 0; end = strings.LastIndex(form[:end], "-") {
+			if _, ok := ids[form[:end]]; ok {
+				tokens = append(tokens, form[:end])
+				break
+			}
 		}
 	}
-}
-
-// prefix is the longest item ID that s starts with at a "-" boundary.
-func (l *linker) prefix(s string) string {
-	for end := len(s); end > 0; end = strings.LastIndex(s[:end], "-") {
-		if _, ok := l.ids[s[:end]]; ok {
-			return s[:end]
-		}
-	}
-	return ""
+	return tokens
 }
 
 var (
@@ -223,8 +243,9 @@ var (
 	commitURL = regexp.MustCompile(`^https?://[^/]+/.+/commit/([0-9a-fA-F]{7,40})(?:[/?#]|$)`)
 )
 
-// pullKey identifies a pull request URL whatever its case or suffix.
-func pullKey(raw string) string {
+// PullKey identifies a pull or merge request URL whatever its case or suffix,
+// or is "" for any other URL.
+func PullKey(raw string) string {
 	m := pullURL.FindStringSubmatch(strings.TrimSpace(raw))
 	if m == nil {
 		return ""
@@ -238,7 +259,7 @@ func (l *linker) explicit(ref model.Ref, raw string, prs map[string]*line, commi
 	if u, err := url.Parse(strings.TrimSpace(raw)); err != nil || u.Scheme != "https" && u.Scheme != "http" {
 		return
 	}
-	if key := pullKey(raw); key != "" {
+	if key := PullKey(raw); key != "" {
 		if ln := prs[key]; ln != nil {
 			ln.link(ref, evidence{kind: "ref"})
 			return
@@ -313,7 +334,7 @@ func (l *linker) change(ln *line) Change {
 	}
 	if pr != nil {
 		c.Title, c.URL, c.Repo, c.Number = pr.Title, pr.URL, pr.Repo, pr.Number
-		c.Additions, c.Deletions, c.Review, c.Checks = pr.Additions, pr.Deletions, pr.Review, pr.Checks
+		c.Additions, c.Deletions, c.Review, c.Checks, c.MergeState = pr.Additions, pr.Deletions, pr.Review, pr.Checks, pr.MergeState
 		c.Head = cmp.Or(c.Head, pr.HeadSHA)
 		c.Events = append(c.Events, Event{Kind: "opened", Time: pr.Created})
 		if !pr.Merged.IsZero() {

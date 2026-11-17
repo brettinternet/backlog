@@ -31,11 +31,12 @@ const (
 )
 
 // diffPage draws every file of a change's diff, each from the render cache
-// when its head, patch, width, and theme are unchanged, with the change's
-// tour steps above their lines.
-func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d changes.Detail, view *tourView, request detailRequest) rendered {
+// when its head, patch, width, theme, and review threads are unchanged, with
+// the change's tour steps above their lines.
+func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d changes.Detail, view *tourView, r *changes.Review, draft *changes.Draft, request detailRequest) rendered {
 	t, width := request.theme, max(1, request.width)
 	var page rendered
+	notes := reviewNotes(c, r, draft, request.threads, request.marks)
 	if c.IsCommit() {
 		page = commitMessage(c, d, request)
 	}
@@ -79,7 +80,7 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 		page.files = append(page.files, len(page.lines))
 		page.entries = append(page.entries, len(page.lines))
 		page.rows = append(page.rows, diffRow{file: f.Path})
-		page.lines = append(page.lines, fileLine(t, f, width))
+		page.lines = append(page.lines, fileLine(t, f, width, fileThreads(notes.unresolved, f)))
 		var steps, outdatedSteps []int
 		var marks lineMarks
 		ranges := ""
@@ -101,11 +102,19 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 			}
 		}
 		large := len(f.Patch) > bodyLimit
-		key := renderKey{Version: c.Head, Width: width, Theme: t.key(), Tab: tabChangeDiff, Expanded: large && request.expanded, Dependency: f.Path + "\x00" + patchDigest(f.Patch) + ranges}
+		on := notes.on(f)
+		key := renderKey{Version: c.Head, Width: width, Theme: t.key(), Tab: tabChangeDiff, Expanded: large && request.expanded, Dependency: f.Path + "\x00" + patchDigest(f.Patch) + ranges + on.digest()}
 		body, ok := worker.diffs.render(key)
 		if !ok {
-			body = fileDiff(f, t, width, key.Expanded, marks)
+			body = fileDiff(f, t, width, key.Expanded, marks, on)
 			worker.diffs.putRender(key, body)
+		}
+		// A body with no notes has one entry per line.
+		lineOf := func(j int) int {
+			if body.entries == nil {
+				return j
+			}
+			return body.entries[j]
 		}
 		// Each step sits above the row showing its first line, or under the
 		// file's header saying why none does, as an outdated step does; lines
@@ -119,7 +128,7 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 			for j, r := range body.rows {
 				for _, a := range r.anchors("") {
 					if _, ok := rowOf[a]; !ok {
-						rowOf[a] = j
+						rowOf[a] = lineOf(j)
 					}
 				}
 			}
@@ -160,7 +169,7 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 				page.lines = append(page.lines, t.yellow.render(ansi.Truncate(note, width, "…")))
 			}
 		}
-		hunks := body.hunks
+		hunks, entry := body.hunks, 0
 		for j, line := range body.lines {
 			for _, n := range at[j] {
 				callouts(n, "", false)
@@ -171,7 +180,13 @@ func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d ch
 			if len(hunks) > 0 && hunks[0] == j {
 				page.hunks, hunks = append(page.hunks, len(page.lines)), hunks[1:]
 			}
-			page.entries = append(page.entries, len(page.lines))
+			if entry < len(body.rows) && lineOf(entry) == j {
+				if key := body.rows[entry].thread; key != "" && notes.pending[key] {
+					page.threads = append(page.threads, len(page.entries))
+				}
+				page.entries = append(page.entries, len(page.lines))
+				entry++
+			}
 			page.lines = append(page.lines, line)
 		}
 		page.rows = append(page.rows, body.rows...)
@@ -230,6 +245,7 @@ func commitMessage(c changes.Change, d changes.Detail, request detailRequest) re
 type diffRow struct {
 	file     string
 	old, new int
+	thread   string // the review thread a row heads, which shows no line
 }
 
 type diffSide byte
@@ -250,6 +266,9 @@ type lineAnchor struct {
 // anchors resolves r at head, new side first: one anchor per line it shows,
 // or its file.
 func (r diffRow) anchors(head string) []lineAnchor {
+	if r.thread != "" {
+		return nil
+	}
 	var out []lineAnchor
 	if r.new > 0 {
 		out = append(out, lineAnchor{head: head, file: r.file, side: sideNew, line: r.new})
@@ -266,7 +285,7 @@ func (r diffRow) anchors(head string) []lineAnchor {
 // shows is whether r shows a's line, or is a's file's first row for line 0.
 func (r diffRow) shows(a lineAnchor) bool {
 	switch {
-	case r.file != a.file:
+	case r.file != a.file || r.thread != "":
 		return false
 	case a.line == 0:
 		return r.old == 0 && r.new == 0
@@ -343,7 +362,7 @@ func hunkStart(header string) (int, int) {
 
 // fileDiff renders one file's hunks; hunks holds each header's line. A patch
 // over the body limit waits for m, up to the 128 KiB a patch is cut to.
-func fileDiff(f changes.File, t theme, width int, expanded bool, marks lineMarks) rendered {
+func fileDiff(f changes.File, t theme, width int, expanded bool, marks lineMarks, on fileNotes) rendered {
 	var out rendered
 	note := func(p paint, text string) {
 		out.lines = append(out.lines, p.render(ansi.Truncate(text, width, "…")))
@@ -382,6 +401,9 @@ func fileDiff(f changes.File, t theme, width int, expanded bool, marks lineMarks
 	}
 	if f.Cut != "" {
 		note(t.yellow, f.Cut)
+	}
+	if len(on.threads) > 0 || len(on.drafts) > 0 {
+		out = placeNotes(out, on, t, width, digits, split)
 	}
 	for _, line := range out.lines {
 		out.size += len(line) + 1

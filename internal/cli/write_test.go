@@ -585,6 +585,35 @@ func TestAllSingleWritesGuardVersion(t *testing.T) {
 	}
 }
 
+// An agent that doesn't search first files the same work twice. Only an open,
+// unarchived item in the target source may refuse a create, matched ignoring
+// case and spacing, and a hand-written item counts before any index exists.
+func TestNewRefusesDuplicateTitle(t *testing.T) {
+	root := writeFixture(t)
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: other, type: native, path: other, prefix: OT}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: done, name: Done, category: done}]\ndefaults: {source: tasks}\n")
+	refused := func(title, match string) {
+		t.Helper()
+		code, out, _ := writeRun(root, "", "new", title)
+		if code != 5 || !strings.Contains(out, `"reason":"rejected"`) || !strings.Contains(out, `"matches":["tasks:`+match+`"]`) {
+			t.Fatalf("new %q: %d %s", title, code, out)
+		}
+	}
+	refused("  ORIGINAL ", "BL-012")
+	// A read builds the title index; later matches come from bl's own writes.
+	if code, out, _ := writeRun(root, "", "ls"); code != 0 {
+		t.Fatalf("ls: %d %s", code, out)
+	}
+	writeOK(t, root, "", "new", "Fix  login redirect")
+	refused("fix LOGIN\tredirect", "BL-13")
+	writeOK(t, root, "", "new", "fix login redirect", "--force")
+	writeOK(t, root, "", "new", "--source", "other", "Other work")
+	writeOK(t, root, "", "new", "other work")
+	writeOK(t, root, "", "set", "12", "13", "14", "status=done")
+	writeOK(t, root, "", "new", "Original")
+	writeOK(t, root, "", "archive", "15")
+	writeOK(t, root, "", "new", "other work")
+}
+
 // An unqualified blocker that exists only in another queue previously stored a
 // local ref that never resolves, leaving the item silently never ready.
 func TestNewResolvesBlockersAcrossSources(t *testing.T) {
@@ -602,7 +631,7 @@ func TestNewResolvesBlockersAcrossSources(t *testing.T) {
 		{"API-1", model.Ref{ID: "API-1"}, "bl: warning: blocker API-1 matches no single item; qualify it as source:ID\n"},
 		{"API-9", model.Ref{ID: "API-9"}, "bl: warning: blocker API-9 matches no single item; qualify it as source:ID\n"},
 	} {
-		code, out, stderr := writeRun(root, "", "new", "--source", "web", "Blocked <"+tc.blocker)
+		code, out, stderr := writeRun(root, "", "new", "--source", "web", "Blocked by "+tc.blocker+" <"+tc.blocker)
 		if code != 0 || stderr != tc.warning {
 			t.Fatalf("<%s: %d %s %q", tc.blocker, code, out, stderr)
 		}
@@ -663,7 +692,8 @@ func TestNewResolvesCreateSource(t *testing.T) {
 		var envelope struct {
 			Data struct{ Source, Title string }
 		}
-		if err := json.Unmarshal([]byte(writeOK(t, root, "", append([]string{"new"}, args...)...)), &envelope); err != nil {
+		// Every case creates the title T; only the source is under test.
+		if err := json.Unmarshal([]byte(writeOK(t, root, "", append([]string{"new", "--force"}, args...)...)), &envelope); err != nil {
 			t.Fatal(err)
 		}
 		return envelope.Data.Source + " " + envelope.Data.Title
@@ -696,4 +726,57 @@ func TestNewResolvesCreateSource(t *testing.T) {
 	}
 	put(t, filepath.Join(root, "backlog.local.yaml"), "defaults: {source: nope}\n")
 	refused("unknown defaults.source nope; creatable sources: tasks, issues", "T")
+}
+
+// "." resolves the invoking checkout's branch, not the control root's: here the
+// control root's branch names an item ID two sources share.
+func TestDotNamesBranchItem(t *testing.T) {
+	root := writeFixture(t)
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: mirror, type: native, path: mirror, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\n")
+	if err := os.MkdirAll(filepath.Join(root, "mirror"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(root, "mirror/BL-012.md"), get(t, filepath.Join(root, "items/BL-012.md")))
+	var created struct{ Data struct{ ID string } }
+	if err := json.Unmarshal([]byte(writeOK(t, root, "", "new", "--source", "tasks", "Branch item")), &created); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(root, ".git/HEAD"), "ref: refs/heads/bl-012-root\n")
+	linked := linkedCoordinationFixture(t, root)
+	head := filepath.Join(root, ".git/worktrees/linked/HEAD")
+
+	put(t, head, "ref: refs/heads/feat/"+strings.ToLower(created.Data.ID)+"-slug\n")
+	if code, out, stderr := writeRun(linked, "", "show", "."); code != 0 || !strings.Contains(out, `"id":"`+created.Data.ID+`"`) {
+		t.Fatalf("show .: %d %s %s", code, out, stderr)
+	}
+	writeOK(t, linked, "", "note", ".", "from the branch")
+	if !strings.Contains(get(t, filepath.Join(root, "items", created.Data.ID+".md")), "from the branch") {
+		t.Fatal("note . missed the branch item")
+	}
+	writeOK(t, linked, "", "archive", ".")
+	writeOK(t, linked, "", "unarchive", ".")
+	var child struct{ Data struct{ ID string } }
+	if err := json.Unmarshal([]byte(writeOK(t, linked, "", "new", "--source", "tasks", "Child ^.")), &child); err != nil {
+		t.Fatal(err)
+	}
+	writeOK(t, linked, "", "set", "tasks:BL-012", "blocked_by=.")
+	for _, id := range []string{child.Data.ID, "BL-012"} {
+		if text := get(t, filepath.Join(root, "items", id+".md")); !strings.Contains(text, created.Data.ID) {
+			t.Fatalf("%s does not reference the branch item:\n%s", id, text)
+		}
+	}
+
+	for _, tc := range []struct {
+		head, want string
+		code       int
+	}{
+		{"0123456789abcdef0123456789abcdef01234567\n", "HEAD is detached", 3},
+		{"ref: refs/heads/unlinked\n", "branch unlinked links none", 3},
+		{"ref: refs/heads/bl-012-slug\n", "mirror:BL-012", 2},
+	} {
+		put(t, head, tc.head)
+		if code, out, _ := writeRun(linked, "", "done", "."); code != tc.code || !strings.Contains(out, tc.want) {
+			t.Fatalf("%q: %d %s", tc.head, code, out)
+		}
+	}
 }

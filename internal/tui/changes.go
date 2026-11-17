@@ -50,20 +50,45 @@ func checksGlyph(t theme, checks string) string {
 	return ""
 }
 
+// verdictGlyph is the list's last glyph for c: an open pull request's
+// verdict from the list read, by what to fix first, else its checks glyph, as
+// for a draft or an unknown merge state (design.md D46).
+func verdictGlyph(t theme, c changes.Change) string {
+	merge := changes.ListMerge(c)
+	switch {
+	case merge == "":
+	case merge == changes.VerdictConflicts:
+		return t.red.render("⚠")
+	case c.Checks == changes.ChecksFailing:
+		return t.red.render("✕")
+	case c.Review == changes.ReviewChanges:
+		return t.red.render("✎")
+	case merge == changes.VerdictBehind:
+		return t.yellow.render("↓")
+	case c.Checks == changes.ChecksPending:
+		return t.yellow.render("●")
+	case c.Review == changes.ReviewRequested:
+		return t.yellow.render("○")
+	case merge == changes.VerdictReady:
+		return t.green.render("✓")
+	}
+	return checksGlyph(t, c.Checks)
+}
+
 // changeCell is the list column: the most advanced change's stage, label, and
-// checks, such as ⇡#45 ✓, padded to width.
+// verdict, such as ⇡#45 ✓, padded to width.
 func changeCell(t theme, cs []changes.Change, width int) string {
 	c, ok := changes.Furthest(cs)
 	if !ok {
 		return blank(width)
 	}
-	checks := checksGlyph(t, c.Checks)
+	verdict := verdictGlyph(t, c)
 	room := width - 1
-	if checks != "" {
+	if verdict != "" {
 		room -= 2
-		checks = " " + checks
+		verdict = " " + verdict
 	}
-	return stageGlyph(t, c) + t.muted.render(cell(textutil.Line(changes.Label(c)), max(0, room))) + checks
+	return stageGlyph(t, c) + t.muted.render(cell(textutil.Line(changes.Label(c)), max(0, room))) + verdict
 }
 
 // changeWidth is the width changeCell needs for cs.
@@ -73,7 +98,7 @@ func changeWidth(cs []changes.Change) int {
 		return 0
 	}
 	n := 1 + textWidth(changes.Label(c))
-	if c.Checks != "" {
+	if verdictGlyph(theme{}, c) != "" {
 		n += 2
 	}
 	return n
@@ -183,7 +208,7 @@ func changesVersion(cs []changes.Change) string {
 	}
 	h := fnv.New64a()
 	for _, c := range cs {
-		for _, s := range []string{c.ID, c.Stage, c.State, c.Reason, c.Checks, c.Review, c.Head, c.Title, c.URL, c.Worktree, c.Updated.String()} {
+		for _, s := range []string{c.ID, c.Stage, c.State, c.Reason, c.Checks, c.Review, c.MergeState, c.Head, c.Title, c.URL, c.Worktree, c.Updated.String()} {
 			h.Write([]byte(s))
 			h.Write([]byte{0})
 		}
@@ -202,6 +227,19 @@ func linkedChange(c changes.Change) hooks.LinkedChange {
 	l := hooks.LinkedChange{URL: c.URL, Branch: c.Branch, Head: c.Head, Base: c.Base(), Path: c.Worktree}
 	if c.Number > 0 {
 		l.Number = strconv.Itoa(c.Number)
+	}
+	return l
+}
+
+// actionTarget is c for {change.*}, with the check view's check for
+// {check.*}: its GitHub Actions run and URL.
+func (m Model) actionTarget(c changes.Change) hooks.LinkedChange {
+	l := linkedChange(c)
+	if m.change != nil && m.check != nil && m.shownCheck != nil {
+		l.CheckURL = m.shownCheck.URL
+		if m.shownCheck.Workflow > 0 {
+			l.CheckRun = strconv.FormatInt(m.shownCheck.Workflow, 10)
+		}
 	}
 	return l
 }

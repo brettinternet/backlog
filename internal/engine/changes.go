@@ -197,7 +197,8 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 }
 
 // ItemChangesDetail is ItemChanges with each open pull request's verdict,
-// reviewers, and check timing, for bl changes --detail and MCP detail.
+// reviewers, check timing, and the first failing runs' steps, annotations,
+// and log excerpts, for bl changes --detail and MCP detail.
 func ItemChangesDetail(ctx context.Context, cfg project.Config, ref model.Ref) (ChangesResult, error) {
 	return loadItemChanges(ctx, cfg, ref, true)
 }
@@ -222,6 +223,9 @@ func loadItemChanges(ctx context.Context, cfg project.Config, ref model.Ref, det
 	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref], o.Forges, false), Providers: d.Statuses}
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
+	}
+	if detail {
+		changes.AddFailures(ctx, result.Changes, o.Forges)
 	}
 	for i, c := range result.Changes {
 		if !detail {
@@ -255,7 +259,7 @@ func MentionsChanges(text string) bool {
 	}
 	for _, t := range q.Terms {
 		switch t.Field {
-		case "change", "checks", "review":
+		case "change", "checks", "review", "merge":
 			return true
 		case "has":
 			for _, v := range t.Values {
@@ -287,7 +291,36 @@ func linkReads(ctx context.Context, cfg project.Config, s *ReadSnapshot) {
 func queryChanges(cs []changes.Change) []query.Change {
 	out := make([]query.Change, len(cs))
 	for n, c := range cs {
-		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review}
+		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review, Merge: changes.ListMerge(c)}
 	}
 	return out
+}
+
+// BranchItems reads the invoking checkout's current branch, never the control
+// root's (D5), and the items it names under D43's branch rule. A detached HEAD
+// returns no branch and no items.
+func BranchItems(ctx context.Context, cfg project.Config) (string, []model.Item, error) {
+	branch := cfg.Discovery.Branch()
+	if branch == "" {
+		return "", nil, nil
+	}
+	// Archived items count, so unarchive . restores the branch's item.
+	reads, err := LoadReads(ctx, cfg, true)
+	if err != nil {
+		return branch, nil, err
+	}
+	var refs []model.Ref
+	byRef := map[model.Ref]model.Item{}
+	for _, item := range reads.Query.Items {
+		if item.Project != "" && item.Project != cfg.Project.ID {
+			continue
+		}
+		refs = append(refs, item.Ref)
+		byRef[item.Ref] = item
+	}
+	var items []model.Item
+	for _, ref := range changes.BranchItems(refs, branch) {
+		items = append(items, byRef[ref])
+	}
+	return branch, items, nil
 }

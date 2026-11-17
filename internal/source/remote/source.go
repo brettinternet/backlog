@@ -82,6 +82,26 @@ func (s *Source) Load(ctx context.Context, request source.Cursor) (source.Delta,
 	return s.guardSearch(delta), s.safeError(err)
 }
 
+// FindTitle compares cached rows only; a stale cache can miss a match.
+func (s *Source) FindTitle(ctx context.Context, key string) ([]model.Item, error) {
+	delta, err := s.cache.RemoteCached(ctx)
+	if err != nil {
+		return nil, s.safeError(err)
+	}
+	var items []model.Item
+	for _, item := range delta.Items {
+		if delta.Archived[item.Ref] || model.TitleKey(item.Title) != key {
+			continue
+		}
+		clean, err := s.cleanItem(item)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, clean)
+	}
+	return items, nil
+}
+
 // Read is a fresh provider read. It also refreshes the item's cached row, so a
 // relation edit or deletion that a change window cannot see reaches later reads
 // now, not at the next reconciliation. The cache write is best effort.

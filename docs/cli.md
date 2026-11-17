@@ -38,6 +38,14 @@ the matches in the message and `error.details.matches`; so does an ID stored
 both active and archived (pick one with a [path selector](#bl-renumber-from-to)).
 A missing ID exits 3.
 
+`.` is the item the current branch names: `bl show .` in a worktree on
+`feat/bl-12-slug` shows BL-12, and `bl new "Fix ^."` or `bl set 7 blocked_by=.`
+references it. The branch is the invoking checkout's (`-C DIR`'s),
+read by the rule that [links changes](design.md) (D43): the branch name, or its last
+`/` segment, starts with the ID followed by `-` or the end. A detached HEAD or a
+branch naming no item exits 3; a branch naming several items exits 2 and lists
+them. MCP refuses `.` with `usage`.
+
 ## Read commands
 
 ### `bl ls [QUERY] [--view V] [--sort S] [--group G] [-n N] [--workspace NAME]`
@@ -133,7 +141,9 @@ change is unknown or stale. JSON returns `data.changes`, each with `id`,
 `stage` (`worktree`, `branch`, `pr`, `landed`), `state` (`open`, `draft`,
 `merged`, `closed`, `unknown`, `stale`), `link` (how it was found: `branch`,
 `title`, `closes`, `provider`, `trailer`, `merge`, `ref`), and optional
-`reason`, `checks`, `review`, `branch`, `head`, `title`, `url`, `repo`,
+`reason`, `checks`, `review`, `mergeState` (the forge's lowercased merge state
+from its list read, such as `clean`, `behind`, or `dirty`; GitHub only),
+`branch`, `head`, `title`, `url`, `repo`,
 `number`, `additions`, `deletions` (a branch or worktree's from its merge base
 with the default branch, counting a worktree's uncommitted files), `worktree`,
 `dirty`, `ahead`, `behind`, an open pull request's `checkRuns` (`name`,
@@ -149,7 +159,14 @@ cache, refreshed incrementally; Git is read from `.git` and never fetched.
 state; `verdict`; and `reasons`, each with `kind`, `text`, and the `check` or
 `login` it names, in fix-first order), each check run's exact `status`, `run`,
 `startedAt`, and `completedAt`, and `reviewers` (`login`, `state`,
-`submittedAt`, `outdated`) ([Changes](changes.md)). Text output prints the
+`submittedAt`, `outdated`), and `threads` (`id`, `path`, `line`, `old` when on
+the old side, `resolved`, `outdated`, `hunk`, and `comments` with `author`,
+`body`, `time`, and `url`) ([Changes](changes.md)). The first five failing
+check runs of each open pull request also carry their node `id`,
+`workflowRun` (the Actions run), `steps` (`number`, `name`, `status`, `url`),
+`annotations` (`path`, `line`, `level`, `title`, `message`, `url`), and either
+`log`, the failed job's log excerpt, or `logUnavailable` with why there is
+none. Text output prints the
 verdict, then one reason per line. Without it, output is unchanged.
 
 ### `bl tour ID [FILE|-]`
@@ -235,7 +252,7 @@ the envelope is `ok: false` with the first failure's error and exit code, and
 keeps `data.outcomes`. `--if-version` with several IDs exits 2 before writing.
 Text output prints each written item, then `ID: message` for each failure.
 
-### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--ref URL]... [--source SOURCE] [--sprint S]`
+### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--ref URL]... [--source SOURCE] [--sprint S] [--force]`
 
 Alias: `bl create`.
 
@@ -271,6 +288,13 @@ bl new 'Fix flaky login test' --ref https://github.com/acme/app/pull/45
 - `--sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
   like `bl set sprint=`. Only Linear sources create with a sprint.
 - `--if-version` on create always conflicts.
+- A title that matches an open item in the target source, ignoring case and
+  surrounding or repeated whitespace, exits 5 with `rejected`, naming the
+  matches in the message and `error.details.matches`. Closed and archived
+  items and other sources never match. `--force` creates anyway. The check
+  reads cached titles and makes no provider request, so a stale cache can miss
+  a match: an edit outside `bl` until the next read refreshes it, or a remote
+  item created since the last sync.
 - A create that leaves an item behind but fails a later step, such as a Linear
   blocker relation, exits 6 with `unknown-outcome` and names the item in the
   message and `error.details.created`. Check it before creating again.
@@ -809,7 +833,9 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
 
 Validates every active and archived native item. Findings have `code`,
 `severity`, `path`, `line`, and `message` (JSON `data.findings`, `[]` when
-clean). Errors exit 5; warnings don't.
+clean). Errors exit 5; warnings don't. `duplicate-title` warns on each open
+active item whose title matches another's in the same source, the duplicates
+`bl new` refuses.
 
 `--fix` applies only the [repairs in the format spec](format.md#validation):
 filename renames, `updated`-only and comment-only merge conflicts, and line

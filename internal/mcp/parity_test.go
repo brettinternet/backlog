@@ -58,7 +58,7 @@ func TestWriteCommandOptionParity(t *testing.T) {
 	// Each CLI flag has a named schema destination. These are deliberate aliases
 	// for the corresponding CLI operation, not excluded commands.
 	mapping := map[string]map[string]string{
-		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "ref": "create.refs", "source": "create.source", "status": "create.status", "sprint": "create.sprint"},
+		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "ref": "create.refs", "source": "create.source", "status": "create.status", "sprint": "create.sprint", "force": "create.force"},
 		"set":   {"if-version": "update.version", "yes": "update.confirm"},
 		"start": {"if-version": "update.version"}, "done": {"if-version": "update.version"},
 		"archive": {"if-version": "update.version"}, "unarchive": {"if-version": "update.version"},
@@ -135,7 +135,7 @@ func TestEventsMatchCLI(t *testing.T) {
 		case strings.Contains(body.Query, "pullRequest(number"):
 			data = map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"headRefOid": parityHead, "mergeStateStatus": "BLOCKED", "mergeable": "MERGEABLE",
 				"latestReviews": map[string]any{"nodes": []any{map[string]any{"author": map[string]any{"login": "bo"}, "state": "APPROVED", "submittedAt": at, "commit": map[string]any{"oid": "old"}}}},
-				"reviewThreads": map[string]any{"nodes": []any{map[string]any{"isResolved": true, "path": "a.go"}, map[string]any{"path": "b.go"}}},
+				"reviewThreads": map[string]any{"nodes": []any{map[string]any{"isResolved": true, "path": "a.go"}, map[string]any{"id": "T_b", "path": "b.go", "line": 3, "diffSide": "LEFT", "comments": map[string]any{"nodes": []any{map[string]any{"author": map[string]any{"login": "bo"}, "body": "why?", "createdAt": at, "diffHunk": "@@ -1,3 +1,2 @@"}}}}}},
 				"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://ci.fake/1", "databaseId": 9, "startedAt": at, "completedAt": "2026-01-01T00:04:12Z"}}}}}}}},
 			}}}
 		}
@@ -186,7 +186,9 @@ func TestEventsMatchCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// The session spans dozens of CLI runs and tool calls, so a fixed deadline
+	// fails a slow but healthy run under -race; go test's timeout catches a hang.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st, ct := mcp.NewInMemoryTransports()
 	serverDone := make(chan error, 1)
@@ -323,12 +325,12 @@ func TestEventsMatchCLI(t *testing.T) {
 	if !reflect.DeepEqual(cliData, mcpData) {
 		t.Fatalf("changes differ\nMCP %v\nCLI %v", mcpData, cliData)
 	}
-	// --detail and detail: true add the verdict, check timing, and reviewers.
+	// --detail and detail: true add the verdict, check timing, reviewers, and threads.
 	code, out = run("changes", "1", "--detail")
 	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil {
 		t.Fatalf("bl changes --detail: %d %s", code, out)
 	}
-	for _, want := range []string{`"merge":{"state":"blocked","verdict":"blocked","reasons":[{"kind":"failing","text":"test failed","check":"test"}`, `"status":"failed","run":9,"startedAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:04:12Z"`, `"reviewers":[{"login":"bo","state":"approved","submittedAt":"2026-01-01T00:00:00Z","outdated":true}]`} {
+	for _, want := range []string{`"merge":{"state":"blocked","verdict":"blocked","reasons":[{"kind":"failing","text":"test failed","check":"test"}`, `"status":"failed","run":9,"startedAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:04:12Z"`, `"reviewers":[{"login":"bo","state":"approved","submittedAt":"2026-01-01T00:00:00Z","outdated":true}]`, `{"id":"T_b","path":"b.go","line":3,"old":true,"hunk":"@@ -1,3 +1,2 @@","comments":[{"author":"bo","body":"why?","time":"2026-01-01T00:00:00Z"}]}`} {
 		if !strings.Contains(string(cliChanges.Data), want) {
 			t.Fatalf("bl changes --detail lacks %s\n%s", want, cliChanges.Data)
 		}

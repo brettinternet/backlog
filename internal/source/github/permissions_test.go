@@ -109,9 +109,28 @@ func TestOAuthInstallationPermissionGatedWrites(t *testing.T) {
 	if _, err := forge.SubmitReview(ctx, 45, draft, changes.EventComment); err == nil || len(f.submitted) != 0 {
 		t.Fatalf("review posted without pull request write: %v", err)
 	}
+	if err := forge.ResolveThread(ctx, "T_1", true); err == nil || !strings.Contains(err.Error(), "Pull requests: write") || len(f.resolved) != 0 {
+		t.Fatalf("thread resolved without pull request write: %v", err)
+	}
 	f.pullPermission = "write"
 	if r, err := forge.readReview(ctx, 45); err != nil || r.Blocked != "" {
 		t.Fatalf("review with pull request write: %v %q", err, r.Blocked)
+	}
+	// A failed job's log needs the app's Actions: read; without it the
+	// check view says so instead of failing.
+	forge.checks = changes.NewChecks("", s.o.Repo)
+	f.check = map[string]any{"status": "COMPLETED", "conclusion": "FAILURE", "checkSuite": map[string]any{"app": map[string]any{"slug": "github-actions"}}}
+	f.log = "##[error]boom\n"
+	check := changes.Check{ID: "CR_11", Run: 11}
+	if d, err := forge.Check(ctx, check, false); err != nil || d.Log != "" || !strings.Contains(d.LogUnavailable, "lacks Actions: read") {
+		t.Fatalf("log without Actions: read: %v %q", err, d.LogUnavailable)
+	}
+	f.actionsPermission = "read"
+	if _, err := s.Read(ctx, "1"); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := forge.Check(ctx, check, false); err != nil || d.Log != "##[error]boom" {
+		t.Fatalf("log with Actions: read: %v %q %q", err, d.Log, d.LogUnavailable)
 	}
 	f.repositoryMissing = true
 	if _, err = apply("status", "open"); err == nil {

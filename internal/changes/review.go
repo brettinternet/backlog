@@ -45,8 +45,9 @@ type Review struct {
 // Check is one check run or commit status on the head commit. Status is its
 // exact state word, such as timed out; State is the rollup category it counts
 // as, so checks: queries and glyphs keep their meaning. Run is the forge's
-// check run ID.
+// check run ID and ID its node ID; the detail is read on demand.
 type Check struct {
+	ID          string    `json:"id,omitempty"`
 	Name        string    `json:"name"`
 	State       string    `json:"state"`
 	URL         string    `json:"url,omitempty"`
@@ -54,6 +55,7 @@ type Check struct {
 	Run         int64     `json:"run,omitempty"`
 	StartedAt   time.Time `json:"startedAt,omitzero"`
 	CompletedAt time.Time `json:"completedAt,omitzero"`
+	CheckDetail
 }
 
 // Exact check state words.
@@ -103,14 +105,18 @@ type Comment struct {
 	Time   time.Time `json:"time"`
 }
 
-// Thread is a review thread on a file line, its comments oldest first. ID
-// is the forge's, which a reply names.
+// Thread is a review thread on a file line, on the old side when Old, its
+// comments oldest first. ID is the forge's, which a reply names; Hunk is the
+// diff hunk its first comment was made on, ending at its line. Line is the
+// head's, or for an outdated thread the line it was made on.
 type Thread struct {
 	ID       string    `json:"id,omitempty"`
 	Path     string    `json:"path"`
 	Line     int       `json:"line,omitempty"`
+	Old      bool      `json:"old,omitempty"`
 	Resolved bool      `json:"resolved,omitempty"`
 	Outdated bool      `json:"outdated,omitempty"`
+	Hunk     string    `json:"hunk,omitempty"`
 	Comments []Comment `json:"comments"`
 }
 
@@ -131,30 +137,32 @@ type Entry struct {
 	Thread  *Thread
 }
 
-// Conversation lists unresolved threads first, then comments and resolved
-// threads, each oldest first.
+// Conversation lists unresolved threads by file and line, then comments
+// and reviews oldest first, then resolved threads by file and line.
 func (r Review) Conversation() []Entry {
-	var out []Entry
-	for _, c := range r.Comments {
-		out = append(out, Entry{Comment: c})
-	}
+	var open, resolved []Entry
 	for i := range r.Threads {
 		t := &r.Threads[i]
-		if len(t.Comments) > 0 {
-			out = append(out, Entry{Comment: t.Comments[0], Thread: t})
+		if len(t.Comments) == 0 {
+			continue
+		}
+		if t.Resolved {
+			resolved = append(resolved, Entry{Comment: t.Comments[0], Thread: t})
+		} else {
+			open = append(open, Entry{Comment: t.Comments[0], Thread: t})
 		}
 	}
-	open := func(e Entry) bool { return e.Thread != nil && !e.Thread.Resolved }
-	slices.SortStableFunc(out, func(a, b Entry) int {
-		if open(a) != open(b) {
-			if open(a) {
-				return -1
-			}
-			return 1
-		}
-		return a.Comment.Time.Compare(b.Comment.Time)
-	})
-	return out
+	byLine := func(a, b Entry) int {
+		return cmp.Or(cmp.Compare(a.Thread.Path, b.Thread.Path), cmp.Compare(a.Thread.Line, b.Thread.Line))
+	}
+	slices.SortStableFunc(open, byLine)
+	slices.SortStableFunc(resolved, byLine)
+	comments := make([]Entry, len(r.Comments))
+	for i, c := range r.Comments {
+		comments[i] = Entry{Comment: c}
+	}
+	slices.SortStableFunc(comments, func(a, b Entry) int { return a.Comment.Time.Compare(b.Comment.Time) })
+	return slices.Concat(open, comments, resolved)
 }
 
 // LoadReview reads a pull request change's review from the forge serving it,
@@ -354,4 +362,20 @@ func Ordered(checks []Check) []Check {
 	out := slices.Clone(checks)
 	slices.SortStableFunc(out, func(a, b Check) int { return cmp.Compare(rank[a.State], rank[b.State]) })
 	return out
+}
+
+// ListMerge is an open pull request's verdict from the list read alone, for
+// the list glyph and merge: (design.md D46): ready, unstable, blocked,
+// behind, or conflicts. It is empty for anything else, such as a draft, an
+// unknown or stale state, or a merge state the forge is still computing, and
+// never ready while its checks are stale.
+func ListMerge(c Change) string {
+	if c.Stage != StagePR || c.State != StateOpen {
+		return ""
+	}
+	verdict := map[string]string{"clean": VerdictReady, "has_hooks": VerdictReady, "unstable": VerdictUnstable, "blocked": VerdictBlocked, "behind": VerdictBehind, "dirty": VerdictConflicts}[c.MergeState]
+	if verdict == VerdictReady && c.Checks == ChecksStale {
+		return ""
+	}
+	return verdict
 }

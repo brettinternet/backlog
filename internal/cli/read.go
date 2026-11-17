@@ -232,7 +232,7 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 			return writeHistory(out, page)
 		}},
 		{Name: "changes", Usage: "Show an item's linked worktrees, branches, pull requests, and landed commits", ArgsUsage: "ID", Flags: []urfave.Flag{
-			&urfave.BoolFlag{Name: "detail", Usage: "Add each open pull request's verdict and reasons, check timing, and reviewers"},
+			&urfave.BoolFlag{Name: "detail", Usage: "Add each open pull request's verdict and reasons, check timing, reviewers, and review threads"},
 		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 1 {
 				return &Error{Reason: "usage", Message: "changes requires exactly one ID"}
@@ -266,8 +266,12 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 			if err != nil {
 				return err
 			}
+			id, err := itemID(ctx, cfg, cmd.Args().Get(0))
+			if err != nil {
+				return err
+			}
 			if cmd.Bool("remove") {
-				result, err := engine.RemoveTour(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
+				result, err := engine.RemoveTour(ctx, cfg, id, cmd.Args().Get(1))
 				if err != nil {
 					return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 				}
@@ -285,7 +289,7 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 				return err
 			}
 			if cmd.Args().Len() == 1 {
-				result, err := engine.ReadTours(ctx, cfg, cmd.Args().First())
+				result, err := engine.ReadTours(ctx, cfg, id)
 				if err != nil {
 					return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 				}
@@ -296,9 +300,9 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 			}
 			var result engine.TourResult
 			if file := cmd.Args().Get(1); file == "-" {
-				result, err = engine.StoreTourReader(ctx, cfg, cmd.Args().Get(0), in)
+				result, err = engine.StoreTourReader(ctx, cfg, id, in)
 			} else {
-				result, err = engine.StoreTourFile(ctx, cfg, cmd.Args().Get(0), file)
+				result, err = engine.StoreTourFile(ctx, cfg, id, file)
 			}
 			if err != nil {
 				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
@@ -422,8 +426,43 @@ func groupName(field string, g query.Group) string {
 	return ""
 }
 
+// itemID resolves "." to the item the invoking checkout's branch names,
+// qualified by source (D19). Any other value is returned unchanged.
+func itemID(ctx context.Context, cfg project.Config, value string) (string, error) {
+	if value != "." {
+		return value, nil
+	}
+	branch, items, err := engine.BranchItems(ctx, cfg)
+	if e := duplicateFiles(err); e != nil {
+		return "", e
+	}
+	if err != nil {
+		if auth := oauthCLIError(err); auth != nil {
+			return "", auth
+		}
+		return "", &Error{Reason: "unavailable", Message: err.Error()}
+	}
+	switch {
+	case branch == "":
+		return "", &Error{Reason: "not-found", Message: ". names no item: HEAD is detached"}
+	case len(items) == 0:
+		return "", &Error{Reason: "not-found", Message: ". names no item: branch " + branch + " links none", Details: map[string]any{"branch": branch}}
+	case len(items) > 1:
+		names := []string{}
+		for _, i := range items {
+			names = append(names, i.Ref.Source+":"+i.Ref.ID)
+		}
+		return "", &Error{Reason: "usage", Message: "ambiguous ID .; branch " + branch + " matches: " + strings.Join(names, ", "), Details: map[string]any{"branch": branch, "matches": names}}
+	}
+	return items[0].Ref.Source + ":" + items[0].Ref.ID, nil
+}
+
 // readOne reads the one item that id names, in full.
 func readOne(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
+	id, err := itemID(ctx, cfg, id)
+	if err != nil {
+		return model.Item{}, err
+	}
 	matches, err := engine.ReadDetail(ctx, cfg, id)
 	if e := duplicateFiles(err); e != nil {
 		return model.Item{}, e

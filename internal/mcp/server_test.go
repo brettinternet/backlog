@@ -139,6 +139,8 @@ func TestFoundationToolsAndWriteGuards(t *testing.T) {
 		t.Fatalf("unknown status wrote item: %v", entries)
 	}
 	assertErr(call("show", map[string]any{"id": "missing"}), "not-found")
+	// The server's checkout isn't the caller's, so "." names nothing here.
+	assertErr(call("show", map[string]any{"id": "."}), "usage")
 	assertErr(call("query", map[string]any{"query": "badfield:value"}), "usage")
 	created = call("create", map[string]any{"title": "Ready"})
 	if created.IsError {

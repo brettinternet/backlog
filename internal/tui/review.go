@@ -3,6 +3,8 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -10,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/changes"
+	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -24,6 +27,7 @@ type reviewer interface {
 	Draft(changes.Change) (changes.Draft, error)
 	SaveDraft(changes.Draft) error
 	Submit(context.Context, changes.Change, string) (changes.Draft, error)
+	ResolveThread(context.Context, changes.Change, string, bool) error
 }
 
 // reviewState is the change view's review: the last read and draft, an
@@ -57,6 +61,20 @@ type reviewSavedMsg struct {
 	err     error
 }
 type reviewSubmittedMsg struct{ err error }
+type threadWrittenMsg struct {
+	thread string
+	err    error
+}
+
+// threadWrite is a resolve or unresolve x sent on the pull request at url:
+// in flight until its reply, then awaiting the re-read from generation
+// reread, or refused with the forge's reason.
+type threadWrite struct {
+	url     string
+	resolve bool
+	reread  uint64
+	refused string
+}
 
 // reviewBlocked says why review actions are disabled, or "".
 func (m Model) reviewBlocked() string {
@@ -93,6 +111,17 @@ func (m *Model) beginReviewDraft() tea.Cmd {
 		id = m.detailIDs[m.entryCursor]
 	}
 	switch {
+	case m.cursorThread() != "":
+		// A thread in the Diff takes a reply, as in Conversation.
+		if t := threadAt(m.review.read, m.cursorThread()); t != nil && t.ID != "" {
+			edit.reply = &changes.Reply{Thread: t.ID, Path: t.Path, Line: t.Line}
+			text = ""
+			for _, r := range d.Replies {
+				if r.Thread == t.ID {
+					text = r.Body
+				}
+			}
+		}
 	case m.detailTab == tabChangeDiff:
 		anchors := m.cursorAnchors()
 		if len(anchors) == 0 || anchors[0].line == 0 {
@@ -114,7 +143,7 @@ func (m *Model) beginReviewDraft() tea.Cmd {
 			}
 		}
 	case m.detailTab == tabChangeConversation:
-		entries := m.review.read.Conversation()
+		entries := conversation(m.review.read, m.resolvedOpen)
 		if m.entryCursor >= 0 && m.entryCursor < len(entries) && entries[m.entryCursor].Thread != nil && entries[m.entryCursor].Thread.ID != "" {
 			t := entries[m.entryCursor].Thread
 			edit.reply = &changes.Reply{Thread: t.ID, Path: t.Path, Line: t.Line}
@@ -211,6 +240,150 @@ type retainedError struct {
 
 func (e *retainedError) Error() string {
 	return e.err.Error() + "; buffer retained at " + e.path
+}
+
+// cursorReviewThread is the review thread under the cursor in the Diff or
+// Conversation, or nil.
+func (m Model) cursorReviewThread() *changes.Thread {
+	if key := m.cursorThread(); key != "" {
+		return threadAt(m.review.read, key)
+	}
+	if m.detailTab != tabChangeConversation || !m.detailCurrent() {
+		return nil
+	}
+	entries := conversation(m.review.read, m.resolvedOpen)
+	if m.entryCursor < 0 || m.entryCursor >= len(entries) {
+		return nil
+	}
+	return entries[m.entryCursor].Thread
+}
+
+// resolveBlocked says why x is disabled, or "".
+func (m Model) resolveBlocked() string {
+	if reason := m.reviewBlocked(); reason != "" {
+		return reason
+	}
+	if m.detailTab != tabChangeDiff && m.detailTab != tabChangeConversation {
+		return "open a thread in the Diff or Conversation"
+	}
+	return ""
+}
+
+// resolveThread resolves or unresolves the thread under the cursor with one
+// write, which the thread shows pending until a re-read confirms it. A
+// thread with a write in flight or awaiting its re-read isn't sent again,
+// so a second x can't undo the first.
+func (m *Model) resolveThread() tea.Cmd {
+	if reason := m.resolveBlocked(); reason != "" {
+		m.notice = "Disabled: " + reason
+		return nil
+	}
+	t := m.cursorReviewThread()
+	if t == nil || t.ID == "" {
+		m.notice = "Move the cursor to a review thread to resolve it."
+		return nil
+	}
+	if w, ok := m.threadWrites[t.ID]; ok && w.refused == "" {
+		m.notice = "This thread's change is still being confirmed."
+		return nil
+	}
+	writes := maps.Clone(m.threadWrites)
+	if writes == nil {
+		writes = map[string]threadWrite{}
+	}
+	writes[t.ID] = threadWrite{url: m.shownChange().URL, resolve: !t.Resolved}
+	m.threadWrites = writes
+	store, ctx, c, id, resolve := m.reviewer, m.opts.Context, m.shownChange(), t.ID, !t.Resolved
+	return tea.Batch(m.showDetail(), func() tea.Msg {
+		return threadWrittenMsg{thread: id, err: store.ResolveThread(ctx, c, id, resolve)}
+	})
+}
+
+// threadWritten keeps a refusal with the forge's reason; otherwise, even
+// after an unknown outcome, the thread stays pending until a fresh read of
+// the pull request decides what it shows.
+func (m Model) threadWritten(msg threadWrittenMsg) (tea.Model, tea.Cmd) {
+	w, ok := m.threadWrites[msg.thread]
+	if !ok {
+		return m, nil
+	}
+	writes := maps.Clone(m.threadWrites)
+	var refusal *source.Error
+	if msg.err != nil && !(errors.As(msg.err, &refusal) && refusal.Reason == "unknown-outcome") {
+		w.refused = msg.err.Error()
+		if refusal != nil {
+			w.refused = refusal.Message
+		}
+		w.refused = boundedLine(w.refused)
+		writes[msg.thread], m.threadWrites = w, writes
+		m.notice = "Thread: " + w.refused
+		return m, m.showDetail()
+	}
+	cmd := m.scheduleDetail()
+	w.reread = m.detailGeneration
+	writes[msg.thread], m.threadWrites = w, writes
+	if m.detailOpen {
+		m.submitDetail(false)
+	}
+	return m, cmd
+}
+
+// rereadThreads is whether a write on the shown pull request awaits the
+// re-read, which reads its review fresh.
+func (m Model) rereadThreads() bool {
+	if m.change == nil {
+		return false
+	}
+	url := m.shownChange().URL
+	for _, w := range m.threadWrites {
+		if w.reread != 0 && w.url == url {
+			return true
+		}
+	}
+	return false
+}
+
+// threadsConfirmed drops the writes a result's review read after them
+// settles, and reports whether it dropped any, whose pending marks the
+// result still shows. A stale read settles nothing.
+func (m *Model) threadsConfirmed(result detailResult) bool {
+	if result.review == nil || result.review.Stale != "" || m.change == nil {
+		return false
+	}
+	url := m.shownChange().URL
+	var writes map[string]threadWrite
+	for id, w := range m.threadWrites {
+		if w.reread == 0 || result.generation < w.reread || w.url != url {
+			continue
+		}
+		if writes == nil {
+			writes = maps.Clone(m.threadWrites)
+		}
+		delete(writes, id)
+	}
+	if writes != nil {
+		m.threadWrites = writes
+	}
+	return writes != nil
+}
+
+// threadMarks is what each thread with a write shows in place of its state.
+func (m Model) threadMarks() map[string]string {
+	if len(m.threadWrites) == 0 {
+		return nil
+	}
+	marks := make(map[string]string, len(m.threadWrites))
+	for id, w := range m.threadWrites {
+		switch {
+		case w.refused != "":
+			marks[id] = "✕ " + w.refused
+		case w.resolve:
+			marks[id] = "… resolving"
+		default:
+			marks[id] = "… unresolving"
+		}
+	}
+	return marks
 }
 
 // beginSubmitReview opens the submit prompt.

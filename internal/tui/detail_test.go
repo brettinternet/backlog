@@ -820,6 +820,80 @@ func TestChangeView(t *testing.T) {
 	}
 }
 
+// Catches gp opening the wrong pull request or not falling back to Changes, J
+// dropping the change view's tab or keeping a change on an item without one, a
+// pull request item not opening in its change view, reopening after backspace,
+// or not reopening once selected again, and gp acting with no pull request.
+func TestOpenPull(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 4, RenderMarkdown)
+	m.opts.Workspace = &project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "tasks", Type: "native"}, {ID: "prs", Type: "github-pulls"}}}}
+	pull := func(n int, state string) changes.Change {
+		return changes.Change{ID: fmt.Sprintf("pr:%d", n), Stage: changes.StagePR, State: state, Number: n, Branch: fmt.Sprintf("b%d", n)}
+	}
+	branch := changes.Change{ID: "branch:b", Stage: changes.StageBranch, State: changes.StateOpen, Branch: "b"}
+	byID := map[string][]changes.Change{
+		"BL-1": {branch, pull(1, changes.StateMerged), pull(2, changes.StateOpen)},
+		"BL-2": {pull(3, changes.StateOpen), pull(4, changes.StateDraft)},
+		"BL-4": {pull(5, changes.StateOpen)},
+	}
+	for i := range m.data.rows {
+		r := &m.data.rows[i].row
+		r.Changes = byID[r.Ref.ID]
+		if r.Ref.ID == "BL-4" {
+			r.Ref.Source = "prs"
+		}
+	}
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	at := func(m Model, id string, number int, tab detailTab) {
+		t.Helper()
+		row, _ := m.selectedRow()
+		got := 0
+		if m.change != nil {
+			got = m.change.Number
+		}
+		if !m.detailOpen || row.Ref.ID != id || got != number || m.detailTab != tab {
+			t.Fatalf("on %s #%d tab %d, want %s #%d tab %d", row.Ref.ID, got, m.detailTab, id, number, tab)
+		}
+	}
+	m, _ = detailKey(m, 'g', 0)
+	m, _ = detailKey(m, 'p', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-1", 2, tabChangeOverview)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-2", 3, tabChangeFiles)
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-3", 0, tabChanges)
+	m, _ = detailKey(m, 'g', 0)
+	m, _ = detailKey(m, 'p', 0)
+	if !strings.Contains(m.notice, "no open pull request") {
+		t.Fatalf("gp without a pull request: notice %q", m.notice)
+	}
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-4", 5, tabChangeOverview)
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	at(m, "BL-4", 0, tabChanges)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-4", 5, tabChangeOverview)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'g', 0)
+	m, _ = detailKey(m, 'p', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-2", 0, tabChanges)
+}
+
 // Catches the Diff tab losing its unified and split layouts, [ ] and [c ]c
 // landing off the file or hunk, m not drawing a large file, enter on a History
 // commit not opening its diff or backspace not returning to that entry, a
@@ -1289,7 +1363,7 @@ func TestChangeViewReview(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	review := changes.Review{
 		Body:      "Closes BL-1 with **care**",
-		Checks:    []changes.Check{{Name: "test", State: changes.ChecksPassing, URL: "https://ci/test"}, {Name: "lint", State: changes.ChecksFailing, URL: "https://ci/lint"}},
+		Checks:    []changes.Check{{Name: "test", State: changes.ChecksPassing, URL: "https://ci/test"}, {ID: "CR_push", Name: "lint", State: changes.ChecksPassing, URL: "https://ci/lint-push"}, {ID: "CR_pr", Name: "lint", State: changes.ChecksFailing, URL: "https://ci/lint"}},
 		Reviewers: []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved}, {Login: "bo", State: changes.ReviewChanges}},
 		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}, {Author: "bo", State: changes.ReviewChanges, Body: "please fix", Time: at.Add(30 * time.Minute), URL: "https://github.com/o/r/pull/45#review-2"}},
 		Threads: []changes.Thread{
@@ -1297,7 +1371,9 @@ func TestChangeViewReview(t *testing.T) {
 			{ID: "T_b", Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this? " + strings.Repeat("and this ", 400), Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
 		},
 	}
-	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) {
+		return changes.Detail{Files: []changes.File{{Path: "b.go", Status: changes.FileModified, Patch: "@@ -5,3 +5,4 @@\n a\n b\n+c\n d\n"}}}, nil
+	}
 	var fresh atomic.Int32
 	m.detailWorker.changeReview = func(_ context.Context, _ changes.Change, refresh bool) (changes.Review, error) {
 		if refresh {
@@ -1331,9 +1407,41 @@ func TestChangeViewReview(t *testing.T) {
 		}
 		last += 1 + i
 	}
-	// Entries: the three reasons, the two checks, then the two reviewers.
-	if m, _ = detailKey(m, tea.KeyEnter, 0); !strings.Contains(m.notice, "Disabled") {
-		t.Fatalf("enter on a failing check: %q", m.notice)
+	// Entries: the three reasons, the three checks, then the two reviewers.
+	// Enter on the failing check's reason opens its check view one level
+	// under Overview, whose log yl copies and whose steps O opens; backspace
+	// returns to the reason.
+	m.detailWorker.changeCheck = func(_ context.Context, _ changes.Change, check changes.Check, _ bool) (changes.CheckDetail, error) {
+		// The passing push run shares the failing check's name.
+		if check.ID != "CR_pr" {
+			return changes.CheckDetail{}, errors.New("read " + check.ID)
+		}
+		return changes.CheckDetail{Steps: []changes.Step{{Number: 1, Name: "Run lint", Status: changes.CheckFailed, URL: "https://ci/lint#step:1:1"}},
+			Annotations: []changes.Annotation{{Path: "a.go", Line: 3, Level: "failure", Message: "unused x"}}, Log: "lint ./...\n##[error]Process completed with exit code 1."}, nil
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	content = m.View().Content
+	last = -1
+	for _, want := range []string{"✕ lint", "failing", "Steps", "✕ Run lint", "Annotations", "a.go:3  unused x", "Log", "lint ./...", "##[error]Process completed"} {
+		i := strings.Index(content[last+1:], want)
+		if i < 0 || strings.Contains(content, "Merge ") {
+			t.Fatalf("check view lacks %q after the line before it\n%s", want, content)
+		}
+		last += 1 + i
+	}
+	m, _ = detailKey(m, 'j', 0)
+	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/lint#step:1:1" {
+		t.Fatalf("O opened %q, not the step under the cursor", opened)
+	}
+	m, _ = detailKey(m, 'y', 0)
+	if m, _ = detailKey(m, 'l', 0); m.notice != "Copied the log excerpt." {
+		t.Fatalf("yl: %q", m.notice)
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	if content = m.View().Content; m.check != nil || m.entryCursor != 0 || !strings.Contains(content, "Merge      ✕ Blocked") {
+		t.Fatalf("backspace left the check view: cursor %d\n%s", m.entryCursor, content)
 	}
 	for range 4 {
 		m, _ = detailKey(m, 'j', 0)
@@ -1341,8 +1449,9 @@ func TestChangeViewReview(t *testing.T) {
 	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/test" {
 		t.Fatalf("O opened %q, not the check under the cursor", opened)
 	}
-	m, _ = detailKey(m, 'j', 0)
-	m, _ = detailKey(m, 'j', 0)
+	for range 3 {
+		m, _ = detailKey(m, 'j', 0)
+	}
 	m, _ = detailKey(m, tea.KeyEnter, 0)
 	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#review-2" {
 		t.Fatalf("enter on bo opened tab %d at %d of %q", m.detailTab, m.entryCursor, m.detailIDs)
@@ -1352,8 +1461,12 @@ func TestChangeViewReview(t *testing.T) {
 	m, _ = detailKey(m, 'j', 0)
 	m, _ = detailKey(m, 'j', 0)
 	m, _ = detailKey(m, tea.KeyEnter, 0)
-	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#r1" {
+	if m = settleDetail(t, m); m.detailTab != tabChangeDiff || m.cursorThread() != "T_b" {
 		t.Fatalf("enter on unresolved threads opened tab %d at %d", m.detailTab, m.entryCursor)
+	}
+	// backspace returns to the reason it came from, then closes the change.
+	if m, _ = detailKey(m, tea.KeyBackspace, 0); m.detailTab != tabChangeOverview || m.entryCursor != 2 || m.change == nil {
+		t.Fatalf("backspace from the Diff: tab %d at %d", m.detailTab, m.entryCursor)
 	}
 	// ann approved without a comment, so has no Conversation entry, but has
 	// reviewed.
@@ -1375,7 +1488,7 @@ func TestChangeViewReview(t *testing.T) {
 	review.MergeState = "dirty"
 	_ = m.switchDetailTab(tabChangeOverview)
 	m = settleDetail(t, m)
-	if content := m.View().Content; !strings.Contains(content, "✓ 7 passing") || strings.Contains(content, "unit-0") || !strings.Contains(content, "⚠ Conflicts") {
+	if content := m.View().Content; !strings.Contains(content, "✓ 8 passing") || strings.Contains(content, "unit-0") || !strings.Contains(content, "⚠ Conflicts") {
 		t.Fatalf("Overview didn't fold passing checks\n%s", content)
 	}
 	fold := slices.Index(m.detailLinks, linkFold)
@@ -1430,8 +1543,17 @@ func TestChangeViewReview(t *testing.T) {
 	_ = m.switchDetailTab(tabChangeConversation)
 	m = settleDetail(t, m)
 	content = strings.Join(m.detailLines, "\n")
-	if b, c, a := strings.Index(content, "b.go:7"), strings.Index(content, "first comment"), strings.Index(content, "a.go:3"); b < 0 || c < b || a < c || !strings.Contains(content, "resolved") {
-		t.Fatalf("Conversation not unresolved first\n%s", content)
+	if b, c, a := strings.Index(content, "b.go:7"), strings.Index(content, "first comment"), strings.Index(content, "✓ 1 resolved thread"); b < 0 || c < b || a < c || strings.Contains(content, "a.go:3") {
+		t.Fatalf("Conversation not unresolved first, resolved folded\n%s", content)
+	}
+	if !strings.Contains(m.View().Content, "Conversation 1") {
+		t.Fatalf("Conversation tab lacks its unresolved count\n%s", m.View().Content)
+	}
+	folded := m
+	folded.entryCursor = len(folded.detailEntries) - 1
+	folded, _ = detailKey(folded, tea.KeyEnter, 0)
+	if folded = settleDetail(t, folded); !strings.Contains(strings.Join(folded.detailLines, "\n"), "a.go:3") || folded.entryCursor != len(folded.detailEntries)-2 {
+		t.Fatalf("enter didn't open the resolved threads\n%s", strings.Join(folded.detailLines, "\n"))
 	}
 	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://github.com/o/r/pull/45#r1" {
 		t.Fatalf("O opened %q, not the thread under the cursor", opened)
@@ -1496,13 +1618,282 @@ func TestChangeViewReview(t *testing.T) {
 	if m, cmd = detailKey(m, 'c', 0); cmd != nil || !strings.Contains(m.notice, "Pull requests: write") {
 		t.Fatalf("blocked c: %q", m.notice)
 	}
+	if m, cmd = detailKey(m, 'x', 0); cmd != nil || !strings.Contains(m.notice, "Pull requests: write") {
+		t.Fatalf("blocked x: %q", m.notice)
+	}
 }
 
-// fakeReviewer keeps one draft in memory and records the submitted event.
+// TestDiffThreads checks that review threads sit under their line on their
+// side, in either layout and on a renamed file, that ]u steps through the
+// unresolved ones, and that held j over a long diff with threads stays
+// within budget.
+func TestDiffThreads(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	pr := changes.Change{ID: "pr:45", Stage: changes.StagePR, State: changes.StateOpen, Number: 45, Head: "abc", URL: "https://github.com/o/r/pull/45"}
+	m.data.rows[len(m.data.rows)-1].row.Changes = []changes.Change{pr}
+	comment := func(author, body string) []changes.Comment {
+		return []changes.Comment{{Author: author, Body: body}}
+	}
+	review := changes.Review{Head: "abc", Threads: []changes.Thread{
+		{ID: "T1", Path: "a.go", Line: 2, Comments: comment("ann", "fix z")},
+		{ID: "T2", Path: "a.go", Line: 2, Old: true, Comments: comment("bo", "why y")},
+		{ID: "T3", Path: "old.go", Line: 10, Comments: comment("cy", "rename q")},
+		{ID: "T4", Path: "a.go", Line: 3, Resolved: true, Comments: comment("ann", "fine w")},
+		{ID: "T5", Path: "a.go", Line: 1, Outdated: true, Comments: comment("bo", "gone")},
+	}}
+	files := []changes.File{
+		{Path: "a.go", Status: changes.FileModified, Patch: "@@ -1,3 +1,3 @@\n x\n-y\n+z\n w\n"},
+		{Path: "new.go", From: "old.go", Status: changes.FileRenamed, Patch: "@@ -10,2 +10,2 @@\n-p\n+q\n r\n"},
+	}
+	var mu sync.Mutex
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return changes.Detail{Files: files}, nil
+	}
+	freshReads := 0
+	m.detailWorker.changeReview = func(_ context.Context, _ changes.Change, fresh bool) (changes.Review, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fresh {
+			freshReads++
+		}
+		return review, nil
+	}
+	drafts := &fakeReviewer{draft: changes.Draft{URL: pr.URL, Comments: []changes.LineComment{{Head: "abc", Path: "a.go", Line: 3, Body: "draft note"}}}}
+	m.reviewer, m.detailWorker.changeDraft = drafts, drafts.Draft
+	m.width = 100
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+
+	// Files counts each file's unresolved threads, the outdated one too, and
+	// enter opens the Diff at the file, which backspace returns from.
+	_ = m.switchDetailTab(tabChangeFiles)
+	m = settleDetail(t, m)
+	if l := m.detailLines[m.detailEntries[0]]; !strings.Contains(l, "● 3") {
+		t.Fatalf("Files row lacks its unresolved count: %q", l)
+	}
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeDiff || m.detailEntries[m.entryCursor] != m.detailFiles[1] {
+		t.Fatalf("enter on new.go opened tab %d at line %d", m.detailTab, m.detailEntries[m.entryCursor])
+	}
+	rowOf := func(m Model, key string) int {
+		return slices.IndexFunc(m.detailRows, func(r diffRow) bool { return r.thread == key })
+	}
+	under := func(m Model, key string) diffRow {
+		n := rowOf(m, key)
+		if n < 1 {
+			t.Fatalf("no thread %s in the Diff", key)
+		}
+		return m.detailRows[n-1]
+	}
+	// Each thread is under the row showing its line on its side; the
+	// renamed file's thread names its old path.
+	for key, want := range map[string]diffRow{"T1": {file: "a.go", new: 2}, "T2": {file: "a.go", old: 2}, "T3": {file: "new.go", new: 10}} {
+		if got := under(m, key); got != want {
+			t.Fatalf("%s under %+v, want %+v", key, got, want)
+		}
+	}
+	if rowOf(m, "T5") >= 0 {
+		t.Fatal("the outdated thread shows in the Diff")
+	}
+	text := strings.Join(m.detailLines, "\n")
+	for _, want := range []string{"fix z", "why y", "rename q", "✎ draft", "draft note"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Diff lacks %q\n%s", want, text)
+		}
+	}
+	folded := func(m Model) bool {
+		for _, l := range m.detailLines {
+			if strings.Contains(l, "fine w") {
+				return strings.Contains(l, "✓")
+			}
+		}
+		t.Fatal("Diff lacks the resolved thread")
+		return false
+	}
+	if !folded(m) {
+		t.Fatal("the resolved thread isn't folded")
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeFiles || m.entryCursor != 1 {
+		t.Fatalf("backspace returned to tab %d at %d", m.detailTab, m.entryCursor)
+	}
+	// A tab chosen directly drops the return, so backspace closes the change.
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChangeOverview)
+	if _ = m.switchDetailTab(tabChangeDiff); m.changeReturn != nil {
+		t.Fatalf("a directly chosen Diff returns to %+v", *m.changeReturn)
+	}
+
+	// ]u and [u step through unresolved threads in diff order, wrapping and
+	// skipping resolved and outdated ones; a thread has no line to comment on.
+	_ = m.switchDetailTab(tabChangeDiff)
+	m = settleDetail(t, m)
+	for i, step := range []struct{ keys, want, notice string }{
+		{"]u", "T2", ""}, {"]u", "T1", ""}, {"]u", "T3", ""}, {"]u", "T2", "Wrapped"}, {"[u", "T3", "Wrapped"}, {"[u", "T1", ""},
+	} {
+		m.notice = ""
+		for _, r := range step.keys {
+			m, _ = detailKey(m, r, 0)
+		}
+		if m.cursorThread() != step.want || !strings.Contains(m.notice, step.notice) || step.notice == "" && m.notice != "" {
+			t.Fatalf("step %d %s: on %q, notice %q", i, step.keys, m.cursorThread(), m.notice)
+		}
+	}
+	if anchors := m.cursorAnchors(); len(anchors) != 0 {
+		t.Fatalf("a thread resolves to %v", anchors)
+	}
+	// enter shows the resolved thread whole and keeps the cursor on it; the
+	// cursor stays on a thread as the layout splits, where the old side's
+	// thread is in the left half and the new side's in the right.
+	m.entryCursor = rowOf(m, "T4")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); folded(m) || m.cursorThread() != "T4" {
+		t.Fatalf("enter on a resolved thread: folded %v, cursor on %q", folded(m), m.cursorThread())
+	}
+	m.entryCursor = rowOf(m, "T1")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 400, Height: 24})
+	m = settleDetail(t, next.(Model))
+	if m.cursorThread() != "T1" {
+		t.Fatalf("split moved the cursor to %q", m.cursorThread())
+	}
+	half := (m.detailWidth() - 2*detailPad - 1) / 2
+	for key, left := range map[string]bool{"T1": false, "T2": true} {
+		head := ansi.Strip(m.detailLines[m.detailEntries[rowOf(m, key)]])
+		if column := ansi.StringWidth(head[:strings.Index(head, "●")]); column < half != left {
+			t.Fatalf("%s at column %d of a %d-column half", key, column, half)
+		}
+	}
+	if got := under(m, "T2"); got.old != 2 {
+		t.Fatalf("split T2 under %+v", got)
+	}
+
+	// x resolves the Diff thread under the cursor once: it shows pending, a
+	// second x sends nothing that could toggle it back, and after an unknown
+	// outcome a fresh re-read decides what shows.
+	written := func(cmd tea.Cmd) threadWrittenMsg {
+		t.Helper()
+		if cmd != nil {
+			for _, c := range cmd().(tea.BatchMsg) {
+				if c == nil {
+					continue
+				}
+				if msg, ok := c().(threadWrittenMsg); ok {
+					return msg
+				}
+			}
+		}
+		t.Fatal("x sent no thread write")
+		return threadWrittenMsg{}
+	}
+	drafts.resolveErr = source.Refuse("unknown-outcome", "sent but unconfirmed")
+	m, cmd := detailKey(m, 'x', 0)
+	write := written(cmd)
+	if m = settleDetail(t, m); !strings.Contains(strings.Join(m.detailLines, "\n"), "… resolving") {
+		t.Fatalf("x shows no pending mark\n%s", strings.Join(m.detailLines, "\n"))
+	}
+	if m, cmd = detailKey(m, 'x', 0); cmd != nil || !strings.Contains(m.notice, "being confirmed") {
+		t.Fatalf("second x while pending: %q", m.notice)
+	}
+	mu.Lock()
+	review.Threads[0].Resolved = true // GitHub applied it despite the lost reply.
+	reads := freshReads
+	mu.Unlock()
+	next, _ = m.Update(write)
+	m = settleDetail(t, next.(Model))
+	mu.Lock()
+	reads = freshReads - reads
+	mu.Unlock()
+	if text := strings.Join(m.detailLines, "\n"); reads == 0 || strings.Contains(text, "resolving") || len(m.threadWrites) != 0 || !slices.Equal(drafts.resolved, []string{"T1 true"}) {
+		t.Fatalf("re-read after an unknown outcome: %d fresh reads, writes %v, sent %v\n%s", reads, m.threadWrites, drafts.resolved, text)
+	}
+	// A refusal stays on the thread with GitHub's reason, and x in
+	// Conversation tries the thread under its cursor again.
+	m.entryCursor = rowOf(m, "T2")
+	drafts.resolveErr = source.Refuse("rejected", "GitHub refused: thread is locked")
+	m, cmd = detailKey(m, 'x', 0)
+	next, _ = m.Update(written(cmd))
+	if m = settleDetail(t, next.(Model)); !strings.Contains(strings.Join(m.detailLines, "\n"), "✕ GitHub refused: thread is locked") {
+		t.Fatalf("refusal not shown\n%s", strings.Join(m.detailLines, "\n"))
+	}
+	_ = m.switchDetailTab(tabChangeConversation)
+	m = settleDetail(t, m)
+	m.entryCursor = slices.Index(m.detailLinks, linkThread+"T2")
+	if text := strings.Join(m.detailLines, "\n"); m.entryCursor < 0 || !strings.Contains(text, "✕ GitHub refused") {
+		t.Fatalf("Conversation lacks the refusal at %d\n%s", m.entryCursor, text)
+	}
+	drafts.resolveErr = nil
+	m, cmd = detailKey(m, 'x', 0)
+	_ = written(cmd)
+	if m = settleDetail(t, m); !slices.Equal(drafts.resolved, []string{"T1 true", "T2 true", "T2 true"}) || !strings.Contains(strings.Join(m.detailLines, "\n"), "… resolving") {
+		t.Fatalf("x in Conversation sent %v\n%s", drafts.resolved, strings.Join(m.detailLines, "\n"))
+	}
+	m.threadWrites = nil
+	_ = m.switchDetailTab(tabChangeDiff)
+	m = settleDetail(t, m)
+
+	// Held j over a 10,000-line diff with 100 threads stays within the §11
+	// navigation budget, whose in-process time BL_TUI_MEASURE=1 logs.
+	var patch strings.Builder
+	patch.WriteString("@@ -0,0 +1,10000 @@\n")
+	mu.Lock()
+	review.Threads = nil
+	for i := 1; i <= 10000; i++ {
+		fmt.Fprintf(&patch, "+\tline := %d\n", i)
+		if i%100 == 0 {
+			review.Threads = append(review.Threads, changes.Thread{ID: "L" + strconv.Itoa(i), Path: "long.go", Line: i, Comments: comment("ann", "note on "+strconv.Itoa(i))})
+		}
+	}
+	files = []changes.File{{Path: "long.go", Status: changes.FileAdded, Patch: patch.String()}}
+	mu.Unlock()
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = next.(Model)
+	m.detailExpanded = true
+	m.submitDetail(true)
+	m = settleDetail(t, m)
+	if len(m.detailThreads) != 100 {
+		t.Fatalf("long diff shows %d of 100 threads", len(m.detailThreads))
+	}
+	m.entryCursor, m.detailScroll = 0, 0
+	samples := make([]time.Duration, 0, len(m.detailEntries))
+	for m.entryCursor < len(m.detailEntries)-1 {
+		start := time.Now()
+		m, _ = detailKey(m, 'j', 0)
+		_ = m.View()
+		samples = append(samples, time.Since(start))
+	}
+	if len(samples) != len(m.detailEntries)-1 {
+		t.Fatalf("held j took %d presses over %d entries", len(samples), len(m.detailEntries))
+	}
+	if os.Getenv("BL_TUI_MEASURE") == "1" {
+		slices.Sort(samples)
+		t.Logf("held j over 10,000 lines and 100 threads Update+View p95=%s max=%s", samples[(len(samples)*95-1)/100], samples[len(samples)-1])
+	}
+}
+
+// fakeReviewer keeps one draft in memory and records the submitted event
+// and each thread write, which answers resolveErr.
 type fakeReviewer struct {
-	mu    sync.Mutex
-	draft changes.Draft
-	event string
+	mu         sync.Mutex
+	draft      changes.Draft
+	event      string
+	resolved   []string
+	resolveErr error
+}
+
+func (f *fakeReviewer) ResolveThread(_ context.Context, _ changes.Change, thread string, resolve bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolved = append(f.resolved, thread+" "+strconv.FormatBool(resolve))
+	return f.resolveErr
 }
 
 func (f *fakeReviewer) Draft(changes.Change) (changes.Draft, error) { return f.saved(), nil }
@@ -1522,4 +1913,127 @@ func (f *fakeReviewer) Submit(_ context.Context, _ changes.Change, event string)
 	defer f.mu.Unlock()
 	f.event = event
 	return changes.Draft{URL: f.draft.URL}, nil
+}
+
+// Catches a shown pull request's reader leaking after its view closes or the
+// selection moves, which burns the account's rate limit, a pull request that
+// isn't shown being read, and a finished check or new verdict not reaching the
+// status bar.
+func TestChangeViewPoll(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 2, RenderMarkdown)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	m.opts.Now = func() time.Time { return now }
+	pr := func(n int) changes.Change {
+		return changes.Change{ID: "pr:" + strconv.Itoa(n), Stage: changes.StagePR, State: changes.StateOpen, Number: n, URL: "https://github.com/o/r/pull/" + strconv.Itoa(n)}
+	}
+	last := len(m.data.rows) - 1
+	m.data.rows[last-1].row.Changes = []changes.Change{pr(46)}
+	m.data.rows[last].row.Changes = []changes.Change{pr(45)}
+	m.selected = last
+	var mu sync.Mutex
+	reads := map[int]int{}
+	state := "blocked"
+	checks := []changes.Check{{Name: "test", State: changes.ChecksPending, Status: changes.CheckRunning}, {Name: "lint", State: changes.ChecksPassing, Status: changes.CheckPassed}}
+	set := func(merge string, test, lint changes.Check) {
+		mu.Lock()
+		defer mu.Unlock()
+		state, checks = merge, []changes.Check{test, lint}
+	}
+	read := func(n int) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return reads[n]
+	}
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	m.detailWorker.changeReview = func(_ context.Context, c changes.Change, fresh bool) (changes.Review, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fresh {
+			reads[c.Number]++
+		}
+		return changes.Review{MergeState: state, Checks: slices.Clone(checks)}, nil
+	}
+	review := m.detailWorker.changeReview
+	m.detailWorker.enrich = func(ctx context.Context, cs []changes.Change, fresh bool) []changes.Change {
+		out := slices.Clone(cs)
+		for i := range out {
+			r, _ := review(ctx, out[i], fresh)
+			merge := changes.Verdict(out[i], r)
+			out[i].CheckRuns, out[i].Merge = r.Checks, &merge
+		}
+		return out
+	}
+	refresh := func(m Model) Model {
+		t.Helper()
+		now = now.Add(time.Minute)
+		next, _ := m.Update(forgedMsg{})
+		return settleDetail(t, next.(Model))
+	}
+	idle := func(m Model) Model {
+		t.Helper()
+		now = now.Add(time.Minute)
+		next, _ := m.Update(forgedMsg{})
+		m = next.(Model)
+		select {
+		case <-m.detailWorker.results:
+			t.Fatal("a forge refresh read a pull request that isn't shown")
+		case <-time.After(100 * time.Millisecond):
+		}
+		return m
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if m.change == nil || m.change.Number != 45 {
+		t.Fatalf("change view not open on #45: %+v", m.change)
+	}
+	before := read(45)
+	for range 3 {
+		m = refresh(m)
+	}
+	if read(45) != before+3 || read(46) != 0 || m.notice != "" {
+		t.Fatalf("three refreshes read #45 %d times and #46 %d times, notice %q", read(45)-before, read(46), m.notice)
+	}
+
+	passed := changes.Check{Name: "test", State: changes.ChecksPassing, Status: changes.CheckPassed}
+	lint := changes.Check{Name: "lint", State: changes.ChecksPassing, Status: changes.CheckPassed}
+	set("clean", passed, lint)
+	if m = refresh(m); m.notice != "✓ checks passed · #45 ready" {
+		t.Fatalf("checks finishing: notice %q", m.notice)
+	}
+	if m, _ = detailKey(m, 'j', 0); m.notice != "" {
+		t.Fatalf("a key kept the notice %q", m.notice)
+	}
+	set("blocked", passed, changes.Check{Name: "lint", State: changes.ChecksPending, Status: changes.CheckRunning})
+	if m = refresh(m); m.notice != "#45 running" {
+		t.Fatalf("a rerun: notice %q", m.notice)
+	}
+	set("blocked", passed, changes.Check{Name: "lint", State: changes.ChecksFailing, Status: changes.CheckTimedOut})
+	if m = refresh(m); m.notice != "✕ lint timed out · #45 blocked" {
+		t.Fatalf("a failed check: notice %q", m.notice)
+	}
+
+	// The Changes tab shows #45 too; its Overview, another item, or a closed
+	// detail shows none.
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	before = read(45)
+	if m = refresh(m); m.change != nil || read(45) != before+1 {
+		t.Fatalf("the Changes tab read #45 %d times on a refresh", read(45)-before)
+	}
+	_ = m.switchDetailTab(tabOverview)
+	m = settleDetail(t, m)
+	m = idle(m)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m = idle(m)
+	m, _ = detailKey(m, 'q', 0)
+	m = idle(m)
+	if read(45) != before+1 || read(46) != 0 {
+		t.Fatalf("after the view moved and closed, #45 was read %d more times and #46 %d", read(45)-before-1, read(46))
+	}
 }

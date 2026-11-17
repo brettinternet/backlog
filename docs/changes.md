@@ -169,6 +169,17 @@ is reused for a minute while the head doesn't move; `R` reads it again. A
 failed read keeps the last one, which shows with why it may be out of date.
 It reads the first 100 checks, comments, reviews, and threads.
 
+A check run's detail (its first 50 steps and annotations, output title and
+summary, and, for a failed GitHub Actions job, a log excerpt) is read only for
+the check shown and the first five failing runs `--detail` reports, through
+the same queue. The log comes from signed storage without the account's
+credential, and needs the token's Actions: read
+([GitHub](github.md)). It streams, keeping at most 100 lines of 2 KiB each,
+stops at the first `##[error]` line, and gives up past 32 MiB. Timestamps and
+terminal sequences are stripped and secrets redacted before a completed run's
+detail is kept, by check run, in a `.checks.json` file beside `.pulls.json`;
+a running job is read again each time.
+
 From that detail, one verdict says whether the pull request can land and
 what's left, in fix-first order: failing checks, requested changes, unresolved
 threads, required review, pending checks, conflicts, behind the base, branch
@@ -183,6 +194,11 @@ the browser (`O`) or an action (`!`) ([design](design.md) D46).
 
 The TUI reads local data every five seconds, which starts no process unless the
 default branch moved, and forges every minute, on a worker; `R` reloads both.
+On each per-minute forge refresh it also reads the detail of the open pull
+request a change view or the Changes tab shows, one read per shown pull request
+a minute, on the detail worker through the account's request queue. Nothing
+reads a pull request that isn't shown, and the reads stop when the view closes
+or the selection moves.
 `bl changes`, MCP `changes`, `bl history`, and `bl ls` or MCP `query` with a
 change term load once per call.
 
@@ -192,10 +208,10 @@ change term load once per call.
 | --- | --- |
 | TUI list | The most advanced change, such as `⇡#45 ✓` ([TUI](tui.md#layout)) |
 | TUI Changes tab | Every change, furthest first, with its actions and URL ([TUI](tui.md#detail)) |
-| TUI change view | A verdict strip, and an overview of merge reasons, checks, and reviewers, files with `+/−`, highlighted diff, commits, and conversation ([TUI](tui.md#detail)) |
+| TUI change view | A verdict strip, and an overview of merge reasons, checks, and reviewers, files with `+/−`, highlighted diff, commits, and conversation, with review threads inline in the diff ([TUI](tui.md#detail)) |
 | History | One group per change: its span, events, and landed commits |
-| Queries | `has:change`, `change:`, `checks:`, `review:` ([Query](query.md#fields)) |
-| `bl changes ID` | The same list as text or JSON; `--detail` adds the verdict, check timing, and reviewers ([CLI](cli.md#bl-changes-id)) |
+| Queries | `has:change`, `change:`, `checks:`, `review:`, `merge:` ([Query](query.md#fields)) |
+| `bl changes ID` | The same list as text or JSON; `--detail` adds the verdict, check timing, reviewers, and review threads ([CLI](cli.md#bl-changes-id)) |
 | MCP `changes` | The same data as `bl changes --json` ([MCP](mcp.md#tools)) |
 | Actions | `{change.number}`, `{change.url}`, `{change.branch}`, `{change.head}`, `{change.base}`, `{change.path}` ([Automation](automation.md#placeholders-and-environment)) |
 

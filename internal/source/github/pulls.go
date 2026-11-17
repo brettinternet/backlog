@@ -14,6 +14,7 @@ import (
 	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/remote"
+	"github.com/brettinternet/backlog/internal/textutil"
 )
 
 // Forge lists a repository's pull requests for linked changes (design.md
@@ -25,6 +26,7 @@ type Forge struct {
 	cache   string
 	mu      sync.Mutex
 	reviews *changes.Reviews
+	checks  *changes.Checks
 }
 
 // NewForge reads o.Repo's pull requests, caching them redacted at cachePath.
@@ -36,13 +38,13 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 	if o.Repo == "" {
 		return nil, source.Refuse("rejected", "a GitHub forge needs owner/repo")
 	}
-	return &Forge{s: s, cache: cachePath, reviews: changes.NewReviews(cachePath, o.Repo)}, nil
+	return &Forge{s: s, cache: cachePath, reviews: changes.NewReviews(cachePath, o.Repo), checks: changes.NewChecks(cachePath, o.Repo)}, nil
 }
 
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }
 func (f *Forge) Web() string  { return "https://" + f.s.o.Host + "/" + f.s.o.Repo }
 
-const pullsQuery = `query($owner:String!,$repo:String!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:50,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
+const pullsQuery = `query($owner:String!,$repo:String!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:50,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision mergeStateStatus closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
 
 type pullNode struct {
 	Number                     int
@@ -58,6 +60,7 @@ type pullNode struct {
 	MergeCommit             *struct{ Oid string }
 	Additions, Deletions    int
 	ReviewDecision          string
+	MergeStateStatus        string
 	ClosingIssuesReferences struct{ Nodes []struct{ ID string } }
 	Commits                 struct {
 		Nodes []struct {
@@ -165,7 +168,8 @@ func (n pullNode) pull(repo string) changes.PullRequest {
 		State: strings.ToLower(n.State), Draft: n.IsDraft, CrossRepository: n.IsCrossRepository,
 		Head: n.HeadRefName, HeadSHA: n.HeadRefOid, Additions: n.Additions, Deletions: n.Deletions,
 		Created: n.CreatedAt.UTC(), Updated: n.UpdatedAt.UTC(),
-		Review: map[string]string{"APPROVED": changes.ReviewApproved, "CHANGES_REQUESTED": changes.ReviewChanges, "REVIEW_REQUIRED": changes.ReviewRequested}[n.ReviewDecision],
+		Review:     map[string]string{"APPROVED": changes.ReviewApproved, "CHANGES_REQUESTED": changes.ReviewChanges, "REVIEW_REQUIRED": changes.ReviewRequested}[n.ReviewDecision],
+		MergeState: strings.ToLower(textutil.Line(n.MergeStateStatus)),
 	}
 	if n.MergedAt != nil {
 		pr.Merged = n.MergedAt.UTC()

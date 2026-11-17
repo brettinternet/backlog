@@ -80,7 +80,7 @@ func diagnoseRun(cfg project.Config, label string, run []string, cwd string, has
 				}
 			case isChange:
 				if !action {
-					return "", fmt.Errorf("{%s} is only set for actions run on a change", key)
+					return "", fmt.Errorf("{%s} is only set for actions run on a change or check", key)
 				}
 			case !placeholders[key]:
 				return "", fmt.Errorf("unknown placeholder {%s}", key)
@@ -91,7 +91,7 @@ func diagnoseRun(cfg project.Config, label string, run []string, cwd string, has
 		})
 		if err != nil {
 			out = append(out, Diagnostic{Message: label + ": " + err.Error(),
-				Fix: "Use only {id}, {ref}, {source}, {url}, {root}, {branch}, {resource}, {change.*}, or {result.KEY} where available"})
+				Fix: "Use only {id}, {ref}, {source}, {url}, {root}, {branch}, {resource}, {change.*}, {check.*}, or {result.KEY} where available"})
 		}
 	}
 	if len(run) == 0 || run[0] == "" {

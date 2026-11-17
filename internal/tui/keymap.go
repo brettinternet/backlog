@@ -48,7 +48,7 @@ var searchAliases = map[string]string{
 	"comment":     "reply",
 	"review":      "approve request changes pull request",
 	"note":        "plan",
-	"criterion":   "check acceptance",
+	"criterion":   "check acceptance resolve unresolve review thread",
 	"claim":       "lease lock unclaim",
 	"archive":     "delete remove trash",
 	"new":         "create add",
@@ -56,12 +56,13 @@ var searchAliases = map[string]string{
 	"adopt":       "create add pull request",
 	"actions":     "run",
 	"open-url":    "browser link",
+	"open-pull":   "change view merge request pr",
 	"quit":        "exit",
 }
 
 // itemAction reports whether an action acts on the selected item.
 func itemAction(id string) bool {
-	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url", "adopt"}, id)
+	return strings.HasPrefix(id, "yank-") || slices.Contains([]string{"status", "previous-status", "next-status", "start", "done", "priority", "assignees", "assign-me", "labels", "milestone", "sprint", "blocker", "parent", "title", "description", "edit", "comment", "note", "claim", "archive", "open-url", "adopt", "open-pull"}, id)
 }
 
 func defaultKeymap() []action {
@@ -88,9 +89,12 @@ func defaultKeymap() []action {
 		{id: "next-hunk", label: "Next hunk", canonical: "] c", follows: "next-group", bindings: []string{"] c"}},
 		{id: "previous-tour-step", label: "Previous tour step", canonical: "[ t", follows: "previous-group", bindings: []string{"[ t"}},
 		{id: "next-tour-step", label: "Next tour step", canonical: "] t", follows: "next-group", bindings: []string{"] t"}},
+		{id: "previous-thread", label: "Previous unresolved thread", canonical: "[ u", follows: "previous-group", bindings: []string{"[ u"}},
+		{id: "next-thread", label: "Next unresolved thread", canonical: "] u", follows: "next-group", bindings: []string{"] u"}},
 		{id: "left", label: "Back / parent / left", canonical: "h", bindings: []string{"h", "left"}},
 		{id: "right", label: "Open / child / right", canonical: "l", bindings: []string{"l", "right"}},
 		{id: "go-to", label: "Go to item", bindings: []string{"ctrl+p"}},
+		{id: "open-pull", label: "Open pull request", bindings: []string{"g p"}},
 		{group: "Detail", id: "detail", label: "Toggle detail", canonical: "enter", bindings: []string{"enter"}},
 		{id: "next-detail-tab", label: "Next tab", canonical: "tab", bindings: []string{"tab"}},
 		{id: "previous-detail-tab", label: "Previous tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
@@ -125,7 +129,7 @@ func defaultKeymap() []action {
 		{id: "comment", label: "Comment", canonical: "c", bindings: []string{"c"}},
 		{id: "review", label: "Submit review…", canonical: "r", bindings: []string{"r"}},
 		{id: "note", label: "Edit notes", canonical: "i", bindings: []string{"i"}},
-		{id: "criterion", label: "Toggle criterion", canonical: "x", bindings: []string{"x"}},
+		{id: "criterion", label: "Toggle criterion / resolve thread", canonical: "x", bindings: []string{"x"}},
 		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
 		{id: "archive", label: "Archive", canonical: "d d", bindings: []string{"d d"}},
 		{id: "new", label: "New item / next match", canonical: "n", bindings: []string{"n"}},
@@ -149,6 +153,7 @@ func defaultKeymap() []action {
 		{id: "yank-markdown", label: "Copy Markdown link", canonical: "y m", bindings: []string{"y m"}},
 		{id: "yank-change", label: "Copy change URL", canonical: "y p", bindings: []string{"y p"}},
 		{id: "yank-commit", label: "Copy commit SHA", canonical: "y s", bindings: []string{"y s"}},
+		{id: "yank-log", label: "Copy log excerpt", canonical: "y l", bindings: []string{"y l"}},
 		{group: "General", id: "help", label: "Help", bindings: []string{"?"}},
 		{id: "palette", label: "Commands", bindings: []string{":", "alt+x"}},
 		{id: "quit", label: "Quit / back", canonical: "q", bindings: []string{"q"}},
@@ -388,11 +393,13 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 			}
 		}
 		if c, ok := m.selectedChange(); ok {
-			m.actionChange = new(linkedChange(c))
+			m.actionChange = new(m.actionTarget(c))
 		}
 		return m.openConfiguredActions()
 	case "go-to":
 		return m.openGoTo()
+	case "open-pull":
+		return m, m.openPull()
 	case "help", "palette":
 		return m.openActions(a.id == "help")
 	case "quit-now":
@@ -478,6 +485,9 @@ func (m Model) disabledReason(a action) string {
 	if a.id == "comment" && m.change != nil && m.detailFocus || a.id == "review" {
 		return m.reviewBlocked()
 	}
+	if a.id == "criterion" && m.change != nil && m.detailFocus {
+		return m.resolveBlocked()
+	}
 	if a.id == "criterion" && (!m.detailFocus || m.detailTab != tabCriteria) {
 		return "open the Criteria tab"
 	}
@@ -514,6 +524,15 @@ func (m Model) disabledReason(a action) string {
 			return "select an item"
 		}
 		return m.pickerCapability(row.Ref, picker)
+	}
+	if a.id == "open-pull" {
+		row, ok := m.selectedRow()
+		if !ok {
+			return "select an item"
+		}
+		if _, _, n := furthestPull(row.Changes); n == 0 {
+			return "no open pull request"
+		}
 	}
 	if a.id == "new" || a.id == "new-child" || a.id == "adopt" {
 		if m.opts.Store == nil {
@@ -584,6 +603,9 @@ func (m Model) disabledReason(a action) string {
 		}
 		if a.id == "yank-commit" && m.yankCommit() == "" {
 			return "select a commit in History or a change"
+		}
+		if a.id == "yank-log" && m.yankLog() == "" {
+			return "open a check with a log excerpt"
 		}
 	}
 	return ""

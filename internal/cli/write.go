@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,9 @@ func writeError(err error) *Error {
 	if created := engine.ErrorCreated(err); created != "" {
 		e.Details = map[string]any{"created": created}
 	}
+	if matches := engine.ErrorMatches(err); matches != nil {
+		e.Details = map[string]any{"matches": matches}
+	}
 	return e
 }
 func writeUsage(message string) error { return &Error{Reason: "usage", Message: message} }
@@ -99,6 +103,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		data := writeData{Outcomes: []writeOutcome{}}
 		var first *Error
 		for _, id := range ids {
+			if resolved, err := itemID(ctx, cfg, id); err == nil {
+				id = resolved
+			}
 			var transition engine.TransitionResult
 			ctx := engine.WithTransitionResult(ctx, &transition)
 			item, err := writeItem(ctx, cfg, id)
@@ -191,6 +198,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		&urfave.StringSliceFlag{Name: "ref", Usage: "Add the reference `URL`, such as a pull request to adopt"},
 		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (default: defaults.source, else the only source that can create)"},
 		&urfave.StringFlag{Name: "sprint", Usage: "Add to sprint `VALUE`: current, next, or a name or key (Linear)"},
+		&urfave.BoolFlag{Name: "force", Usage: "Create even when an open item has the same title"},
 	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if !cmd.Args().Present() {
 			return writeUsage("new requires a title")
@@ -216,6 +224,11 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			}
 		}
 		item.Ref.Source = sourceID
+		if !cmd.Bool("force") {
+			if err := engine.DuplicateTitle(ctx, cfg, sourceID, item.Title); err != nil {
+				return writeError(err)
+			}
+		}
 		engine.ApplyCreateDefaults(cfg, sourceID, &item)
 		for _, c := range cmd.StringSlice("ac") {
 			if strings.TrimSpace(c) == "" || strings.ContainsAny(c, "\r\n") {
@@ -453,6 +466,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if err != nil {
 			return err
 		}
+		if args[0], err = itemID(ctx, cfg, args[0]); err != nil {
+			return err
+		}
 		item, err := writeItem(ctx, cfg, args[0])
 		if err != nil {
 			return err
@@ -681,6 +697,13 @@ func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 }
 
 func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, bool, error) {
+	if ref.Source == "" && ref.ID == "." {
+		id, err := itemID(ctx, cfg, ref.ID)
+		if err != nil {
+			return ref, false, err
+		}
+		ref.Source, ref.ID, _ = strings.Cut(id, ":")
+	}
 	resolved, found, err := engine.ResolveRef(ctx, cfg, sourceID, ref)
 	if e := duplicateFiles(err); e != nil {
 		return ref, false, e
@@ -693,6 +716,32 @@ func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 
 // resolveChanges expands reference shorthand in set mutations for one item.
 func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, changes []model.Mutation) ([]model.Mutation, error) {
+	changes = slices.Clone(changes)
+	for n, m := range changes {
+		switch m.Field {
+		case "parent", "duplicate_of", "blocked_by", "related":
+		default:
+			continue
+		}
+		switch value := m.Value.(type) {
+		case string:
+			id, err := itemID(ctx, cfg, value)
+			if err != nil {
+				return nil, err
+			}
+			changes[n].Value = id
+		case []string:
+			values := make([]string, len(value))
+			for k, raw := range value {
+				id, err := itemID(ctx, cfg, raw)
+				if err != nil {
+					return nil, err
+				}
+				values[k] = id
+			}
+			changes[n].Value = values
+		}
+	}
 	resolved, err := engine.ResolveChanges(ctx, cfg, sourceID, changes)
 	if err != nil {
 		return nil, writeError(err)
@@ -701,6 +750,10 @@ func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, ch
 }
 
 func writeItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
+	id, err := itemID(ctx, cfg, id)
+	if err != nil {
+		return model.Item{}, err
+	}
 	matches, err := engine.ReadDetail(ctx, cfg, id)
 	if e := duplicateFiles(err); e != nil {
 		return model.Item{}, e

@@ -277,6 +277,35 @@ func TestEnrichStaleChecks(t *testing.T) {
 	}
 }
 
+// Catches merge: and the list glyph reading an unknown merge state, a draft, or
+// stale checks as ready.
+func TestListMerge(t *testing.T) {
+	open := Change{Stage: StagePR, State: StateOpen, Number: 1}
+	with := func(c Change, merge, checks string) Change { c.MergeState, c.Checks = merge, checks; return c }
+	draft := open
+	draft.State = StateDraft
+	for _, tc := range []struct {
+		c    Change
+		want string
+	}{
+		{with(open, "clean", ChecksPassing), VerdictReady},
+		{with(open, "has_hooks", ""), VerdictReady},
+		{with(open, "dirty", ChecksPassing), VerdictConflicts},
+		{with(open, "behind", ""), VerdictBehind},
+		{with(open, "unstable", ChecksFailing), VerdictUnstable},
+		{with(open, "blocked", ""), VerdictBlocked},
+		{with(open, "unknown", ChecksPassing), ""},
+		{with(open, "", ChecksPassing), ""},
+		{with(open, "clean", ChecksStale), ""},
+		{with(draft, "clean", ChecksPassing), ""},
+	} {
+		c, want := tc.c, tc.want
+		if got := ListMerge(c); got != want {
+			t.Errorf("%s/%s/%s = %q, want %q", c.State, c.MergeState, c.Checks, got, want)
+		}
+	}
+}
+
 // Catches a pull request reading Ready from a stale read or while a draft,
 // UNSTABLE read as blocked, and reasons out of fix-first order.
 func TestVerdict(t *testing.T) {

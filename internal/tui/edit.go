@@ -143,6 +143,9 @@ type editAction struct {
 	workflow model.StatusCategory
 	// step moves each item to its source's previous (-1) or next (1) status.
 	step int
+	// column moves each item to the board column with this status entry,
+	// resolved like step.
+	column string
 	// move moves the selected item one row up (-1) or down (1) by rank.
 	move int
 }
@@ -794,11 +797,15 @@ func (m *Model) startEdit(action editAction) {
 }
 
 func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
+	return m.editTargetsCommand(action, currentVersion, m.captureTargets())
+}
+
+// editTargetsCommand applies action to targets, captured when the edit began.
+func (m Model) editTargetsCommand(action editAction, currentVersion bool, targets editTargets) tea.Cmd {
 	store := m.opts.Store
 	if store == nil {
 		return func() tea.Msg { return editResultMsg{message: "Editing is unavailable without an engine store."} }
 	}
-	targets := m.captureTargets()
 	return func() tea.Msg {
 		marks := map[model.Ref]string{}
 		if targets.marks != nil {
@@ -839,7 +846,24 @@ func (m Model) editCommand(action editAction, currentVersion bool) tea.Cmd {
 				}
 				status := stepStatus(m.opts.Statuses, accepted, item.Status, action.step)
 				if status == "" {
-					disabled = append(disabled, fmt.Sprintf("%s: source %s accepts no %s status", ref.ID, ref.Source, map[int]string{-1: "previous", 1: "next"}[action.step]))
+					disabled = append(disabled, noStatus(ref, map[int]string{-1: "previous", 1: "next"}[action.step]))
+					continue
+				}
+				mutation.Value = status
+			}
+			if action.column != "" {
+				if (project.Settings{Statuses: m.opts.Statuses}).StatusEntry(item.Status) == action.column {
+					noChanges = true
+					continue
+				}
+				accepted, err := store.StatusChoices(item)
+				if err != nil {
+					disabled = append(disabled, ref.ID+": "+engine.ErrorMessage(err))
+					continue
+				}
+				status := columnStatus(m.opts.Statuses, accepted, action.column)
+				if status == "" {
+					disabled = append(disabled, noStatus(ref, action.column))
 					continue
 				}
 				mutation.Value = status
@@ -1132,6 +1156,23 @@ func stepStatus(statuses []project.StatusConfig, accepted []model.StatusChoice, 
 	return best
 }
 
+// columnStatus is the first accepted key, in statusOrder, that the board
+// column with status entry column holds (D36), or "" if none.
+func columnStatus(statuses []project.StatusConfig, accepted []model.StatusChoice, column string) string {
+	settings := project.Settings{Statuses: statuses}
+	for _, key := range statusOrder(statuses, accepted) {
+		if settings.StatusEntry(key) == column {
+			return key
+		}
+	}
+	return ""
+}
+
+// noStatus refuses a status step or drop, naming the source.
+func noStatus(ref model.Ref, status string) string {
+	return fmt.Sprintf("%s: source %s accepts no %s status", ref.ID, ref.Source, status)
+}
+
 func (m *Model) workflowTransition(category model.StatusCategory) tea.Cmd {
 	row, ok := m.selectedRow()
 	if !ok {
@@ -1224,6 +1265,14 @@ func osc52(value string) tea.Cmd {
 	return tea.Raw(sequence)
 }
 
+// yankLog is the log excerpt of the check view's check, which yl copies.
+func (m Model) yankLog() string {
+	if m.check == nil || m.shownCheck == nil {
+		return ""
+	}
+	return m.shownCheck.Log
+}
+
 func (m *Model) yank(key string) tea.Cmd {
 	row, ok := m.selectedRow()
 	if !ok {
@@ -1247,6 +1296,8 @@ func (m *Model) yank(key string) tea.Cmd {
 		value = m.yankChange().URL
 	case "s":
 		value = m.yankCommit()
+	case "l":
+		value = m.yankLog()
 	default:
 		m.notice = "Unknown yank target."
 		return nil
@@ -1256,6 +1307,9 @@ func (m *Model) yank(key string) tea.Cmd {
 		return nil
 	}
 	m.notice = "Copied " + textutil.Line(value)
+	if key == "l" {
+		m.notice = "Copied the log excerpt."
+	}
 	return osc52(value)
 }
 

@@ -62,6 +62,30 @@ func (s *Secrets) Redact(text string) string {
 	return text
 }
 
+// RedactCut redacts text that was cut short, also dropping a trailing
+// fragment that may begin a secret the cut split.
+func (s *Secrets) RedactCut(text string) string {
+	text = s.Redact(text)
+	if s == nil {
+		return text
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	end := len(text)
+	for _, value := range s.values {
+		encoded, _ := json.Marshal(value)
+		for _, v := range []string{value, string(encoded[1 : len(encoded)-1])} {
+			for n := min(len(v)-1, len(text)); n > 0; n-- {
+				if strings.HasSuffix(text, v[:n]) {
+					end = min(end, len(text)-n)
+					break
+				}
+			}
+		}
+	}
+	return text[:end]
+}
+
 // Credential deliberately has no exported token field or JSON representation.
 // Only Client can attach it to a request. Formatting never reveals the value.
 // Register adds a credential to the process-wide redaction set before it can

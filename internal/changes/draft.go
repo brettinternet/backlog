@@ -208,6 +208,19 @@ type ReviewWriter interface {
 	// send, with Unknown set when the outcome is unknown or Error when the
 	// forge refused part of it.
 	SubmitReview(ctx context.Context, number int, d Draft, event string) (Draft, error)
+	// ResolveThread resolves or unresolves a review thread in one
+	// non-retried call; an unknown-outcome error may have applied.
+	ResolveThread(ctx context.Context, thread string, resolve bool) error
+}
+
+// ResolveThread resolves or unresolves a thread of c's pull request through
+// the forge serving it.
+func ResolveThread(ctx context.Context, c Change, forges []Forge, thread string, resolve bool) error {
+	w, ok := forgeFor(c, forges).(ReviewWriter)
+	if c.Number == 0 || !ok {
+		return errors.New("no forge resolves threads on " + c.URL)
+	}
+	return w.ResolveThread(ctx, thread, resolve)
 }
 
 // SubmitReview sends c's draft through the forge serving its pull request.

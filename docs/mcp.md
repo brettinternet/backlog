@@ -82,11 +82,15 @@ by the configured source IDs and types for `source:` filters.
   the only source that can create.
 - `create` `refs` are written in the same create, like `bl new --ref`, so one
   call adopts a pull request item.
+- `create` refuses a title that matches an open item in its source, like
+  `bl new`: `rejected` with `matches`, each a `source:ID`. `force: true`
+  creates anyway.
 - Comment `author` defaults to `me.default`. On GitHub, Linear, and Jira it is
   the source account's `user`, and any other `author` is `rejected`.
 - Errors are tool results with `isError: true` and JSON `reason` and `message`.
   A `create` that leaves an item behind but fails a later step also returns
-  `created`, the item's `source:ID`.
+  `created`, the item's `source:ID`. A duplicate-title refusal returns
+  `matches`.
 
 ## Results
 
@@ -110,7 +114,9 @@ An unknown `cursor` returns `not-found`.
 agent can see whether its pull request is open, green, and approved, which
 checks fail, and how many review threads are unresolved, without calling the
 forge itself. With `detail: true` it adds the merge verdict and its reasons,
-check timing, and reviewers, like `bl changes --detail --json`.
+check timing, reviewers, review threads with their hunk and comments, and,
+for the first five failing check runs, their `steps`, `annotations`, and `log`
+excerpt or `logUnavailable`, like `bl changes --detail --json`.
 
 `tour` stores a tour for the item's linked change whose head is its `ref` and
 returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;
