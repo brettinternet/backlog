@@ -34,6 +34,7 @@ type accountQueue struct {
 	slot    chan struct{}
 	pending chan struct{}
 	retryAt time.Time // protected by slot, including response body reads
+	backoff time.Duration
 	etags   map[[32]byte]string
 }
 type Scheduler struct {
@@ -164,8 +165,13 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 		}
 		limited = response.StatusCode == 403 && strings.Contains(strings.ToLower(string(raw)), "rate limit")
 	}
+	// GitHub's secondary limit often omits both headers and asks for at least
+	// a minute, longer on each repeat.
 	if limited && !until.After(now) {
-		until = now.Add(time.Second)
+		q.backoff = min(max(2*q.backoff, time.Minute), 16*time.Minute)
+		until = now.Add(q.backoff)
+	} else if !limited {
+		q.backoff = 0
 	}
 	if until.After(q.retryAt) {
 		q.retryAt = until

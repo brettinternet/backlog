@@ -207,3 +207,51 @@ func TestRateLimitResetForms(t *testing.T) {
 		}
 	}
 }
+
+// Catches GitHub's header-less secondary rate limit retried after a second,
+// which GitHub penalizes, and backoff that never resets after a success.
+func TestHeaderlessRateLimitBackoff(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	var clock atomic.Int64
+	clock.Store(now.Unix())
+	scheduler := NewSchedulerWithClock(func() time.Time { return time.Unix(clock.Load(), 0) })
+	var ok atomic.Bool
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ok.Load() {
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		w.WriteHeader(403)
+		fmt.Fprint(w, `{"message":"You have exceeded a secondary rate limit"}`)
+	}))
+	defer server.Close()
+	parsed, _ := url.Parse(server.URL)
+	client := Client{Host: parsed.Host, Account: "alice", HTTP: server.Client(), Scheduler: scheduler, Secrets: &Secrets{}}
+	request, _ := http.NewRequest(http.MethodGet, server.URL, nil)
+	do := func() error {
+		_, err := client.Do(context.Background(), request, Credential{token: "token"})
+		return err
+	}
+	for _, wait := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 16 * time.Minute, 0, time.Minute} {
+		ok.Store(wait == 0)
+		err := do()
+		var limited ScheduleDiagnostic
+		if wait == 0 {
+			if err != nil {
+				t.Fatalf("success: %v", err)
+			}
+			continue
+		}
+		if !errors.As(err, &limited) || !limited.RetryAt.Equal(now.Add(wait)) {
+			t.Fatalf("want retry after %v: %v %v", wait, err, limited.RetryAt.Sub(now))
+		}
+		now = now.Add(wait - time.Second)
+		clock.Store(now.Unix())
+		if err = do(); !errors.As(err, &limited) {
+			t.Fatalf("request before %v elapsed: %v", wait, err)
+		}
+		now = now.Add(time.Second)
+		clock.Store(now.Unix())
+	}
+}
