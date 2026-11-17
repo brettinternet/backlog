@@ -149,7 +149,9 @@ cache, refreshed incrementally; Git is read from `.git` and never fetched.
 state; `verdict`; and `reasons`, each with `kind`, `text`, and the `check` or
 `login` it names, in fix-first order), each check run's exact `status`, `run`,
 `startedAt`, and `completedAt`, and `reviewers` (`login`, `state`,
-`submittedAt`, `outdated`) ([Changes](changes.md)). Text output prints the
+`submittedAt`, `outdated`), and `threads` (`id`, `path`, `line`, `old` when on
+the old side, `resolved`, `outdated`, `hunk`, and `comments` with `author`,
+`body`, `time`, and `url`) ([Changes](changes.md)). Text output prints the
 verdict, then one reason per line. Without it, output is unchanged.
 
 ### `bl tour ID [FILE|-]`

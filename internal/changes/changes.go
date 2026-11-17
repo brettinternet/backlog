@@ -69,12 +69,13 @@ type Change struct {
 	Ahead     *int   `json:"ahead,omitempty"`
 	Behind    *int   `json:"behind,omitempty"`
 	// CheckRuns and Unresolved are an open pull request's checks and
-	// unresolved review threads, read for the item shown. Merge and
-	// Reviewers, and each check's exact state and timing, are what Brief drops.
+	// unresolved review threads, read for the item shown. Merge, Reviewers,
+	// Threads, and each check's exact state and timing are what Brief drops.
 	CheckRuns  []Check    `json:"checkRuns,omitempty"`
 	Unresolved *int       `json:"unresolved,omitempty"`
 	Merge      *Merge     `json:"merge,omitempty"`
 	Reviewers  []Reviewer `json:"reviewers,omitempty"`
+	Threads    []Thread   `json:"threads,omitempty"`
 	Commits    []Commit   `json:"commits,omitempty"`
 	Events     []Event    `json:"events,omitempty"`
 	Updated    time.Time  `json:"updated,omitzero"`

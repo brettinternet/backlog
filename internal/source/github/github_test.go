@@ -1026,7 +1026,7 @@ func TestForgePullRequests(t *testing.T) {
 		"comments":       nodes(comment("cy", "looks good")),
 		"reviewThreads": nodes(
 			map[string]any{"isResolved": true, "path": "a.go", "line": 3, "comments": nodes(comment("ann", "done"))},
-			map[string]any{"isResolved": false, "path": "b.go", "line": nil, "originalLine": 7, "comments": nodes(comment("bo", "why?"))},
+			map[string]any{"isResolved": false, "path": "b.go", "line": nil, "originalLine": 7, "diffSide": "LEFT", "comments": nodes(map[string]any{"author": map[string]any{"login": "bo"}, "body": "why?", "diffHunk": "@@ -7 +7 @@\n-\x1b[2Jfake-secret", "createdAt": at}, comment("ann", "because"))},
 		),
 		"commits": nodes(map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": nodes(
 			map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://ci/1", "databaseId": 11, "startedAt": at, "completedAt": at.Add(252 * time.Second)},
@@ -1054,7 +1054,7 @@ func TestForgePullRequests(t *testing.T) {
 		!slices.EqualFunc(r.Reviewers, wantReviewers, func(a, b changes.Reviewer) bool {
 			return a.SubmittedAt.Equal(b.SubmittedAt) && a.Login == b.Login && a.State == b.State && a.Outdated == b.Outdated
 		}) ||
-		r.MergeState != "blocked" || r.Mergeable != "mergeable" || r.Fetched.IsZero() || r.Unresolved() != 1 || r.Threads[1].Line != 7 || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
+		r.MergeState != "blocked" || r.Mergeable != "mergeable" || r.Fetched.IsZero() || r.Unresolved() != 1 || r.Threads[1].Line != 7 || !r.Threads[1].Old || r.Threads[0].Old || r.Threads[1].Hunk != "@@ -7 +7 @@\n-[REDACTED]" || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
 		t.Fatalf("review: %+v", r)
 	}
 	if strings.Contains(r.Body, "fake-secret") || strings.ContainsAny(r.Body, "\x1b\x07") {

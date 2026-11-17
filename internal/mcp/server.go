@@ -46,7 +46,7 @@ func New(cfg project.Config) *Server {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "query", Description: "Search backlog items using the bl query language."}, s.query)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "show", Description: "Read one backlog item."}, s.show)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "history", Description: "Read one item's history: events, claims, sessions, comments, linked changes, and Git commits, oldest first, with each provider's status."}, s.history)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status; detail adds each open pull request's merge verdict and reasons, check timing, and reviewers."}, s.changes)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "changes", Description: "Read one item's linked changes: worktrees, branches, pull requests, and landed commits, furthest first, with stage, state, checks, review, URL, and each provider's status; detail adds each open pull request's merge verdict and reasons, check timing, reviewers, and review threads."}, s.changes)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "tour", Description: "Store a CodeTour, from file or the inline tour object, for the item's linked change whose head equals the tour's ref, for the TUI Diff tab, or, with neither, read the tours stored for its linked changes, or with remove delete one. The format is in bl instructions tours."}, s.tour)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "create", Description: "Create a backlog item."}, s.create)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "update", Description: "Update fields on one backlog item."}, s.update)
@@ -135,7 +135,7 @@ type ShowArgs struct {
 
 type ChangesArgs struct {
 	ID     string `json:"id"`
-	Detail bool   `json:"detail,omitempty" jsonschema:"Add each open pull request's merge verdict and reasons, check status and timing, and reviewers, as bl changes --detail does."`
+	Detail bool   `json:"detail,omitempty" jsonschema:"Add each open pull request's merge verdict and reasons, check status and timing, reviewers, and review threads, as bl changes --detail does."`
 }
 
 type TourArgs struct {

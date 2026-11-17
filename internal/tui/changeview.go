@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,6 +27,7 @@ func (m *Model) openChange(c changes.Change) tea.Cmd {
 	row, _ := m.selectedRow()
 	m.change, m.changeRef, m.changeTab, m.changeCursor = &c, row.Ref, tabChanges, m.entryCursor
 	m.find, m.checksOpen = findState{}, false
+	m.threadsToggled, m.resolvedOpen, m.changeReturn, m.diffTarget = nil, false, nil, ""
 	return m.switchDetailTab(tabChangeOverview)
 }
 
@@ -56,26 +58,34 @@ func (m *Model) openChangeCommit() tea.Cmd {
 	// The forge's message shows when the checkout lacks the commit.
 	c := changes.CommitChange(cmp.Or(m.change.Dir(), m.opts.EditorDir, "."), m.detailCommits[m.entryCursor])
 	m.changeParent, m.parentCursor, m.change = m.change, m.entryCursor, &c
-	m.find = findState{}
+	m.find, m.changeReturn = findState{}, nil
 	return m.switchDetailTab(tabChangeDiff)
 }
 
-// followChangeLink does what enter does on the Overview entry under the
-// cursor: toggles the folded checks, opens a review or the first unresolved
-// thread in Conversation, or opens ! narrowed to the change's actions.
+// followChangeLink does what enter does on the Overview, Files, or
+// Conversation entry under the cursor: toggles the folded checks or resolved
+// threads, opens a review in Conversation, opens the Diff at a file or
+// thread, or opens ! narrowed to the change's actions.
 func (m Model) followChangeLink() (tea.Model, tea.Cmd) {
 	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailLinks) {
 		return m, nil
 	}
 	link := m.detailLinks[m.entryCursor]
 	switch {
+	case link == linkFold && m.detailTab == tabChangeConversation:
+		return m, m.toggleResolved(!m.resolvedOpen)
 	case link == linkFold:
 		return m, m.toggleChecks(!m.checksOpen)
 	case link == linkCheck:
 		m.notice = "Disabled: a check opens in the browser with O"
-	case link == linkThreads:
-		m.reviewEntry = firstUnresolved(m.review.read)
-		return m, m.switchDetailTab(tabChangeConversation)
+	case strings.HasPrefix(link, linkThread):
+		if t := threadAt(m.review.read, strings.TrimPrefix(link, linkThread)); t != nil && (t.Outdated || t.Line == 0) {
+			m.notice = "This thread is outdated; its line isn't in the diff."
+			return m, nil
+		}
+		return m, m.openDiffAt(link)
+	case link == linkThreads || strings.HasPrefix(link, linkFile):
+		return m, m.openDiffAt(link)
 	case strings.HasPrefix(link, linkReview):
 		login := strings.TrimPrefix(link, linkReview)
 		m.reviewEntry = reviewURL(m.review.read, login)
@@ -104,22 +114,123 @@ func (m *Model) toggleChecks(open bool) tea.Cmd {
 	return m.showDetail()
 }
 
-// firstUnresolved is the first comment URL of the first unresolved thread.
-func firstUnresolved(r *changes.Review) string {
-	if r == nil {
-		return ""
+// toggleResolved shows or folds Conversation's resolved threads.
+func (m *Model) toggleResolved(open bool) tea.Cmd {
+	if m.resolvedOpen == open {
+		return nil
 	}
-	for _, e := range r.Conversation() {
-		if e.Thread != nil && !e.Thread.Resolved {
-			return e.Comment.URL
-		}
-	}
-	return ""
+	m.resolvedOpen = open
+	return m.showDetail()
 }
 
-// closeChange returns to the entry the change view opened from.
+// openDiffAt opens the Diff at target, a link to a file, a thread, or the
+// first unresolved thread; backspace returns to the entry it came from.
+func (m *Model) openDiffAt(target string) tea.Cmd {
+	m.changeReturn = &tabStop{tab: m.detailTab, cursor: m.entryCursor}
+	m.diffTarget = target
+	return m.switchDetailTab(tabChangeDiff)
+}
+
+// landDiff puts the cursor on the Diff's target as the Diff arrives.
+func (m *Model) landDiff(target string) {
+	n := -1
+	switch {
+	case target == linkThreads:
+		if len(m.detailThreads) == 0 {
+			m.notice = "No unresolved threads in this diff."
+			return
+		}
+		n = m.detailThreads[0]
+	case strings.HasPrefix(target, linkFile):
+		n = diffRowOf(m.detailRows, lineAnchor{file: strings.TrimPrefix(target, linkFile)})
+	case strings.HasPrefix(target, linkThread):
+		key := strings.TrimPrefix(target, linkThread)
+		if n = slices.IndexFunc(m.detailRows, func(r diffRow) bool { return r.thread == key }); n < 0 {
+			m.notice = "This thread's line isn't in the diff."
+		}
+	}
+	if n >= 0 && n < len(m.detailEntries) {
+		m.showDiffEntry(n, strings.HasPrefix(target, linkFile))
+	}
+}
+
+// showDiffEntry puts the cursor on entry n, at the top of the view for a
+// file and a few lines below it for a thread, so the line it's on shows.
+func (m *Model) showDiffEntry(n int, top bool) {
+	m.entryCursor = n
+	m.detailScroll = m.detailEntries[n]
+	if !top {
+		m.detailScroll = max(0, m.detailScroll-3)
+	}
+	m.scrollDetail(0)
+}
+
+// stepThread moves the Diff cursor to the next or previous unresolved
+// thread, wrapping around the diff.
+func (m *Model) stepThread(forward bool) {
+	threads := m.detailThreads
+	if len(threads) == 0 {
+		m.notice = "No unresolved threads in this diff."
+		return
+	}
+	i, found := slices.BinarySearch(threads, m.entryCursor)
+	if forward && found {
+		i++
+	} else if !forward {
+		i--
+	}
+	switch {
+	case i >= len(threads):
+		i, m.notice = 0, "Wrapped to the first unresolved thread."
+	case i < 0:
+		i, m.notice = len(threads)-1, "Wrapped to the last unresolved thread."
+	}
+	m.showDiffEntry(threads[i], false)
+}
+
+// cursorThread is the review thread the Diff cursor is on, or "".
+func (m Model) cursorThread() string {
+	if m.detailTab != tabChangeDiff || !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailRows) {
+		return ""
+	}
+	return m.detailRows[m.entryCursor].thread
+}
+
+// foldThread shows or folds the Diff thread key: "fold" toggles it, and
+// "fold-open" and "fold-close" show and fold it.
+func (m *Model) foldThread(key, how string) tea.Cmd {
+	t := threadAt(m.review.read, key)
+	if t == nil {
+		return nil
+	}
+	shown := threadShown(*t, m.threadsToggled)
+	open := how == "fold-open" || how == "fold" && !shown
+	if open == shown {
+		return nil
+	}
+	toggled := maps.Clone(m.threadsToggled)
+	if toggled == nil {
+		toggled = map[string]bool{}
+	}
+	if open == t.Resolved {
+		toggled[key] = true
+	} else {
+		delete(toggled, key)
+	}
+	m.threadsToggled = toggled
+	return m.showDetail()
+}
+
+// closeChange returns to the entry the change view opened from, or from a
+// Diff opened at a file or thread, to the entry that opened it.
 func (m *Model) closeChange() tea.Cmd {
-	m.find = findState{}
+	if stop := m.changeReturn; stop != nil && m.detailTab == tabChangeDiff {
+		m.changeReturn = nil
+		cmd := m.switchDetailTab(stop.tab)
+		m.entryCursor = stop.cursor
+		return cmd
+	}
+	m.find, m.changeReturn = findState{}, nil
 	if m.changeParent != nil {
 		cursor := m.parentCursor
 		m.change, m.changeParent = m.changeParent, nil
@@ -241,14 +352,21 @@ func (m *Model) gotoAnchor(a lineAnchor) anchorStatus {
 type diffPlace struct {
 	anchor lineAnchor
 	offset int
+	thread string // the review thread on the row, found first
 }
 
 func placeOf(rows []diffRow, i int) diffPlace {
 	if i < 0 || i >= len(rows) || rows[i].file == "" {
 		return diffPlace{offset: -1}
 	}
+	if key := rows[i].thread; key != "" {
+		// A thread gone since is at the line it was under.
+		p := placeOf(rows, i-1)
+		p.thread = key
+		return p
+	}
 	numbered := func(j int, oldFirst bool) (lineAnchor, bool) {
-		if j < 0 || j >= len(rows) || rows[j].file != rows[i].file {
+		if j < 0 || j >= len(rows) || rows[j].file != rows[i].file || rows[j].thread != "" {
 			return lineAnchor{}, false
 		}
 		a := rows[j].anchors("")
@@ -271,6 +389,11 @@ func placeOf(rows []diffRow, i int) diffPlace {
 
 // find is the place's row in rows, or -1.
 func (p diffPlace) find(rows []diffRow) int {
+	if p.thread != "" {
+		if n := slices.IndexFunc(rows, func(r diffRow) bool { return r.thread == p.thread }); n >= 0 {
+			return n
+		}
+	}
 	if p.anchor.file == "" {
 		return -1
 	}
@@ -327,7 +450,7 @@ func (m Model) itemTab() detailTab {
 // changeViewPage draws one change view tab: Overview's properties, checks,
 // reviewers, and description, one entry per file or commit, or the
 // Conversation. Checks and Conversation entries carry the URL O opens.
-func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, draft *changes.Draft, draftErr string, request detailRequest, render func(string, int, string) (string, error)) rendered {
+func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, draft *changes.Draft, draftErr string, request detailRequest, render, comment func(string, int, string) (string, error)) rendered {
 	t, width := request.theme, max(1, request.width)
 	now := cmp.Or(request.now, time.Now())
 	var page rendered
@@ -336,9 +459,17 @@ func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, draft
 		if len(d.Files) == 0 {
 			page.lines = append(page.lines, t.muted.render("No changed files."))
 		}
+		unresolved := map[string]int{}
+		if r != nil {
+			for _, thread := range r.Threads {
+				if !thread.Resolved {
+					unresolved[thread.Path]++
+				}
+			}
+		}
 		for _, f := range d.Files {
-			page.entries = append(page.entries, len(page.lines))
-			page.lines = append(page.lines, fileLine(t, f, width))
+			page.entries, page.links = append(page.entries, len(page.lines)), append(page.links, linkFile+f.Path)
+			page.lines = append(page.lines, fileLine(t, f, width, fileThreads(unresolved, f)))
 		}
 	case tabChangeCommits:
 		if len(d.Commits) == 0 {
@@ -358,7 +489,7 @@ func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, draft
 			page.lines = append(page.lines, head+subject+blank(room-ansi.StringWidth(subject))+t.muted.render(tail))
 		}
 	case tabChangeConversation:
-		page = conversationLines(r, request)
+		page = conversationLines(r, request, comment)
 	default:
 		page = changeOverview(c, d, r, draft, draftErr, request, render)
 	}
@@ -458,7 +589,9 @@ func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft
 const (
 	linkCheck   = "check"   // the check view (BL-178); disabled until then
 	linkReview  = "review:" // the login's latest review in Conversation
-	linkThreads = "threads" // the first unresolved thread in Conversation
+	linkThreads = "threads" // the Diff at its first unresolved thread
+	linkThread  = "thread:" // the Diff at the review thread with this key
+	linkFile    = "file:"   // the Diff at this file
 	linkActions = "actions" // ! narrowed to the change's actions
 	linkFold    = "fold"    // passing and skipped checks
 )
@@ -863,10 +996,31 @@ func markdownLines(text string, width int, t theme, render func(string, int, str
 	return lines
 }
 
-// conversationLines draws one entry per comment or review thread, unresolved
-// threads first: a thread's file and line or a comment's author, then each
-// comment's author, age, and wrapped text.
-func conversationLines(r *changes.Review, request detailRequest) rendered {
+// threadHunkLines is how many lines of its diff hunk a Conversation thread shows.
+const threadHunkLines = 4
+
+// conversation is Conversation's entries: unresolved threads by file and
+// line, comments and reviews oldest first, then one entry, a zero Entry,
+// folding the resolved threads, followed by them when open.
+func conversation(r *changes.Review, open bool) []changes.Entry {
+	if r == nil {
+		return nil
+	}
+	entries := r.Conversation()
+	i := slices.IndexFunc(entries, func(e changes.Entry) bool { return e.Thread != nil && e.Thread.Resolved })
+	if i < 0 {
+		return entries
+	}
+	if !open {
+		return append(entries[:i:i], changes.Entry{})
+	}
+	return slices.Concat(entries[:i], []changes.Entry{{}}, entries[i:])
+}
+
+// conversationLines draws one entry per comment or review thread: a thread's
+// file, line, state, and the end of its diff hunk, then each comment's
+// author, age, and text rendered as Markdown, and resolved threads folded.
+func conversationLines(r *changes.Review, request detailRequest, render func(string, int, string) (string, error)) rendered {
 	t, width := request.theme, max(1, request.width)
 	now := cmp.Or(request.now, time.Now())
 	var page rendered
@@ -876,7 +1030,7 @@ func conversationLines(r *changes.Review, request detailRequest) rendered {
 	if r.Stale != "" {
 		page.lines = append(page.lines, t.yellow.render(ansi.Truncate(textutil.Line(r.Stale), width, "…")), "")
 	}
-	entries := r.Conversation()
+	entries := conversation(r, request.resolved)
 	if len(entries) == 0 {
 		page.lines = append(page.lines, t.muted.render("No conversation."))
 		return page
@@ -903,8 +1057,18 @@ func conversationLines(r *changes.Review, request detailRequest) rendered {
 			body, page.truncated = truncateUTF8(body, max(0, limit-used))+"…", true
 		}
 		used += len(body)
-		for line := range strings.SplitSeq(ansi.Wrap(body, max(1, width-len(indent)-2), ""), "\n") {
-			page.lines = append(page.lines, indent+"  "+strings.TrimRight(line, " "))
+		lines := markdownLines(body, max(1, width-len(indent)-2), t, render)
+		for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[0])) == "" {
+			lines = lines[1:]
+		}
+		for _, line := range lines {
+			page.lines = append(page.lines, indent+"  "+line)
+		}
+	}
+	resolved := 0
+	for _, thread := range r.Threads {
+		if thread.Resolved && len(thread.Comments) > 0 {
+			resolved++
 		}
 	}
 	for i, e := range entries {
@@ -912,10 +1076,21 @@ func conversationLines(r *changes.Review, request detailRequest) rendered {
 			page.lines = append(page.lines, "")
 		}
 		page.entries, page.ids = append(page.entries, len(page.lines)), append(page.ids, e.Comment.URL)
-		if e.Thread == nil {
+		switch {
+		case e.Thread == nil && e.Comment.Author == "" && e.Comment.URL == "":
+			page.links = append(page.links, linkFold)
+			label := "✓ " + strconv.Itoa(resolved) + " resolved thread"
+			if resolved != 1 {
+				label += "s"
+			}
+			page.lines = append(page.lines, t.muted.render(label))
+			continue
+		case e.Thread == nil:
+			page.links = append(page.links, "")
 			comment(e.Comment, "")
 			continue
 		}
+		page.links = append(page.links, linkThread+threadKey(*e.Thread))
 		state := t.yellow.render("● unresolved")
 		if e.Thread.Resolved {
 			state = t.muted.render("✓ resolved")
@@ -930,6 +1105,7 @@ func conversationLines(r *changes.Review, request detailRequest) rendered {
 		room := max(1, width-ansi.StringWidth(state)-2)
 		where = ansi.Truncate(where, room, "…")
 		page.lines = append(page.lines, t.accent.render(where)+blank(room-ansi.StringWidth(where)+2)+state)
+		page.lines = append(page.lines, hunkTail(t, e.Thread.Hunk, width)...)
 		for _, c := range e.Thread.Comments {
 			comment(c, "  ")
 		}
@@ -937,9 +1113,33 @@ func conversationLines(r *changes.Review, request detailRequest) rendered {
 	return page
 }
 
+// hunkTail is the last lines of a thread's diff hunk, which end at its line,
+// colored as the Diff colors them.
+func hunkTail(t theme, hunk string, width int) []string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimRight(hunk, "\n"), "\n") {
+		if !strings.HasPrefix(line, "@@") {
+			lines = append(lines, line)
+		}
+	}
+	lines = lines[max(0, len(lines)-threadHunkLines):]
+	for i, line := range lines {
+		p := t.muted
+		switch {
+		case strings.HasPrefix(line, "+"):
+			p = t.green
+		case strings.HasPrefix(line, "-"):
+			p = t.red
+		}
+		lines[i] = "  " + p.render(ansi.Truncate(expandTabs(textutil.Line(line)), max(1, width-2), "…"))
+	}
+	return lines
+}
+
 // fileLine is a status letter, the path (old → new for a rename) cut from
-// the left so the file name stays, and its line counts at the right.
-func fileLine(t theme, f changes.File, width int) string {
+// the left so the file name stays, and its unresolved review threads and
+// line counts at the right.
+func fileLine(t theme, f changes.File, width, unresolved int) string {
 	glyph := map[string]string{
 		changes.FileAdded: t.green.render("A"), changes.FileDeleted: t.red.render("D"),
 		changes.FileRenamed: t.magenta.render("R"), changes.FileBinary: t.muted.render("B"),
@@ -954,6 +1154,9 @@ func fileLine(t theme, f changes.File, width int) string {
 		tail = "  " + t.muted.render("binary")
 	case changes.FileUnchanged:
 		tail = ""
+	}
+	if unresolved > 0 {
+		tail = "  " + t.yellow.render("● "+strconv.Itoa(unresolved)) + tail
 	}
 	path := textutil.Line(f.Path)
 	if f.From != "" {
