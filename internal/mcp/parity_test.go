@@ -186,7 +186,9 @@ func TestEventsMatchCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// The session spans dozens of CLI runs and tool calls, so a fixed deadline
+	// fails a slow but healthy run under -race; go test's timeout catches a hang.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st, ct := mcp.NewInMemoryTransports()
 	serverDone := make(chan error, 1)
