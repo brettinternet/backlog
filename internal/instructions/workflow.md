@@ -91,6 +91,11 @@ bl ac ID set 2 "Clearer criterion text." --if-version VERSION --json
 A stale version exits 4 without writing. Reread the item and reassess the
 operation; do not blindly retry. Every successful write returns a new version.
 
+Creating an item whose title matches an open item in the same source, ignoring
+case and spacing, is `rejected` with the matches in error.details.matches (MCP
+`matches`). Update the match instead; pass --force (MCP `force`) only when the
+new item is genuinely separate work.
+
 Finish every acceptance criterion and delivery obligation, including commits or
 integration if required. Persist blockers and the exact next step if genuinely
 blocked; do not mark incomplete work done.

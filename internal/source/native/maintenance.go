@@ -178,6 +178,30 @@ func validateFiles(files []checkedFile, parseFindings []source.Finding) []source
 			findings = append(findings, source.Finding{Code: "duplicate-id", Severity: "error", Path: f.path, Line: f.doc.FieldLine("id"), Message: "item ID is also used by another active or archived item"})
 		}
 	}
+	// Open items sharing a normalized title in one source are likely the same
+	// work recorded twice; bl new refuses the second unless forced.
+	titles := map[[2]string][]checkedFile{}
+	for _, f := range files {
+		if f.doc != nil && f.source.options.Statuses[f.item.Status].Open() && filepath.Dir(f.path) == f.source.options.Path {
+			key := [2]string{f.source.options.ID, model.TitleKey(f.item.Title)}
+			titles[key] = append(titles[key], f)
+		}
+	}
+	for _, same := range titles {
+		if len(same) < 2 {
+			continue
+		}
+		for _, f := range same {
+			var others []string
+			for _, other := range same {
+				if other.path != f.path {
+					others = append(others, other.item.Ref.ID)
+				}
+			}
+			sort.Strings(others)
+			findings = append(findings, source.Finding{Code: "duplicate-title", Severity: "warning", Path: f.path, Line: f.doc.FieldLine("title"), Message: "an open item has the same title: " + strings.Join(others, ", ")})
+		}
+	}
 	blockerGraph := map[itemKey][]graphEdge{}
 	parentGraph := map[itemKey][]graphEdge{}
 	for _, f := range files {

@@ -190,6 +190,7 @@ type CreateArgs struct {
 	Refs        []string `json:"refs,omitempty" jsonschema:"Reference URLs or paths, such as a pull request URL to adopt it."`
 	Source      string   `json:"source,omitempty"`
 	Sprint      string   `json:"sprint,omitempty" jsonschema:"current, next, or a sprint name or key (Linear)."`
+	Force       bool     `json:"force,omitempty" jsonschema:"Create even when an open item in the source has the same title; otherwise that refuses with matches."`
 }
 type UpdateArgs struct {
 	WriteArgs
@@ -456,6 +457,12 @@ func (s *Server) create(ctx context.Context, _ *mcp.CallToolRequest, args Create
 	sourceID, err := engine.CreateSource(ctx, s.cfg, args.Source, "", nil)
 	if err != nil {
 		return failed[any](reason(err), err.Error())
+	}
+	if !args.Force {
+		if err := engine.DuplicateTitle(ctx, s.cfg, sourceID, args.Title); err != nil {
+			b, _ := json.Marshal(map[string]any{"reason": reason(err), "message": engine.ErrorMessage(err), "matches": engine.ErrorMatches(err)})
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+		}
 	}
 	item := model.Item{Ref: model.Ref{Source: sourceID}, Title: args.Title, Status: status, Type: args.Type, Priority: model.Priority(args.Priority), Description: args.Description, Assignees: args.Assignees, Labels: args.Labels, Milestone: args.Milestone, Due: args.Due, Refs: args.Refs, Sprint: args.Sprint}
 	if args.Parent != "" {

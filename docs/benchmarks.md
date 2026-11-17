@@ -18,6 +18,7 @@ isolated-host guarantees.
 | Warm `bl history ID` with 100k events and 20 commits, 10k ≤ 30 ms | 21.78 ms (`show` with events 24.16 ms, same run) | BL-139 |
 | Warm `bl ls` / `bl next`, 10k ≤ 150 ms | 132.6 / 107.7 ms | BL-48 |
 | Native single-field write ≤ 50 ms | 10k 26.10 ms; 50k 38.66 ms | BL-50 |
+| `bl new` duplicate-title check added, 50k ≤ 20 ms | 11.98 ms with a match, 10.96 ms without (`BenchmarkDuplicateTitle50k`, warm cache) | BL-184 |
 | CLI peak RSS, 10k ≤ 150 MiB; 50k ≤ 400 MiB | 116.6 / 383.8 MiB (`ls`) | BL-48 |
 | TUI warm first content, 10k ≤ 100 ms | 37.60 ms | BL-58 |
 | TUI cold first content, 10k ≤ 400 ms | 54.50 ms, before the load completes | BL-58 |

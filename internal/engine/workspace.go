@@ -134,6 +134,13 @@ func (s *workspaceSource) LoadInitial(ctx context.Context) (source.Delta, error)
 	}
 	return source.Delta{Coverage: source.Partial}, nil
 }
+func (s *workspaceSource) FindTitle(ctx context.Context, key string) ([]model.Item, error) {
+	items, err := findTitle(ctx, s.Source, key)
+	for n := range items {
+		items[n] = s.item(items[n])
+	}
+	return items, err
+}
 func (s *workspaceSource) Watch(ctx context.Context, changed func()) error {
 	if watcher, ok := s.Source.(source.Watcher); ok {
 		return watcher.Watch(ctx, changed)

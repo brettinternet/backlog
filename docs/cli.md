@@ -228,7 +228,7 @@ the envelope is `ok: false` with the first failure's error and exit code, and
 keeps `data.outcomes`. `--if-version` with several IDs exits 2 before writing.
 Text output prints each written item, then `ID: message` for each failure.
 
-### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--ref URL]... [--source SOURCE] [--sprint S]`
+### `bl new TITLE [TOKENS] [--status S] [--body TEXT|-] [--ac TEXT]... [--ref URL]... [--source SOURCE] [--sprint S] [--force]`
 
 Alias: `bl create`.
 
@@ -264,6 +264,13 @@ bl new 'Fix flaky login test' --ref https://github.com/acme/app/pull/45
 - `--sprint` takes `current`, `next`, `none`, a sprint name, or a key, resolved
   like `bl set sprint=`. Only Linear sources create with a sprint.
 - `--if-version` on create always conflicts.
+- A title that matches an open item in the target source, ignoring case and
+  surrounding or repeated whitespace, exits 5 with `rejected`, naming the
+  matches in the message and `error.details.matches`. Closed and archived
+  items and other sources never match. `--force` creates anyway. The check
+  reads cached titles and makes no provider request, so a stale cache can miss
+  a match: an edit outside `bl` until the next read refreshes it, or a remote
+  item created since the last sync.
 - A create that leaves an item behind but fails a later step, such as a Linear
   blocker relation, exits 6 with `unknown-outcome` and names the item in the
   message and `error.details.created`. Check it before creating again.
@@ -802,7 +809,9 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
 
 Validates every active and archived native item. Findings have `code`,
 `severity`, `path`, `line`, and `message` (JSON `data.findings`, `[]` when
-clean). Errors exit 5; warnings don't.
+clean). Errors exit 5; warnings don't. `duplicate-title` warns on each open
+active item whose title matches another's in the same source, the duplicates
+`bl new` refuses.
 
 `--fix` applies only the [repairs in the format spec](format.md#validation):
 filename renames, `updated`-only and comment-only merge conflicts, and line
