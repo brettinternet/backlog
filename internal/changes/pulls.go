@@ -53,6 +53,25 @@ func (p *PartialPulls) Error() string {
 
 func (p *PartialPulls) Unwrap() error { return p.Err }
 
+// PullSync is a forge's cached sync state: the pull requests kept, when
+// the last successful refresh began, and whether older ones are still being
+// read.
+type PullSync struct {
+	Kept      int       `json:"kept"`
+	Refreshed time.Time `json:"refreshed,omitzero"`
+	Reading   bool      `json:"reading"`
+}
+
+// ReadPullSync reads the sync state of repo's pull request cache at path,
+// zero when there is none yet.
+func ReadPullSync(path, repo string) PullSync {
+	var cached pullCache
+	if data, err := os.ReadFile(path); err != nil || json.Unmarshal(data, &cached) != nil || cached.Repo != repo {
+		return PullSync{}
+	}
+	return PullSync{Kept: len(cached.Pulls), Refreshed: cached.Fetched.UTC(), Reading: cached.Resume != ""}
+}
+
 // RefreshPulls merges a forge's newest reads into its cache at path and
 // returns the merged list, redacted before anything is kept or shown, as
 // provider activity is. open reads every open pull request, whose checks

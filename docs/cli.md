@@ -754,6 +754,12 @@ the effective non-secret settings plus `directory`, `paths`, `discovery`,
 {"ui":{"highContrast":false},"provenance":{"ui.highContrast":{"layer":"project","file":"/repo/backlog.yaml","line":4}},"privileged":[{"key":"hooks[0]","trusted":false,"origin":{"layer":"project","file":"/repo/backlog.yaml","line":8}}]}
 ```
 
+`changes.forges` lists the [forges](changes.md#configuration) it resolved,
+explicit or from `origin`, each with `type`, `host`, `repo`, `account`,
+`implicit`, and `error` when it can't be read. With none, `changes.reason` and
+`fix` say why in `bl doctor`'s words. Text output prints a `Forge:` line for
+each, or `Forges: none:` with the reason and fix.
+
 Provenance layers are `built-in`, `discovery`, `user`, `project`, `local`,
 `user-project`, `environment`, and `flag`. Implicit defaults (such as
 `milestones[0].archived: false`) are `built-in`. `privileged` lists hooks,
@@ -795,9 +801,10 @@ warn  claims        Active without a live claim: BL-7
                     Fix: Resume each with bl claim ID, or move it to todo, done, or canceled
 pass  sources       Sources are configured; no network checks requested
 pass  accounts      Provider source accounts are ready; reads verify them
+pass  forges        github acme/app on github.com, account personal, implicit: ok; 120 pull requests kept, refreshed 2026-11-17T21:55:51Z
 ```
 
-Ten checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`, `accounts`.
+Eleven checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`, `accounts`, `forges`.
 Each has a `status` (`pass`, `warn`, `fail`, `skip`), `message`, and `fix`. JSON
 `data.checks` lists all of them. Any failure exits 5 (`rejected`); warnings
 alone exit 0. Invalid config fails `config` and skips the checks that need it.
@@ -829,7 +836,24 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
   from user config or can't authenticate, by the same offline rules as
   [`bl auth status`](#bl-auth-status-provider-account-and-bl-auth-loginlogout-provider-account).
   It skips untrusted sources, which are inert.
-- `--online` allows network probes after trust. None are defined yet.
+- `forges` reports each [linked changes forge](changes.md#configuration):
+  its type, host, repository, account, and whether it is explicit
+  (`changes.forges`) or implicit (`origin`). It reads one uncached page of
+  pull requests with their checks and closing references, through the
+  account's credentials, and reports `ok`, `warn` naming checks or closing
+  references the token can't read, or `fail` when it can't read pull
+  requests. It also shows the cache's sync state: pull requests kept, the last
+  refresh, and whether older ones are still being read. A GitHub or GitLab
+  `origin` with no forge warns why: no account for its host (`github.com` or
+  `gitlab.com`; another host is known only by its accounts), with a user
+  config snippet and `bl auth login`, or several, naming them and a
+  `changes.forges` entry that picks one. An explicit forge that can't be
+  built, such as an untrusted one or one with an unknown account, fails. Any
+  other origin, or none, skips. JSON `data.forges` lists each forge's `type`,
+  `host`, `repo`, `account`, `explicit`, `status`, `unreadable`, `error`, and
+  `sync` (`kept`, `refreshed`, `reading`).
+- `--online` allows network probes of sources after trust. None are defined
+  yet.
 
 ### `bl check [--fix]`
 
@@ -869,8 +893,9 @@ uses reason `adapter-check`. It doesn't trust configured sources. See the
 ### `bl instructions [TOPIC]`
 
 Prints Markdown guidance matching the installed version. Topics: `overview`
-(default), `workflow`, `query`, `format`, `json`, `tours`. Unknown topics exit 2. JSON
-`data` has `topic`, `topics`, and `markdown`.
+(default), `workflow`, `query`, `format`, `json`, `changes` (forge setup,
+token permissions, provider states, and `bl changes` JSON), `tours`. Unknown
+topics exit 2. JSON `data` has `topic`, `topics`, and `markdown`.
 
 Guidance never needs a project. In one whose config sets
 `history.commitTrailer: KEY` (for example `Refs`), `workflow` adds one line

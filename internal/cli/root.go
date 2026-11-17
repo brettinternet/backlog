@@ -79,16 +79,36 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		if err != nil {
 			return err
 		}
+		effective := effectiveChanges(cfg)
 		if cmd.Bool("json") {
 			return success(out, "config show", struct {
 				project.Config
-				Directory string `json:"directory"`
-			}{cfg, directory})
+				Changes   configChanges `json:"changes"`
+				Directory string        `json:"directory"`
+			}{cfg, effective, directory})
 		}
 		_, err = fmt.Fprintf(out, "Directory: %s\nControl root: %s\nProject: %s (host-local: %t)\nUser config: %s\nState: %s\nCache: %s\nui.highContrast: %t (%s)\n",
 			directory, cfg.Discovery.ControlRoot, cfg.Project.ID, cfg.HostLocal, cfg.Paths.ConfigFile, cfg.Paths.StateDir, cfg.Paths.CacheDir, cfg.UI.HighContrast, cfg.Provenance["ui.highContrast"].Layer)
 		if err != nil {
 			return err
+		}
+		for _, f := range effective.Forges {
+			line := fmt.Sprintf("Forge: %s %s on %s, account %s, %s", f.Type, f.Repo, f.Host, cmp.Or(f.Account, "none"), map[bool]string{true: "implicit", false: "explicit"}[f.Implicit])
+			if f.Error != "" {
+				line += " (" + f.Error + ")"
+			}
+			if err := writeLine(out, line); err != nil {
+				return err
+			}
+		}
+		if effective.Reason != "" {
+			line := "Forges: none: " + effective.Reason
+			if effective.Fix != "" {
+				line += "\nFix: " + effective.Fix
+			}
+			if err := writeLine(out, line); err != nil {
+				return err
+			}
 		}
 		settings, err := json.MarshalIndent(cfg.Settings, "", "  ")
 		if err != nil {

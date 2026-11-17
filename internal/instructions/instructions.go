@@ -10,7 +10,9 @@ import (
 var topics embed.FS
 
 // Names returns topics in reading order.
-func Names() []string { return []string{"overview", "workflow", "query", "format", "json", "tours"} }
+func Names() []string {
+	return []string{"overview", "workflow", "query", "format", "json", "changes", "tours"}
+}
 
 // Read returns a known topic; caller input never becomes a filesystem path.
 func Read(topic string) (string, bool) {

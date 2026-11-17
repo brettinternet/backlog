@@ -10,7 +10,16 @@ Do not parse human tables. Envelope schemaVersion is 1.
 ```
 
 Read summaries include source, id, title, status, category, priority, and version.
-Show returns data.item plus metadata and sections; next returns data.items.
+Each read command's data:
+- ls: groups, each with value and items (summaries). Without --group there is
+  one group whose value is empty; there is no top-level data.items.
+- next: items (summaries); --claim adds attempts, resumed, claim, and status.
+- show: item (a summary), metadata, and sections; criteria and dod when
+  present; resource, claims, and sessions with coordination.
+- changes: changes (each with id, stage, state, and link) and providers.
+- history: entries (each with id, time, kind, summary, and provider),
+  providers, and more; cursor when more is true.
+
 With --explain, next also includes explanations for included and excluded
 candidates in a nonempty snapshot. Reasons include blocker, blocker-unknown,
 excluded-label, query, and limit; inspect readiness and reasons, not just inclusion.

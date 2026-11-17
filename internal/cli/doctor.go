@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/brettinternet/backlog/internal/cache"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
@@ -32,6 +34,8 @@ type doctorCheck struct {
 }
 type doctorData struct {
 	Checks []doctorCheck `json:"checks"`
+	// Forges are the forges check's per-forge facts.
+	Forges []forgeReport `json:"forges,omitempty"`
 }
 
 func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
@@ -87,12 +91,13 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 			}
 			return nil
 		}},
-		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, sources, and accounts", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "doctor", Usage: "Diagnose configuration, trust, hooks, cache, coordination, sources, accounts, and forges", Category: categoryProject, Flags: []urfave.Flag{&urfave.BoolFlag{Name: "online", Usage: "Also probe network sources (installed adapters only)"}}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			cfg, configErr := loadConfig(cmd, *directory)
 			checks := []doctorCheck{{"config", "pass", "Configuration is valid", "No action needed"}}
+			var forgeReports []forgeReport
 			if configErr != nil {
 				checks[0] = doctorCheck{"config", "fail", configErr.Error(), "Correct the reported configuration key or YAML syntax"}
-				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources", "accounts"} {
+				for _, name := range []string{"trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources", "accounts", "forges"} {
 					checks = append(checks, doctorCheck{name, "skip", "Configuration could not be loaded", "Fix configuration and rerun bl doctor"})
 				}
 			} else {
@@ -104,8 +109,10 @@ func diagnosticCommands(directory *string, out io.Writer) []*urfave.Command {
 					checks[0] = doctorCheck{"config", "warn", strings.Join(messages, "; "), "Move " + cfg.Ignored[0].Key + " to your user config (" + cfg.Paths.ConfigFile + ")"}
 				}
 				checks = append(checks, trustCheck(cfg), hooksCheck(cfg), branchCheck(ctx, cfg), localConfigCheck(ctx, cfg), cacheCheck(ctx, cfg), workleaseCheck(ctx, cfg), claimsCheck(ctx, cfg), sourceCheck(cfg, cmd.Bool("online")), accountsCheck(cfg))
+				forges, reports := forgesCheck(ctx, cfg)
+				checks, forgeReports = append(checks, forges), reports
 			}
-			data := doctorData{Checks: checks}
+			data := doctorData{Checks: checks, Forges: forgeReports}
 			failed := false
 			for _, c := range checks {
 				failed = failed || c.Status == "fail"
@@ -450,4 +457,158 @@ func sourceCheck(cfg project.Config, online bool) doctorCheck {
 		c.Message = "File sources are local; no network probes needed"
 	}
 	return c
+}
+
+type forgeReport struct {
+	Type       string           `json:"type"`
+	Host       string           `json:"host"`
+	Repo       string           `json:"repo"`
+	Account    string           `json:"account"`
+	Explicit   bool             `json:"explicit"`
+	Status     string           `json:"status"`
+	Unreadable []string         `json:"unreadable,omitempty"`
+	Error      string           `json:"error,omitempty"`
+	Sync       changes.PullSync `json:"sync"`
+}
+
+// forgeProbeTimeout bounds each forge's one-page read.
+const forgeProbeTimeout = 15 * time.Second
+
+// configChanges is changes config with the forges it resolved to; Reason
+// and Fix say why none did, in the doctor forges check's words.
+type configChanges struct {
+	Git    bool          `json:"git"`
+	Forges []configForge `json:"forges"`
+	Reason string        `json:"reason,omitempty"`
+	Fix    string        `json:"fix,omitempty"`
+}
+
+// configForge is one resolved forge; Error says why it can't be read.
+type configForge struct {
+	Type     string `json:"type"`
+	Host     string `json:"host"`
+	Repo     string `json:"repo"`
+	Account  string `json:"account,omitempty"`
+	Implicit bool   `json:"implicit"`
+	Error    string `json:"error,omitempty"`
+}
+
+func effectiveChanges(cfg project.Config) configChanges {
+	resolved, gap := engine.ResolveForges(cfg)
+	out := configChanges{Git: cfg.Changes.Git, Forges: []configForge{}}
+	for _, f := range resolved {
+		forge := configForge{Type: f.Type, Host: f.Host, Repo: f.Repo, Account: f.Account, Implicit: !f.Explicit}
+		if f.Err != nil {
+			forge.Error = f.Err.Error()
+		}
+		out.Forges = append(out.Forges, forge)
+	}
+	if len(resolved) == 0 {
+		var status string
+		status, out.Reason, out.Fix = noForge(cfg, gap)
+		if status == "skip" {
+			out.Fix = ""
+		}
+	}
+	return out
+}
+
+// noForge says why cfg resolved no forge from gap, ResolveForges' second
+// result, as a doctor status, message, and fix; bl config show says the same.
+func noForge(cfg project.Config, gap *engine.ForgeGap) (status, message, fix string) {
+	if gap == nil {
+		return "skip", "No changes.forges and no GitHub or GitLab origin", "No action needed"
+	}
+	label := map[string]string{"github": "GitHub", "gitlab": "GitLab"}[gap.Type]
+	origin := gap.Host + "/" + gap.Repo
+	if len(gap.Accounts) == 0 {
+		account := "{name: personal, host: " + gap.Host + ", user: YOUR_LOGIN"
+		login := ", then run bl auth login " + gap.Type + " personal"
+		switch {
+		case gap.Type == "gitlab":
+			account += ", env: GITLAB_TOKEN"
+			login = ""
+		case gap.Host == "github.com":
+			account += ", oauth: true"
+		}
+		return "warn",
+			"Origin " + origin + " has no forge: no " + label + " account for " + gap.Host + ", so linked pull requests never appear",
+			"Add a " + label + " account for " + gap.Host + " to user config (" + cfg.Paths.ConfigFile + "): accounts: {" + gap.Type + ": [" + account + "}]}" + login
+	}
+	return "warn",
+		"Origin " + origin + " has no forge: " + label + " accounts " + strings.Join(gap.Accounts, ", ") + " all match " + gap.Host,
+		"Pick one in backlog.yaml, then run bl trust: changes: {forges: [{type: " + gap.Type + ", host: " + gap.Host + ", repo: " + gap.Repo + ", account: " + gap.Accounts[0] + "}]}"
+}
+
+// forgesCheck reports how linked changes' forges resolved and whether each
+// can read one page of pull requests with checks and closing references.
+func forgesCheck(ctx context.Context, cfg project.Config) (doctorCheck, []forgeReport) {
+	resolved, gap := engine.ResolveForges(cfg)
+	if len(resolved) == 0 {
+		status, message, fix := noForge(cfg, gap)
+		return doctorCheck{"forges", status, message, fix}, nil
+	}
+	c := doctorCheck{"forges", "pass", "", "No action needed"}
+	var reports []forgeReport
+	var messages, fixes []string
+	for _, f := range resolved {
+		r := forgeReport{Type: f.Type, Host: f.Host, Repo: f.Repo, Account: f.Account, Explicit: f.Explicit, Status: "ok", Sync: changes.ReadPullSync(f.Cache, f.Repo)}
+		fix := ""
+		if f.Err != nil {
+			r.Status, r.Error = "fail", f.Err.Error()
+			fix = "Correct changes.forges or add its account to user config"
+			if f.Untrusted {
+				fix = "Review bl trust --show, then run bl trust"
+			}
+		} else if prober, ok := f.Forge.(interface {
+			Probe(context.Context) ([]string, error)
+		}); ok {
+			probeCtx, cancel := context.WithTimeout(ctx, forgeProbeTimeout)
+			unreadable, err := prober.Probe(probeCtx)
+			cancel()
+			switch {
+			case err != nil:
+				r.Status, r.Error, r.Unreadable = "fail", err.Error(), []string{"pull requests"}
+				fix = "Grant the account read access to " + f.Repo + "'s pull requests, or check bl auth status"
+			case len(unreadable) > 0:
+				r.Status, r.Unreadable = "warn", unreadable
+				fix = "Grant the account read access to " + f.Repo + "'s " + strings.Join(unreadable, " and ")
+			}
+		}
+		origin := "implicit"
+		if f.Explicit {
+			origin = "explicit"
+		}
+		message := fmt.Sprintf("%s %s on %s, account %s, %s: %s", f.Type, f.Repo, f.Host, cmp.Or(f.Account, "none"), origin, r.Status)
+		switch {
+		case r.Error != "" && len(r.Unreadable) > 0:
+			message += " (can't read pull requests: " + r.Error + ")"
+		case r.Error != "":
+			message += " (" + r.Error + ")"
+		case len(r.Unreadable) > 0:
+			message += " (can't read " + strings.Join(r.Unreadable, ", ") + ")"
+		}
+		message += fmt.Sprintf("; %d pull requests kept", r.Sync.Kept)
+		if !r.Sync.Refreshed.IsZero() {
+			message += ", refreshed " + r.Sync.Refreshed.UTC().Format(time.RFC3339)
+		} else {
+			message += ", never refreshed"
+		}
+		if r.Sync.Reading {
+			message += ", still reading older ones"
+		}
+		messages = append(messages, message)
+		if fix != "" && !slices.Contains(fixes, fix) {
+			fixes = append(fixes, fix)
+		}
+		if r.Status == "fail" || r.Status == "warn" && c.Status == "pass" {
+			c.Status = r.Status
+		}
+		reports = append(reports, r)
+	}
+	c.Message = strings.Join(messages, "; ")
+	if len(fixes) > 0 {
+		c.Fix = strings.Join(fixes, "; ")
+	}
+	return c, reports
 }
