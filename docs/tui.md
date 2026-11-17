@@ -895,6 +895,13 @@ Widths use terminal cells. Colors adapt to the terminal's light or dark
 background, mixing neutrals from its own palette. `NO_COLOR` turns styling off;
 `--high-contrast` uses bold, underline, and reverse instead of faint text.
 
+Item bodies render GitHub Markdown. An alert (`> [!NOTE]`, `TIP`, `IMPORTANT`,
+`WARNING`, or `CAUTION`) renders as a quote headed by its bold type name, with
+its text on the next line. An unindented fenced block with an info string
+shows the first word, its language, as a dim caption line above the block.
+Both are left as written inside fenced blocks, using the fence rules in
+[format.md](format.md).
+
 Interactive sessions use 20% GC heap growth instead of the CLI's fixed 300 MiB
 soft memory target. Explicit `GOGC` and `GOMEMLIMIT` win and are restored on
 exit. See [benchmarks](benchmarks.md#tui) for measurements.

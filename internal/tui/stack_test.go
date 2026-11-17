@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 	"github.com/brettinternet/backlog/internal/format"
 	"github.com/brettinternet/backlog/internal/testkit"
 	"github.com/brettinternet/backlog/internal/tui/ptytest"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
@@ -122,6 +124,55 @@ func TestListProviderControls(t *testing.T) {
 	}
 	if strings.Contains(rendered, "\x1b[2J") || !strings.Contains(rendered, "safe body") {
 		t.Fatalf("unsafe body: %q", rendered)
+	}
+}
+
+// Catches an alert marker running into its text, a type rendered unbolded,
+// a fence losing its language or gaining a caption it has no info string for,
+// and alert or fence syntax inside a fenced block being rewritten.
+func TestMarkdownAlertsAndFenceCaptions(t *testing.T) {
+	t.Parallel()
+	var body strings.Builder
+	titles := []string{"Note", "Tip", "Important", "Warning", "Caution"}
+	for _, title := range titles {
+		body.WriteString("> [!" + strings.ToUpper(title) + "]\n> " + title + " text.\n\n")
+	}
+	body.WriteString("````markdown\n> [!NOTE]\n> inside\n```mermaid\n````\n\n```mermaid\ngraph TD\n```\n\n```\nplain\n```\n")
+	for _, theme := range []string{"no-color", "dark"} {
+		out, err := renderMarkdown(body.String(), 60, theme)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var lines []string
+		for line := range strings.SplitSeq(ansi.Strip(out), "\n") {
+			if line = strings.TrimRight(line, " "); line != "" {
+				lines = append(lines, line)
+			}
+		}
+		at := func(want string) int { return slices.Index(lines, want) }
+		for _, title := range titles {
+			heading, text := "│ "+title, "│ "+title+" text."
+			if theme == "no-color" {
+				heading, text = "| **"+title+"**", "| "+title+" text."
+			} else if !strings.Contains(out, "1m"+title) {
+				t.Errorf("%s: %s not bold", theme, title)
+			}
+			if i := at(heading); i < 0 || i+1 >= len(lines) || lines[i+1] != text {
+				t.Errorf("%s: %s alert\n%s", theme, title, strings.Join(lines, "\n"))
+			}
+		}
+		if i := at("  > [!NOTE]"); i < 1 || lines[i-1] != "markdown" || lines[i+1] != "  > inside" || lines[i+2] != "  ```mermaid" {
+			t.Errorf("%s: fenced Markdown rewritten\n%s", theme, strings.Join(lines, "\n"))
+		}
+		if i := at("  graph TD"); i < 1 || lines[i-1] != "mermaid" || lines[i+1] != "  plain" {
+			t.Errorf("%s: fence captions\n%s", theme, strings.Join(lines, "\n"))
+		}
+		if theme == "dark" && !strings.Contains(out, "\x1b[90mmermaid") {
+			t.Errorf("caption not dim: %q", out)
+		}
+		if strings.Contains(out, alertMark) {
+			t.Errorf("%s: alert mark leaked", theme)
+		}
 	}
 }
 
