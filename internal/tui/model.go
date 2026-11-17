@@ -1637,6 +1637,8 @@ func (m *Model) switchDetailTab(tab detailTab) tea.Cmd {
 	m.detailTab = tab
 	m.detailExpanded = false
 	m.entryCursor = 0
+	// A tab chosen directly leaves the entry a link came from.
+	m.changeReturn = nil
 	return m.showDetail()
 }
 

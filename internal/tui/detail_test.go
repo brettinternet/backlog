@@ -1611,6 +1611,13 @@ func TestDiffThreads(t *testing.T) {
 	if m = settleDetail(t, m); m.detailTab != tabChangeFiles || m.entryCursor != 1 {
 		t.Fatalf("backspace returned to tab %d at %d", m.detailTab, m.entryCursor)
 	}
+	// A tab chosen directly drops the return, so backspace closes the change.
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChangeOverview)
+	if _ = m.switchDetailTab(tabChangeDiff); m.changeReturn != nil {
+		t.Fatalf("a directly chosen Diff returns to %+v", *m.changeReturn)
+	}
 
 	// ]u and [u step through unresolved threads in diff order, wrapping and
 	// skipping resolved and outdated ones; a thread has no line to comment on.

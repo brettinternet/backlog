@@ -126,9 +126,11 @@ func (m *Model) toggleResolved(open bool) tea.Cmd {
 // openDiffAt opens the Diff at target, a link to a file, a thread, or the
 // first unresolved thread; backspace returns to the entry it came from.
 func (m *Model) openDiffAt(target string) tea.Cmd {
-	m.changeReturn = &tabStop{tab: m.detailTab, cursor: m.entryCursor}
+	from := &tabStop{tab: m.detailTab, cursor: m.entryCursor}
 	m.diffTarget = target
-	return m.switchDetailTab(tabChangeDiff)
+	cmd := m.switchDetailTab(tabChangeDiff)
+	m.changeReturn = from
+	return cmd
 }
 
 // landDiff puts the cursor on the Diff's target as the Diff arrives.
