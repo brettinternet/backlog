@@ -207,6 +207,71 @@ func TestInstructionsCommandDrift(t *testing.T) {
 	}
 }
 
+// Agents parse read data by the json topic, so a key it omits or invents sends
+// them to the wrong path (BL-204: ls returns groups[].items, not items). Every
+// key a command returns must appear in its bullet, and required keys must exist.
+func TestInstructionsJSONReadShapes(t *testing.T) {
+	root := writeFixture(t)
+	markdown, _ := instructions.Read("json")
+	bullets := map[string]string{}
+	command := ""
+	for _, line := range strings.Split(markdown, "\n") {
+		if name, rest, ok := strings.Cut(strings.TrimPrefix(line, "- "), ":"); ok && strings.HasPrefix(line, "- ") && !strings.Contains(name, " ") {
+			command = name
+			bullets[command] = rest
+		} else if command != "" && strings.HasPrefix(line, "  ") {
+			bullets[command] += line
+		} else {
+			command = ""
+		}
+	}
+	documented := func(name, key string) {
+		t.Helper()
+		if !regexp.MustCompile(`\b` + key + `\b`).MatchString(bullets[name]) {
+			t.Errorf("%s: key %s not documented in %q", name, key, bullets[name])
+		}
+	}
+	for _, c := range []struct {
+		args     []string
+		required []string
+	}{
+		{[]string{"ls"}, []string{"groups"}},
+		{[]string{"next"}, []string{"items"}},
+		{[]string{"show", "BL-012"}, []string{"item", "metadata", "sections"}},
+		{[]string{"changes", "BL-012"}, []string{"changes", "providers"}},
+		{[]string{"history", "BL-012"}, []string{"entries", "providers", "more"}},
+	} {
+		name := c.args[0]
+		code, out, stderr := run(append([]string{"-C", root, "--json"}, c.args...)...)
+		var envelope struct {
+			Data map[string]json.RawMessage
+		}
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil || code != 0 || stderr != "" {
+			t.Fatalf("%s: %d %s %s", name, code, out, stderr)
+		}
+		for _, key := range c.required {
+			if _, ok := envelope.Data[key]; !ok {
+				t.Errorf("%s: documented key %s missing from %s", name, key, out)
+			}
+		}
+		for key := range envelope.Data {
+			documented(name, key)
+		}
+		if name == "ls" {
+			var groups []map[string]json.RawMessage
+			if err := json.Unmarshal(envelope.Data["groups"], &groups); err != nil || len(groups) == 0 {
+				t.Fatalf("ls groups: %s", out)
+			}
+			for key := range groups[0] {
+				documented(name, key)
+			}
+			if _, ok := groups[0]["items"]; !ok {
+				t.Errorf("ls group lacks items: %s", out)
+			}
+		}
+	}
+}
+
 // Exercise the documented loop with returned versions, not invented hashes.
 // This catches examples that use the wrong JSON path or stale criterion versions.
 func TestInstructionsWorkflow(t *testing.T) {
