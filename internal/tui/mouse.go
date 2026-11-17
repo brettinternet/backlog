@@ -40,6 +40,9 @@ type cardDrag struct {
 // board columns), so hit-testing cannot drift from what is drawn.
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	p := msg.Mouse()
+	if m.diagram.open {
+		return m.diagramMouse(msg)
+	}
 	if m.modalOpen() {
 		// A click outside the palette or menu closes it, like a context
 		// menu; a right-click then opens the menu where it landed.
@@ -206,6 +209,8 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					return m, m.switchDetailTab(first + detailTab(i))
 				}
 			}
+		case y >= m.detailBodyTop() && m.diagramAt(line) >= 0 && !m.detailPlaceholder() && m.detailError == "":
+			return m, m.openDiagram(m.detailDiagrams[m.diagramAt(line)].source)
 		case y >= m.detailBodyTop() && line == len(m.detailLines) && m.detailTruncated && !m.detailPlaceholder() && m.detailError == "":
 			// The "… m more" line below the body.
 			return m, m.toggleMore()

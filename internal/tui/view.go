@@ -54,6 +54,8 @@ func (m Model) holding() bool { return m.held != nil && !m.loads[listLoad].shown
 
 func (m Model) body(rows int) []string {
 	switch {
+	case m.diagram.open:
+		return m.diagramPane(rows)
 	case m.holding():
 		return m.held.body
 	case m.split():

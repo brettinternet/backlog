@@ -99,6 +99,7 @@ func defaultKeymap() []action {
 		{id: "next-detail-tab", label: "Next tab", canonical: "tab", bindings: []string{"tab"}},
 		{id: "previous-detail-tab", label: "Previous tab", canonical: "shift+tab", bindings: []string{"shift+tab"}},
 		{id: "back", label: "Back", canonical: "backspace", bindings: []string{"backspace"}},
+		{id: "open-diagram", label: "Open diagram", bindings: []string{"g d"}},
 		{id: "split-left", label: "Shrink list", canonical: "ctrl+left", bindings: []string{"ctrl+left"}},
 		{id: "split-right", label: "Grow list", canonical: "ctrl+right", bindings: []string{"ctrl+right"}},
 		{group: "Views", id: "next-view", label: "Next view", canonical: "g t", bindings: []string{"g t"}},
@@ -400,6 +401,13 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 		return m.openGoTo()
 	case "open-pull":
 		return m, m.openPull()
+	case "open-diagram":
+		if reason := m.disabledReason(a); reason != "" {
+			m.notice = "Disabled: " + reason
+			return m, nil
+		}
+		m.detailFocus = true
+		return m, m.openDiagram(m.detailDiagrams[m.diagramInView()].source)
 	case "help", "palette":
 		return m.openActions(a.id == "help")
 	case "quit-now":
@@ -481,6 +489,12 @@ func (m Model) disabledReason(a action) string {
 	}
 	if a.id == "back" && !m.detailFocus {
 		return "open an item first"
+	}
+	if a.id == "open-diagram" {
+		if !m.detailOpen || m.detailPlaceholder() || m.detailError != "" || m.diagramInView() < 0 {
+			return "no diagram in detail"
+		}
+		return ""
 	}
 	if a.id == "comment" && m.change != nil && m.detailFocus || a.id == "review" {
 		return m.reviewBlocked()
