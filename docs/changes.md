@@ -162,7 +162,17 @@ refresh keeps the cached list, plus whatever it read, and marks it stale. On
 GitHub, a page that fails with a server error or a GraphQL error, as slow
 pages on a large repository do, is read again at half the size, down to 12,
 and an interrupted read resumes after its last page on the next refresh, so a
-first refresh of thousands of pull requests converges. Only the open pass reads
+first refresh of thousands of pull requests converges.
+
+Open pull requests are what in-progress items link to, so on GitHub a refresh
+reads all of them first, then at most 3 pages of closed and merged ones, and
+fewer once the token has under a tenth of its hourly limit left, leaving that
+for interactive reads and other tools. Later refreshes continue from where the
+last stopped until they reach the newest 1,000 or the end. Until then the
+forge reports `partial`, such as `reading older pull requests, 300 read, will
+resume`, and its pull requests are current, not stale; a failed closed and
+merged page that can resume is `partial` too. A failed open pass is
+`unavailable`, with the cached pull requests stale. Only the open pass reads
 the merge state, review decision, and checks, which together quadruple a page's
 time; the closed and merged pass reads 100 per page without them, so a closed
 or merged GitHub pull request shows no list checks or review, and `checks:` and
@@ -207,13 +217,17 @@ the browser (`O`) or an action (`!`) ([design](design.md) D46).
 
 The TUI reads local data every five seconds, which starts no process unless the
 default branch moved, and forges every minute, on a worker; `R` reloads both.
+While a forge is `partial`, forges load again five seconds after the last load
+instead, publishing after each, until none is; a rate-limited account sends
+nothing before its retry time.
 On each per-minute forge refresh it also reads the detail of the open pull
 request a change view or the Changes tab shows, one read per shown pull request
 a minute, on the detail worker through the account's request queue. Nothing
 reads a pull request that isn't shown, and the reads stop when the view closes
 or the selection moves.
 `bl changes`, MCP `changes`, `bl history`, and `bl ls` or MCP `query` with a
-change term load once per call.
+change term load once per call, so on a large repository they report the forge
+`partial` until enough calls or the TUI have read its older pull requests.
 
 ## Surfaces
 

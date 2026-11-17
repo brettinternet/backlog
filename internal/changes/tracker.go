@@ -19,14 +19,17 @@ func Load(ctx context.Context, o Options) Data {
 
 // LoadForges lists every forge's pull requests. A forge that fails keeps
 // what it last had, marked stale, so its pull requests read as stale rather
-// than vanishing or looking current.
+// than vanishing or looking current. One with older pull requests left to
+// read is partial, its list current.
 func LoadForges(ctx context.Context, forges []Forge) ([]PullRequest, []Status) {
 	var prs []PullRequest
 	var statuses []Status
 	for _, f := range forges {
 		list, err := f.PullRequests(ctx)
 		status := Status{Provider: f.Name(), State: OK}
-		if err != nil {
+		if partial := (*PartialPulls)(nil); errors.As(err, &partial) {
+			status.State, status.Reason = Partial, err.Error()
+		} else if err != nil {
 			status.State, status.Reason = Unavailable, err.Error()
 			for i := range list {
 				list[i].Stale = f.Name() + " refresh failed: " + err.Error()
@@ -46,7 +49,9 @@ type State struct {
 
 // Tracker keeps projects' changes current on its own goroutine, never the UI
 // loop (D14): local refs and worktrees every few seconds, which spawns no
-// process unless the default branch moved, and forges every minute.
+// process unless the default branch moved, and forges every minute, or a few
+// seconds after the last load while one is partial, still reading older pull
+// requests.
 type Tracker struct {
 	projects map[string]Options
 	latest   atomic.Pointer[State]
@@ -56,8 +61,9 @@ type Tracker struct {
 }
 
 const (
-	localInterval = 5 * time.Second
-	forgeInterval = time.Minute
+	localInterval   = 5 * time.Second
+	forgeInterval   = time.Minute
+	partialInterval = 5 * time.Second
 )
 
 // Track starts a tracker for projects, or returns nil when none reads
@@ -174,9 +180,19 @@ func (t *Tracker) run(ctx context.Context) {
 			local[key] = LoadLocal(ctx, o, local[key])
 		}
 	}
+	// again fires partialInterval after a load that left a forge partial.
+	var again <-chan time.Time
 	loadForges := func() {
+		partial := false
 		for key, o := range t.projects {
 			prs[key], forges[key] = LoadForges(ctx, o.Forges)
+			for _, status := range forges[key] {
+				partial = partial || status.State == Partial
+			}
+		}
+		again = nil
+		if partial {
+			again = time.After(partialInterval)
 		}
 	}
 	publish := func() {
@@ -212,6 +228,8 @@ func (t *Tracker) run(ctx context.Context) {
 		case <-forgeTick.C:
 			loadForges()
 			ticked = true
+		case <-again:
+			loadForges()
 		case <-t.refresh:
 			loadLocal()
 			loadForges()

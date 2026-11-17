@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -20,7 +21,8 @@ import (
 // Forge lists a repository's pull requests for linked changes (design.md
 // D43), through the account's request queue like the source it reuses. Each
 // refresh reads every open pull request, whose checks change without touching
-// its update time, and any other updated since the last refresh.
+// its update time, then a few pages of the others, newest updated since the
+// last refresh first, then continuing an earlier read.
 type Forge struct {
 	s       *Source
 	cache   string
@@ -84,9 +86,9 @@ type pullNode struct {
 	}
 }
 
-// PullRequests returns the cached list after merging in every pull request
-// updated since the last refresh. On failure it returns the cached list with
-// the error, so its entries read as stale.
+// PullRequests returns the cached list after merging in this refresh's
+// reads. On failure it returns the cached list with the error, so its entries
+// read as stale; with older pull requests left to read, *changes.PartialPulls.
 func (f *Forge) PullRequests(ctx context.Context) ([]changes.PullRequest, error) {
 	return f.refresh(ctx, 0)
 }
@@ -97,54 +99,75 @@ const pullsAge = time.Minute
 
 // Recent is PullRequests, but reuses a list refreshed in the last minute by
 // any process, so the github-pulls source adds no request to the changes
-// tracker's.
+// tracker's. Older pull requests left to read don't fail it: every open one
+// was read.
 func (f *Forge) Recent(ctx context.Context) ([]changes.PullRequest, error) {
-	return f.refresh(ctx, pullsAge)
+	prs, err := f.refresh(ctx, pullsAge)
+	if partial := (*changes.PartialPulls)(nil); errors.As(err, &partial) {
+		err = nil
+	}
+	return prs, err
 }
 
 func (f *Forge) refresh(ctx context.Context, fresh time.Duration) ([]changes.PullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return changes.RefreshPulls(f.cache, f.s.o.Repo, fresh, f.s.o.Secrets.Redact, func(prev changes.PullProgress) ([]changes.PullRequest, []changes.PullRequest, changes.PullProgress, error) {
-		c, err := f.s.authenticate(ctx)
-		if err != nil {
-			return nil, nil, prev, err
+	var c remote.Credential
+	open := func() ([]changes.PullRequest, error) {
+		var err error
+		if c, err = f.s.authenticate(ctx); err != nil {
+			return nil, err
 		}
-		open, _, err := f.fetch(ctx, c, "OPEN", "", time.Time{})
-		if err != nil {
-			return open, nil, prev, err
+		open, _, err := f.fetch(ctx, c, "OPEN", "", time.Time{}, nil)
+		return open, err
+	}
+	return changes.RefreshPulls(f.cache, f.s.o.Repo, fresh, f.s.o.Secrets.Redact, open, func(prev changes.PullProgress) ([]changes.PullRequest, changes.PullProgress, error) {
+		pages := olderPages
+		updated, after, err := f.fetch(ctx, c, "", "", prev.Cursor, &pages)
+		if len(updated) == 0 && err != nil {
+			return nil, prev, err
 		}
-		// Open pull requests were all just read.
 		next := prev
-		updated, after, err := f.fetch(ctx, c, "", "", prev.Cursor)
 		if len(updated) > 0 {
-			if err != nil && prev.Resume == "" {
-				next.Resume, next.Oldest, next.Since = after, updated[len(updated)-1].Updated, prev.Cursor
-			}
-			if err == nil || prev.Resume == "" {
-				next.Cursor = updated[0].Updated
-			}
+			next.Cursor = updated[0].Updated
 		}
-		if err != nil || prev.Resume == "" {
-			return open, updated, next, err
+		if after != "" && len(updated) > 0 {
+			// Stopped short of the cursor: resume down to it, or past it to
+			// where an earlier interrupted read was going, rereading what
+			// that read had reached.
+			if prev.Resume == "" {
+				next.Since = prev.Cursor
+			}
+			next.Resume, next.Oldest = after, updated[len(updated)-1].Updated
+			return updated, next, err
 		}
-		rest, after, err := f.fetch(ctx, c, "", prev.Resume, prev.Since)
+		if prev.Resume == "" || pages == 0 {
+			return updated, next, nil
+		}
+		rest, after, err := f.fetch(ctx, c, "", prev.Resume, prev.Since, &pages)
 		updated = append(updated, rest...)
-		if err != nil {
+		if after != "" {
 			if len(rest) > 0 {
 				next.Resume, next.Oldest = after, rest[len(rest)-1].Updated
 			}
-			return open, updated, next, err
+			return updated, next, err
 		}
 		next.Resume, next.Oldest, next.Since = "", time.Time{}, time.Time{}
-		return open, updated, next, nil
+		return updated, next, nil
 	})
 }
 
+// olderPages bounds the closed and merged pages one refresh reads, so a
+// large repository's first refresh returns its open pull requests promptly
+// and later refreshes read the rest.
+const olderPages = 3
+
 // fetch pages newest updated first from the page cursor after, open pull
-// requests or the rest, until it reaches since or changes.MaxPulls. On
-// failure it returns those read with the page cursor after them.
-func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after string, since time.Time) ([]changes.PullRequest, string, error) {
+// requests or the rest, until it reaches since or changes.MaxPulls. With
+// pages, it reads at most that many, counting them down, and fewer once the
+// account's rate limit runs low; it then returns the page cursor to resume
+// from. On failure it returns those read with the page cursor after them.
+func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after string, since time.Time, pages *int) ([]changes.PullRequest, string, error) {
 	vars := f.s.variables()
 	vars["states"], vars["open"] = []string{"CLOSED", "MERGED"}, state == "OPEN"
 	first := pullsPage
@@ -155,6 +178,9 @@ func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after str
 	client.Refusals = true
 	var out []changes.PullRequest
 	for {
+		if pages != nil && *pages <= 0 {
+			return out, after, nil
+		}
 		if after != "" {
 			vars["after"] = after
 		}
@@ -203,6 +229,15 @@ func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after str
 			return out, "", nil
 		}
 		after = page.PageInfo.EndCursor
+		if pages != nil {
+			*pages--
+			// Leave the rest of the hour's requests to interactive reads and
+			// other tools sharing the token.
+			limit, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Limit"))
+			if remaining, err := strconv.Atoi(response.Header.Get("X-RateLimit-Remaining")); err == nil && remaining*10 < limit {
+				*pages = 0
+			}
+		}
 	}
 }
 

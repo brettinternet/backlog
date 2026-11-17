@@ -63,7 +63,8 @@ failing check runs' steps, annotations, and log excerpt.
 
 `data.providers` lists `git` and each forge with a `state` and `reason`: `ok`
 answered fully; `partial` answered but may miss some, such as commits older
-than the newest 1,001 on the default branch; `unavailable` couldn't answer,
+than the newest 1,001 on the default branch, or a forge's older pull requests,
+which each later call reads more of; `unavailable` couldn't answer,
 so a missing change may still exist and cached pull requests read `stale`.
 Never read a missing change as absent while its provider is `partial` or
 `unavailable`.
