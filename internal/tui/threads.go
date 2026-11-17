@@ -57,10 +57,11 @@ type diffNotes struct {
 	unresolved map[string]int
 	drafts     []changes.LineComment
 	replies    map[string][]string
+	marks      map[string]string // x's pending or refused write by thread ID
 }
 
-func reviewNotes(c changes.Change, r *changes.Review, draft *changes.Draft, toggled string) diffNotes {
-	notes := diffNotes{toggled: toggledSet(toggled), pending: map[string]bool{}, unresolved: map[string]int{}, replies: map[string][]string{}}
+func reviewNotes(c changes.Change, r *changes.Review, draft *changes.Draft, toggled string, marks map[string]string) diffNotes {
+	notes := diffNotes{toggled: toggledSet(toggled), pending: map[string]bool{}, unresolved: map[string]int{}, replies: map[string][]string{}, marks: marks}
 	if r != nil {
 		for _, t := range r.Threads {
 			if !t.Resolved {
@@ -103,6 +104,7 @@ type fileNotes struct {
 	threads []changes.Thread
 	shown   []bool
 	replies [][]string
+	marks   []string
 	drafts  []changes.LineComment
 }
 
@@ -114,6 +116,7 @@ func (n diffNotes) on(f changes.File) fileNotes {
 			out.threads = append(out.threads, t)
 			out.shown = append(out.shown, threadShown(t, n.toggled))
 			out.replies = append(out.replies, n.replies[t.ID])
+			out.marks = append(out.marks, n.marks[t.ID])
 		}
 	}
 	for _, d := range n.drafts {
@@ -137,7 +140,7 @@ func (n fileNotes) digest() string {
 		}
 	}
 	for i, t := range n.threads {
-		write(threadKey(t), strconv.FormatBool(t.Old), strconv.Itoa(t.Line), strconv.FormatBool(t.Resolved), strconv.FormatBool(n.shown[i]))
+		write(threadKey(t), strconv.FormatBool(t.Old), strconv.Itoa(t.Line), strconv.FormatBool(t.Resolved), strconv.FormatBool(n.shown[i]), n.marks[i])
 		for _, c := range t.Comments {
 			write(c.Author, c.Body)
 		}
@@ -190,7 +193,7 @@ func placeNotes(in rendered, on fileNotes, t theme, width, digits int, split boo
 			for _, i := range threads[at] {
 				out.entries = append(out.entries, len(out.lines))
 				out.rows = append(out.rows, diffRow{file: r.file, thread: threadKey(on.threads[i])})
-				for _, l := range threadBlock(t, on.threads[i], on.shown[i], on.replies[i], max(1, room)) {
+				for _, l := range threadBlock(t, on.threads[i], on.shown[i], on.replies[i], on.marks[i], max(1, room)) {
 					out.lines = append(out.lines, blank(indent)+l)
 				}
 			}
@@ -209,21 +212,38 @@ func placeNotes(in rendered, on fileNotes, t theme, width, digits int, split boo
 	return out
 }
 
+// threadMark is a thread's state as drawn: state, or x's write instead, a
+// refusal in red with the forge's reason.
+func threadMark(t theme, write, state string) string {
+	switch {
+	case write == "":
+		return state
+	case strings.HasPrefix(write, "✕"):
+		return t.red.render(write)
+	}
+	return t.accent.render(write)
+}
+
 // threadBlock draws a thread behind a bar: whole, each comment's author then
 // its text, or folded to its first comment on one line with how many there
-// are. Drafted replies follow it.
-func threadBlock(t theme, th changes.Thread, shown bool, replies []string, room int) []string {
+// are, and x's pending or refused write at the end of its first line.
+// Drafted replies follow it.
+func threadBlock(t theme, th changes.Thread, shown bool, replies []string, write string, room int) []string {
 	bar, mark := t.yellow.render("┃")+" ", t.yellow.render("●")
 	if th.Resolved {
 		bar, mark = t.faint.render("┃")+" ", t.green.render("✓")
 	}
 	inner := max(1, room-2)
 	first := th.Comments[0]
+	if write != "" {
+		write = "  " + threadMark(t, write, "")
+	}
 	if !shown {
 		tail := ""
 		if n := len(th.Comments) + len(replies); n > 1 {
 			tail = "  " + t.muted.render(strconv.Itoa(n))
 		}
+		tail += write
 		head := mark + " " + t.bold.render(textutil.Line(first.Author)) + " " + t.muted.render(strings.TrimSpace(textutil.Line(first.Body)))
 		return []string{bar + ansi.Truncate(head, max(1, inner-ansi.StringWidth(tail)), "…") + tail}
 	}
@@ -231,7 +251,7 @@ func threadBlock(t theme, th changes.Thread, shown bool, replies []string, room 
 	for i, c := range th.Comments {
 		head := t.bold.render(textutil.Line(c.Author))
 		if i == 0 {
-			head = mark + " " + head
+			head = ansi.Truncate(mark+" "+head, max(1, inner-ansi.StringWidth(write)), "…") + write
 		} else {
 			head = "  " + head
 		}

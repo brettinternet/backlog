@@ -88,6 +88,9 @@ func (s *eventSource) LoadInitial(ctx context.Context) (source.Delta, error) {
 	}
 	return source.Delta{Coverage: source.Partial}, nil
 }
+func (s *eventSource) FindTitle(ctx context.Context, key string) ([]model.Item, error) {
+	return findTitle(ctx, s.Source, key)
+}
 func (s *eventSource) readState(ctx context.Context, id string) (model.Item, bool, error) {
 	if reader, ok := s.Source.(interface {
 		ReadState(context.Context, string) (model.Item, bool, error)

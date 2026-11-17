@@ -49,6 +49,7 @@ assignee picker ([Jira](jira.md#writes)).
 | `◌` `○` `◐` `✓` `✕` | Status category: backlog, todo, active, done, canceled |
 | `⊘ N` | N open blockers |
 | `▣ a/b` | Closed descendants / all descendants |
+| `☑ a/b` | Checked / all acceptance criteria, not definition of done (Active tab) |
 | `●` after the ID | Edit pending |
 | `!` after the ID | Edit failed or conflicted; open the item for detail |
 | `•` in the gutter | Marked |
@@ -59,7 +60,9 @@ adapters replace the badges with `⚠ Untrusted project config · bl trust --sho
 untrusted adapters aren't opened, but native sources stay browsable.
 
 **Rows:** priority, ID, status, title with labels, open blockers, child
-progress, linked change, assignee, and time since update. The change column
+progress, linked change, assignee, and time since update. The Active tab also
+shows acceptance criteria progress once any row has criteria; other built-in
+tabs don't. The change column
 shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓`
 ([Changes](changes.md)), and appears once any row has one. For an open pull
 request its last glyph is the merge verdict from the list read, first that
@@ -68,7 +71,7 @@ its base, `●` checks running, `○` review required, `✓` ready. A draft, or 
 pull request whose merge state is unknown, shows its checks glyph. Help lists
 these under Change column. As the pane narrows,
 columns drop in this order so the title keeps at least two-fifths of the width:
-updated, assignee, children and change, blockers, claim, then the status name
+updated, assignee, children, criteria, and change, blockers, claim, then the status name
 (the icon stays).
 Grouping by status shows only the icon. Opaque provider IDs (Linear states and
 users, Jira accountIds, GitHub Projects options) show the provider's name
@@ -136,8 +139,8 @@ views:
 ```
 
 Explicit `sort` and `group` override query directives. Columns are `id`,
-`priority`, `status`, `blockers`, `children`, `claim`, `assignee`, `updated`, and
-`title`, in display order.
+`priority`, `status`, `blockers`, `children`, `criteria`, `changes`, `claim`,
+`assignee`, `updated`, and `title`, in display order.
 
 `gt`/`gT` cycle tabs; `1`–`9` jump to one (a digit waits 350 ms in case it starts
 a count). Each tab keeps its query, folds, and selected item across refreshes,
@@ -399,8 +402,15 @@ reply's thread is gone; it then sends the review and the replies in one call
 that is never retried. Parts the forge refused stay in the draft with its
 reasons. When the call's outcome is unknown, the draft says so and `r` offers
 only discard: check the pull request before drafting again. Without a forge
-that posts reviews or an account that may write ([GitHub](github.md)), `c`
-and `r` are disabled with the reason.
+that posts reviews or an account that may write ([GitHub](github.md)), `c`,
+`r`, and `x` are disabled with the reason.
+
+`x` on a thread in the Diff or Conversation resolves it, or unresolves a
+resolved one, with one forge call that is never retried. The thread shows
+`… resolving` (or `… unresolving`), and `x` on it sends nothing more, until a
+fresh read of the pull request shows its state; that read also decides after
+an unknown outcome. A refusal stays on the thread as `✕` with the forge's
+reason until `x` tries again. GitLab forges don't resolve threads.
 Review actions on a single commit's Diff are disabled with the reason, since
 drafts anchor to the pull request's head.
 `enter` on a commit in History opens that commit's Diff in the change view;
@@ -494,7 +504,8 @@ item stays selected; `.` repeats the move. They work when the view's first sort
 key is `rank` or `next`, in the list layout. Under `next`, priority outranks
 rank, so a move stops at a priority boundary and the status bar points to `p`.
 Elsewhere, including the tree and board, they're disabled with `sort by rank or
-next to reorder`; on a source other than native, the status bar names it.
+next to reorder`; on a source other than native, the status bar names it. On the
+board, drag a card instead ([Mouse](#mouse)).
 On macOS, `alt+j` and `alt+k` need the terminal to send Option as Meta.
 
 **Status keys:** `S` and `D` resolve `workflow.start` and `workflow.done` per
@@ -539,6 +550,11 @@ source that can create. Without either, it asks for one first. `+source`
 switches it. `N` creates a child of the selected item, in its source. Sources
 that can't create disable both.
 On a board, the focused column sets the status.
+
+When the title matches an open item in the source, as `bl new` checks, `enter`
+shows the matches instead of creating, and a second `enter` creates. `esc`
+dismisses the matches; changing the title checks again. The full form does the
+same.
 
 `+` on a pull request item (`github-pulls`) adopts it: quick-add opens with the
 pull request's title, escaped so it stays the title, and its URL in `refs`. The
@@ -664,7 +680,14 @@ change, or a change's commit, to select it; double-click to open it. Click a
 History entry, or any line of its expansion, to select it; click its `▸` or
 double-click to expand or collapse it, and click `! resume` to run it. Click the
 query in the status bar to edit it there. The wheel moves three rows, or scrolls
-detail under the pointer; a sideways swipe moves one board column. Drag the
+detail under the pointer; a sideways swipe moves one board column. Drag a board
+card onto another column to set its status, resolved and refused as `<` and `>`
+are; the target header highlights and a line marks where the card lands. A
+marked card drags every mark, changing only status. Where the view's first sort
+key is `rank` or `next`, the drop also places the card beside its nearest
+same-source neighbor by rank, as the move keys do, and works within a column.
+`esc` cancels; a drop on a header, outside the board, or on the card's own slot
+does nothing, and moving past a board edge scrolls columns. Drag the
 divider to resize. Drag across detail text to select it, moving past an edge to scroll;
 release copies it (OSC 52).
 
@@ -770,7 +793,7 @@ keys:
 | `comment` | `c` | Comment |
 | `review` | `r` | Submit review… |
 | `note` | `i` | Edit notes |
-| `criterion` | `x` | Toggle criterion |
+| `criterion` | `x` | Toggle criterion / resolve thread |
 | `claim` | `C` | Claim / release |
 | `archive` | `d d` | Archive |
 | `new` | `n` | New item / next match |

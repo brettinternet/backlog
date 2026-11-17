@@ -23,7 +23,7 @@ func TestExcerpt(t *testing.T) {
 	log.WriteString("2026-01-01T00:00:02Z \x1b]52;c;cGF5bG9hZA==\x07" + strings.Repeat("é", 4000) + "\n")
 	log.WriteString("2026-01-01T00:00:03Z ##[error]Process completed with exit code 1.\n")
 	log.WriteString("after the error\n")
-	lines, err := Excerpt(strings.NewReader(log.String()))
+	lines, err := Excerpt(strings.NewReader(log.String()), nil)
 	if err != nil || len(lines) != ExcerptLines || lines[len(lines)-1] != "##[error]Process completed with exit code 1." || lines[0] != "line 52" {
 		t.Fatalf("excerpt: %v %d lines, first %q, last %q", err, len(lines), lines[0], lines[len(lines)-1])
 	}
@@ -32,11 +32,11 @@ func TestExcerpt(t *testing.T) {
 		t.Fatalf("long line: %d bytes %q", len(long), long[:40])
 	}
 	// Without an error line, the last lines show; past 32 MiB, none.
-	lines, err = Excerpt(strings.NewReader("\uFEFFonly\nlast"))
+	lines, err = Excerpt(strings.NewReader("\uFEFFonly\nlast"), nil)
 	if err != nil || strings.Join(lines, "|") != "only|last" {
 		t.Fatalf("short log: %v %q", err, lines)
 	}
-	if _, err := Excerpt(io.LimitReader(repeatReader('x'), MaxLogBytes+1)); !errors.Is(err, ErrLogTooLarge) {
+	if _, err := Excerpt(io.LimitReader(repeatReader('x'), MaxLogBytes+1), nil); !errors.Is(err, ErrLogTooLarge) {
 		t.Fatalf("huge log: %v", err)
 	}
 }
@@ -57,7 +57,7 @@ func FuzzExcerpt(f *testing.F) {
 	f.Add("2026-01-01T00:00:00Z ok\n##[error]boom\nafter")
 	f.Add("\uFEFF\x1b[31mred\r\n" + strings.Repeat("y", 5000))
 	f.Fuzz(func(t *testing.T, log string) {
-		lines, err := Excerpt(strings.NewReader(log))
+		lines, err := Excerpt(strings.NewReader(log), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

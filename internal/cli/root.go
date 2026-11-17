@@ -206,6 +206,9 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			ResolveRef: func(ctx context.Context, source string, ref model.Ref) (model.Ref, error) {
 				return ResolveRef(ctx, cfg, source, ref)
 			},
+			DuplicateTitle: func(ctx context.Context, source, title string) error {
+				return engine.DuplicateTitle(ctx, cfg, source, title)
+			},
 			NativeBytes: func(_ context.Context, item model.Item) ([]byte, error) {
 				p, local := cfg.SourceProject(item.Ref.Source)
 				item.Ref.Source = local

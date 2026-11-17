@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"cmp"
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
@@ -18,11 +20,20 @@ func (m Model) moveReason() string {
 	if !ok {
 		return "select an item"
 	}
-	if m.isTree() || m.isBoard() || len(m.shown.Sort) == 0 || m.shown.Sort[0].Field != "rank" && m.shown.Sort[0].Field != "next" {
+	if m.isTree() || m.isBoard() {
 		return "sort by rank or next to reorder"
 	}
-	if kind := m.sourceType(row.Ref.Source); kind != "native" {
-		return "source " + row.Ref.Source + " (" + kind + ") can't be reordered; only native sources store rank"
+	return m.rankReason(row.Ref.Source)
+}
+
+// rankReason reports why the view's sort or the source keeps an item of
+// source from being placed by rank, or "".
+func (m Model) rankReason(source string) string {
+	if len(m.shown.Sort) == 0 || m.shown.Sort[0].Field != "rank" && m.shown.Sort[0].Field != "next" {
+		return "sort by rank or next to reorder"
+	}
+	if kind := m.sourceType(source); kind != "native" {
+		return "source " + source + " (" + kind + ") can't be reordered; only native sources store rank"
 	}
 	return ""
 }
@@ -72,6 +83,90 @@ func (m *Model) moveRow(step int) tea.Cmd {
 			return editResultMsg{message: "Move failed: " + textutil.Line(engine.ErrorMessage(err))}
 		}
 		mutations := engine.MoveMutations(writes)
+		if len(mutations) == 0 {
+			return editResultMsg{message: "No changes."}
+		}
+		select {
+		case err := <-store.Mutate(mutations...):
+			if err != nil {
+				return editResultMsg{message: "Move failed: " + boundedLine(err.Error())}
+			}
+			return editResultMsg{message: "Moved " + ref.ID + "."}
+		case <-ctx.Done():
+			return editResultMsg{message: "Move canceled while waiting for the source."}
+		}
+	}
+}
+
+// dropCommand writes a dropped board card's status, when column is another
+// column, and its rank beside the nearest card of its source in cards from
+// slot, as moveRow does, in one edit. Under sort:next only a card of the same
+// priority places it. Without such a card the drop changes only status.
+func (m Model) dropCommand(row engine.Row, column string, cards []screenRow, slot int) tea.Cmd {
+	store, ctx, catalog, statuses := m.opts.Store, m.opts.Context, m.catalog, m.opts.Statuses
+	desc, next := m.shown.Sort[0].Desc, m.shown.Sort[0].Field == "next"
+	ref := row.Ref
+	return func() tea.Msg {
+		item, _, ok := store.Current().Get(ref)
+		if !ok {
+			return editResultMsg{message: "No editable items are selected."}
+		}
+		var status *model.Mutation
+		if (project.Settings{Statuses: statuses}).StatusEntry(item.Status) != column {
+			accepted, err := store.StatusChoices(item)
+			if err != nil {
+				return editResultMsg{message: "Disabled: " + ref.ID + ": " + textutil.Line(engine.ErrorMessage(err))}
+			}
+			key := columnStatus(statuses, accepted, column)
+			if key == "" {
+				return editResultMsg{message: "Disabled: " + noStatus(ref, column)}
+			}
+			status = &model.Mutation{Ref: ref, Op: model.Set, Field: "status", Value: key}
+		}
+		peer := func(c screenRow) bool {
+			return c.row.Ref != ref && c.row.Ref.Source == ref.Source && (!next || c.row.Priority == item.Priority)
+		}
+		var target model.Ref
+		after := !desc
+		for n := min(slot, len(cards)) - 1; n >= 0 && target == (model.Ref{}); n-- {
+			if peer(cards[n]) {
+				target = cards[n].row.Ref
+			}
+		}
+		for n := slot; n < len(cards) && target == (model.Ref{}); n++ {
+			if peer(cards[n]) {
+				target, after = cards[n].row.Ref, desc
+			}
+		}
+		var mutations []model.Mutation
+		if target != (model.Ref{}) {
+			items := slices.DeleteFunc(store.Current().Items(), func(i model.Item) bool { return i.Ref.Source != ref.Source })
+			var order []model.Ref
+			if catalog != nil {
+				order = catalog.Next()
+			}
+			writes, err := engine.PlanMove(engine.RankOrder(items, order), []model.Ref{ref}, target, after)
+			if err != nil {
+				return editResultMsg{message: "Move failed: " + textutil.Line(engine.ErrorMessage(err))}
+			}
+			mutations = engine.MoveMutations(writes)
+		}
+		if status != nil {
+			// The card's status and rank change in one write, which one undo reverses.
+			n := slices.IndexFunc(mutations, func(w model.Mutation) bool { return w.Ref == ref })
+			if n < 0 {
+				mutations = append(mutations, *status)
+			} else {
+				rank := mutations[n]
+				rank.ExpectedVersion = ""
+				mutations[n] = model.Mutation{Ref: ref, Op: model.Batch, Changes: []model.Mutation{*status, rank}}
+			}
+			n = slices.IndexFunc(mutations, func(w model.Mutation) bool { return w.Ref == ref })
+			mutations[n].ExpectedVersion = cmp.Or(row.Version, item.Version)
+			if reason := mutationCapabilityReason(store.Capabilities(ref.Source), mutations[n]); reason != "" {
+				return editResultMsg{message: "Disabled: " + ref.ID + ": " + reason}
+			}
+		}
 		if len(mutations) == 0 {
 			return editResultMsg{message: "No changes."}
 		}

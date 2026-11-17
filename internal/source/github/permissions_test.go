@@ -109,6 +109,9 @@ func TestOAuthInstallationPermissionGatedWrites(t *testing.T) {
 	if _, err := forge.SubmitReview(ctx, 45, draft, changes.EventComment); err == nil || len(f.submitted) != 0 {
 		t.Fatalf("review posted without pull request write: %v", err)
 	}
+	if err := forge.ResolveThread(ctx, "T_1", true); err == nil || !strings.Contains(err.Error(), "Pull requests: write") || len(f.resolved) != 0 {
+		t.Fatalf("thread resolved without pull request write: %v", err)
+	}
 	f.pullPermission = "write"
 	if r, err := forge.readReview(ctx, 45); err != nil || r.Blocked != "" {
 		t.Fatalf("review with pull request write: %v %q", err, r.Blocked)

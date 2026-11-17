@@ -40,12 +40,14 @@ type Row struct {
 	ErrorLocalVersion, ErrorRemoteVersion     string
 	OpenBlockers, ChildrenDone, ChildrenTotal int
 	CriteriaDone, CriteriaTotal, Comments     int
+	// AcceptedDone and AcceptedTotal count acceptance criteria only, not DoD.
+	AcceptedDone, AcceptedTotal int
 	// Changes are the item's linked changes, furthest first (design.md D43).
 	Changes []changes.Change
 }
 
 // SetCounts tallies the item's checked criteria and its comments, so detail
-// tabs can label them before the full item is read.
+// tabs and the criteria column can show them before the full item is read.
 func (r *Row) SetCounts(item model.Item) {
 	r.CriteriaDone, r.CriteriaTotal = 0, 0
 	for _, list := range [][]model.Criterion{item.Criteria, item.DoD} {
@@ -54,6 +56,12 @@ func (r *Row) SetCounts(item model.Item) {
 			if criterion.Checked {
 				r.CriteriaDone++
 			}
+		}
+	}
+	r.AcceptedTotal, r.AcceptedDone = len(item.Criteria), 0
+	for _, criterion := range item.Criteria {
+		if criterion.Checked {
+			r.AcceptedDone++
 		}
 	}
 	r.Comments = len(item.Comments)

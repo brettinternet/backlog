@@ -48,7 +48,7 @@ var searchAliases = map[string]string{
 	"comment":     "reply",
 	"review":      "approve request changes pull request",
 	"note":        "plan",
-	"criterion":   "check acceptance",
+	"criterion":   "check acceptance resolve unresolve review thread",
 	"claim":       "lease lock unclaim",
 	"archive":     "delete remove trash",
 	"new":         "create add",
@@ -129,7 +129,7 @@ func defaultKeymap() []action {
 		{id: "comment", label: "Comment", canonical: "c", bindings: []string{"c"}},
 		{id: "review", label: "Submit review…", canonical: "r", bindings: []string{"r"}},
 		{id: "note", label: "Edit notes", canonical: "i", bindings: []string{"i"}},
-		{id: "criterion", label: "Toggle criterion", canonical: "x", bindings: []string{"x"}},
+		{id: "criterion", label: "Toggle criterion / resolve thread", canonical: "x", bindings: []string{"x"}},
 		{id: "claim", label: "Claim / release", canonical: "C", bindings: []string{"C"}},
 		{id: "archive", label: "Archive", canonical: "d d", bindings: []string{"d d"}},
 		{id: "new", label: "New item / next match", canonical: "n", bindings: []string{"n"}},
@@ -484,6 +484,9 @@ func (m Model) disabledReason(a action) string {
 	}
 	if a.id == "comment" && m.change != nil && m.detailFocus || a.id == "review" {
 		return m.reviewBlocked()
+	}
+	if a.id == "criterion" && m.change != nil && m.detailFocus {
+		return m.resolveBlocked()
 	}
 	if a.id == "criterion" && (!m.detailFocus || m.detailTab != tabCriteria) {
 		return "open the Criteria tab"

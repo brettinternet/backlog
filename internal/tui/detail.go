@@ -77,13 +77,14 @@ type detailRequest struct {
 	statuses   []project.StatusConfig
 	theme      theme
 	now        time.Time
-	fresh      bool            // R: reread from the source, bypassing both caches
-	poll       bool            // a forge refresh: reread only the shown pull requests' reviews
-	change     *changes.Change // the change view's change
-	checksOpen bool            // the Overview shows passing and skipped checks
-	check      *changes.Check  // the check view's check, on the Overview tab
-	threads    string          // review threads toggled from their default, one key per line
-	resolved   bool            // Conversation shows its resolved threads
+	fresh      bool              // R: reread from the source, bypassing both caches
+	poll       bool              // a forge refresh: reread only the shown pull requests' reviews
+	change     *changes.Change   // the change view's change
+	checksOpen bool              // the Overview shows passing and skipped checks
+	check      *changes.Check    // the check view's check, on the Overview tab
+	threads    string            // review threads toggled from their default, one key per line
+	resolved   bool              // Conversation shows its resolved threads
+	marks      map[string]string // what threads with an x write show for their state, by ID
 }
 type detailResult struct {
 	generation uint64

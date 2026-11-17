@@ -58,7 +58,7 @@ func TestWriteCommandOptionParity(t *testing.T) {
 	// Each CLI flag has a named schema destination. These are deliberate aliases
 	// for the corresponding CLI operation, not excluded commands.
 	mapping := map[string]map[string]string{
-		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "ref": "create.refs", "source": "create.source", "status": "create.status", "sprint": "create.sprint"},
+		"new":   {"if-version": "create.version", "body": "create.description", "ac": "create.criteria", "ref": "create.refs", "source": "create.source", "status": "create.status", "sprint": "create.sprint", "force": "create.force"},
 		"set":   {"if-version": "update.version", "yes": "update.confirm"},
 		"start": {"if-version": "update.version"}, "done": {"if-version": "update.version"},
 		"archive": {"if-version": "update.version"}, "unarchive": {"if-version": "update.version"},
@@ -186,7 +186,9 @@ func TestEventsMatchCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// The session spans dozens of CLI runs and tool calls, so a fixed deadline
+	// fails a slow but healthy run under -race; go test's timeout catches a hang.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st, ct := mcp.NewInMemoryTransports()
 	serverDone := make(chan error, 1)

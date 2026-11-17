@@ -25,6 +25,9 @@ Examples:
 const newHelp = `Tokens in TITLE set fields: !high priority, @me assignee, #bug label,
 ^BL-1 parent, <BL-2 blocker, ~m-1 milestone, :feature type, and +tasks source.
 
+An open item in the target source with the same title, ignoring case and
+spacing, refuses the create and names the match; update it, or pass --force.
+
 Examples:
   bl new 'Fix login !high #bug @me'
   bl new 'Write the guide' --status draft --ac 'Covers setup'

@@ -42,6 +42,7 @@ type Options struct {
 	CreateSource, CreateStatus string
 	ValidateItem               func(model.Item) error
 	ResolveRef                 func(context.Context, string, model.Ref) (model.Ref, error)
+	DuplicateTitle             func(ctx context.Context, source, title string) error // engine.DuplicateTitle, run in a command
 	NativeBytes                func(context.Context, model.Item) ([]byte, error)
 	NativeSource               func(string) bool
 	EditorDir                  string
@@ -262,9 +263,10 @@ type Model struct {
 	// their default; resolvedOpen shows Conversation's resolved threads.
 	threadsToggled map[string]bool
 	resolvedOpen   bool
-	detailThreads  []int    // the Diff's entry of each unresolved review thread
-	diffTarget     string   // the link the Diff opens at when it arrives
-	changeReturn   *tabStop // the entry backspace returns to from a Diff opened at a link
+	threadWrites   map[string]threadWrite // x's resolve or unresolve writes by thread ID
+	detailThreads  []int                  // the Diff's entry of each unresolved review thread
+	diffTarget     string                 // the link the Diff opens at when it arrives
+	changeReturn   *tabStop               // the entry backspace returns to from a Diff opened at a link
 }
 
 // tabStop is an entry of a change view tab.
@@ -518,6 +520,7 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
 		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(), checksOpen: m.checksOpen, check: m.check,
 		threads: strings.Join(slices.Sorted(maps.Keys(m.threadsToggled)), "\n"), resolved: m.resolvedOpen,
+		marks: m.threadMarks(), poll: m.rereadThreads(),
 	}
 }
 
@@ -971,6 +974,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case detailResultMsg:
 		result := detailResult(msg)
+		confirmed := false
 		if m.detailOpen && result.generation == m.detailGeneration && result.identity.Ref == m.detailIdentity.Ref {
 			// A new version or length of the page in view keeps its scroll.
 			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab && m.detailShownCheck == result.checkView
@@ -1001,6 +1005,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notice = notice
 			}
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
+			confirmed = m.threadsConfirmed(result)
 			m.detailLinks, m.changeFacts = result.links, result.facts
 			m.shownCheck, m.detailShownCheck = result.check, result.checkView
 			m.detailSteps, m.detailTour, m.detailThreads = result.steps, result.tour, result.threads
@@ -1055,6 +1060,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if same && current < len(m.find.lines) {
 				m.find.current = current
 			}
+		}
+		if confirmed {
+			// Redraw without the settled writes' pending marks.
+			return m, tea.Batch(m.waitDetail(), m.showDetail())
 		}
 		return m, m.waitDetail()
 	case pickerChoicesMsg:
@@ -1113,8 +1122,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.reviewSaved(msg)
 	case reviewSubmittedMsg:
 		return m.reviewSubmitted(msg)
+	case threadWrittenMsg:
+		return m.threadWritten(msg)
 	case editSavedMsg:
 		return m.editorSaved(msg)
+	case titleCheckedMsg:
+		return m, m.titleChecked(msg)
 	case editResultMsg:
 		m.editResult(msg)
 		m.refreshClaims()
@@ -1130,6 +1143,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A notice lasts until the next key, then the query shows again.
 		m.notice = ""
 		s := keyString(msg)
+		// A key ends a card drag; esc only cancels it.
+		if m.mouse.card.pressed {
+			m.mouse.card = cardDrag{}
+			if s == "esc" {
+				return m, nil
+			}
+		}
 		if code, ok := emacsInputKeys[s]; ok && m.modalOpen() && !(m.plainField() && (s == "ctrl+j" || s == "ctrl+k")) {
 			msg = tea.KeyPressMsg{Code: code}
 			s = msg.String()
@@ -1390,10 +1410,14 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		// The change view drafts and submits a pull request review.
-		if m.change != nil && (s == "c" || s == "r") {
-			if s == "c" {
+		// The change view drafts and submits a pull request review, and x
+		// resolves or unresolves the thread under the cursor.
+		if m.change != nil && (s == "c" || s == "r" || s == "x") {
+			switch s {
+			case "c":
 				return m, m.beginReviewDraft()
+			case "x":
+				return m, m.resolveThread()
 			}
 			return m, m.beginSubmitReview()
 		}

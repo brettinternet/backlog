@@ -95,6 +95,11 @@ type fixture struct {
 	// answers it, or a 502 after dispatch when empty.
 	submitted   []map[string]any
 	submitReply string
+	// resolved records each thread resolve or unresolve as its mutation
+	// name and thread ID; resolveReply answers it, or a 502 after dispatch
+	// when empty.
+	resolved     []string
+	resolveReply string
 	// check is the check run node the detail query reads, counted by
 	// checkReads. Its job log redirects to /blob/log, which serves log, or
 	// 33 MiB when hugeLog, and records each request's Authorization in
@@ -378,6 +383,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		return input
+	}
+	if name, _, ok := strings.Cut(q, "ReviewThread("); ok && strings.HasPrefix(q, "mutation") {
+		f.resolved = append(f.resolved, name[strings.LastIndex(name, "{")+1:]+"ReviewThread "+fmt.Sprint(v["id"]))
+		if f.resolveReply == "" {
+			w.WriteHeader(502)
+			return
+		}
+		fmt.Fprint(w, f.resolveReply)
+		return
 	}
 	if strings.Contains(q, "addPullRequestReview") {
 		f.submitted = append(f.submitted, v)
@@ -1164,6 +1178,28 @@ func TestForgeSubmitReview(t *testing.T) {
 	}
 }
 
+// Catches a thread write retried after dispatch, which would toggle the
+// thread back, an unknown outcome reported as a refusal, and a refusal that
+// drops GitHub's reason or leaks a secret in it.
+func TestForgeResolveThread(t *testing.T) {
+	s, f := newFixture(t)
+	forge := &Forge{s: s}
+	ctx := context.Background()
+	f.resolveReply = `{"data":{"resolveReviewThread":{"thread":{"id":"T_1","isResolved":true}}}}`
+	if err := forge.ResolveThread(ctx, "T_1", true); err != nil || !slices.Equal(f.resolved, []string{"resolveReviewThread T_1"}) {
+		t.Fatalf("resolve: %v %v", err, f.resolved)
+	}
+	f.resolveReply = ""
+	if err := forge.ResolveThread(ctx, "T_1", false); !reason(err, "unknown-outcome") || !slices.Equal(f.resolved, []string{"resolveReviewThread T_1", "unresolveReviewThread T_1"}) {
+		t.Fatalf("unknown outcome: %v %v", err, f.resolved)
+	}
+	f.resolveReply = `{"data":{"unresolveReviewThread":null},"errors":[{"message":"thread is locked fake-secret"}]}`
+	err := forge.ResolveThread(ctx, "T_1", false)
+	if !reason(err, "rejected") || !strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "fake-secret") || len(f.resolved) != 3 {
+		t.Fatalf("refusal: %v %v", err, f.resolved)
+	}
+}
+
 // Add and remove must change one entry without replacing the list, so an entry
 // another writer added survives; a write whose result is lost is never resent.
 func TestEntryEditsAndUnknownOutcome(t *testing.T) {
@@ -1615,13 +1651,16 @@ func TestForgeCheck(t *testing.T) {
 		"annotations": nodes(map[string]any{"path": "a.go", "location": map[string]any{"start": map[string]any{"line": 3}}, "annotationLevel": "FAILURE",
 			"message": "unused x fake-secret", "blobUrl": "https://github.com/owner/repo/blob/aaa/a.go"}),
 	}
-	f.log = "2026-01-01T00:00:00Z setup\n2026-01-01T00:00:01Z token fake-secret \x1b[31mred\x1b[0m\n2026-01-01T00:00:02Z ##[error]exit 1\nafter\n"
+	// The long line is cut as read mid-secret; stripping its escapes leaves
+	// the fragment inside the kept 2 KiB.
+	long := strings.Repeat("\x1b[0m", 100) + strings.Repeat("y", 1707)
+	f.log = "2026-01-01T00:00:00Z setup\n2026-01-01T00:00:01Z token fake-secret \x1b[31mred\x1b[0m\n" + long + "fake-secret\n2026-01-01T00:00:02Z ##[error]exit 1\nafter\n"
 	check := changes.Check{ID: "CR_11", Run: 11, URL: "https://github.com/owner/repo/actions/runs/99/job/11"}
 	d, err := forge.Check(ctx, check, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Log != "setup\ntoken [REDACTED] red\n##[error]exit 1" || d.LogUnavailable != "" || d.Workflow != 99 || len(f.blobAuth) != 1 || f.blobAuth[0] != "" {
+	if d.Log != "setup\ntoken [REDACTED] red\n"+strings.Repeat("y", 1707)+"…\n##[error]exit 1" || d.LogUnavailable != "" || d.Workflow != 99 || len(f.blobAuth) != 1 || f.blobAuth[0] != "" {
 		t.Fatalf("log %q (%q), workflow %d, blob auth %q", d.Log, d.LogUnavailable, d.Workflow, f.blobAuth)
 	}
 	if len(d.Steps) != 1 || d.Steps[0].Status != "failed" || d.Steps[0].URL != check.URL+"#step:3:1" ||

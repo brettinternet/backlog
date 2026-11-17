@@ -54,6 +54,9 @@ func writeError(err error) *Error {
 	if created := engine.ErrorCreated(err); created != "" {
 		e.Details = map[string]any{"created": created}
 	}
+	if matches := engine.ErrorMatches(err); matches != nil {
+		e.Details = map[string]any{"matches": matches}
+	}
 	return e
 }
 func writeUsage(message string) error { return &Error{Reason: "usage", Message: message} }
@@ -194,6 +197,7 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		&urfave.StringSliceFlag{Name: "ref", Usage: "Add the reference `URL`, such as a pull request to adopt"},
 		&urfave.StringFlag{Name: "source", Usage: "Create in source `ID` (default: defaults.source, else the only source that can create)"},
 		&urfave.StringFlag{Name: "sprint", Usage: "Add to sprint `VALUE`: current, next, or a name or key (Linear)"},
+		&urfave.BoolFlag{Name: "force", Usage: "Create even when an open item has the same title"},
 	}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
 		if !cmd.Args().Present() {
 			return writeUsage("new requires a title")
@@ -219,6 +223,11 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			}
 		}
 		item.Ref.Source = sourceID
+		if !cmd.Bool("force") {
+			if err := engine.DuplicateTitle(ctx, cfg, sourceID, item.Title); err != nil {
+				return writeError(err)
+			}
+		}
 		engine.ApplyCreateDefaults(cfg, sourceID, &item)
 		for _, c := range cmd.StringSlice("ac") {
 			if strings.TrimSpace(c) == "" || strings.ContainsAny(c, "\r\n") {

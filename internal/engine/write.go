@@ -190,6 +190,76 @@ func ErrorCreated(err error) string {
 	return ""
 }
 
+// ErrorMatches names the open items a refused create's title repeats, as
+// source:ID.
+func ErrorMatches(err error) []string {
+	var refusal *source.Error
+	if !errors.As(err, &refusal) {
+		return nil
+	}
+	var names []string
+	for _, ref := range refusal.Matches {
+		names = append(names, ref.Source+":"+ref.ID)
+	}
+	return names
+}
+
+// DuplicateTitle refuses a create into sourceID whose normalized title
+// (model.TitleKey) matches an open item there. It reads cached titles and makes
+// no provider request, so a stale cache can miss a match. The check is
+// advisory: a source that can't answer refuses nothing.
+func DuplicateTitle(ctx context.Context, cfg project.Config, sourceID, title string) error {
+	key := model.TitleKey(title)
+	if key == "" {
+		return nil
+	}
+	for _, c := range cfg.Sources {
+		if c.ID != sourceID {
+			continue
+		}
+		backend, err := readSource(cfg, c)
+		if err != nil {
+			return nil
+		}
+		items, _ := findTitle(ctx, backend, key)
+		var refs []model.Ref
+		var names []string
+		for _, item := range items {
+			if item.Category.Open() {
+				refs = append(refs, item.Ref)
+				names = append(names, item.Ref.Source+":"+item.Ref.ID)
+			}
+		}
+		if len(refs) == 0 {
+			return nil
+		}
+		return &source.Error{Reason: "rejected", Message: "title matches an open item: " + strings.Join(names, ", "), Matches: refs}
+	}
+	return nil
+}
+
+// findTitle asks a TitleFinder, or loads a local Backlog.md tree; other
+// sources can't answer without a provider request.
+func findTitle(ctx context.Context, backend source.Source, key string) ([]model.Item, error) {
+	if finder, ok := backend.(source.TitleFinder); ok {
+		return finder.FindTitle(ctx, key)
+	}
+	if backend.Info().Kind != "backlog-md" {
+		return nil, nil
+	}
+	delta, err := backend.Load(ctx, source.Cursor{})
+	if err != nil {
+		return nil, err
+	}
+	var items []model.Item
+	for _, item := range delta.Items {
+		if !delta.Archived[item.Ref] && model.TitleKey(item.Title) == key {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
 // ApplyWrite is synchronous and UI-independent. Every operation is validated
 // before the source applies the entire mutation under its lock. Callers bind
 // ExpectedVersion to the version they read, even without an explicit CLI guard.

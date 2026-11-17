@@ -2,6 +2,7 @@ package changes
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -121,22 +122,29 @@ var logTimestamp = regexp.MustCompile(`^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?
 
 // Excerpt streams a job log, untrusted, keeping at most ExcerptLines lines:
 // those up to and including the first ##[error] line, or the last ones when
-// there is none. Each line loses its timestamp and terminal controls and is
-// cut to ExcerptLineMax bytes. Past MaxLogBytes it stops with ErrLogTooLarge.
-func Excerpt(r io.Reader) ([]string, error) {
+// there is none. Each line loses its timestamp and terminal controls, then
+// passes through redact, if any, before it is cut to ExcerptLineMax bytes;
+// cut says the line was already cut short as read, so a secret may end it
+// split. Past MaxLogBytes it stops with ErrLogTooLarge.
+func Excerpt(r io.Reader, redact func(line string, cut bool) string) ([]string, error) {
 	reader := bufio.NewReaderSize(io.LimitReader(r, MaxLogBytes+1), logReadChunkMax)
 	var lines []string
 	total := 0
 	var line []byte
+	cut, first := false, true
 	keep := func() bool {
 		text := string(line)
-		if total == len(line) {
+		if first {
 			text = strings.TrimPrefix(text, "\uFEFF")
 		}
 		text = textutil.Line(logTimestamp.ReplaceAllString(strings.TrimRight(text, "\r\n"), ""))
-		if len(text) > ExcerptLineMax {
+		if redact != nil {
+			text = redact(text, cut)
+		}
+		if len(text) > ExcerptLineMax || cut {
 			text = truncateLine(text, ExcerptLineMax) + "…"
 		}
+		cut, first = false, false
 		if len(lines) == ExcerptLines {
 			lines = slices.Delete(lines, 0, 1)
 		}
@@ -151,9 +159,9 @@ func Excerpt(r io.Reader) ([]string, error) {
 			return nil, ErrLogTooLarge
 		}
 		// A long line keeps only its first bytes, with room for the timestamp.
-		if room := ExcerptLineMax + 64 - len(line); room > 0 {
-			line = append(line, chunk[:min(len(chunk), room)]...)
-		}
+		room := max(0, ExcerptLineMax+64-len(line))
+		line = append(line, chunk[:min(len(chunk), room)]...)
+		cut = cut || len(bytes.TrimRight(chunk, "\r\n")) > room
 		switch {
 		case err == nil:
 			if keep() {
@@ -173,6 +181,9 @@ func Excerpt(r io.Reader) ([]string, error) {
 
 // truncateLine cuts s to at most n bytes at a rune boundary.
 func truncateLine(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
 	for n > 0 && n < len(s) && s[n]&0xC0 == 0x80 {
 		n--
 	}

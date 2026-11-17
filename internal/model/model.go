@@ -1,7 +1,12 @@
 // Package model defines source-independent backlog items and edits.
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+
+	"golang.org/x/text/cases"
+)
 
 type Ref struct {
 	Source string `json:"source"`
@@ -16,6 +21,15 @@ const (
 	Done     StatusCategory = "done"
 	Canceled StatusCategory = "canceled"
 )
+
+// Open reports a backlog, todo, or active category: work not yet finished.
+func (c StatusCategory) Open() bool { return c == Backlog || c == Todo || c == Active }
+
+// TitleKey normalizes a title for duplicate detection: Unicode case-folded,
+// trimmed, and inner whitespace collapsed to one space (design.md D33).
+func TitleKey(title string) string {
+	return strings.Join(strings.Fields(cases.Fold().String(title)), " ")
+}
 
 // StatusChoice is one status key a source accepts, with its category.
 // Default marks the source's own pick when start or done is ambiguous.

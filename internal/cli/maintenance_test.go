@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -97,6 +98,35 @@ func TestInitCreatesValidProjectAndRefusesOverwrite(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) || len(entries) != len(afterEntries) {
 		t.Fatal("second init changed the project")
+	}
+}
+
+// Existing duplicates surface as warnings that don't fail CI; closed and
+// archived items aren't duplicates of open work.
+func TestCheckWarnsDuplicateTitle(t *testing.T) {
+	root := writeFixture(t)
+	if err := os.MkdirAll(filepath.Join(root, "items", "archive"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	titled := func(id, status, title string) string {
+		return strings.Replace(maintenanceItem(id, status, "", ""), "title: "+id+" item", "title: "+title, 1)
+	}
+	put(t, filepath.Join(root, "items", "BL-20.md"), titled("BL-20", "todo", "'ORIGINAL  '"))
+	put(t, filepath.Join(root, "items", "BL-21.md"), titled("BL-21", "done", "Original"))
+	put(t, filepath.Join(root, "items", "archive", "BL-22.md"), titled("BL-22", "todo", "Original"))
+	code, output, stderr := writeRun(root, "", "check")
+	if code != 0 || stderr != "" {
+		t.Fatalf("check: %d %s %s", code, output, stderr)
+	}
+	findings, _ := findingsFromJSON(t, output)
+	var flagged []string
+	for _, finding := range findings {
+		if finding.Code == "duplicate-title" {
+			flagged = append(flagged, finding.Path)
+		}
+	}
+	if !slices.Equal(flagged, []string{"items/BL-012.md", "items/BL-20.md"}) {
+		t.Fatalf("duplicate-title flagged %v: %s", flagged, output)
 	}
 }
 
