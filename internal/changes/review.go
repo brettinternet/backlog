@@ -103,14 +103,18 @@ type Comment struct {
 	Time   time.Time `json:"time"`
 }
 
-// Thread is a review thread on a file line, its comments oldest first. ID
-// is the forge's, which a reply names.
+// Thread is a review thread on a file line, on the old side when Old, its
+// comments oldest first. ID is the forge's, which a reply names; Hunk is the
+// diff hunk its first comment was made on, ending at its line. Line is the
+// head's, or for an outdated thread the line it was made on.
 type Thread struct {
 	ID       string    `json:"id,omitempty"`
 	Path     string    `json:"path"`
 	Line     int       `json:"line,omitempty"`
+	Old      bool      `json:"old,omitempty"`
 	Resolved bool      `json:"resolved,omitempty"`
 	Outdated bool      `json:"outdated,omitempty"`
+	Hunk     string    `json:"hunk,omitempty"`
 	Comments []Comment `json:"comments"`
 }
 
@@ -131,30 +135,32 @@ type Entry struct {
 	Thread  *Thread
 }
 
-// Conversation lists unresolved threads first, then comments and resolved
-// threads, each oldest first.
+// Conversation lists unresolved threads by file and line, then comments
+// and reviews oldest first, then resolved threads by file and line.
 func (r Review) Conversation() []Entry {
-	var out []Entry
-	for _, c := range r.Comments {
-		out = append(out, Entry{Comment: c})
-	}
+	var open, resolved []Entry
 	for i := range r.Threads {
 		t := &r.Threads[i]
-		if len(t.Comments) > 0 {
-			out = append(out, Entry{Comment: t.Comments[0], Thread: t})
+		if len(t.Comments) == 0 {
+			continue
+		}
+		if t.Resolved {
+			resolved = append(resolved, Entry{Comment: t.Comments[0], Thread: t})
+		} else {
+			open = append(open, Entry{Comment: t.Comments[0], Thread: t})
 		}
 	}
-	open := func(e Entry) bool { return e.Thread != nil && !e.Thread.Resolved }
-	slices.SortStableFunc(out, func(a, b Entry) int {
-		if open(a) != open(b) {
-			if open(a) {
-				return -1
-			}
-			return 1
-		}
-		return a.Comment.Time.Compare(b.Comment.Time)
-	})
-	return out
+	byLine := func(a, b Entry) int {
+		return cmp.Or(cmp.Compare(a.Thread.Path, b.Thread.Path), cmp.Compare(a.Thread.Line, b.Thread.Line))
+	}
+	slices.SortStableFunc(open, byLine)
+	slices.SortStableFunc(resolved, byLine)
+	comments := make([]Entry, len(r.Comments))
+	for i, c := range r.Comments {
+		comments[i] = Entry{Comment: c}
+	}
+	slices.SortStableFunc(comments, func(a, b Entry) int { return a.Comment.Time.Compare(b.Comment.Time) })
+	return slices.Concat(open, comments, resolved)
 }
 
 // LoadReview reads a pull request change's review from the forge serving it,

@@ -52,6 +52,7 @@ type Tracker struct {
 	latest   atomic.Pointer[State]
 	updates  chan struct{}
 	refresh  chan struct{}
+	forged   chan struct{}
 }
 
 const (
@@ -69,7 +70,7 @@ func Track(ctx context.Context, projects map[string]Options) *Tracker {
 	if !active {
 		return nil
 	}
-	t := &Tracker{projects: projects, updates: make(chan struct{}, 1), refresh: make(chan struct{}, 1)}
+	t := &Tracker{projects: projects, updates: make(chan struct{}, 1), refresh: make(chan struct{}, 1), forged: make(chan struct{}, 1)}
 	go t.run(ctx)
 	return t
 }
@@ -79,6 +80,11 @@ func (t *Tracker) Latest() *State { return t.latest.Load() }
 
 // Updates receives after each new state.
 func (t *Tracker) Updates() <-chan struct{} { return t.updates }
+
+// Forged receives after each per-minute forge refresh, whether or not
+// anything changed, so a shown pull request's detail is read again on the
+// same cadence. Refresh doesn't send: its caller reads what it shows itself.
+func (t *Tracker) Forged() <-chan struct{} { return t.forged }
 
 // Detail reads one change's files and commits, from Git or the forge among
 // the tracked projects' that serves its pull request. A nil tracker reads
@@ -187,6 +193,7 @@ func (t *Tracker) run(ctx context.Context) {
 	defer localTick.Stop()
 	defer forgeTick.Stop()
 	for {
+		ticked := false
 		select {
 		case <-ctx.Done():
 			return
@@ -194,6 +201,7 @@ func (t *Tracker) run(ctx context.Context) {
 			loadLocal()
 		case <-forgeTick.C:
 			loadForges()
+			ticked = true
 		case <-t.refresh:
 			loadLocal()
 			loadForges()
@@ -202,5 +210,11 @@ func (t *Tracker) run(ctx context.Context) {
 			return
 		}
 		publish()
+		if ticked {
+			select {
+			case t.forged <- struct{}{}:
+			default:
+			}
+		}
 	}
 }

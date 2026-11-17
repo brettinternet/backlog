@@ -89,6 +89,8 @@ func defaultKeymap() []action {
 		{id: "next-hunk", label: "Next hunk", canonical: "] c", follows: "next-group", bindings: []string{"] c"}},
 		{id: "previous-tour-step", label: "Previous tour step", canonical: "[ t", follows: "previous-group", bindings: []string{"[ t"}},
 		{id: "next-tour-step", label: "Next tour step", canonical: "] t", follows: "next-group", bindings: []string{"] t"}},
+		{id: "previous-thread", label: "Previous unresolved thread", canonical: "[ u", follows: "previous-group", bindings: []string{"[ u"}},
+		{id: "next-thread", label: "Next unresolved thread", canonical: "] u", follows: "next-group", bindings: []string{"] u"}},
 		{id: "left", label: "Back / parent / left", canonical: "h", bindings: []string{"h", "left"}},
 		{id: "right", label: "Open / child / right", canonical: "l", bindings: []string{"l", "right"}},
 		{id: "go-to", label: "Go to item", bindings: []string{"ctrl+p"}},

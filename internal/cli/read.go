@@ -232,7 +232,7 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 			return writeHistory(out, page)
 		}},
 		{Name: "changes", Usage: "Show an item's linked worktrees, branches, pull requests, and landed commits", ArgsUsage: "ID", Flags: []urfave.Flag{
-			&urfave.BoolFlag{Name: "detail", Usage: "Add each open pull request's verdict and reasons, check timing, and reviewers"},
+			&urfave.BoolFlag{Name: "detail", Usage: "Add each open pull request's verdict and reasons, check timing, reviewers, and review threads"},
 		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 1 {
 				return &Error{Reason: "usage", Message: "changes requires exactly one ID"}
