@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -253,12 +252,6 @@ func (e queryEditor) completion() (field, prefix string, start, end int) {
 	}
 	return field, b.String(), start, end
 }
-func quoteQuery(s string) string {
-	if strings.ContainsAny(s, " \t\n\r,:\"\\") || strings.HasPrefix(s, "-") {
-		return strconv.Quote(s)
-	}
-	return s
-}
 func (m *Model) editQuery(text string) {
 	m.editor = queryEditor{lineInput: newLine(text), open: true, original: m.query}
 	m.prefix = ""
@@ -289,7 +282,7 @@ func (m *Model) insertCompletion() bool {
 		value = e.candidates[e.candidate].Value
 	}
 	if field != "" {
-		value = quoteQuery(value)
+		value = query.Quote(value)
 	}
 	e.text = e.text[:start] + value + e.text[end:]
 	e.cursor = start + len(value)

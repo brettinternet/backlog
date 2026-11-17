@@ -851,6 +851,26 @@ nothing about commits. Under [`tours.mode`](changes.md#tours) `suggest` or
 `require`, `workflow` asks for a tour of each matching change before done.
 A config that fails to load is ignored here.
 
+### `bl completion bash|zsh|fish|pwsh`
+
+Prints a shell script that completes subcommands, flags, item IDs, `bl set`
+fields and values, query fields and values, and the values of `--view`,
+`--workspace`, `--source`, `--status`, `--sort`, `--group`, `--before`, and
+`--after`. [Install](guide.md#shell-completion) it once per shell.
+
+Candidates come only from config and cached items. Native and Backlog.md
+sources use the read cache, and remote sources use their cached rows. External
+and Beads sources contribute no IDs. Completion never runs hooks, actions,
+adapters, or Git, never contacts a provider, and never needs trust.
+
+A numeric word completes a prefixed source's shorthand (`12` for `BL-012`). An
+ID present in several sources completes as `SOURCE:ID`. Query values that need
+quoting are quoted.
+
+The scripts call `bl WORD... CURRENT --generate-shell-completion`, which prints
+one `VALUE<TAB>DESCRIPTION` line per candidate. It's an internal protocol
+between the script and the same `bl` version.
+
 ### `bl auth status [PROVIDER [ACCOUNT]]` and `bl auth login|logout PROVIDER ACCOUNT`
 
 ```sh

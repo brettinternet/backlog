@@ -3,8 +3,18 @@ package query
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 )
+
+// Quote makes a completion value one query term value, quoting whitespace and
+// query punctuation.
+func Quote(s string) string {
+	if strings.ContainsAny(s, " \t\n\r,:\"\\") || strings.HasPrefix(s, "-") {
+		return strconv.Quote(s)
+	}
+	return s
+}
 
 // Candidate.Value is the unquoted semantic value; Name is a display label.
 // Callers quote Value when inserting whitespace or query punctuation.

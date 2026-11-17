@@ -1,0 +1,13 @@
+# bl PowerShell completion. Load it with: bl completion pwsh | Out-String | Invoke-Expression
+
+Register-ArgumentCompleter -Native -CommandName bl -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $words = @($commandAst.CommandElements | Where-Object { $_.Extent.EndOffset -lt $cursorPosition } | ForEach-Object { $_.Extent.Text })
+    $program = $commandAst.CommandElements[0].Extent.Text
+    $rest = @($words | Select-Object -Skip 1)
+    & $program @rest $wordToComplete --generate-shell-completion 2>$null | ForEach-Object {
+        $value, $description = $_ -split "`t", 2
+        if (-not $description) { $description = $value }
+        [System.Management.Automation.CompletionResult]::new($value, $value, 'ParameterValue', $description)
+    }
+}

@@ -1,0 +1,30 @@
+# bl bash completion. Load it with: eval "$(bl completion bash)"
+
+_bl() {
+    local line=${COMP_LINE:0:COMP_POINT}
+    local current=${line##*[[:space:]]}
+    local -a words
+    read -r -a words <<< "${line:0:${#line}-${#current}}"
+    local output
+    output=$("${words[0]}" "${words[@]:1}" "$current" --generate-shell-completion 2>/dev/null) || return
+    # Bash replaces only the part of the word after its last COMP_WORDBREAKS
+    # character, such as : in status:todo or = in status=done.
+    local strip= i
+    for (( i = ${#current} - 1; i >= 0; i-- )); do
+        if [[ $COMP_WORDBREAKS == *"${current:i:1}"* ]]; then
+            strip=${current:0:i+1}
+            break
+        fi
+    done
+    COMPREPLY=()
+    local value
+    while IFS= read -r value; do
+        value=${value%%$'\t'*}
+        [[ -n $value ]] && COMPREPLY+=("${value#"$strip"}")
+    done <<< "$output"
+    if [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == *[:=] ]] && type compopt &>/dev/null; then
+        compopt -o nospace
+    fi
+}
+
+complete -o default -o nosort -F _bl bl 2>/dev/null || complete -o default -F _bl bl
