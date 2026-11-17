@@ -21,8 +21,12 @@ type State struct {
 }
 
 // Change is what queries match of a linked change: its state, checks, review
-// decision, and merge verdict from the list read.
-type Change struct{ State, Checks, Review, Merge string }
+// decision, and merge verdict from the list read, and whether it has a pull
+// or merge request.
+type Change struct {
+	State, Checks, Review, Merge string
+	PR                           bool
+}
 type Event struct {
 	Type                  string
 	Changed               []string
@@ -291,6 +295,8 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 			return s.Coordination && (state.Claim == "me" || state.Claim == "others")
 		case "change":
 			return len(state.Changes) > 0
+		case "pr":
+			return slices.ContainsFunc(state.Changes, func(c Change) bool { return c.PR })
 		}
 	case "change", "checks", "review", "merge":
 		for _, c := range state.Changes {

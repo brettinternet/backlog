@@ -263,7 +263,7 @@ func MentionsChanges(text string) bool {
 			return true
 		case "has":
 			for _, v := range t.Values {
-				if strings.EqualFold(v.Text, "change") {
+				if strings.EqualFold(v.Text, "change") || strings.EqualFold(v.Text, "pr") {
 					return true
 				}
 			}
@@ -291,7 +291,7 @@ func linkReads(ctx context.Context, cfg project.Config, s *ReadSnapshot) {
 func queryChanges(cs []changes.Change) []query.Change {
 	out := make([]query.Change, len(cs))
 	for n, c := range cs {
-		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review, Merge: changes.ListMerge(c)}
+		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review, Merge: changes.ListMerge(c), PR: c.Stage == changes.StagePR || c.Number > 0}
 	}
 	return out
 }
