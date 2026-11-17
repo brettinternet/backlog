@@ -40,6 +40,15 @@ Examples:
   bl set 12 status=in-progress priority=high
   bl set 12 13 label+=bug blocked_by+=7`
 
+const moveHelp = `Places the items, in the order given, together just before or after X by
+writing new rank keys. Placing beside an unranked item first ranks the
+unranked items shown before it, so nothing else changes position. Native
+sources only.
+
+Examples:
+  bl move 12 --before 7
+  bl move 12 13 --after 7`
+
 const acHelp = `Criteria are numbered from 1. When the numbers come from an earlier read,
 pass its version with --if-version so a changed list fails instead of
 updating the wrong criterion. --dod targets definition-of-done items, which

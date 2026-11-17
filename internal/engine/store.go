@@ -42,15 +42,28 @@ type sourceWorker struct {
 	reconcile atomic.Bool
 	sprints   bool // the source can supply a sprint catalog
 }
+
+// editJob applies its steps in order, as one edit: one result and one history
+// entry. A step that fails stops the rest, and the entry keeps what was written.
 type editJob struct {
+	steps   []*editStep
+	history int // -1 undo, +1 redo, 0 ordinary edit
+	result  chan error
+}
+type editStep struct {
 	mutation model.Mutation
 	before   *record
 	preview  model.Item
 	inverse  model.Mutation
-	history  int // -1 undo, +1 redo, 0 ordinary edit
-	result   chan error
+	// Set by the worker: the written item, or why the step failed. A step after
+	// a failure isn't attempted.
+	item      model.Item
+	err       error
+	attempted bool
+	remote    *model.Item
 }
-type historyEntry struct {
+type historyEntry struct{ steps []historyStep }
+type historyStep struct {
 	mutation      model.Mutation
 	targetVersion string
 }
@@ -221,10 +234,16 @@ func (s *Store) StatusChoices(item model.Item) ([]model.StatusChoice, error) {
 	}
 	return statusChoices(s.ctx, s.cfg, backend, item)
 }
-func (s *Store) Mutate(m model.Mutation) <-chan error {
+
+// Mutate applies ms in order as one edit, which one undo reverses. They must
+// target distinct items of one source; a create goes alone.
+func (s *Store) Mutate(ms ...model.Mutation) <-chan error {
 	result := make(chan error, 1)
-	m = cloneMutation(m)
-	s.request(func(st *storeState) { st.begin(&editJob{mutation: m, result: result}) }, result)
+	job := &editJob{result: result}
+	for _, m := range ms {
+		job.steps = append(job.steps, &editStep{mutation: cloneMutation(m)})
+	}
+	s.request(func(st *storeState) { st.begin(job) }, result)
 	return result
 }
 func (s *Store) Undo() <-chan error { return s.history(-1) }
@@ -254,7 +273,13 @@ func (s *Store) history(direction int) <-chan error {
 			s.complete(result, source.Refuse("not-found", "no session history"))
 			return
 		}
-		st.begin(&editJob{mutation: stack[len(stack)-1].mutation, history: direction, result: result})
+		// Reversing an edit runs its steps backward.
+		job := &editJob{history: direction, result: result}
+		steps := stack[len(stack)-1].steps
+		for n := len(steps) - 1; n >= 0; n-- {
+			job.steps = append(job.steps, &editStep{mutation: steps[n].mutation})
+		}
+		st.begin(job)
 	}, result)
 	return result
 }
@@ -333,27 +358,39 @@ func (st *storeState) observe(ref model.Ref, item *model.Item, gone bool) {
 	st.publish(n)
 }
 func (st *storeState) begin(job *editJob) {
-	m := job.mutation
-	w := st.workers[m.Ref.Source]
 	reject := func(err error) { st.store.complete(job.result, err) }
+	if len(job.steps) == 0 {
+		reject(source.Refuse("rejected", "empty mutation"))
+		return
+	}
+	sourceID := job.steps[0].mutation.Ref.Source
+	w := st.workers[sourceID]
 	if w == nil {
 		reject(source.Refuse("unavailable", "unknown source"))
 		return
 	}
-	if st.historyBusy || st.pending[m.Ref] {
-		reject(source.Refuse("busy", "item or history mutation pending"))
-		return
-	}
-	cfg, local := st.store.cfg.SourceProject(m.Ref.Source)
-	if err := validateWrite(cfg, local, w.backend.Info().Capabilities, m); err != nil {
-		reject(err)
-		return
-	}
-	if m.Op == model.Create {
-		st.serial++
-		m.Ref.ID = fmt.Sprintf("~pending-%d", st.serial)
-		job.mutation.Ref = m.Ref
-	} else {
+	cfg, local := st.store.cfg.SourceProject(sourceID)
+	seen := map[model.Ref]bool{}
+	for _, step := range job.steps {
+		m := step.mutation
+		if m.Ref.Source != sourceID || m.Op == model.Create && len(job.steps) > 1 || m.Op != model.Create && seen[m.Ref] {
+			reject(source.Refuse("rejected", "one edit changes distinct items of one source, or creates one item"))
+			return
+		}
+		seen[m.Ref] = true
+		if st.historyBusy || st.pending[m.Ref] {
+			reject(source.Refuse("busy", "item or history mutation pending"))
+			return
+		}
+		if err := validateWrite(cfg, local, w.backend.Info().Capabilities, m); err != nil {
+			reject(err)
+			return
+		}
+		if m.Op == model.Create {
+			st.serial++
+			step.mutation.Ref.ID = fmt.Sprintf("~pending-%d", st.serial)
+			continue
+		}
 		before := st.snapshot.records[m.Ref]
 		if before == nil {
 			reject(source.Refuse("not-found", "item is not loaded"))
@@ -376,20 +413,23 @@ func (st *storeState) begin(job *editJob) {
 			reject(err)
 			return
 		}
-		job.before = before
+		step.before = before
 	}
 	if len(w.jobs) == cap(w.jobs) {
 		reject(source.Refuse("busy", "source queue is full"))
 		return
 	}
-	preparePreview(cfg, w.backend.Info().Capabilities, job)
-	if st.store.cfg.Workspace != nil {
-		job.preview.Project = cfg.Project.ID
-	}
-	st.pending[m.Ref] = true
-	st.historyBusy = job.history != 0
 	n := st.snapshot.fork()
-	n.records[m.Ref] = &record{item: new(cloneItem(job.preview)), edit: EditState{Pending: true}, archived: m.Op == model.Archive || job.before != nil && job.before.archived && m.Op != model.Unarchive}
+	for _, step := range job.steps {
+		m := step.mutation
+		preparePreview(cfg, w.backend.Info().Capabilities, step)
+		if st.store.cfg.Workspace != nil {
+			step.preview.Project = cfg.Project.ID
+		}
+		st.pending[m.Ref] = true
+		n.records[m.Ref] = &record{item: new(cloneItem(step.preview)), edit: EditState{Pending: true}, archived: m.Op == model.Archive || step.before != nil && step.before.archived && m.Op != model.Unarchive}
+	}
+	st.historyBusy = job.history != 0
 	st.publish(n)
 	// This actor is the only producer; the worker can only free queue capacity.
 	w.jobs <- job
@@ -533,7 +573,7 @@ func (s *Store) runSource(id string, w *sourceWorker) {
 
 // The preview runs on the engine actor, before queued source I/O. Even a
 // second edit behind a slow write is visible immediately as pending.
-func preparePreview(cfg project.Config, caps model.Capabilities, job *editJob) {
+func preparePreview(cfg project.Config, caps model.Capabilities, job *editStep) {
 	m := job.mutation
 	if m.Op == model.Create {
 		job.preview = cloneItem(*m.Item)
@@ -566,7 +606,23 @@ func preparePreview(cfg project.Config, caps model.Capabilities, job *editJob) {
 	}
 }
 func (s *Store) runEdit(w *sourceWorker, job *editJob) {
-	m := job.mutation
+	for _, step := range job.steps {
+		step.attempted = true
+		step.item, step.err = s.runStep(w, step)
+		if step.err != nil {
+			var refusal *source.Error
+			if errors.As(step.err, &refusal) && refusal.Reason == "conflict" {
+				if i, e := w.backend.Read(s.ctx, step.mutation.Ref.ID); e == nil {
+					step.remote = new(cloneItem(i))
+				}
+			}
+			break
+		}
+	}
+	s.finishEdit(job)
+}
+func (s *Store) runStep(w *sourceWorker, step *editStep) (model.Item, error) {
+	m := step.mutation
 	if m.Op == model.Create {
 		m.Ref.ID = ""
 	}
@@ -575,22 +631,19 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 		err = requireTours(s.ctx, s.cfg, w.backend, m)
 	}
 	if err != nil {
-		s.finishEdit(w, job, model.Item{}, err)
-		return
+		return model.Item{}, err
 	}
 	if m.Op != model.Create {
 		preparer, ok := w.backend.(source.Preparer)
 		if !ok {
-			s.finishEdit(w, job, model.Item{}, source.Refuse("unavailable", "source does not support optimistic preparation"))
-			return
+			return model.Item{}, source.Refuse("unavailable", "source does not support optimistic preparation")
 		}
 		prepared, err := preparer.Prepare(s.ctx, m)
 		if err != nil {
-			s.finishEdit(w, job, model.Item{}, err)
-			return
+			return model.Item{}, err
 		}
-		job.preview = cloneItem(prepared.Item)
-		job.inverse = cloneMutation(prepared.Inverse)
+		step.preview = cloneItem(prepared.Item)
+		step.inverse = cloneMutation(prepared.Inverse)
 	}
 	var transition TransitionResult
 	ctx := WithTransitionResult(s.ctx, &transition)
@@ -603,108 +656,140 @@ func (s *Store) runEdit(w *sourceWorker, job *editJob) {
 	if err != nil && transition.Claim != nil {
 		err = source.Refuse(ErrorReason(err), fmt.Sprintf("status %s; claim %s: %s", transition.Status, transition.Claim.Outcome, ErrorMessage(err)))
 	}
-	s.finishEdit(w, job, item, err)
+	return item, err
 }
-func (s *Store) finishEdit(w *sourceWorker, job *editJob, item model.Item, err error) {
-	var remote *model.Item
-	var refusal *source.Error
-	if errors.As(err, &refusal) && refusal.Reason == "conflict" {
-		if i, e := w.backend.Read(s.ctx, job.mutation.Ref.ID); e == nil {
-			i = cloneItem(i)
-			remote = &i
+func (s *Store) finishEdit(job *editJob) {
+	var first error
+	for _, step := range job.steps {
+		if first == nil {
+			first = step.err
 		}
 	}
 	if !s.send(func(st *storeState) {
 		n := st.snapshot.fork()
-		ref := job.mutation.Ref
-		delete(st.pending, ref)
 		if job.history != 0 {
 			st.historyBusy = false
 		}
-		if err != nil {
-			state := EditState{Error: err.Error()}
-			if remote != nil {
-				local := cloneItem(job.preview)
-				state.Local = &local
-				state.Remote = remote
-			}
-			if item.Version != "" {
-				n.records[ref] = &record{item: new(cloneItem(item)), edit: state, archived: job.before != nil && job.before.archived}
-			} else if job.before != nil {
-				prior := job.before.item
-				if remote != nil {
-					prior = remote
+		var written []historyStep // inverses of the steps that applied, in order
+		applied := map[model.Ref]model.Item{}
+		deleted := false
+		for _, step := range job.steps {
+			ref, item, err := step.mutation.Ref, step.item, step.err
+			delete(st.pending, ref)
+			switch {
+			case !step.attempted:
+				if step.before != nil {
+					n.records[ref] = step.before
+				} else {
+					delete(n.records, ref)
 				}
-				// A preflight that finds the item gone revokes its readiness now.
-				n.records[ref] = &record{item: prior, edit: state, archived: job.before.archived, stale: job.before.stale || ErrorReason(err) == "not-found"}
-			} else {
-				n.records[ref] = &record{item: new(cloneItem(job.preview)), edit: state}
-			}
-		} else if job.mutation.Op == model.Delete {
-			// No redo: recreating would assign the item a new ID.
-			delete(n.records, ref)
-			note := "deleted " + ref.Source + ":" + ref.ID
-			if item.Version != "" {
-				n.records[ref] = &record{item: new(cloneItem(item))}
-				note = "couldn't delete " + ref.Source + ":" + ref.ID + ", so it's now " + item.Status
-				if item.Category == model.Canceled {
-					note += " (canceled)"
+			case err != nil:
+				state := EditState{Error: err.Error()}
+				if step.remote != nil {
+					local := cloneItem(step.preview)
+					state.Local = &local
+					state.Remote = step.remote
 				}
-			}
-			st.store.historyNote.Store(&note)
-			if job.history == -1 {
-				st.undo = st.undo[:len(st.undo)-1]
-			}
-			st.redo = nil
-		} else {
-			item = cloneItem(item)
-			delete(n.records, ref)
-			n.records[item.Ref] = &record{item: &item, archived: job.mutation.Op == model.Archive || job.before != nil && job.before.archived && job.mutation.Op != model.Unarchive}
-			inverse := job.inverse
-			inverse.Ref = item.Ref
-			inverse.ExpectedVersion = item.Version
-			entry := historyEntry{mutation: inverse}
-			if job.before != nil {
-				entry.targetVersion = job.before.item.Version
-				st.superseded[item.Ref] = job.before.item.Version
-			}
-			var targetVersion string
-			switch job.history {
-			case -1:
-				targetVersion = st.undo[len(st.undo)-1].targetVersion
-				st.undo = st.undo[:len(st.undo)-1]
-				if inverse.Op != "" {
-					st.redo = append(st.redo, entry)
+				if item.Version != "" {
+					n.records[ref] = &record{item: new(cloneItem(item)), edit: state, archived: step.before != nil && step.before.archived}
+				} else if step.before != nil {
+					prior := step.before.item
+					if step.remote != nil {
+						prior = step.remote
+					}
+					// A preflight that finds the item gone revokes its readiness now.
+					n.records[ref] = &record{item: prior, edit: state, archived: step.before.archived, stale: step.before.stale || ErrorReason(err) == "not-found"}
+				} else {
+					n.records[ref] = &record{item: new(cloneItem(step.preview)), edit: state}
 				}
-			case 1:
-				targetVersion = st.redo[len(st.redo)-1].targetVersion
-				st.redo = st.redo[:len(st.redo)-1]
-				if inverse.Op != "" {
-					st.undo = append(st.undo, entry)
+			case step.mutation.Op == model.Delete:
+				// No redo: recreating would assign the item a new ID.
+				deleted = true
+				applied[ref] = item
+				delete(n.records, ref)
+				note := "deleted " + ref.Source + ":" + ref.ID
+				if item.Version != "" {
+					n.records[ref] = &record{item: new(cloneItem(item))}
+					note = "couldn't delete " + ref.Source + ":" + ref.ID + ", so it's now " + item.Status
+					if item.Category == model.Canceled {
+						note += " (canceled)"
+					}
 				}
+				st.store.historyNote.Store(&note)
 			default:
-				if inverse.Op != "" {
-					st.undo = append(st.undo, entry)
+				item = cloneItem(item)
+				applied[ref] = item
+				delete(n.records, ref)
+				n.records[item.Ref] = &record{item: &item, archived: step.mutation.Op == model.Archive || step.before != nil && step.before.archived && step.mutation.Op != model.Unarchive}
+				inverse := step.inverse
+				inverse.Ref = item.Ref
+				inverse.ExpectedVersion = item.Version
+				entry := historyStep{mutation: inverse}
+				if step.before != nil {
+					entry.targetVersion = step.before.item.Version
+					st.superseded[item.Ref] = step.before.item.Version
 				}
+				if inverse.Op != "" {
+					written = append(written, entry)
+				}
+			}
+		}
+		if len(applied) > 0 {
+			// The stack this edit came from loses the steps that applied; the
+			// opposite one gains their inverses as one entry.
+			from, to := &st.undo, &st.redo
+			if job.history == 1 {
+				from, to = &st.redo, &st.undo
+			}
+			targets := map[model.Ref]string{}
+			if job.history != 0 {
+				top := (*from)[len(*from)-1]
+				remaining := top.steps[:0:0]
+				for _, step := range top.steps {
+					if _, ok := applied[step.mutation.Ref]; ok {
+						if step.mutation.Op != model.Delete {
+							targets[step.mutation.Ref] = step.targetVersion
+						}
+					} else {
+						remaining = append(remaining, step)
+					}
+				}
+				*from = (*from)[:len(*from)-1]
+				if len(remaining) > 0 {
+					*from = append(*from, historyEntry{steps: remaining})
+				}
+			} else {
+				to = &st.undo
+				st.redo = nil
+			}
+			if len(written) > 0 {
+				*to = append(*to, historyEntry{steps: written})
+			}
+			if deleted {
 				st.redo = nil
 			}
 			// Only rebind history across our own contiguous edits. Crossing an external
 			// version gap would let a later undo silently discard somebody else's work.
-			if job.history != 0 {
+			for ref, targetVersion := range targets {
+				version := applied[ref].Version
 				for _, stack := range [][]historyEntry{st.undo, st.redo} {
-					for j := len(stack) - 1; j >= 0; j-- {
-						if stack[j].mutation.Ref == item.Ref {
-							if stack[j].mutation.ExpectedVersion == targetVersion {
-								stack[j].mutation.ExpectedVersion = item.Version
+					found := false
+					for j := len(stack) - 1; j >= 0 && !found; j-- {
+						for k := range stack[j].steps {
+							if step := &stack[j].steps[k]; step.mutation.Ref == ref {
+								if step.mutation.ExpectedVersion == targetVersion {
+									step.mutation.ExpectedVersion = version
+								}
+								found = true
+								break
 							}
-							break
 						}
 					}
 				}
 			}
 		}
 		st.publish(n)
-		s.complete(job.result, err)
+		s.complete(job.result, first)
 	}) {
 		s.complete(job.result, s.ctx.Err())
 	}

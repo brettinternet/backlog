@@ -278,7 +278,11 @@ type Catalog struct {
 	explanations map[model.Ref]Explanation
 	claims       map[model.Ref]rowClaim
 	changes      map[model.Ref][]changes.Change
+	next         []model.Ref
 }
+
+// Next is the engine ranking's order, which sort:rank uses for unranked items.
+func (c *Catalog) Next() []model.Ref { return c.next }
 
 // rowClaim is an item's claim as rows show it, labeled when the overlay was built.
 type rowClaim struct {
@@ -515,7 +519,7 @@ func (p *Projector) run() {
 					explanations[e.Ref] = e
 				}
 				cached = req.snapshot
-				catalog = &Catalog{snapshot: req.snapshot, reverse: reverse, explanations: explanations, claims: claimRows}
+				catalog = &Catalog{snapshot: req.snapshot, reverse: reverse, explanations: explanations, claims: claimRows, next: base.Next}
 				linkedState, linked = nil, nil
 			}
 			if req.changes != linkedState {

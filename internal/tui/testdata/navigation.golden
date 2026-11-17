@@ -403,23 +403,23 @@
  Keys  › ▏                                                                      
                                                                                 
   Navigate                               Select                                 
-  j ↓ ctrl+n     Move down               space          Mark                    
-  k ↑            Move up                 V              Visual range            
-  J              Next item               ctrl+a         Mark all                
-  K              Previous item           esc ctrl+g     Cancel / clear          
-  gg home alt+<  First row                                                      
-  G end alt+>    Last row, or row N      Copy                                   
-  H              Top of screen           yy             Copy ID                 
-  M              Middle of screen        yt             Copy title              
-  L              Bottom of screen        yb             Copy branch             
-  ctrl+d pgdn    Half page down          yu             Copy URL                
-  ctrl+u pgup    Half page up            ym             Copy Markdown link      
-  ctrl+f ctrl+v  Page down               yp             Copy change URL         
-  ctrl+b alt+v   Page up                 ys             Copy commit SHA         
-  [              Previous group / file                                          
-  ]              Next group / file       General                                
-  [c             Previous hunk           ?              Help                    
-  ]c             Next hunk               : alt+x        Commands                
-  [t             Previous tour step      q              Quit / back             
+  j ↓ ctrl+n      Move down              space           Mark                   
+  k ↑             Move up                V               Visual range           
+  J               Next item              ctrl+a          Mark all               
+  K               Previous item          esc ctrl+g      Cancel / clear         
+  gg home alt+<   First row                                                     
+  G end alt+>     Last row, or row N     Copy                                   
+  H               Top of screen          yy              Copy ID                
+  M               Middle of screen       yt              Copy title             
+  L               Bottom of screen       yb              Copy branch            
+  ctrl+d pgdn     Half page down         yu              Copy URL               
+  ctrl+u pgup     Half page up           ym              Copy Markdown link     
+  ctrl+f ctrl+v   Page down              yp              Copy change URL        
+  ctrl+b alt+v    Page up                ys              Copy commit SHA        
+  [               Previous group / file                                         
+  ]               Next group / file      General                                
+  [c              Previous hunk          ?               Help                   
+  ]c              Next hunk              : alt+x         Commands               
+  [t              Previous tour step     q               Quit / back            
                                                                              ↓  
  is:ready sort:next                                            ● 3  ! 3    5/60 

@@ -143,6 +143,8 @@ type editAction struct {
 	workflow model.StatusCategory
 	// step moves each item to its source's previous (-1) or next (1) status.
 	step int
+	// move moves the selected item one row up (-1) or down (1) by rank.
+	move int
 }
 type editResultMsg struct {
 	message string

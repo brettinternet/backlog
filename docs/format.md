@@ -104,7 +104,7 @@ Keep the header fields synchronous; only the body waits.
 | `blocked_by` | list of IDs | no | Hard prerequisites (design.md §6). Cycles are errors. |
 | `related` | list of IDs | no | Informational |
 | `duplicate_of` | ID | no | Informational |
-| `rank` | string | no | Manual order key, compared bytewise. `bl` generates fractional keys, so moving one item rewrites one line. |
+| `rank` | string | no | Manual order key, compared bytewise. `bl move` and the TUI generate fractional keys from `0-9a-z`, the shortest strictly between the neighbors and never ending in `0`, so moving one item rewrites one line. Creates leave it unset. |
 | `due` | date | no | `YYYY-MM-DD` |
 | `refs` | list of strings | no | URLs or repository-relative paths |
 | `files` | list of strings | no | Declared file scope: repository-relative paths or globs |

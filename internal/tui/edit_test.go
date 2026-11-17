@@ -16,6 +16,7 @@ import (
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/query"
 	"github.com/brettinternet/backlog/internal/source"
 )
 
@@ -117,6 +118,8 @@ func fakeInverse(item model.Item, mutation model.Mutation) model.Mutation {
 			inverse.Value = item.Status
 		case "priority":
 			inverse.Value = string(item.Priority)
+		case "rank":
+			inverse.Value = item.Rank
 		case "milestone":
 			inverse.Value = item.Milestone
 		case "parent":
@@ -170,6 +173,8 @@ func fakeApply(item model.Item, mutation model.Mutation) (model.Item, error) {
 			item.Status = text
 		case "priority":
 			item.Priority = model.Priority(text)
+		case "rank":
+			item.Rank = text
 		case "milestone":
 			item.Milestone = text
 		case "parent":
@@ -314,7 +319,14 @@ func editKeyMessage(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "up":
 		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "alt+up":
+		return tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}
+	case "alt+down":
+		return tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt}
 	default:
+		if strings.HasPrefix(key, "alt+") {
+			return tea.KeyPressMsg{Code: rune(key[len(key)-1]), Mod: tea.ModAlt}
+		}
 		if strings.HasPrefix(key, "ctrl+") {
 			return tea.KeyPressMsg{Code: rune(key[len(key)-1]), Mod: tea.ModCtrl}
 		}
@@ -772,5 +784,46 @@ func TestYankOSC52AndSafeOpen(t *testing.T) {
 	}
 	if value, err := safeURL("HTTPS://example.test/items/12"); err != nil || value != "https://example.test/items/12" {
 		t.Fatalf("uppercase HTTPS rejected: %q %v", value, err)
+	}
+}
+
+// Catches the reorder keys falling through, as alt+arrows did while the keymap
+// refused them, a move writing the wrong side of its neighbor, and a move
+// crossing a priority boundary under sort:next, where it can't take effect.
+func TestMoveRowKeys(t *testing.T) {
+	items := []model.Item{editItem("BL-1", "One"), editItem("BL-2", "Two"), editItem("BL-3", "Three")}
+	items[0].Rank, items[1].Rank, items[2].Rank = "a", "b", "c"
+	items[2].Priority = model.High
+	cfg := project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "tasks", Type: "native"}}}}
+	m, _ := editFixture(t, items, allEditCapabilities, Options{Workspace: &cfg})
+	m.selected = 1
+	m.shown.Sort = []query.SortKey{{Field: "updated"}}
+	if next, _ := m.Update(editKeyMessage("alt+k")); !strings.Contains(next.(Model).notice, "sort by rank or next to reorder") {
+		t.Fatalf("updated sort: %q", next.(Model).notice)
+	}
+	m.shown.Sort = []query.SortKey{{Field: "next"}}
+	if next, _ := m.Update(editKeyMessage("alt+down")); !strings.Contains(next.(Model).notice, "press p") {
+		t.Fatalf("priority boundary: %q", next.(Model).notice)
+	}
+	for _, key := range []string{"alt+up", "alt+k"} {
+		m, backend := editFixture(t, items, allEditCapabilities, Options{Workspace: &cfg})
+		m.selected = 1
+		m.shown.Sort = []query.SortKey{{Field: "rank"}}
+		next, cmd := m.Update(editKeyMessage(key))
+		if cmd == nil {
+			t.Fatalf("%s: no move: %q", key, next.(Model).notice)
+		}
+		cmd()
+		if rank := itemFrom(t, backend, "BL-2").Rank; rank >= "a" || rank == "" || itemFrom(t, backend, "BL-1").Rank != "a" {
+			t.Fatalf("%s: BL-2 rank %q", key, rank)
+		}
+		if next.(Model).lastEdit == nil || next.(Model).lastEdit.move != -1 {
+			t.Fatalf("%s: . would not repeat the move", key)
+		}
+	}
+	cfg.Sources[0].Type = "backlog-md"
+	m.shown.Sort = []query.SortKey{{Field: "rank"}}
+	if next, _ := m.Update(editKeyMessage("alt+j")); !strings.Contains(next.(Model).notice, "(backlog-md) can't be reordered") {
+		t.Fatalf("non-native: %q", next.(Model).notice)
 	}
 }
