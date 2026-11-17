@@ -298,8 +298,23 @@ func (m Model) boardColumnLines(column, width, rows int, focused bool) []string 
 		label += " " + t.faint.render(strings.Repeat("\u2500", rule))
 	}
 	lines[0] = fit(label, width)
+	drag := m.mouse.card
+	target := drag.active && drag.column == column
+	if target {
+		lines[0] = t.selected(lines[0])
+	}
 	for i := 1; i < rows; i++ {
 		lines[i] = blank(width)
+	}
+	top := m.board.positions[header.value].top
+	if target {
+		// The marker shows where the card lands, pushing the cards below it down.
+		defer func() {
+			if at := 1 + (drag.slot-top)*cardHeight; at >= 1 && at < rows {
+				copy(lines[at+1:], lines[at:])
+				lines[at] = t.accent.render(strings.Repeat("\u2501", width))
+			}
+		}()
 	}
 	if end == start+1 {
 		if rows > 1 {
@@ -311,7 +326,6 @@ func (m Model) boardColumnLines(column, width, rows int, focused bool) []string 
 		}
 		return lines
 	}
-	top := m.board.positions[header.value].top
 	for k := 0; 1+k*cardHeight < rows; k++ {
 		index := start + 1 + top + k
 		if index >= end {

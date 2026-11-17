@@ -266,3 +266,125 @@ func BenchmarkBoardRender(b *testing.B) {
 		})
 	}
 }
+
+// Catches a drag path that bypasses per-source status resolution, a drop that
+// writes after esc or on a refused column, marks left behind, and a drop at a
+// position that changes status without placing the card by rank.
+func TestBoardCardDrag(t *testing.T) {
+	t.Parallel()
+	items := []model.Item{editItem("BL-1", "One"), editItem("BL-2", "Two"), editItem("BL-3", "Three")}
+	items[0].Rank, items[1].Rank, items[2].Rank = "a", "b", "c"
+	items[1].Status, items[2].Status = "active", "active"
+	cfg := project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "tasks", Type: "native"}}}}
+	board := func(t *testing.T, sort string) (Model, *editFakeSource) {
+		t.Helper()
+		m, backend := editFixture(t, items, allEditCapabilities, Options{Workspace: &cfg})
+		m.view = 4
+		m.query = "group:status " + sort
+		m.shown, _ = query.Parse(m.query, query.Options{})
+		return prepareBoard(m), backend
+	}
+	mouse := func(m Model, msg tea.Msg) (Model, tea.Cmd) {
+		next, cmd := m.Update(msg)
+		return next.(Model), cmd
+	}
+	// drag presses on card id and releases on the row of target, or on its
+	// header row, after moving onto it.
+	drag := func(t *testing.T, m Model, id, target string, below int) (Model, tea.Cmd) {
+		t.Helper()
+		y := drawnRow(t, m, id+" ")
+		m, _ = mouse(m, tea.MouseClickMsg{X: drawnAt(t, m, y, id), Y: y, Button: tea.MouseLeft})
+		header := drawnRow(t, m, "To Do")
+		x := drawnAt(t, m, header, target)
+		m, _ = mouse(m, tea.MouseMotionMsg{X: x, Y: header + below, Button: tea.MouseLeft})
+		return mouse(m, tea.MouseReleaseMsg{X: x, Y: header + below, Button: tea.MouseLeft})
+	}
+	statuses := func(backend *editFakeSource) string {
+		var out []string
+		for _, mutation := range backend.applied() {
+			out = append(out, fmt.Sprint(mutation.Ref.ID, " ", mutation.Op, " ", mutation.Field, " ", mutation.Value))
+		}
+		return strings.Join(out, "; ")
+	}
+
+	keyed, keyBackend := board(t, "")
+	keyed = editPress(keyed, ">")
+	m, backend := board(t, "")
+	m, cmd := drag(t, m, "BL-1", "In Progress", 1)
+	if cmd == nil {
+		t.Fatalf("drop issued nothing: %q", m.notice)
+	}
+	m = editPressMessage(m, cmd)
+	if got, want := statuses(backend), statuses(keyBackend); got != want || got != "BL-1 set status active" {
+		t.Fatalf("drop wrote %q, > wrote %q", got, want)
+	}
+
+	// The source refuses the column: nothing is written and the source is named.
+	m, backend = board(t, "")
+	backend.choices = []model.StatusChoice{{Key: "todo", Category: model.Todo}, {Key: "done", Category: model.Done}}
+	m, cmd = drag(t, m, "BL-1", "In Progress", 1)
+	m = editPressMessage(m, cmd)
+	if len(backend.applied()) != 0 || !strings.Contains(m.notice, "source tasks accepts no active status") {
+		t.Fatalf("refused drop: %q %q", statuses(backend), m.notice)
+	}
+
+	// esc, a header, and the card's own slot write nothing.
+	m, backend = board(t, "sort:rank")
+	y := drawnRow(t, m, "BL-1 ")
+	m, _ = mouse(m, tea.MouseClickMsg{X: 4, Y: y, Button: tea.MouseLeft})
+	header := drawnRow(t, m, "To Do")
+	m, _ = mouse(m, tea.MouseMotionMsg{X: drawnAt(t, m, header, "In Progress"), Y: header + 1, Button: tea.MouseLeft})
+	if !strings.Contains(m.View().Content, "━━━") {
+		t.Fatal("no insertion marker while dragging")
+	}
+	m = send(m, "esc")
+	if strings.Contains(m.View().Content, "━━━") {
+		t.Fatal("esc left the marker")
+	}
+	if m, cmd = mouse(m, tea.MouseReleaseMsg{X: 40, Y: header + 1, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("release after esc dropped the card")
+	}
+	if _, cmd = drag(t, m, "BL-1", "In Progress", 0); cmd != nil {
+		t.Fatal("header drop issued a command")
+	}
+	if _, cmd = drag(t, m, "BL-1", "To Do", 2); cmd != nil {
+		t.Fatal("own-slot drop issued a command")
+	}
+	if len(backend.applied()) != 0 {
+		t.Fatal(statuses(backend))
+	}
+
+	// Past the right edge of a narrow board, the drag scrolls a column per motion.
+	m, _ = board(t, "")
+	m.width = 40
+	y = drawnRow(t, m, "BL-1 ")
+	m, _ = mouse(m, tea.MouseClickMsg{X: 4, Y: y, Button: tea.MouseLeft})
+	m, _ = mouse(m, tea.MouseMotionMsg{X: 39, Y: y, Button: tea.MouseLeft})
+	if m.board.left != 1 {
+		t.Fatalf("edge drag scrolled to column %d", m.board.left)
+	}
+	m, _ = mouse(m, tea.MouseMotionMsg{X: 0, Y: y, Button: tea.MouseLeft})
+	if m.board.left != 0 {
+		t.Fatalf("left edge drag scrolled to column %d", m.board.left)
+	}
+	m = send(m, "esc")
+
+	// Under sort:rank, a drop between BL-2 and BL-3 sets status and rank in one write.
+	m, backend = board(t, "sort:rank")
+	m, cmd = drag(t, m, "BL-1", "In Progress", 3)
+	m = editPressMessage(m, cmd)
+	moved := itemFrom(t, backend, "BL-1")
+	if moved.Status != "active" || moved.Rank <= "b" || moved.Rank >= "c" || len(backend.applied()) != 1 {
+		t.Fatalf("ranked drop: %+v; %s; %q", moved, statuses(backend), m.notice)
+	}
+
+	// A marked card drags every mark.
+	m, backend = board(t, "sort:rank")
+	m.marks.toggle(items[1].Ref, items[1].Version)
+	m.marks.toggle(items[2].Ref, items[2].Version)
+	m, cmd = drag(t, m, "BL-2", "To Do", 1)
+	m = editPressMessage(m, cmd)
+	if itemFrom(t, backend, "BL-2").Status != "todo" || itemFrom(t, backend, "BL-3").Status != "todo" {
+		t.Fatalf("marked drop: %s; %q", statuses(backend), m.notice)
+	}
+}
