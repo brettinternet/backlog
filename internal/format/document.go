@@ -197,10 +197,10 @@ func Parse(data []byte) (*Document, error) {
 	current := "Description"
 	start := d.close + 1
 	heading := -1
-	fence := fenceState{}
+	fence := Fence{}
 	for i := start; i < len(d.lines); i++ {
 		line := clean(d.lines[i])
-		if fence.consume(line) {
+		if fence.Consume(line) {
 			continue
 		}
 		if !strings.HasPrefix(line, "## ") {
@@ -241,12 +241,18 @@ func validTime(s string) bool {
 	return e == nil && t.Format("2006-01-02T15:04:05Z") == s
 }
 
-type fenceState struct {
+// Fence tracks fenced code blocks line by line, per docs/format.md.
+type Fence struct {
 	char  byte
 	count int
 }
 
-func (f *fenceState) consume(line string) bool {
+// Open reports whether the lines consumed so far end inside a fenced block.
+func (f *Fence) Open() bool { return f.count > 0 }
+
+// Consume reports whether line belongs to a fenced block, opening and closing
+// fence lines included.
+func (f *Fence) Consume(line string) bool {
 	s := strings.TrimLeft(line, " ")
 	if len(line)-len(s) > 3 || len(s) < 3 {
 		return f.count > 0
@@ -381,10 +387,10 @@ func (d *Document) entries(name string) []entry {
 		return nil
 	}
 	var result []entry
-	fence := fenceState{}
+	fence := Fence{}
 	for i := s.start; i < s.end; i++ {
 		line := clean(d.lines[i])
-		if fence.consume(line) {
+		if fence.Consume(line) {
 			continue
 		}
 		m := taskPattern.FindStringSubmatch(line)
@@ -454,12 +460,12 @@ func (d *Document) Item() model.Item {
 		item.DoD = append(item.DoD, model.Criterion{Text: e.text, Checked: e.checked, Evidence: e.evidence})
 	}
 	if s, ok := d.sections["Comments"]; ok {
-		fence := fenceState{}
+		fence := Fence{}
 		var current *model.Comment
 		for i := s.start; i < s.end; i++ {
 			line := clean(d.lines[i])
 			m := []string(nil)
-			if !fence.consume(line) {
+			if !fence.Consume(line) {
 				m = commentPattern.FindStringSubmatch(line)
 			}
 			if m != nil && validTime(m[1]) {

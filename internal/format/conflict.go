@@ -162,7 +162,7 @@ func commentsOnly(lines []string) ([]mergedComment, bool) {
 	var result []mergedComment
 	var current strings.Builder
 	var currentTime time.Time
-	fence := fenceState{}
+	fence := Fence{}
 	started := false
 	flush := func() {
 		if !started {
@@ -177,7 +177,7 @@ func commentsOnly(lines []string) ([]mergedComment, bool) {
 	for _, raw := range lines {
 		line := cleanConflictLine(raw)
 		comment := []string(nil)
-		if !fence.consume(line) {
+		if !fence.Consume(line) {
 			comment = commentPattern.FindStringSubmatch(line)
 		}
 		if comment != nil && validTime(comment[1]) {
@@ -276,7 +276,7 @@ func ResolveConflicts(data []byte) ([]byte, bool) {
 	inFrontmatter := len(lines) > 0 && cleanConflictLine(lines[0]) == "---"
 	frontmatterClosed := false
 	section := "Description"
-	fence := fenceState{}
+	fence := Fence{}
 	for i := 0; i < len(lines); {
 		line := cleanConflictLine(lines[i])
 		if !isStartMarker(line) {
@@ -285,7 +285,7 @@ func ResolveConflicts(data []byte) ([]byte, bool) {
 				inFrontmatter = false
 				frontmatterClosed = true
 			} else if !inFrontmatter && frontmatterClosed {
-				if !fence.consume(line) && strings.HasPrefix(line, "## ") {
+				if !fence.Consume(line) && strings.HasPrefix(line, "## ") {
 					if name := sectionName(strings.TrimPrefix(line, "## ")); name != "" {
 						section = name
 					}
