@@ -409,6 +409,23 @@ bl edit 12 --section plan --text - --if-version VERSION < plan.md
 
 On failure, your buffer is kept; the message and `error.details.editedPath` name it.
 
+### `bl move ID... (--before X | --after X)`
+
+Place the items, in argument order, together just before or after X in the
+source's `sort:rank` order, writing only `rank` (D45). Placing beside an
+unranked item first ranks the unranked items shown before it, after the
+source's greatest key, so nothing else changes position; those writes are
+listed with the moved items. An item already in place writes nothing.
+`--if-version` takes exactly one ID. Native sources only; a target in another
+source refuses `rejected`, as does a gap with no key between its neighbors
+(change one of them). Items are written one at a time; after a failure, the
+output lists those already written.
+
+```sh
+bl move 12 --before 7
+bl move 12 13 --after 7
+```
+
 ### `bl archive ID...` and `bl unarchive ID...`
 
 Move native items into or out of `archive/` without changing their bytes or

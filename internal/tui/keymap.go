@@ -131,6 +131,8 @@ func defaultKeymap() []action {
 		{id: "new", label: "New item / next match", canonical: "n", bindings: []string{"n"}},
 		{id: "new-child", label: "New child / previous match", canonical: "N", bindings: []string{"N"}},
 		{id: "adopt", label: "Adopt pull request", canonical: "+", bindings: []string{"+"}},
+		{id: "move-item-up", label: "Move item up", canonical: "alt+k", bindings: []string{"alt+k", "alt+up"}},
+		{id: "move-item-down", label: "Move item down", canonical: "alt+j", bindings: []string{"alt+j", "alt+down"}},
 		{id: "repeat", label: "Repeat edit", canonical: ".", bindings: []string{"."}},
 		{id: "undo", label: "Undo", canonical: "u", bindings: []string{"u"}},
 		{id: "redo", label: "Redo", canonical: "ctrl+r", bindings: []string{"ctrl+r"}},
@@ -259,10 +261,10 @@ func validKey(key string) bool {
 		return len(rest) == 1 && rest[0] >= 'a' && rest[0] <= 'z' || slices.Contains([]string{"left", "right", "up", "down"}, rest)
 	}
 	// Terminals report Alt with a capital as alt+shift+x, which bindings can't
-	// spell, so only lowercase letters and symbols follow alt+.
+	// spell, so only lowercase letters, symbols and arrows follow alt+.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
 		r := []rune(rest)
-		return len(r) == 1 && !unicode.IsUpper(r[0]) && validKey(rest)
+		return len(r) == 1 && !unicode.IsUpper(r[0]) && validKey(rest) || slices.Contains([]string{"left", "right", "up", "down"}, rest)
 	}
 	return false
 }
@@ -457,6 +459,12 @@ func (m Model) disabledReason(a action) string {
 		if row, ok := m.selectedRow(); ok && m.opts.Me[row.Ref.Source] == "" {
 			return "no current user is configured"
 		}
+	}
+	if a.id == "move-item-up" || a.id == "move-item-down" {
+		if m.detailFocus {
+			return focusList
+		}
+		return m.moveReason()
 	}
 	if a.id == "repeat" && m.lastEdit == nil {
 		return "no edit to repeat"

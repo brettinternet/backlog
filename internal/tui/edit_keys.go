@@ -95,10 +95,17 @@ func (m *Model) updateItemKey(key string) (tea.Cmd, bool) {
 		return m.workflowTransition(model.Active), true
 	case "D":
 		return m.workflowTransition(model.Done), true
+	case "alt+k":
+		return m.moveRow(-1), true
+	case "alt+j":
+		return m.moveRow(1), true
 	case ".":
 		if m.lastEdit == nil {
 			m.notice = "No edit to repeat."
 			return nil, true
+		}
+		if m.lastEdit.move != 0 {
+			return m.moveRow(m.lastEdit.move), true
 		}
 		return m.editCommand(*m.lastEdit, true), true
 	case "u":

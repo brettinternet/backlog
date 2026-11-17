@@ -44,7 +44,9 @@ open, but an unresolved listed child does, conservatively.
 
 ## Ranking
 
-All items are returned in the §6 order, plus the ready subset. Unblock impact
+All items are returned in the §6 order, plus the ready subset. `rank` keys come
+from `bl move` and the TUI's move keys (design.md D45); new items are unranked
+and sort after ranked ones of their priority. Unblock impact
 counts distinct open, unarchived items that transitively depend on this one,
 stopping at closed or archived items. When natural ID order ties (as with
 imported padding), source and verbatim ID decide, so order never depends on

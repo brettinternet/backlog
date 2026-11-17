@@ -421,6 +421,14 @@ range, `ctrl-a` marks the view. Edits from the list apply to the marks, or to
 the selection when nothing is marked. `esc` clears marks or closes detail. `.`
 repeats the last edit on the current targets.
 
+**Reordering:** `alt+k`/`alt+up` and `alt+j`/`alt+down` move the selected item
+past the next row of its source by writing `rank`, as `bl move` does, and the
+item stays selected; `.` repeats the move. They work when the view's first sort
+key is `rank` or `next`, in the list layout. Under `next`, priority outranks
+rank, so a move stops at a priority boundary and the status bar points to `p`.
+Elsewhere, including the tree and board, they're disabled with `sort by rank or
+next to reorder`; on a source other than native, the status bar names it.
+
 **Status keys:** `S` and `D` resolve `workflow.start` and `workflow.done` per
 item source, as `bl start` and `bl done` do. A refused item names its source.
 
@@ -697,6 +705,8 @@ keys:
 | `new` | `n` | New item / next match |
 | `new-child` | `N` | New child / previous match |
 | `adopt` | `+` | Adopt pull request |
+| `move-item-up` | `alt+k`, `alt+up` | Move item up |
+| `move-item-down` | `alt+j`, `alt+down` | Move item down |
 | `repeat` | `.` | Repeat edit |
 | `undo` | `u` | Undo |
 | `redo` | `ctrl+r` | Redo |

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -324,6 +325,59 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 			return err
 		}
 		return batch(ctx, cmd, cfg, ids, changes)
+	}})
+	commands = append(commands, &urfave.Command{Name: "move", Usage: "Reorder items by rank", ArgsUsage: "ID... (--before X | --after X)", Description: moveHelp, Flags: append([]urfave.Flag{&urfave.StringFlag{Name: "before", Usage: "Place the items just before `ID`"}, &urfave.StringFlag{Name: "after", Usage: "Place the items just after `ID`"}}, flag()...), Action: func(ctx context.Context, cmd *urfave.Command) error {
+		ids := cmd.Args().Slice()
+		if len(ids) == 0 || cmd.String("before") == "" == (cmd.String("after") == "") {
+			return writeUsage("move requires IDs and one of --before ID or --after ID")
+		}
+		if cmd.IsSet("if-version") && (len(ids) != 1 || cmd.String("if-version") == "") {
+			return writeUsage("--if-version requires exactly one ID and a nonempty version")
+		}
+		cfg, err := loadConfig(cmd, *directory)
+		if err != nil {
+			return err
+		}
+		target, err := writeItem(ctx, cfg, cmp.Or(cmd.String("before"), cmd.String("after")))
+		if err != nil {
+			return err
+		}
+		moving := make([]model.Item, len(ids))
+		for n, id := range ids {
+			if moving[n], err = writeItem(ctx, cfg, id); err != nil {
+				return err
+			}
+		}
+		if cmd.IsSet("if-version") {
+			moving[0].Version = cmd.String("if-version")
+		}
+		placed, err := engine.Move(ctx, cfg, moving, target, cmd.String("after") != "")
+		data := writeData{Outcomes: []writeOutcome{}}
+		for _, item := range placed {
+			summary := itemjson.NewSummary(item)
+			data.Outcomes = append(data.Outcomes, writeOutcome{ID: item.Ref.ID, Item: &summary})
+		}
+		if err != nil {
+			failure := writeError(err)
+			if len(placed) > 0 {
+				failure.Data = data
+			}
+			return failure
+		}
+		if cmd.Bool("json") {
+			return success(out, cmd.Name, data)
+		}
+		written := make([]readItem, len(data.Outcomes))
+		for n, r := range data.Outcomes {
+			written[n] = *r.Item
+		}
+		table := newItemTable(out, cfg, written)
+		for _, r := range written {
+			if err := table.write(r); err != nil {
+				return err
+			}
+		}
+		return nil
 	}})
 	transitions := map[string]*urfave.Command{}
 	for name, usage := range map[string][2]string{

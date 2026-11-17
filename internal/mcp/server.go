@@ -195,10 +195,12 @@ type UpdateArgs struct {
 	WriteArgs
 	Confirm   bool           `json:"confirm,omitempty" jsonschema:"Acknowledge replacement of a Jira single assignee."`
 	ID        string         `json:"id"`
-	Operation string         `json:"operation,omitempty" jsonschema:"start, done, archive, unarchive, or replace_section. start and done set the workflow status the item's source accepts."`
+	Operation string         `json:"operation,omitempty" jsonschema:"start, done, archive, unarchive, replace_section, or move. start and done set the workflow status the item's source accepts. move places the item just before or after another item of its native source by writing rank."`
 	Fields    map[string]any `json:"fields,omitempty" jsonschema:"Field values matching bl set fields; suffix list fields with + or - for add/remove."`
 	Section   string         `json:"section,omitempty" jsonschema:"Editable section for replace_section: description, criteria, dod, plan, notes, or summary."`
 	Text      string         `json:"text,omitempty" jsonschema:"Replacement text for replace_section; empty clears the section."`
+	Before    string         `json:"before,omitempty" jsonschema:"For move: the item ID to place this item just before."`
+	After     string         `json:"after,omitempty" jsonschema:"For move: the item ID to place this item just after."`
 }
 type AppendArgs struct {
 	WriteArgs
@@ -510,6 +512,26 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 	if args.Operation != "" && len(args.Fields) != 0 {
 		return failed[any]("usage", "fields and operation cannot be combined")
 	}
+	if args.Operation == "move" {
+		if (args.Before == "") == (args.After == "") {
+			return failed[any]("usage", "move requires one of before or after")
+		}
+		target, err := readItem(ctx, s.cfg, cmp.Or(args.Before, args.After))
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+		item.Version = version
+		placed, err := engine.Move(engine.WithEventOrigin(ctx, "mcp"), s.cfg, []model.Item{item}, target, args.After != "")
+		if err != nil {
+			return failed[any](reason(err), err.Error())
+		}
+		for _, p := range placed {
+			if p.Ref == item.Ref {
+				item = p
+			}
+		}
+		return nil, ItemResult{Item: itemjson.NewSummary(item)}, nil
+	}
 	done := args.Operation == "done"
 	if args.Operation == "start" || done {
 		// Resolved per item source, then written like a status field update.
@@ -537,7 +559,7 @@ func (s *Server) update(ctx context.Context, _ *mcp.CallToolRequest, args Update
 				return failed[any]("rejected", "section must be description, criteria, dod, plan, notes, or summary")
 			}
 		default:
-			return failed[any]("rejected", "operation must be start, done, archive, unarchive, or replace_section")
+			return failed[any]("rejected", "operation must be start, done, archive, unarchive, replace_section, or move")
 		}
 		updated, err := engine.ApplyWrite(engine.WithEventOrigin(ctx, "mcp"), s.cfg, model.Mutation{Op: op, Ref: item.Ref, ExpectedVersion: version, Section: section, Text: args.Text})
 		if err != nil {

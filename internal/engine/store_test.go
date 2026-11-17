@@ -582,6 +582,51 @@ func TestNativeUndoRedoAndExternalHistoryGap(t *testing.T) {
 	}
 }
 
+// A move writes several items' ranks as one edit: one undo must restore every
+// key it wrote, and one redo reapply them, or reordering leaves a scrambled
+// order behind.
+func TestMultiItemEditUndoesAsOne(t *testing.T) {
+	t.Parallel()
+	initial, backend, _ := nativeStore(t)
+	initial.Close()
+	if _, err := backend.Apply(context.Background(), model.Mutation{Op: model.Create, Item: &model.Item{Title: "Second", Status: "todo", Rank: "m"}}); err != nil {
+		t.Fatal(err)
+	}
+	s := engine.OpenStore(context.Background(), storeConfig(), source.Registry{"tasks": backend})
+	defer s.Close()
+	awaitSnapshot(t, s, func(s *engine.Snapshot) bool { return s.Len() == 2 })
+	refs := []model.Ref{{Source: "tasks", ID: "BL-1"}, {Source: "tasks", ID: "BL-2"}}
+	ranks := func() string {
+		var out []string
+		for _, ref := range refs {
+			i, err := backend.Read(context.Background(), ref.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, i.Rank)
+		}
+		return strings.Join(out, ",")
+	}
+	var ms []model.Mutation
+	for n, ref := range refs {
+		i, _, _ := s.Current().Get(ref)
+		ms = append(ms, model.Mutation{Ref: ref, ExpectedVersion: i.Version, Op: model.Set, Field: "rank", Value: []string{"a", "b"}[n]})
+	}
+	requireSuccess(t, s.Mutate(ms...))
+	for _, step := range []struct {
+		run  func() <-chan error
+		want string
+	}{{s.Undo, ",m"}, {s.Redo, "a,b"}, {s.Undo, ",m"}} {
+		requireSuccess(t, step.run())
+		if got := ranks(); got != step.want {
+			t.Fatalf("ranks %q, want %q", got, step.want)
+		}
+	}
+	if err := awaitResult(t, s.Undo()); err == nil {
+		t.Fatal("one undo left a second entry behind")
+	}
+}
+
 type slowPreparation struct {
 	*native.Source
 	gate <-chan struct{}

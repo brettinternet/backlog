@@ -44,7 +44,7 @@ by the configured source IDs and types for `source:` filters.
 | `query` | `query` | `bl ls` |
 | `show` | `id` | `bl show` (adds `resource` with coordination) |
 | `create` | `title`, and optional `status`, `type`, `priority`, `description`, `criteria`, `assignees`, `labels`, `milestone`, `due`, `parent`, `blocked_by`, `refs`, `source`, `sprint` | `bl new` |
-| `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, or `operation: replace_section` with `section` and `text`; `session`, `run`, `agent`, `agentSession` | `bl set`, `bl archive`, `bl edit --section` |
+| `update` | `id`, `version`, and `fields`, `operation: archive\|unarchive`, `operation: replace_section` with `section` and `text`, or `operation: move` with `before` or `after`; `session`, `run`, `agent`, `agentSession` | `bl set`, `bl archive`, `bl edit --section`, `bl move` |
 | `append` | `id`, `version`, `kind` (`note`\|`comment`\|`handoff`), `text`, `author`; `session`, `agent`, `agentSession` | `bl note`, `bl comment`, `bl handoff` |
 | `criteria` | `id`, `version`, `operation` (`check`\|`uncheck`\|`add`\|`set`\|`remove`), `index`, `text`, `evidence`, `list` (`criteria`\|`dod`) | `bl ac` |
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
@@ -74,6 +74,8 @@ by the configured source IDs and types for `source:` filters.
   the entry at `index` to `text`, keeping its check state and evidence.
 - Editable sections: `description`, `criteria`, `dod`, `plan`, `notes`,
   `summary`.
+- `operation: "move"` places the item just before or after another item of
+  its native source, like `bl move`, and returns the moved item.
 - References accept the same shorthand as `bl new`. `status: draft` creates an
   item that is never ready.
 - `create` picks its source like `bl new`: `source`, `defaults.source`, else
