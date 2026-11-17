@@ -42,7 +42,7 @@ Then run `bl trust`. Find the UUIDs with GraphQL:
 { team(id: "TEAM_UUID") { states { nodes { id name type } } } }
 ```
 
-Linear state types map to categories: `backlog` → backlog, `unstarted` → todo,
+Linear state types map to categories: `triage` and `backlog` → backlog, `unstarted` → todo,
 `started` → active, `completed` → done, `canceled` and `duplicate` → canceled.
 Raw names, types, priority, and UUIDs stay in item fields. Display IDs like
 `ENG-431` are separate from the issue UUID.
@@ -174,9 +174,12 @@ forces reconciliation.
 
 A moving `updatedAt` scan can't prove absence, so coverage stays partial.
 Reconciliation marks unseen rows stale, not deleted or ready. Cursors commit
-only after a successful scan. Missing or repeated cursors, unknown states or
-relation types, and incomplete nested reads fail closed. Teams with more than
-250 labels are refused.
+only after a successful scan. Missing or repeated cursors and incomplete
+nested reads fail the sync. An issue whose own data bl can't map (an unknown
+state or relation type, an invalid assignee or label, more than 250 labels) is
+skipped with a warning naming it, and its cached row turns stale, so it is
+never ready and never satisfies a blocker. The others still load. It returns
+when it next changes or at the next reconciliation (`R` forces one).
 
 | Relation | Meaning |
 | --- | --- |

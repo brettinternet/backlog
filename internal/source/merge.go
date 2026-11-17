@@ -26,7 +26,7 @@ func Merge(previous, next Delta) Delta {
 	}
 	for _, item := range previous.Items {
 		put(item)
-		if previous.Stale[item.Ref] || !next.RetainUnseen && (!complete || previous.Coverage != Complete) {
+		if previous.Stale[item.Ref] || next.Stale[item.Ref] || !next.RetainUnseen && (!complete || previous.Coverage != Complete) {
 			out.Stale[item.Ref] = true
 		}
 	}

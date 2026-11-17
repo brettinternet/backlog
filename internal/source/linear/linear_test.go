@@ -55,6 +55,7 @@ type fixture struct {
 	created                                                                        map[string]any
 	relationInputs                                                                 []any
 	failRelation                                                                   bool
+	badState                                                                       bool // TEST-1 has a state type bl doesn't know
 }
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -95,6 +96,9 @@ func (f *fixture) row(n int) map[string]any {
 	r["state"] = map[string]string{"id": f.state, "name": "Todo", "type": "unstarted"}
 	if f.state == activeID {
 		r["state"] = map[string]string{"id": activeID, "name": "Started", "type": "started"}
+	}
+	if f.badState && n == 1 {
+		r["state"] = map[string]string{"id": f.state, "name": "Review", "type": "experimental"}
 	}
 	if f.assignee != "" {
 		r["assignee"] = map[string]string{"id": f.assignee, "name": "Ada Lovelace"}
@@ -495,6 +499,30 @@ func TestRefreshBudgetAndRetainedRows(t *testing.T) {
 		t.Fatalf("requested reconciliation: requests=%d err=%v", f.requests-requests, err)
 	}
 	t.Log("1000 issues: unchanged refresh=2 requests; one change=3; hourly or requested reconciliation=106; no stale retained rows")
+}
+
+// One issue in a state type bl doesn't map must not take the source down:
+// the others still load, and its cached copy turns stale so it can't be ready.
+func TestInvalidIssueIsSkippedNotFatal(t *testing.T) {
+	s, f := fixtureSource(t)
+	f.size = 3
+	ctx := context.Background()
+	now := s.o.Now()
+	s.o.Now = func() time.Time { return now }
+	wrapped := remote.New(s, cache.New(t.TempDir(), "invalid", "lin", "scope"), s.o.Secrets)
+	if d, err := wrapped.Load(ctx, source.Cursor{}); err != nil || len(d.Items) != 3 || len(d.Stale) != 0 {
+		t.Fatalf("initial scan: rows=%d stale=%d err=%v", len(d.Items), len(d.Stale), err)
+	}
+	f.changed, f.badState = true, true
+	now = now.Add(time.Minute)
+	d, err := wrapped.Load(ctx, source.Cursor{})
+	ref := model.Ref{Source: "lin", ID: "TEST-1"}
+	if err != nil || len(d.Items) != 3 || len(d.Stale) != 1 || !d.Stale[ref] {
+		t.Fatalf("bad issue in window: rows=%d stale=%v err=%v", len(d.Items), d.Stale, err)
+	}
+	if len(d.Findings) != 1 || d.Findings[0].Severity != "warning" || !strings.Contains(d.Findings[0].Message, `TEST-1: unknown Linear state type "experimental"`) {
+		t.Fatalf("findings: %+v", d.Findings)
+	}
 }
 
 // BL-90: trashing a blocker bumps only the trashed issue and silently drops the

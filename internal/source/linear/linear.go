@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -393,6 +394,19 @@ func (s *Source) Load(ctx context.Context, cursor source.Cursor) (source.Delta, 
 		}
 		for _, row := range batch {
 			item, err := s.item(ctx, c, row)
+			var bad *invalidIssue
+			if errors.As(err, &bad) {
+				// One malformed issue must not hide the rest. Skipping it keeps
+				// coverage partial, so it proves no deletion, and its cached row
+				// turns stale, so it can't be ready or satisfy a blocker.
+				ref := model.Ref{Source: s.o.ID, ID: row.Identifier}
+				if delta.Stale == nil {
+					delta.Stale = map[model.Ref]bool{}
+				}
+				delta.Stale[ref] = true
+				delta.Findings = append(delta.Findings, source.Finding{Code: "linear-invalid-issue", Severity: "warning", Path: row.Identifier, Message: bad.err.Message + "; skipped until it changes or the next reconciliation"})
+				continue
+			}
 			if err != nil {
 				return source.Delta{}, err
 			}
@@ -550,7 +564,7 @@ func (s *Source) detail(ctx context.Context, c remote.Credential, id string) (is
 	return *r.Issue, nil
 }
 func stateCategory(kind string) (model.StatusCategory, bool) {
-	category, ok := map[string]model.StatusCategory{"backlog": model.Backlog, "unstarted": model.Todo, "started": model.Active, "completed": model.Done, "canceled": model.Canceled, "duplicate": model.Canceled}[kind]
+	category, ok := map[string]model.StatusCategory{"triage": model.Backlog, "backlog": model.Backlog, "unstarted": model.Todo, "started": model.Active, "completed": model.Done, "canceled": model.Canceled, "duplicate": model.Canceled}[kind]
 	return category, ok
 }
 func (s *Source) ref(e *entity) (model.Ref, error) {
@@ -566,14 +580,24 @@ func (s *Source) ref(e *entity) (model.Ref, error) {
 	}
 	return model.Ref{Source: alias, ID: e.Identifier}, nil
 }
+
+// invalidIssue is a refusal confined to one issue's data. Load skips that
+// issue instead of failing the source; Read still refuses it.
+type invalidIssue struct{ err *source.Error }
+
+func (e *invalidIssue) Error() string { return e.err.Error() }
+func (e *invalidIssue) Unwrap() error { return e.err }
+func invalid(row issue, message string) error {
+	return &invalidIssue{&source.Error{Reason: "unavailable", Message: row.Identifier + ": " + message}}
+}
 func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (model.Item, error) {
 	if !s.within(row) || row.State == nil || !uuid(row.State.ID) || row.Priority < 0 || row.Priority > 4 {
-		return model.Item{}, source.Refuse("unavailable", "invalid Linear issue")
+		return model.Item{}, invalid(row, "invalid Linear issue")
 	}
 	item := model.Item{Ref: model.Ref{Source: s.o.ID, ID: row.Identifier}, Title: row.Title, Type: "issue", Description: row.Description, Status: row.State.ID, URL: row.URL, Created: row.CreatedAt, Updated: row.UpdatedAt, Fields: map[string]any{"uuid": row.ID, "organizationID": s.o.Organization, "teamID": s.o.Team, "stateName": row.State.Name, "stateType": row.State.Type, "priority": row.Priority, "archived": row.ArchivedAt != nil || row.Trashed}}
 	category, ok := stateCategory(row.State.Type)
 	if !ok {
-		return model.Item{}, source.Refuse("unavailable", "unknown Linear state type")
+		return model.Item{}, invalid(row, fmt.Sprintf("unknown Linear state type %q", row.State.Type))
 	}
 	item.Category = category
 	if row.ArchivedAt != nil || row.Trashed {
@@ -586,7 +610,7 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 	}
 	if row.Assignee != nil {
 		if !uuid(row.Assignee.ID) {
-			return model.Item{}, source.Refuse("unavailable", "invalid Linear assignee")
+			return model.Item{}, invalid(row, "invalid Linear assignee")
 		}
 		item.Assignees = []string{row.Assignee.ID}
 		if row.Assignee.Name != "" {
@@ -594,12 +618,12 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 		}
 	}
 	if row.Labels.Nodes == nil || row.Labels.PageInfo == nil || row.Labels.PageInfo.HasNextPage {
-		return model.Item{}, source.Refuse("unavailable", "Linear labels exceed complete read limit")
+		return model.Item{}, invalid(row, "Linear labels exceed complete read limit")
 	}
 	labelIDs := []string{}
 	for _, l := range row.Labels.Nodes {
 		if !uuid(l.ID) || l.Name == "" {
-			return model.Item{}, source.Refuse("unavailable", "invalid Linear label")
+			return model.Item{}, invalid(row, "invalid Linear label")
 		}
 		item.Labels = append(item.Labels, l.Name)
 		labelIDs = append(labelIDs, l.ID)
@@ -610,7 +634,7 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 	if row.Parent != nil {
 		ref, err := s.ref(row.Parent)
 		if err != nil {
-			return model.Item{}, err
+			return model.Item{}, invalid(row, "incomplete Linear parent identity")
 		}
 		item.Parent = &ref
 		item.Edges = append(item.Edges, model.Edge{Kind: model.Parent, Target: ref})
@@ -661,7 +685,7 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 				}
 				ref, err := s.ref(e)
 				if err != nil {
-					return model.Item{}, err
+					return model.Item{}, invalid(row, "incomplete Linear relation identity")
 				}
 				switch edge.Type {
 				case "blocks":
@@ -675,7 +699,7 @@ func (s *Source) item(ctx context.Context, c remote.Credential, row issue) (mode
 					item.Related = append(item.Related, ref)
 					item.Edges = append(item.Edges, model.Edge{Kind: model.Related, Target: ref})
 				default:
-					return model.Item{}, source.Refuse("unavailable", "unknown Linear relation type")
+					return model.Item{}, invalid(row, fmt.Sprintf("unknown Linear relation type %q", edge.Type))
 				}
 			}
 			next, err := advance(conn.PageInfo, seen)
