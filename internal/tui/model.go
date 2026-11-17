@@ -409,6 +409,9 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	}
 	// A pull request item opens in its pull request's change view once each
 	// time it's selected, so backspace keeps its item tabs (design.md D44).
+	if !ok || row.Ref != m.pullShown {
+		m.pullShown = model.Ref{}
+	}
 	if m.detailOpen && ok && m.change == nil && m.pullShown != row.Ref && m.pullItem(row) {
 		if c, at, n := furthestPull(row.Changes); n > 0 {
 			m.showChange(row, c, at, tabChangeOverview)

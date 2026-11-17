@@ -159,10 +159,10 @@ func pullQuery(text string) (func(changes.Change) bool, string, bool) {
 // showingPull puts the items showing a pull request before the other matches,
 // or says that no item shows it.
 func showingPull(catalog *engine.Catalog, match func(changes.Change) bool, label string, rows []launcherRow) ([]launcherRow, error) {
-	var shown []engine.Row
-	if catalog != nil {
-		shown = catalog.Showing(match)
+	if catalog == nil {
+		return rows, nil
 	}
+	shown := catalog.Showing(match)
 	if len(shown) == 0 {
 		return rows, fmt.Errorf("no item shows pull request %s", label)
 	}

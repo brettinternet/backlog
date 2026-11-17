@@ -822,8 +822,8 @@ func TestChangeView(t *testing.T) {
 
 // Catches gp opening the wrong pull request or not falling back to Changes, J
 // dropping the change view's tab or keeping a change on an item without one, a
-// pull request item not opening in its change view or reopening after
-// backspace, and gp acting with no pull request.
+// pull request item not opening in its change view, reopening after backspace,
+// or not reopening once selected again, and gp acting with no pull request.
 func TestOpenPull(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 4, RenderMarkdown)
@@ -879,6 +879,11 @@ func TestOpenPull(t *testing.T) {
 	m, _ = detailKey(m, tea.KeyBackspace, 0)
 	m = settleDetail(t, m)
 	at(m, "BL-4", 0, tabChanges)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-4", 5, tabChangeOverview)
 	m, _ = detailKey(m, 'K', 0)
 	m = settleDetail(t, m)
 	m, _ = detailKey(m, 'K', 0)
