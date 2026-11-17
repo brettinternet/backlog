@@ -49,6 +49,7 @@ assignee picker ([Jira](jira.md#writes)).
 | `◌` `○` `◐` `✓` `✕` | Status category: backlog, todo, active, done, canceled |
 | `⊘ N` | N open blockers |
 | `▣ a/b` | Closed descendants / all descendants |
+| `☑ a/b` | Checked / all acceptance criteria, not definition of done (Active tab) |
 | `●` after the ID | Edit pending |
 | `!` after the ID | Edit failed or conflicted; open the item for detail |
 | `•` in the gutter | Marked |
@@ -59,7 +60,9 @@ adapters replace the badges with `⚠ Untrusted project config · bl trust --sho
 untrusted adapters aren't opened, but native sources stay browsable.
 
 **Rows:** priority, ID, status, title with labels, open blockers, child
-progress, linked change, assignee, and time since update. The change column
+progress, linked change, assignee, and time since update. The Active tab also
+shows acceptance criteria progress once any row has criteria; other built-in
+tabs don't. The change column
 shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓`
 ([Changes](changes.md)), and appears once any row has one. For an open pull
 request its last glyph is the merge verdict from the list read, first that
@@ -68,7 +71,7 @@ its base, `●` checks running, `○` review required, `✓` ready. A draft, or 
 pull request whose merge state is unknown, shows its checks glyph. Help lists
 these under Change column. As the pane narrows,
 columns drop in this order so the title keeps at least two-fifths of the width:
-updated, assignee, children and change, blockers, claim, then the status name
+updated, assignee, children, criteria, and change, blockers, claim, then the status name
 (the icon stays).
 Grouping by status shows only the icon. Opaque provider IDs (Linear states and
 users, Jira accountIds, GitHub Projects options) show the provider's name
@@ -131,8 +134,8 @@ views:
 ```
 
 Explicit `sort` and `group` override query directives. Columns are `id`,
-`priority`, `status`, `blockers`, `children`, `claim`, `assignee`, `updated`, and
-`title`, in display order.
+`priority`, `status`, `blockers`, `children`, `criteria`, `changes`, `claim`,
+`assignee`, `updated`, and `title`, in display order.
 
 `gt`/`gT` cycle tabs; `1`–`9` jump to one (a digit waits 350 ms in case it starts
 a count). Each tab keeps its query, folds, and selected item across refreshes,
