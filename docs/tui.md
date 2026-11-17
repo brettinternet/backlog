@@ -496,7 +496,8 @@ item stays selected; `.` repeats the move. They work when the view's first sort
 key is `rank` or `next`, in the list layout. Under `next`, priority outranks
 rank, so a move stops at a priority boundary and the status bar points to `p`.
 Elsewhere, including the tree and board, they're disabled with `sort by rank or
-next to reorder`; on a source other than native, the status bar names it.
+next to reorder`; on a source other than native, the status bar names it. On the
+board, drag a card instead ([Mouse](#mouse)).
 On macOS, `alt+j` and `alt+k` need the terminal to send Option as Meta.
 
 **Status keys:** `S` and `D` resolve `workflow.start` and `workflow.done` per
@@ -671,7 +672,14 @@ change, or a change's commit, to select it; double-click to open it. Click a
 History entry, or any line of its expansion, to select it; click its `▸` or
 double-click to expand or collapse it, and click `! resume` to run it. Click the
 query in the status bar to edit it there. The wheel moves three rows, or scrolls
-detail under the pointer; a sideways swipe moves one board column. Drag the
+detail under the pointer; a sideways swipe moves one board column. Drag a board
+card onto another column to set its status, resolved and refused as `<` and `>`
+are; the target header highlights and a line marks where the card lands. A
+marked card drags every mark, changing only status. Where the view's first sort
+key is `rank` or `next`, the drop also places the card beside its nearest
+same-source neighbor by rank, as the move keys do, and works within a column.
+`esc` cancels; a drop on a header, outside the board, or on the card's own slot
+does nothing, and moving past a board edge scrolls columns. Drag the
 divider to resize. Drag across detail text to select it, moving past an edge to scroll;
 release copies it (OSC 52).
 
