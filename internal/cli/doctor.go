@@ -474,33 +474,79 @@ type forgeReport struct {
 // forgeProbeTimeout bounds each forge's one-page read.
 const forgeProbeTimeout = 15 * time.Second
 
+// configChanges is changes config with the forges it resolved to; Reason
+// and Fix say why none did, in the doctor forges check's words.
+type configChanges struct {
+	Git    bool          `json:"git"`
+	Forges []configForge `json:"forges"`
+	Reason string        `json:"reason,omitempty"`
+	Fix    string        `json:"fix,omitempty"`
+}
+
+// configForge is one resolved forge; Error says why it can't be read.
+type configForge struct {
+	Type     string `json:"type"`
+	Host     string `json:"host"`
+	Repo     string `json:"repo"`
+	Account  string `json:"account,omitempty"`
+	Implicit bool   `json:"implicit"`
+	Error    string `json:"error,omitempty"`
+}
+
+func effectiveChanges(cfg project.Config) configChanges {
+	resolved, gap := engine.ResolveForges(cfg)
+	out := configChanges{Git: cfg.Changes.Git, Forges: []configForge{}}
+	for _, f := range resolved {
+		forge := configForge{Type: f.Type, Host: f.Host, Repo: f.Repo, Account: f.Account, Implicit: !f.Explicit}
+		if f.Err != nil {
+			forge.Error = f.Err.Error()
+		}
+		out.Forges = append(out.Forges, forge)
+	}
+	if len(resolved) == 0 {
+		var status string
+		status, out.Reason, out.Fix = noForge(cfg, gap)
+		if status == "skip" {
+			out.Fix = ""
+		}
+	}
+	return out
+}
+
+// noForge says why cfg resolved no forge from gap, ResolveForges' second
+// result, as a doctor status, message, and fix; bl config show says the same.
+func noForge(cfg project.Config, gap *engine.ForgeGap) (status, message, fix string) {
+	if gap == nil {
+		return "skip", "No changes.forges and no GitHub or GitLab origin", "No action needed"
+	}
+	label := map[string]string{"github": "GitHub", "gitlab": "GitLab"}[gap.Type]
+	origin := gap.Host + "/" + gap.Repo
+	if len(gap.Accounts) == 0 {
+		account := "{name: personal, host: " + gap.Host + ", user: YOUR_LOGIN"
+		login := ", then run bl auth login " + gap.Type + " personal"
+		switch {
+		case gap.Type == "gitlab":
+			account += ", env: GITLAB_TOKEN"
+			login = ""
+		case gap.Host == "github.com":
+			account += ", oauth: true"
+		}
+		return "warn",
+			"Origin " + origin + " has no forge: no " + label + " account for " + gap.Host + ", so linked pull requests never appear",
+			"Add a " + label + " account for " + gap.Host + " to user config (" + cfg.Paths.ConfigFile + "): accounts: {" + gap.Type + ": [" + account + "}]}" + login
+	}
+	return "warn",
+		"Origin " + origin + " has no forge: " + label + " accounts " + strings.Join(gap.Accounts, ", ") + " all match " + gap.Host,
+		"Pick one in backlog.yaml, then run bl trust: changes: {forges: [{type: " + gap.Type + ", host: " + gap.Host + ", repo: " + gap.Repo + ", account: " + gap.Accounts[0] + "}]}"
+}
+
 // forgesCheck reports how linked changes' forges resolved and whether each
 // can read one page of pull requests with checks and closing references.
 func forgesCheck(ctx context.Context, cfg project.Config) (doctorCheck, []forgeReport) {
 	resolved, gap := engine.ResolveForges(cfg)
 	if len(resolved) == 0 {
-		if gap == nil {
-			return doctorCheck{"forges", "skip", "No changes.forges and no GitHub or GitLab origin", "No action needed"}, nil
-		}
-		label := map[string]string{"github": "GitHub", "gitlab": "GitLab"}[gap.Type]
-		origin := gap.Host + "/" + gap.Repo
-		if len(gap.Accounts) == 0 {
-			account := "{name: personal, host: " + gap.Host + ", user: YOUR_LOGIN"
-			login := ", then run bl auth login " + gap.Type + " personal"
-			switch {
-			case gap.Type == "gitlab":
-				account += ", env: GITLAB_TOKEN"
-				login = ""
-			case gap.Host == "github.com":
-				account += ", oauth: true"
-			}
-			return doctorCheck{"forges", "warn",
-				"Origin " + origin + " has no forge: no " + label + " account for " + gap.Host + ", so linked pull requests never appear",
-				"Add a " + label + " account for " + gap.Host + " to user config (" + cfg.Paths.ConfigFile + "): accounts: {" + gap.Type + ": [" + account + "}]}" + login}, nil
-		}
-		return doctorCheck{"forges", "warn",
-			"Origin " + origin + " has no forge: " + label + " accounts " + strings.Join(gap.Accounts, ", ") + " all match " + gap.Host,
-			"Pick one in backlog.yaml, then run bl trust: changes: {forges: [{type: " + gap.Type + ", host: " + gap.Host + ", repo: " + gap.Repo + ", account: " + gap.Accounts[0] + "}]}"}, nil
+		status, message, fix := noForge(cfg, gap)
+		return doctorCheck{"forges", status, message, fix}, nil
 	}
 	c := doctorCheck{"forges", "pass", "", "No action needed"}
 	var reports []forgeReport

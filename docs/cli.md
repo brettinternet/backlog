@@ -752,6 +752,12 @@ the effective non-secret settings plus `directory`, `paths`, `discovery`,
 {"ui":{"highContrast":false},"provenance":{"ui.highContrast":{"layer":"project","file":"/repo/backlog.yaml","line":4}},"privileged":[{"key":"hooks[0]","trusted":false,"origin":{"layer":"project","file":"/repo/backlog.yaml","line":8}}]}
 ```
 
+`changes.forges` lists the [forges](changes.md#configuration) it resolved,
+explicit or from `origin`, each with `type`, `host`, `repo`, `account`,
+`implicit`, and `error` when it can't be read. With none, `changes.reason` and
+`fix` say why in `bl doctor`'s words. Text output prints a `Forge:` line for
+each, or `Forges: none:` with the reason and fix.
+
 Provenance layers are `built-in`, `discovery`, `user`, `project`, `local`,
 `user-project`, `environment`, and `flag`. Implicit defaults (such as
 `milestones[0].archived: false`) are `built-in`. `privileged` lists hooks,
@@ -885,8 +891,9 @@ uses reason `adapter-check`. It doesn't trust configured sources. See the
 ### `bl instructions [TOPIC]`
 
 Prints Markdown guidance matching the installed version. Topics: `overview`
-(default), `workflow`, `query`, `format`, `json`, `tours`. Unknown topics exit 2. JSON
-`data` has `topic`, `topics`, and `markdown`.
+(default), `workflow`, `query`, `format`, `json`, `changes` (forge setup,
+token permissions, provider states, and `bl changes` JSON), `tours`. Unknown
+topics exit 2. JSON `data` has `topic`, `topics`, and `markdown`.
 
 Guidance never needs a project. In one whose config sets
 `history.commitTrailer: KEY` (for example `Refs`), `workflow` adds one line

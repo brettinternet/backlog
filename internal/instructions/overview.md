@@ -23,5 +23,6 @@ plain next remains read-only. Follow the project's coordination policy. Unknown
 or unverifiable ownership refuses side effects; do not bypass this with a new
 session.
 
-Read the workflow, query, format, and json topics as needed, and tours to
-walk a reviewer through a change.
+Read the workflow, query, format, and json topics as needed, changes to set
+up and read linked branches and pull requests, and tours to walk a reviewer
+through a change.
