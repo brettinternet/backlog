@@ -136,7 +136,7 @@ func age(t, now time.Time) string {
 type widths struct {
 	id, status, assignee, claim, project, source int
 	changes                                      int
-	blockers, children                           bool // any row has a value
+	blockers, children, criteria                 bool // any row has a value
 }
 
 func measure(rows []screenRow, names map[string]string) widths {
@@ -158,6 +158,7 @@ func measure(rows []screenRow, names map[string]string) widths {
 		}
 		w.blockers = w.blockers || r.OpenBlockers > 0
 		w.children = w.children || r.ChildrenTotal > 0
+		w.criteria = w.criteria || r.AcceptedTotal > 0
 		w.claim = max(w.claim, textWidth(r.Claim))
 		w.project = max(w.project, textWidth(r.Project))
 		w.source = max(w.source, textWidth(r.Source))
@@ -182,6 +183,7 @@ const (
 	colTitle
 	colBlockers
 	colChildren
+	colCriteria
 	colChanges
 	colClaim
 	colAssignee
@@ -246,6 +248,8 @@ func (m Model) layout(width int) listLayout {
 				add(spec{kind: colBlockers, width: 4, right: true, drop: 4})
 			case "children":
 				add(spec{kind: colChildren, width: 7, right: true, drop: 3})
+			case "criteria":
+				add(spec{kind: colCriteria, width: 7, right: true, drop: 3})
 			case "changes":
 				add(spec{kind: colChanges, width: max(6, w.changes), drop: 3})
 			case "claim":
@@ -272,6 +276,10 @@ func (m Model) layout(width int) listLayout {
 		}
 		if w.children {
 			add(spec{kind: colChildren, width: 7, right: true, drop: 3})
+		}
+		// Other built-in tabs stay narrow; Active is where criteria get checked.
+		if w.criteria && m.views[m.view].ID == "builtin:Active" {
+			add(spec{kind: colCriteria, width: 7, right: true, drop: 3})
 		}
 		if w.changes > 0 {
 			add(spec{kind: colChanges, width: w.changes, drop: 3})
@@ -337,6 +345,8 @@ func (m Model) layout(width int) listLayout {
 			c.label = "⊘"
 		case colChildren:
 			c.label = "▣"
+		case colCriteria:
+			c.label = "☑"
 		case colChanges:
 			c.label = "⇡"
 		case colClaim:
@@ -454,6 +464,18 @@ func (m Model) cursorBar() string {
 	return m.theme.accent.render("▌")
 }
 
+// progressCell shows done/total after glyph, green when complete, blank when total is 0.
+func progressCell(t theme, glyph string, done, total, width int) string {
+	if total == 0 {
+		return strings.Repeat(" ", width)
+	}
+	text := cellRight(fmt.Sprintf("%s %d/%d", glyph, done, total), width)
+	if done == total {
+		return t.green.render(text)
+	}
+	return t.muted.render(text)
+}
+
 func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool) string {
 	t := m.theme
 	switch c.kind {
@@ -482,14 +504,9 @@ func (m Model) rowCell(r screenRow, row engine.Row, c listColumn, selected bool)
 		}
 		return t.red.render(cellRight("⊘ "+strconv.Itoa(row.OpenBlockers), c.width))
 	case colChildren:
-		if row.ChildrenTotal == 0 {
-			return strings.Repeat(" ", c.width)
-		}
-		text := cellRight(fmt.Sprintf("▣ %d/%d", row.ChildrenDone, row.ChildrenTotal), c.width)
-		if row.ChildrenDone == row.ChildrenTotal {
-			return t.green.render(text)
-		}
-		return t.muted.render(text)
+		return progressCell(t, "▣", row.ChildrenDone, row.ChildrenTotal, c.width)
+	case colCriteria:
+		return progressCell(t, "☑", row.AcceptedDone, row.AcceptedTotal, c.width)
 	case colChanges:
 		return changeCell(t, row.Changes, c.width)
 	case colClaim:
