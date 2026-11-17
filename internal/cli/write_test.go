@@ -723,6 +723,8 @@ func TestDotNamesBranchItem(t *testing.T) {
 	if !strings.Contains(get(t, filepath.Join(root, "items", created.Data.ID+".md")), "from the branch") {
 		t.Fatal("note . missed the branch item")
 	}
+	writeOK(t, linked, "", "archive", ".")
+	writeOK(t, linked, "", "unarchive", ".")
 
 	for _, tc := range []struct {
 		head, want string

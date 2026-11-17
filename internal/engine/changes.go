@@ -304,7 +304,8 @@ func BranchItems(ctx context.Context, cfg project.Config) (string, []model.Item,
 	if branch == "" {
 		return "", nil, nil
 	}
-	reads, err := LoadReads(ctx, cfg, false)
+	// Archived items count, so unarchive . restores the branch's item.
+	reads, err := LoadReads(ctx, cfg, true)
 	if err != nil {
 		return branch, nil, err
 	}
