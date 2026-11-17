@@ -15,7 +15,7 @@ import (
 // diagramMark tags a supported Mermaid fence's info string, so its caption
 // can be found in rendered output. It's invisible and zero width; bodies lose
 // their own copies.
-const diagramMark = "⁤"
+const diagramMark = "\u2064"
 
 // diagramLimit caps a diagram's source; layout cost grows faster than its size.
 const diagramLimit = 4 << 10
