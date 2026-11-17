@@ -166,6 +166,11 @@ func (s *Source) Info() source.Info {
 	return source.Info{ID: s.o.ID, Kind: "github", Display: display, Capabilities: model.Capabilities{model.Create: creatable, model.Delete: deletable, model.Set: true, model.Add: true, model.Remove: true, model.ReplaceSection: true, model.AppendComment: true, model.ReadActivity: true}}
 }
 func (s *Source) request(ctx context.Context, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
+	return s.requestWith(ctx, s.client, c, method, endpoint, payload)
+}
+
+// requestWith is request through client, such as one returning refusals.
+func (s *Source) requestWith(ctx context.Context, client remote.Client, c remote.Credential, method, endpoint string, payload any) (remote.Response, error) {
 	var body *bytes.Reader
 	if payload != nil {
 		raw, err := json.Marshal(payload)
@@ -192,7 +197,7 @@ func (s *Source) request(ctx context.Context, c remote.Credential, method, endpo
 	// Callers read the body, but a 304 answering the scheduler's If-None-Match
 	// has none and the scheduler keeps none to reuse.
 	req.Header.Set("Cache-Control", "no-cache")
-	return s.client.Do(ctx, req, c)
+	return client.Do(ctx, req, c)
 }
 
 // hint sends a conditional GET whose body is never read, so a 304 is enough.

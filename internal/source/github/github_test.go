@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -79,11 +80,15 @@ type fixture struct {
 	// timelineStuck answers every timeline page with the same cursor.
 	timelineStuck bool
 	timelineCalls int
-	// pulls are the repository's pull request nodes; one without commits
+	// pulls are the repository's pull request nodes, paged newest updated
+	// first with the index after a page as its cursor; one without commits
 	// answers FORBIDDEN for its checks. pullsFail reports the repository
-	// unavailable.
+	// unavailable. A page over pullsBusy nodes, or from the cursor pullsDown,
+	// answers 502.
 	pulls     []map[string]any
 	pullsFail bool
+	pullsBusy int
+	pullsDown string
 	// pullFiles and pullCommits answer pull request 45's REST lists.
 	pullFiles, pullCommits string
 	// review is pull request 45's review node; reviewFail reports it
@@ -418,17 +423,33 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			emit(map[string]any{"repository": nil})
 			return
 		}
-		nodes, failures := []any{}, []any{}
+		var all []map[string]any
 		for _, n := range f.pulls {
-			if fmt.Sprint(v["states"]) == "[OPEN]" && n["state"] != "OPEN" {
-				continue
+			if strings.Contains(fmt.Sprint(v["states"]), n["state"].(string)) {
+				all = append(all, n)
 			}
+		}
+		slices.SortStableFunc(all, func(a, b map[string]any) int { return b["updatedAt"].(time.Time).Compare(a["updatedAt"].(time.Time)) })
+		after, _ := v["after"].(string)
+		start, _ := strconv.Atoi(after)
+		end := min(len(all), start+int(v["first"].(float64)))
+		if f.pullsBusy > 0 && end-start > f.pullsBusy || f.pullsDown != "" && after == f.pullsDown {
+			w.WriteHeader(502)
+			return
+		}
+		nodes, failures := []any{}, []any{}
+		for _, n := range all[start:end] {
 			if n["commits"] == nil {
 				failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests", "nodes", len(nodes), "commits"}})
 			}
+			if v["merge"] != true {
+				n = maps.Clone(n)
+				delete(n, "mergeStateStatus")
+			}
 			nodes = append(nodes, n)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"errors": failures, "data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": nodes}}}})
+		page := map[string]any{"hasNextPage": end < len(all), "endCursor": strconv.Itoa(end)}
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": failures, "data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": page, "nodes": nodes}}}})
 	case strings.Contains(q, "timelineItems("):
 		// Two pages read newest first: before names the older page.
 		types, _ := v["types"].([]any)
@@ -1129,6 +1150,50 @@ func TestForgePullRequests(t *testing.T) {
 	f.reviewFail = true
 	if kept, ok, err := forge.Review(context.Background(), 45, "bbb", false); err == nil || !ok || !reflect.DeepEqual(kept.Checks, wantChecks) || f.reviews != reads+1 {
 		t.Fatalf("failed review read: %v %v %+v", ok, err, kept)
+	}
+}
+
+// Catches a large repository whose slow pages GitHub answers with 502 never
+// listing its open pull requests or never converging, because one failed page
+// discarded every page read, and the merge state lost from open pull requests
+// once the closed and merged pass stopped reading it.
+func TestForgePullRequestsLarge(t *testing.T) {
+	s, f := newFixture(t)
+	forge := &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 130 {
+		state := "MERGED"
+		if i%40 == 0 {
+			state = "OPEN"
+		}
+		f.pulls = append(f.pulls, map[string]any{"number": i + 1, "title": "pr", "state": state, "createdAt": at, "updatedAt": at.Add(-time.Duration(i) * time.Hour), "mergeStateStatus": "CLEAN", "commits": map[string]any{"nodes": []any{}}})
+	}
+	read := func() (map[int]changes.PullRequest, error) {
+		prs, err := forge.PullRequests(context.Background())
+		out := map[int]changes.PullRequest{}
+		for _, pr := range prs {
+			out[pr.Number] = pr
+		}
+		return out, err
+	}
+	// Pages of 50 time out, and the page after the second of 25 is down.
+	f.pullsBusy, f.pullsDown = 25, "50"
+	prs, err := read()
+	if err == nil || len(prs) != 54 {
+		t.Fatalf("first refresh: %v, %d listed", err, len(prs))
+	}
+	for _, n := range []int{1, 41, 81, 121} {
+		if prs[n].State != changes.StateOpen || prs[n].MergeState != "clean" {
+			t.Fatalf("open #%d: %+v", n, prs[n])
+		}
+	}
+	if prs[2].State != changes.StateMerged || prs[2].MergeState != "" {
+		t.Fatalf("merged #2: %+v", prs[2])
+	}
+	f.pullsDown = ""
+	f.pulls[1]["updatedAt"] = at.Add(time.Hour)
+	if prs, err = read(); err != nil || len(prs) != 130 || !prs[2].Updated.Equal(at.Add(time.Hour)) || prs[121].MergeState != "clean" {
+		t.Fatalf("resumed refresh: %v, %d listed, #2 %+v", err, len(prs), prs[2])
 	}
 }
 

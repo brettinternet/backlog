@@ -15,9 +15,20 @@ import (
 // MaxPulls bounds the pull requests a forge keeps, the newest updated.
 const MaxPulls = 1000
 
+// PullProgress is how far a forge has read its pull requests, newest updated
+// first. A refresh reads every one updated since Cursor. A read interrupted
+// partway leaves Resume, the page cursor after the last page read, whose
+// pull requests were updated at or before Oldest; the next refresh continues
+// from it down to Since, the cursor the interrupted read began from.
+type PullProgress struct {
+	Cursor        time.Time
+	Resume        string    `json:",omitempty"`
+	Oldest, Since time.Time `json:",omitzero"`
+}
+
 type pullCache struct {
-	Repo   string
-	Cursor time.Time
+	Repo string
+	PullProgress
 	// Fetched is when the last successful refresh began.
 	Fetched time.Time
 	Pulls   []PullRequest
@@ -27,10 +38,12 @@ type pullCache struct {
 // returns the merged list, redacted before anything is kept or shown, as
 // provider activity is. fetch reads every open pull request, whose checks
 // change without touching its update time, and every other one updated since
-// the cached cursor. A cache refreshed within fresh is returned without a
-// fetch, so readers sharing it add no request. On failure it returns the
-// cached list with the error, so its entries read as stale.
-func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) string, fetch func(since time.Time) (open, updated []PullRequest, cursor time.Time, err error)) ([]PullRequest, error) {
+// the cached progress, and returns the progress it reached. A cache refreshed
+// within fresh is returned without a fetch, so readers sharing it add no
+// request. A failed fetch keeps whatever it read, so a large first read
+// converges over later refreshes, and returns the list with the error, so
+// its entries read as stale.
+func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) string, fetch func(PullProgress) (open, updated []PullRequest, next PullProgress, err error)) ([]PullRequest, error) {
 	var cached pullCache
 	if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &cached) == nil && cached.Repo != repo {
 		cached = pullCache{}
@@ -39,9 +52,9 @@ func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) st
 	if cached.Repo == repo && started.Sub(cached.Fetched) < fresh {
 		return redactPulls(cached, redact)
 	}
-	open, updated, cursor, err := fetch(cached.Cursor)
-	if err != nil {
-		return cached.Pulls, err
+	open, updated, next, fetchErr := fetch(cached.PullProgress)
+	if fetchErr != nil && open == nil && updated == nil {
+		return cached.Pulls, fetchErr
 	}
 	// The later read wins: a pull request merged between the two reads is
 	// merged.
@@ -56,8 +69,16 @@ func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) st
 		}
 	}
 	slices.SortStableFunc(merged, func(a, b PullRequest) int { return b.Updated.Compare(a.Updated) })
+	// What is left to resume would all fall past the kept list.
+	if next.Resume != "" && len(merged) >= MaxPulls && merged[MaxPulls-1].Updated.After(next.Oldest) {
+		next = PullProgress{Cursor: next.Cursor}
+	}
 	merged = merged[:min(len(merged), MaxPulls)]
-	data, err := json.Marshal(pullCache{Repo: repo, Cursor: cursor, Fetched: started, Pulls: merged})
+	kept := pullCache{Repo: repo, PullProgress: next, Fetched: started, Pulls: merged}
+	if fetchErr != nil {
+		kept.Fetched = cached.Fetched
+	}
+	data, err := json.Marshal(kept)
 	var redacted pullCache
 	if err == nil {
 		data = []byte(redact(string(data)))
@@ -69,7 +90,7 @@ func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) st
 	if path != "" {
 		cache.WriteFile(path, data)
 	}
-	return redacted.Pulls, nil
+	return redacted.Pulls, fetchErr
 }
 
 // redactPulls redacts a cached list again, for secrets registered since it

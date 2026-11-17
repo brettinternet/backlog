@@ -44,7 +44,17 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }
 func (f *Forge) Web() string  { return "https://" + f.s.o.Host + "/" + f.s.o.Repo }
 
-const pullsQuery = `query($owner:String!,$repo:String!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:50,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision mergeStateStatus closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
+// pullsQuery reads mergeStateStatus, which doubles a page's time, only when
+// merge is set: it means something only for an open pull request.
+const pullsQuery = `query($owner:String!,$repo:String!,$first:Int!,$after:String,$states:[PullRequestState!],$merge:Boolean!){repository(owner:$owner,name:$repo){pullRequests(first:$first,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision mergeStateStatus @include(if:$merge) closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
+
+const (
+	// pullsPage is a pull request page's size. A page GitHub fails to serve,
+	// often a 502 from a slow page on a large repository, is read again at
+	// half the size, down to minPullsPage.
+	pullsPage    = 50
+	minPullsPage = 12
+)
 
 type pullNode struct {
 	Number                     int
@@ -92,28 +102,59 @@ func (f *Forge) Recent(ctx context.Context) ([]changes.PullRequest, error) {
 func (f *Forge) refresh(ctx context.Context, fresh time.Duration) ([]changes.PullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return changes.RefreshPulls(f.cache, f.s.o.Repo, fresh, f.s.o.Secrets.Redact, func(since time.Time) ([]changes.PullRequest, []changes.PullRequest, time.Time, error) {
+	return changes.RefreshPulls(f.cache, f.s.o.Repo, fresh, f.s.o.Secrets.Redact, func(prev changes.PullProgress) ([]changes.PullRequest, []changes.PullRequest, changes.PullProgress, error) {
 		c, err := f.s.authenticate(ctx)
 		if err != nil {
-			return nil, nil, since, err
+			return nil, nil, prev, err
 		}
-		open, _, err := f.fetch(ctx, c, []string{"OPEN"}, time.Time{})
+		open, _, err := f.fetch(ctx, c, "OPEN", "", time.Time{})
 		if err != nil {
-			return nil, nil, since, err
+			return open, nil, prev, err
 		}
-		updated, cursor, err := f.fetch(ctx, c, nil, since)
-		return open, updated, cursor, err
+		// Open pull requests were all just read.
+		next := prev
+		updated, after, err := f.fetch(ctx, c, "", "", prev.Cursor)
+		if len(updated) > 0 {
+			if err != nil && prev.Resume == "" {
+				next.Resume, next.Oldest, next.Since = after, updated[len(updated)-1].Updated, prev.Cursor
+			}
+			if err == nil || prev.Resume == "" {
+				next.Cursor = updated[0].Updated
+			}
+		}
+		if err != nil || prev.Resume == "" {
+			return open, updated, next, err
+		}
+		rest, after, err := f.fetch(ctx, c, "", prev.Resume, prev.Since)
+		updated = append(updated, rest...)
+		if err != nil {
+			if len(rest) > 0 {
+				next.Resume, next.Oldest = after, rest[len(rest)-1].Updated
+			}
+			return open, updated, next, err
+		}
+		next.Resume, next.Oldest, next.Since = "", time.Time{}, time.Time{}
+		return open, updated, next, nil
 	})
 }
 
-// fetch pages newest updated first, in states or all, until it reaches since
-// or changes.MaxPulls. The cursor is the newest update time read.
-func (f *Forge) fetch(ctx context.Context, c remote.Credential, states []string, since time.Time) ([]changes.PullRequest, time.Time, error) {
+// fetch pages newest updated first from the page cursor after, open pull
+// requests or the rest, until it reaches since or changes.MaxPulls. On
+// failure it returns those read with the page cursor after them.
+func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after string, since time.Time) ([]changes.PullRequest, string, error) {
 	vars := f.s.variables()
-	vars["states"] = states
+	vars["states"], vars["merge"] = []string{"CLOSED", "MERGED"}, state == "OPEN"
+	if state != "" {
+		vars["states"] = []string{state}
+	}
+	client := f.s.client
+	client.Refusals = true
 	var out []changes.PullRequest
-	cursor := since
-	for {
+	for first := pullsPage; ; {
+		if after != "" {
+			vars["after"] = after
+		}
+		vars["first"] = first
 		var result struct {
 			Repository *struct {
 				PullRequests struct {
@@ -125,31 +166,35 @@ func (f *Forge) fetch(ctx context.Context, c remote.Credential, states []string,
 				}
 			}
 		}
-		response, err := f.s.request(ctx, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": pullsQuery, "variables": vars})
+		response, err := f.s.requestWith(ctx, client, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": pullsQuery, "variables": vars})
+		if err == nil && response.Status >= 500 && first > minPullsPage {
+			first /= 2
+			continue
+		}
+		if err == nil && response.Status >= 300 {
+			err = client.Refusal(response.Status, response.Body)
+		}
 		if err != nil {
-			return nil, since, err
+			return out, after, err
 		}
 		if err := decodeAllowing(response.Body, &result, pullError); err != nil {
-			return nil, since, err
+			return out, after, err
 		}
 		if result.Repository == nil {
-			return nil, since, source.Refuse("not-found", "repository unavailable")
+			return out, after, source.Refuse("not-found", "repository unavailable")
 		}
 		page := result.Repository.PullRequests
 		for _, n := range page.Nodes {
 			// One updated in the cursor's own second may be newer than the read.
 			if n.UpdatedAt.Before(since) {
-				return out, cursor, nil
-			}
-			if n.UpdatedAt.After(cursor) {
-				cursor = n.UpdatedAt
+				return out, "", nil
 			}
 			out = append(out, n.pull(f.s.o.Repo))
 		}
 		if !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == "" || len(out) >= changes.MaxPulls {
-			return out, cursor, nil
+			return out, "", nil
 		}
-		vars["after"] = page.PageInfo.EndCursor
+		after = page.PageInfo.EndCursor
 	}
 }
 
