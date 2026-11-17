@@ -7,7 +7,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
+	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -20,6 +22,18 @@ type mouseState struct {
 	lastX, lastY int
 	lastSwipe    time.Time
 	sel          textDrag
+	card         cardDrag
+}
+
+// cardDrag follows a press on a board card. Moving a cell starts the drag;
+// release drops the card on the column and slot under the pointer.
+type cardDrag struct {
+	pressed, active bool
+	x, y            int
+	row             engine.Row
+	targets         editTargets // the card, or every mark when it's marked
+	marked          bool
+	column, slot    int // the target column, or -1, and the cards above the marker
 }
 
 // Mouse routing reuses the renderer's geometry (tab spans, column layout,
@@ -41,8 +55,15 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case tea.MouseReleaseMsg:
 		m.mouse.dragging = false
+		if m.mouse.card.pressed {
+			return m, m.dropCard()
+		}
 		return m, m.finishSelection()
 	case tea.MouseMotionMsg:
+		if m.mouse.card.pressed {
+			m.dragCard(p.X, p.Y)
+			return m, nil
+		}
 		if m.mouse.sel.active {
 			m.extendSelection(p.X, p.Y)
 			return m, nil
@@ -214,13 +235,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case m.isBoard():
 		widths := m.boardColumns(m.board.left)
-		column, x := -1, 0
-		for i, w := range widths {
-			if p.X >= x && p.X < x+w {
-				column = m.board.left + i
-			}
-			x += w + boardGap
-		}
+		column := m.boardColumnAt(p.X)
 		switch {
 		// The header row's edge arrows focus the hidden column beside them.
 		case y == 0 && p.X == 0 && m.board.left > 0:
@@ -281,6 +296,14 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.isBoard() && y > 0 && !right {
+		targets := editTargets{rows: m.data.rows, selected: row.Ref}
+		marked := m.isMarked(index, row.Ref)
+		if marked {
+			targets = m.captureTargets()
+		}
+		m.mouse.card = cardDrag{pressed: true, x: p.X, y: p.Y, row: row, targets: targets, marked: marked, column: -1}
+	}
 	now := m.now()
 	double := row.Ref == m.mouse.lastRef && p.X == m.mouse.lastX && p.Y == m.mouse.lastY && now.Sub(m.mouse.lastClick) >= 0 && now.Sub(m.mouse.lastClick) <= 400*time.Millisecond
 	m.mouse.lastClick, m.mouse.lastRef, m.mouse.lastX, m.mouse.lastY = now, row.Ref, p.X, p.Y
@@ -293,6 +316,91 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, m.scheduleDetail()
 	}
 	return m, nil
+}
+
+// boardColumnAt is the board column drawn at screen x, or -1.
+func (m Model) boardColumnAt(x int) int {
+	at := 0
+	for i, w := range m.boardColumns(m.board.left) {
+		if x >= at && x < at+w {
+			return m.board.left + i
+		}
+		at += w + boardGap
+	}
+	return -1
+}
+
+// dragCard follows the pointer while a card is pressed. Past the board's side
+// edge it scrolls a column per motion, as a text selection scrolls detail.
+// Hit-testing touches only the visible columns (D14).
+func (m *Model) dragCard(x, y int) {
+	d := &m.mouse.card
+	if !d.active && x == d.x && y == d.y {
+		return
+	}
+	d.active = true
+	widths := m.boardColumns(m.board.left)
+	switch {
+	case x <= 0 && m.board.left > 0:
+		m.board.left--
+	case x >= m.boardWidth()-1 && m.board.left+len(widths) < len(m.data.starts):
+		m.board.left++
+	}
+	d.column, d.slot = -1, 0
+	body := y - m.bodyY()
+	column := m.boardColumnAt(x)
+	if body < 1 || body >= m.bodyRows() || column < 0 {
+		return
+	}
+	start, end := m.data.starts[column], m.boardEnd(column)
+	// The upper row of a card drops before it, the lower row after it. The
+	// marker isn't counted, so the slot holds still as it shifts cards down.
+	top := m.board.positions[m.data.rows[start].value].top
+	d.column = column
+	d.slot = min(end-start-1, top+(body-1)/cardHeight+(body-1)%cardHeight)
+}
+
+// dropCard drops the dragged card on its target, through the same status
+// resolution and refusals as < and > (D35, D36). A marked card drops every
+// mark, changing only status. An unmarked card is also placed by rank where
+// the view's sort allows moves.
+func (m *Model) dropCard() tea.Cmd {
+	d := m.mouse.card
+	m.mouse.card = cardDrag{}
+	if !d.active || d.column < 0 || d.column >= len(m.data.starts) || !m.isBoard() {
+		return nil
+	}
+	if !m.boardStatusGroup() {
+		m.notice = "Disabled: group by status to move cards"
+		return nil
+	}
+	start, end := m.data.starts[d.column], m.boardEnd(d.column)
+	column := m.data.rows[start].value
+	own := (project.Settings{Statuses: m.opts.Statuses}).StatusEntry(d.row.Status) == column
+	statusOnly := func() tea.Cmd {
+		action := editAction{kind: editSimple, op: model.Set, field: "status", column: column}
+		m.startEdit(action)
+		return m.editTargetsCommand(action, false, d.targets)
+	}
+	if d.marked || m.opts.Store == nil {
+		return statusOnly() // marks already in the column are left alone
+	}
+	if reason := m.capability(d.row.Ref, model.Set); reason != "" {
+		m.notice = "Disabled: " + reason
+		return nil
+	}
+	cards := m.data.rows[start+1 : end]
+	if slices.ContainsFunc(cards[max(0, d.slot-1):min(len(cards), d.slot+1)], func(c screenRow) bool { return c.row.Ref == d.row.Ref }) {
+		return nil // back on its own slot
+	}
+	if reason := m.rankReason(d.row.Ref.Source); reason != "" {
+		if own {
+			m.notice = "Disabled: " + reason
+			return nil
+		}
+		return statusOnly()
+	}
+	return m.dropCommand(d.row, column, cards, d.slot)
 }
 
 // openItemMenu opens the ! menu for the selected item, as right-click does.

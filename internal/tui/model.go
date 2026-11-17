@@ -1109,6 +1109,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A notice lasts until the next key, then the query shows again.
 		m.notice = ""
 		s := keyString(msg)
+		// A key ends a card drag; esc only cancels it.
+		if m.mouse.card.pressed {
+			m.mouse.card = cardDrag{}
+			if s == "esc" {
+				return m, nil
+			}
+		}
 		if code, ok := emacsInputKeys[s]; ok && m.modalOpen() && !(m.plainField() && (s == "ctrl+j" || s == "ctrl+k")) {
 			msg = tea.KeyPressMsg{Code: code}
 			s = msg.String()
