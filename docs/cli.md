@@ -145,6 +145,13 @@ when a tour is stored for the change, stale once its head is another commit;
 `reason`. Diff text stays out of JSON. Pull requests come from the forge's
 cache, refreshed incrementally; Git is read from `.git` and never fetched.
 
+`--detail` adds, for an open pull request, `merge` (`state`, the forge's merge
+state; `verdict`; and `reasons`, each with `kind`, `text`, and the `check` or
+`login` it names, in fix-first order), each check run's exact `status`, `run`,
+`startedAt`, and `completedAt`, and `reviewers` (`login`, `state`,
+`submittedAt`, `outdated`) ([Changes](changes.md)). Text output prints the
+verdict, then one reason per line. Without it, output is unchanged.
+
 ### `bl tour ID [FILE|-]`
 
 With FILE, or `-` to read it from stdin, stores a tour an agent wrote for the

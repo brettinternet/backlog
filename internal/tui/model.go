@@ -234,6 +234,10 @@ type Model struct {
 	parentCursor int
 	reviewer     reviewer
 	review       reviewState
+	detailLinks  []string        // where enter goes from each change Overview entry
+	changeFacts  *changes.Change // the change view's change as last read, for the verdict strip
+	checksOpen   bool            // the change Overview shows passing and skipped checks
+	reviewEntry  string          // the Conversation entry to select when it arrives
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -456,7 +460,7 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 	return detailRequest{
 		change: change, generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
-		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
+		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(), checksOpen: m.checksOpen,
 	}
 }
 
@@ -926,6 +930,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
+			m.detailLinks, m.changeFacts = result.links, result.facts
 			m.detailSteps, m.detailTour = result.steps, result.tour
 			if !keep {
 				m.tourStep = -1
@@ -950,6 +955,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.changeEntry = ""
 				}
+				// Conversation opens on the review or thread enter followed.
+				if m.detailTab == tabChangeConversation && m.reviewEntry != "" {
+					if n := slices.Index(m.detailIDs, m.reviewEntry); n >= 0 {
+						m.entryCursor = n
+					}
+				}
+				m.reviewEntry = ""
 			}
 			if pinned {
 				m.detailScroll = len(m.detailLines)
@@ -1000,6 +1012,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "Action: " + boundedLine(msg.err.Error())
 		} else {
 			m.notice = msg.message
+		}
+		// An action may have merged, updated, or readied the shown pull
+		// request, so it and the list are read again, as R does.
+		if m.detailOpen && m.change != nil && m.change.Number > 0 {
+			cmd := m.scheduleDetail()
+			m.submitDetail(true)
+			if m.opts.Changes != nil {
+				m.opts.Changes.Refresh()
+			}
+			return m, cmd
 		}
 		return m, nil
 	case editPreparedMsg:
@@ -1325,6 +1347,9 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				}
 				return m, m.toggleHistoryEntry()
 			}
+			if m.change != nil && m.detailTab == tabChangeOverview {
+				return m.followChangeLink()
+			}
 			if m.change != nil {
 				return m, m.openChangeCommit()
 			}
@@ -1369,10 +1394,12 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			}
 		case "j", "down":
 			// Entries taller than the view, and the description past the
-			// last check, scroll until the next entry shows.
+			// last check, scroll until the next entry shows or starts just
+			// below the view, so one-line entries move one press each.
 			if m.scrollsEntries() {
-				if next := m.entryCursor + 1; next < len(m.detailEntries) && m.detailEntries[next] < m.detailScroll+m.detailVisible() {
+				if next := m.entryCursor + 1; next < len(m.detailEntries) && m.detailEntries[next] <= m.detailScroll+m.detailVisible() {
 					m.entryCursor = next
+					m.keepEntryVisible()
 				} else {
 					m.scrollDetail(1)
 				}
@@ -1608,6 +1635,7 @@ func (m *Model) closeDetail() {
 	m.detailLoading = false
 	m.detailLines = nil
 	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
+	m.detailLinks, m.changeFacts = nil, nil
 	m.detailChanges, m.detailCommits = nil, nil
 	m.detailFiles, m.detailHunks = nil, nil
 	m.detailRows, m.detailHead = nil, ""

@@ -259,12 +259,26 @@ that change; `O` opens its URL. `R` reloads changes along with sources.
 
 `enter` on an entry opens its change view in place of the item's tabs, with
 Overview, Files, Diff, Commits, and Conversation tabs; `backspace` returns to
-the entry. Overview lists the change's state, branch, worktree, base, head,
-checks, review, file and commit counts with `+/−`, and uncommitted files. For a
-pull request it also lists each check run and commit status as an entry (`O`
-opens the one under the cursor), each requested or submitted reviewer with
-their state, the unresolved thread count beside the review, and the
-description. Conversation lists review threads (file, line, resolved or not)
+the entry. A strip under the tabs, on every tab, sums up the change: for a
+pull request its head and base, verdict (`Ready`, `Unstable`, `Running`,
+`Blocked`, `Behind`, `Conflicts`, `Draft`, `Merged`, `Closed`, or
+`Checking`), the first reasons, and the age of the read (`stale` when it
+failed); for a branch or worktree its stage, branch, `↑ ↓`, and dirty count.
+Overview lists, for a pull request, Merge (the verdict and one entry per
+reason: failing checks, requested changes, unresolved threads, required
+review, pending checks, conflicts, behind, branch protection, stale, or
+ready), Checks (counts, then one entry per check run or commit status with
+its exact state and duration, failing first; past six, passing and skipped
+checks fold into one entry that `enter` or `za` opens), Reviews (the
+decision, then each reviewer with their state, age, and `outdated` when they
+reviewed another head), the pending review draft, About (branch → base,
+commits, files with `+/−`, head, update age, uncommitted files, worktree,
+URL), and the description; a branch or worktree shows About alone. `enter` on
+a reviewer or requested-changes reason opens Conversation at their latest
+review, on unresolved threads at the first one, and on conflicts, behind, or
+ready opens `!` with the change's actions (such as `gh pr merge`), after
+which the pull request is re-read; on a check it is disabled until the check
+view, and `O` opens it. Conversation lists review threads (file, line, resolved or not)
 and comments, unresolved threads first, each with its comments' authors, ages,
 and text; `O` opens the one under the cursor, and `m` shows more when the text
 is cut off. On both, `j` and `k` scroll until the next entry shows, through a

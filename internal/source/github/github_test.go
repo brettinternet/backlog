@@ -1010,16 +1010,18 @@ func TestForgePullRequests(t *testing.T) {
 		t.Fatalf("pull detail: %+v", d)
 	}
 
-	// A review maps every check, keeps a re-requested reviewer waiting, and
-	// is redacted and stripped of terminal sequences before it is kept.
+	// A review maps every check to its exact state and timing, keeps a
+	// re-requested reviewer waiting, marks a review on an older commit
+	// outdated, reads the merge state, and is redacted and stripped of
+	// terminal sequences before it is kept.
 	nodes := func(v ...any) map[string]any { return map[string]any{"nodes": v} }
 	comment := func(login, body string) map[string]any {
 		return map[string]any{"author": map[string]any{"login": login}, "body": body, "createdAt": at, "url": "https://github.com/owner/repo/pull/45#c-" + login}
 	}
 	f.review = map[string]any{
-		"body": "Fixes BL-12 \x1b]52;c;cGF5bG9hZA==\x07with fake-secret", "headRefOid": "aaa",
+		"body": "Fixes BL-12 \x1b]52;c;cGF5bG9hZA==\x07with fake-secret", "headRefOid": "aaa", "mergeStateStatus": "BLOCKED", "mergeable": "MERGEABLE",
 		"reviewRequests": nodes(map[string]any{"requestedReviewer": map[string]any{"login": "bo"}}, map[string]any{"requestedReviewer": nil}),
-		"latestReviews":  nodes(map[string]any{"author": map[string]any{"login": "ann"}, "state": "APPROVED"}, map[string]any{"author": map[string]any{"login": "bo"}, "state": "CHANGES_REQUESTED"}),
+		"latestReviews":  nodes(map[string]any{"author": map[string]any{"login": "ann"}, "state": "APPROVED", "submittedAt": at, "commit": map[string]any{"oid": "old"}}, map[string]any{"author": map[string]any{"login": "bo"}, "state": "CHANGES_REQUESTED", "commit": map[string]any{"oid": "aaa"}}),
 		"reviews":        nodes(map[string]any{"author": map[string]any{"login": "bo"}, "body": "needs work", "state": "CHANGES_REQUESTED", "submittedAt": at}),
 		"comments":       nodes(comment("cy", "looks good")),
 		"reviewThreads": nodes(
@@ -1027,7 +1029,7 @@ func TestForgePullRequests(t *testing.T) {
 			map[string]any{"isResolved": false, "path": "b.go", "line": nil, "originalLine": 7, "comments": nodes(comment("bo", "why?"))},
 		),
 		"commits": nodes(map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": nodes(
-			map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://ci/1"},
+			map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://ci/1", "databaseId": 11, "startedAt": at, "completedAt": at.Add(252 * time.Second)},
 			map[string]any{"__typename": "CheckRun", "name": "lint", "status": "IN_PROGRESS", "url": "https://github.com/run/2"},
 			map[string]any{"__typename": "CheckRun", "name": "e2e", "status": "COMPLETED", "conclusion": "TIMED_OUT"},
 			map[string]any{"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "SKIPPED"},
@@ -1039,14 +1041,20 @@ func TestForgePullRequests(t *testing.T) {
 		t.Fatal(ok, err)
 	}
 	wantChecks := []changes.Check{
-		{Name: "test", State: changes.ChecksPassing, URL: "https://ci/1"},
-		{Name: "lint", State: changes.ChecksPending, URL: "https://github.com/run/2"},
-		{Name: "e2e", State: changes.ChecksFailing},
-		{Name: "docs", State: changes.ChecksSkipped},
-		{Name: "ci/legacy", State: changes.ChecksFailing, URL: "https://legacy/3"},
+		{Name: "test", State: changes.ChecksPassing, Status: changes.CheckPassed, URL: "https://ci/1", Run: 11, StartedAt: at, CompletedAt: at.Add(252 * time.Second)},
+		{Name: "lint", State: changes.ChecksPending, Status: changes.CheckRunning, URL: "https://github.com/run/2"},
+		{Name: "e2e", State: changes.ChecksFailing, Status: changes.CheckTimedOut},
+		{Name: "docs", State: changes.ChecksSkipped, Status: changes.CheckSkipped},
+		{Name: "ci/legacy", State: changes.ChecksFailing, Status: changes.CheckFailed, URL: "https://legacy/3"},
 	}
-	wantReviewers := []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved}, {Login: "bo", State: changes.ReviewRequested}}
-	if !slices.Equal(r.Checks, wantChecks) || !slices.Equal(r.Reviewers, wantReviewers) || r.Unresolved() != 1 || r.Threads[1].Line != 7 || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
+	wantReviewers := []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved, SubmittedAt: at, Outdated: true}, {Login: "bo", State: changes.ReviewRequested}}
+	if !slices.EqualFunc(r.Checks, wantChecks, func(a, b changes.Check) bool {
+		return a.StartedAt.Equal(b.StartedAt) && a.CompletedAt.Equal(b.CompletedAt) && a.Name == b.Name && a.State == b.State && a.Status == b.Status && a.URL == b.URL && a.Run == b.Run
+	}) ||
+		!slices.EqualFunc(r.Reviewers, wantReviewers, func(a, b changes.Reviewer) bool {
+			return a.SubmittedAt.Equal(b.SubmittedAt) && a.Login == b.Login && a.State == b.State && a.Outdated == b.Outdated
+		}) ||
+		r.MergeState != "blocked" || r.Mergeable != "mergeable" || r.Fetched.IsZero() || r.Unresolved() != 1 || r.Threads[1].Line != 7 || len(r.Comments) != 2 || r.Comments[0].State != changes.ReviewChanges {
 		t.Fatalf("review: %+v", r)
 	}
 	if strings.Contains(r.Body, "fake-secret") || strings.ContainsAny(r.Body, "\x1b\x07") {

@@ -47,7 +47,8 @@ actions:
     run: [herdr, workspace, create, --cwd, "{root}", --label, "{id}", --no-focus]
 ```
 
-Actions for a linked change, offered on the TUI Changes tab:
+Actions for a linked change, offered on the TUI Changes tab and from the
+change view's merge reasons (`enter` on conflicts, behind, or Ready):
 
 ```yaml
 actions:
@@ -57,6 +58,14 @@ actions:
     run: [lazygit, -p, "{change.path}"]
   - name: review
     run: [nvim, "+DiffviewOpen {change.base}...{change.head}"]
+  - name: merge
+    run: [gh, pr, merge, "{change.number}"]
+  - name: update-branch
+    run: [gh, pr, update-branch, "{change.number}"]
+  - name: ready
+    run: [gh, pr, ready, "{change.number}"]
+  - name: draft
+    run: [gh, pr, ready, --undo, "{change.number}"]
 ```
 
 Tests run these examples with fake `tell`, `wt`, `worklease`, and `herdr`, and

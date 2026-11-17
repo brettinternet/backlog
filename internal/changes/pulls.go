@@ -144,6 +144,7 @@ func (r *Reviews) Get(number int, head string, fresh bool, read func() (Review, 
 		}
 	}
 	kept, ok := r.kept[number]
+	kept.Review.Fetched = kept.Fetched
 	if ok && !fresh && kept.Head == head && time.Since(kept.Fetched) < reviewAge {
 		return kept.Review, true, nil
 	}
@@ -151,7 +152,8 @@ func (r *Reviews) Get(number int, head string, fresh bool, read func() (Review, 
 	if err != nil {
 		return kept.Review, ok, err
 	}
-	r.kept[number] = reviewEntry{Head: head, Fetched: time.Now(), Review: review}
+	review.Fetched = time.Now()
+	r.kept[number] = reviewEntry{Head: head, Fetched: review.Fetched, Review: review}
 	if len(r.kept) > maxReviews {
 		numbers := make([]int, 0, len(r.kept))
 		for n := range r.kept {

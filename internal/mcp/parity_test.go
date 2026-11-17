@@ -133,9 +133,10 @@ func TestEventsMatchCLI(t *testing.T) {
 		case strings.Contains(body.Query, "pullRequests("):
 			data = map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{}, "nodes": []any{map[string]any{"number": 7, "title": "BL-1 fix", "url": "https://github.fake/owner/repo/pull/7", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "fix", "headRefOid": parityHead}}}}}
 		case strings.Contains(body.Query, "pullRequest(number"):
-			data = map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"headRefOid": parityHead,
+			data = map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"headRefOid": parityHead, "mergeStateStatus": "BLOCKED", "mergeable": "MERGEABLE",
+				"latestReviews": map[string]any{"nodes": []any{map[string]any{"author": map[string]any{"login": "bo"}, "state": "APPROVED", "submittedAt": at, "commit": map[string]any{"oid": "old"}}}},
 				"reviewThreads": map[string]any{"nodes": []any{map[string]any{"isResolved": true, "path": "a.go"}, map[string]any{"path": "b.go"}}},
-				"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://ci.fake/1"}}}}}}}},
+				"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://ci.fake/1", "databaseId": 9, "startedAt": at, "completedAt": "2026-01-01T00:04:12Z"}}}}}}}},
 			}}}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
@@ -309,7 +310,7 @@ func TestEventsMatchCLI(t *testing.T) {
 	var cliChanges struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"checkRuns":[{"name":"test","state":"failing","url":"https://ci.fake/1"}]`) || !strings.Contains(string(cliChanges.Data), `"unresolved":1`) || !strings.Contains(string(cliChanges.Data), `"providers"`) {
+	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil || !strings.Contains(string(cliChanges.Data), `"checkRuns":[{"name":"test","state":"failing","url":"https://ci.fake/1"}]`) || !strings.Contains(string(cliChanges.Data), `"unresolved":1`) || !strings.Contains(string(cliChanges.Data), `"providers"`) || strings.Contains(string(cliChanges.Data), `"merge"`) {
 		t.Fatalf("bl changes: %d %s", code, out)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "changes", Arguments: map[string]any{"id": "1"}})
@@ -321,6 +322,24 @@ func TestEventsMatchCLI(t *testing.T) {
 	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &mcpData)
 	if !reflect.DeepEqual(cliData, mcpData) {
 		t.Fatalf("changes differ\nMCP %v\nCLI %v", mcpData, cliData)
+	}
+	// --detail and detail: true add the verdict, check timing, and reviewers.
+	code, out = run("changes", "1", "--detail")
+	if code != 0 || json.Unmarshal([]byte(out), &cliChanges) != nil {
+		t.Fatalf("bl changes --detail: %d %s", code, out)
+	}
+	for _, want := range []string{`"merge":{"state":"blocked","verdict":"blocked","reasons":[{"kind":"failing","text":"test failed","check":"test"}`, `"status":"failed","run":9,"startedAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:04:12Z"`, `"reviewers":[{"login":"bo","state":"approved","submittedAt":"2026-01-01T00:00:00Z","outdated":true}]`} {
+		if !strings.Contains(string(cliChanges.Data), want) {
+			t.Fatalf("bl changes --detail lacks %s\n%s", want, cliChanges.Data)
+		}
+	}
+	if result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "changes", Arguments: map[string]any{"id": "1", "detail": true}}); err != nil || result.IsError {
+		t.Fatalf("changes detail: %v %+v", err, result)
+	}
+	_ = json.Unmarshal(cliChanges.Data, &cliData)
+	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &mcpData)
+	if !reflect.DeepEqual(cliData, mcpData) {
+		t.Fatalf("detailed changes differ\nMCP %v\nCLI %v", mcpData, cliData)
 	}
 
 	// bl tour and the MCP tour tool store a tour only for a linked change's

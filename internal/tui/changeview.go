@@ -25,7 +25,7 @@ import (
 func (m *Model) openChange(c changes.Change) tea.Cmd {
 	row, _ := m.selectedRow()
 	m.change, m.changeRef, m.changeTab, m.changeCursor = &c, row.Ref, tabChanges, m.entryCursor
-	m.find = findState{}
+	m.find, m.checksOpen = findState{}, false
 	return m.switchDetailTab(tabChangeOverview)
 }
 
@@ -58,6 +58,59 @@ func (m *Model) openChangeCommit() tea.Cmd {
 	m.changeParent, m.parentCursor, m.change = m.change, m.entryCursor, &c
 	m.find = findState{}
 	return m.switchDetailTab(tabChangeDiff)
+}
+
+// followChangeLink does what enter does on the Overview entry under the
+// cursor: toggles the folded checks, opens a review or the first unresolved
+// thread in Conversation, or opens ! narrowed to the change's actions.
+func (m Model) followChangeLink() (tea.Model, tea.Cmd) {
+	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailLinks) {
+		return m, nil
+	}
+	link := m.detailLinks[m.entryCursor]
+	switch {
+	case link == linkFold:
+		return m, m.toggleChecks(!m.checksOpen)
+	case link == linkCheck:
+		m.notice = "Disabled: a check opens in the browser with O"
+	case link == linkThreads:
+		m.reviewEntry = firstUnresolved(m.review.read)
+		return m, m.switchDetailTab(tabChangeConversation)
+	case strings.HasPrefix(link, linkReview):
+		login := strings.TrimPrefix(link, linkReview)
+		m.reviewEntry = reviewURL(m.review.read, login)
+		if m.reviewEntry == "" && login != "" {
+			m.notice = textutil.Line(login) + " hasn't reviewed yet."
+			return m, nil
+		}
+		return m, m.switchDetailTab(tabChangeConversation)
+	case link == linkActions:
+		m.actionSession, m.actionChange = "", new(linkedChange(m.shownChange()))
+		return m.openConfiguredActions()
+	}
+	return m, nil
+}
+
+// toggleChecks shows or folds the Overview's passing and skipped checks.
+func (m *Model) toggleChecks(open bool) tea.Cmd {
+	if m.checksOpen == open {
+		return nil
+	}
+	m.checksOpen = open
+	return m.showDetail()
+}
+
+// firstUnresolved is the first comment URL of the first unresolved thread.
+func firstUnresolved(r *changes.Review) string {
+	if r == nil {
+		return ""
+	}
+	for _, e := range r.Conversation() {
+		if e.Thread != nil && !e.Thread.Resolved {
+			return e.Comment.URL
+		}
+	}
+	return ""
 }
 
 // closeChange returns to the entry the change view opened from.
@@ -311,84 +364,72 @@ func changeViewPage(c changes.Change, d changes.Detail, r *changes.Review, draft
 	return page
 }
 
-// changeOverview is the change's property sheet, with a pull request's
-// checks as entries, its reviewers, its pending review, and its description.
+// changeOverview is a change's Overview: a pull request's Merge verdict and
+// reasons, Checks, Reviews, and pending review, then About and the
+// description. Each reason, check, and reviewer is an entry whose link says
+// where enter goes, and whose id is the URL O opens.
 func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft *changes.Draft, draftErr string, request detailRequest, render func(string, int, string) (string, error)) rendered {
 	t, width := request.theme, max(1, request.width)
+	now := cmp.Or(request.now, time.Now())
 	var page rendered
-	add := func(label, value string) {
-		if value != "" {
-			page.lines = append(page.lines, property(t, label, value))
+	entry := func(line, id, link string) {
+		page.entries, page.ids, page.links = append(page.entries, len(page.lines)), append(page.ids, id), append(page.links, link)
+		page.lines = append(page.lines, line)
+	}
+	section := func(label, value string) {
+		if len(page.lines) > 0 {
+			page.lines = append(page.lines, "")
 		}
+		page.lines = append(page.lines, property(t, label, value))
 	}
-	add("State", stageGlyph(t, c)+" "+changeState(t, c))
-	add("Branch", textutil.Line(c.Branch))
-	add("Worktree", textutil.Line(worktreePath(c)))
-	if base := c.Base(); base != "" {
-		add("Base", textutil.Line(strings.TrimPrefix(strings.TrimPrefix(base, "refs/heads/"), "refs/remotes/")))
-	}
-	if c.Head != "" {
-		add("Head", t.yellow.render(c.Head[:min(7, len(c.Head))]))
-	}
-	if checks := checksGlyph(t, c.Checks); checks != "" {
-		add("Checks", checks+" "+c.Checks)
-	}
-	if r != nil {
-		if c.Checks == "" && len(r.Checks) > 0 {
-			page.lines = append(page.lines, property(t, "Checks", ""))
-		}
+	if r != nil && c.Number > 0 {
+		merge := changes.Verdict(c, *r)
+		section("Merge", verdictLabel(t, merge.Verdict))
+		urls := map[string]string{}
 		for _, check := range r.Checks {
-			page.entries, page.ids = append(page.entries, len(page.lines)), append(page.ids, check.URL)
-			head := blank(propertyWidth) + cmp.Or(checksGlyph(t, check.State), t.muted.render("–")) + " "
-			tail := "  " + t.muted.render(check.State)
-			room := max(1, width-ansi.StringWidth(head)-ansi.StringWidth(tail))
-			name := ansi.Truncate(textutil.Line(check.Name), room, "…")
-			page.lines = append(page.lines, head+name+blank(room-ansi.StringWidth(name))+tail)
+			urls[check.Name] = cmp.Or(urls[check.Name], check.URL)
 		}
-	}
-	review := changeReview(t, c.Review)
-	if r != nil && r.Unresolved() > 0 {
-		if review != "" {
-			review += t.muted.render(" · ")
-		}
-		review += t.yellow.render(strconv.Itoa(r.Unresolved()) + " unresolved")
-	}
-	add("Review", review)
-	if r != nil {
-		for i, reviewer := range r.Reviewers {
-			label := ""
-			if i == 0 {
-				label = "Reviewers"
+		for _, reason := range merge.Reasons {
+			id, link := c.URL, ""
+			switch reason.Kind {
+			case changes.ReasonFailing, changes.ReasonPending:
+				id, link = cmp.Or(urls[reason.Check], c.URL), linkCheck
+			case changes.ReasonChanges:
+				id, link = cmp.Or(reviewURL(r, reason.Login), c.URL), linkReview+reason.Login
+			case changes.ReasonThreads:
+				link = linkThreads
+			case changes.ReasonConflicts, changes.ReasonBehind, changes.ReasonReady:
+				link = linkActions
 			}
-			page.lines = append(page.lines, property(t, label, ansi.Truncate(textutil.Line(reviewer.Login)+"  "+reviewerState(t, reviewer.State), max(1, width-propertyWidth), "…")))
+			text := reason.Text
+			if reason.Kind == changes.ReasonChanges && reason.Login != "" {
+				text += "  " + t.muted.render(age(reviewerTime(r, reason.Login), now))
+			}
+			entry("  "+reasonGlyph(t, reason)+" "+ansi.Truncate(textutil.Line(text), max(1, width-4), "…"), id, link)
+		}
+		if len(r.Checks) > 0 {
+			section("Checks", checkCounts(t, r.Checks))
+			checkRows(t, r.Checks, request.checksOpen, now, width, entry)
+		}
+		if len(r.Reviewers) > 0 || c.Review != "" {
+			section("Reviews", changeReview(t, c.Review))
+			reviewerRows(t, r, now, width, entry)
 		}
 		pending := draftLines(t, draft, draftErr, cmp.Or(r.Head, c.Head), width)
-		for i, entry := range pending.entries {
-			page.entries, page.ids = append(page.entries, len(page.lines)+entry), append(page.ids, pending.ids[i])
+		if len(pending.lines) > 0 {
+			page.lines = append(page.lines, "")
+		}
+		for i, line := range pending.entries {
+			page.entries, page.ids, page.links = append(page.entries, len(page.lines)+line), append(page.ids, pending.ids[i]), append(page.links, "")
 		}
 		page.lines = append(page.lines, pending.lines...)
 	}
-	additions, deletions := changes.Size(d.Files)
-	if len(d.Files) > 0 {
-		add("Files", strconv.Itoa(len(d.Files))+"  "+t.green.render("+"+strconv.Itoa(additions))+" "+t.red.render("−"+strconv.Itoa(deletions)))
-	}
-	if len(d.Commits) > 0 {
-		add("Commits", strconv.Itoa(len(d.Commits)))
-	}
-	dirty := 0
-	for _, f := range d.Files {
-		if f.Status == changes.FileUncommitted {
-			dirty++
+	about := aboutLines(t, c, d, now, width)
+	if len(about) > 0 {
+		section("About", about[0])
+		for _, line := range about[1:] {
+			page.lines = append(page.lines, blank(propertyWidth)+line)
 		}
-	}
-	if dirty > 0 {
-		add("Dirty", t.yellow.render(strconv.Itoa(dirty)+" uncommitted"))
-	}
-	if !c.Updated.IsZero() {
-		add("Updated", age(c.Updated, request.now)+t.muted.render(" · "+c.Updated.Local().Format("2006-01-02 15:04")))
-	}
-	if c.URL != "" {
-		add("URL", t.link.render(textutil.Line(c.URL)))
 	}
 	for _, reason := range []string{c.Reason, reviewStale(r)} {
 		if reason != "" {
@@ -407,6 +448,377 @@ func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft
 		page.lines = append(page.lines, markdownLines(body.builder.String(), width, t, render)...)
 	}
 	return page
+}
+
+// Overview entry links: where enter goes from a reason, check, or reviewer.
+const (
+	linkCheck   = "check"   // the check view (BL-178); disabled until then
+	linkReview  = "review:" // the login's latest review in Conversation
+	linkThreads = "threads" // the first unresolved thread in Conversation
+	linkActions = "actions" // ! narrowed to the change's actions
+	linkFold    = "fold"    // passing and skipped checks
+)
+
+// foldChecks is how many checks show before passing and skipped ones fold.
+const foldChecks = 6
+
+// checkRows draws checks problems first, one entry each: glyph, name, exact
+// state word, and duration, which drops first as width shrinks. Past
+// foldChecks, passing and skipped checks fold into one summary entry.
+func checkRows(t theme, checks []changes.Check, open bool, now time.Time, width int, entry func(line, id, link string)) {
+	ordered := changes.Ordered(checks)
+	shown, folded := ordered, []changes.Check(nil)
+	if len(ordered) > foldChecks {
+		i := slices.IndexFunc(ordered, func(c changes.Check) bool {
+			return c.State == changes.ChecksPassing || c.State == changes.ChecksSkipped
+		})
+		if i >= 0 {
+			shown, folded = ordered[:i], ordered[i:]
+		}
+	}
+	name := 0
+	for _, check := range ordered {
+		name = max(name, ansi.StringWidth(textutil.Line(check.Name)))
+	}
+	row := func(check changes.Check) {
+		status := cmp.Or(check.Status, check.State)
+		duration := checkDuration(check, now)
+		state := cell(status, len(changes.CheckActionRequired))
+		room := width - 4 - len(changes.CheckActionRequired) - 2
+		if duration != "" && room-2-len(duration) >= min(name, 12) {
+			room -= 2 + len(duration)
+			duration = "  " + t.muted.render(duration)
+		} else {
+			duration = ""
+		}
+		label := ansi.Truncate(textutil.Line(check.Name), max(1, min(name, room)), "…")
+		line := "  " + checkGlyph(t, check) + " " + label + blank(min(name, room)-ansi.StringWidth(label)) + "  " + t.muted.render(state) + duration
+		entry(ansi.Truncate(strings.TrimRight(line, " "), width, "…"), check.URL, linkCheck)
+	}
+	for _, check := range shown {
+		row(check)
+	}
+	if len(folded) == 0 {
+		return
+	}
+	passing, skipped := 0, 0
+	for _, check := range folded {
+		if check.State == changes.ChecksPassing {
+			passing++
+		} else {
+			skipped++
+		}
+	}
+	var parts []string
+	if passing > 0 {
+		parts = append(parts, t.green.render("✓")+" "+strconv.Itoa(passing)+" passing")
+	}
+	if skipped > 0 {
+		parts = append(parts, t.muted.render("–")+" "+strconv.Itoa(skipped)+" skipped")
+	}
+	summary, mark := "  "+strings.Join(parts, t.muted.render(" · ")), "▸"
+	if open {
+		mark = "▾"
+	}
+	entry(summary+blank(width-ansi.StringWidth(summary)-1)+t.muted.render(mark), "", linkFold)
+	if open {
+		for _, check := range folded {
+			row(check)
+		}
+	}
+}
+
+// checkCounts is the Checks header: how many fail, run, pass, and skip.
+func checkCounts(t theme, checks []changes.Check) string {
+	counts := map[string]int{}
+	for _, check := range checks {
+		counts[check.State]++
+	}
+	var parts []string
+	for _, kind := range []struct{ state, glyph string }{
+		{changes.ChecksFailing, t.red.render("✕")}, {changes.ChecksPending, t.yellow.render("●")},
+		{changes.ChecksStale, t.muted.render("?")}, {changes.ChecksPassing, t.green.render("✓")}, {changes.ChecksSkipped, t.muted.render("–")},
+	} {
+		if n := counts[kind.state]; n > 0 {
+			parts = append(parts, kind.glyph+" "+strconv.Itoa(n))
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
+// checkGlyph marks a check by its exact state: queued and waiting checks
+// haven't started.
+func checkGlyph(t theme, check changes.Check) string {
+	switch check.Status {
+	case changes.CheckQueued, changes.CheckWaiting:
+		return t.muted.render("○")
+	case changes.CheckSkipped, changes.CheckNeutral:
+		return t.muted.render("–")
+	}
+	return cmp.Or(checksGlyph(t, check.State), t.muted.render("–"))
+}
+
+// checkDuration is how long a check ran, or has been running, with … .
+func checkDuration(check changes.Check, now time.Time) string {
+	if check.StartedAt.IsZero() {
+		return ""
+	}
+	if !check.CompletedAt.IsZero() {
+		return duration(check.CompletedAt.Sub(check.StartedAt))
+	}
+	if check.State == changes.ChecksPending {
+		return duration(now.Sub(check.StartedAt)) + "…"
+	}
+	return ""
+}
+
+// duration is d to the second under an hour, such as 4m12s, else 1h02m.
+func duration(d time.Duration) string {
+	d = max(0, d.Round(time.Second))
+	h, m, s := int(d/time.Hour), int(d/time.Minute)%60, int(d/time.Second)%60
+	two := func(n int) string { return string(rune('0'+n/10)) + string(rune('0'+n%10)) }
+	switch {
+	case h > 0:
+		return strconv.Itoa(h) + "h" + two(m) + "m"
+	case m > 0:
+		return strconv.Itoa(m) + "m" + two(s) + "s"
+	}
+	return strconv.Itoa(s) + "s"
+}
+
+// reviewerRows draws one entry per reviewer: login, state, age, and
+// outdated when the review isn't on the head.
+func reviewerRows(t theme, r *changes.Review, now time.Time, width int, entry func(line, id, link string)) {
+	name := 0
+	for _, reviewer := range r.Reviewers {
+		name = max(name, ansi.StringWidth(textutil.Line(reviewer.Login)))
+	}
+	name = min(name, max(1, width/3))
+	for _, reviewer := range r.Reviewers {
+		login := ansi.Truncate(textutil.Line(reviewer.Login), name, "…")
+		line := "  " + login + blank(name-ansi.StringWidth(login)) + "  " + reviewerState(t, reviewer.State)
+		if a := age(reviewer.SubmittedAt, now); a != "" {
+			line += "  " + t.muted.render(a)
+		}
+		if reviewer.Outdated {
+			line += "  " + t.yellow.render("outdated")
+		}
+		entry(ansi.Truncate(line, width, "…"), reviewURL(r, reviewer.Login), linkReview+reviewer.Login)
+	}
+}
+
+// reviewURL is the login's latest review in the conversation, or "".
+func reviewURL(r *changes.Review, login string) string {
+	if c, ok := latestReview(r, login); ok {
+		return c.URL
+	}
+	return ""
+}
+
+func latestReview(r *changes.Review, login string) (changes.Comment, bool) {
+	if r == nil || login == "" {
+		return changes.Comment{}, false
+	}
+	for i := len(r.Comments) - 1; i >= 0; i-- {
+		if c := r.Comments[i]; c.Author == login && c.State != "" && c.URL != "" {
+			return c, true
+		}
+	}
+	return changes.Comment{}, false
+}
+
+func reviewerTime(r *changes.Review, login string) time.Time {
+	for _, reviewer := range r.Reviewers {
+		if reviewer.Login == login {
+			return reviewer.SubmittedAt
+		}
+	}
+	return time.Time{}
+}
+
+// aboutLines compress the change's facts: branch → base, commits, and
+// files, then its head, age, worktree, uncommitted files, and URL.
+func aboutLines(t theme, c changes.Change, d changes.Detail, now time.Time, width int) []string {
+	room := max(1, width-propertyWidth)
+	var first []string
+	if base := strings.TrimPrefix(strings.TrimPrefix(c.Base(), "refs/heads/"), "refs/remotes/"); c.Branch != "" && base != "" {
+		first = append(first, textutil.Line(c.Branch)+" → "+textutil.Line(base))
+	} else if c.Branch != "" {
+		first = append(first, textutil.Line(c.Branch))
+	}
+	if n := len(d.Commits); n == 1 {
+		first = append(first, "1 commit")
+	} else if n > 1 {
+		first = append(first, strconv.Itoa(n)+" commits")
+	}
+	if len(d.Files) > 0 {
+		additions, deletions := changes.Size(d.Files)
+		first = append(first, strconv.Itoa(len(d.Files))+" files "+t.green.render("+"+strconv.Itoa(additions))+" "+t.red.render("−"+strconv.Itoa(deletions)))
+	}
+	var second []string
+	if c.Head != "" {
+		second = append(second, "head "+t.yellow.render(c.Head[:min(7, len(c.Head))]))
+	}
+	if !c.Updated.IsZero() {
+		second = append(second, "updated "+age(c.Updated, now))
+	}
+	dirty := 0
+	for _, f := range d.Files {
+		if f.Status == changes.FileUncommitted {
+			dirty++
+		}
+	}
+	if dirty > 0 {
+		second = append(second, t.yellow.render(strconv.Itoa(dirty)+" uncommitted"))
+	}
+	var lines []string
+	for _, parts := range [][]string{first, second} {
+		if len(parts) > 0 {
+			lines = append(lines, ansi.Truncate(strings.Join(parts, t.muted.render(" · ")), room, "…"))
+		}
+	}
+	if path := worktreePath(c); path != "" {
+		lines = append(lines, ansi.Truncate("worktree "+textutil.Line(path), room, "…"))
+	}
+	if c.URL != "" {
+		lines = append(lines, t.link.render(ansi.Truncate(textutil.Line(c.URL), room, "…")))
+	}
+	return lines
+}
+
+// verdictLabel is a verdict's glyph and word, colored by how close the pull
+// request is to landing.
+func verdictLabel(t theme, verdict string) string {
+	switch verdict {
+	case changes.VerdictReady:
+		return t.green.render("✓ Ready")
+	case changes.VerdictUnstable:
+		return t.yellow.render("! Unstable")
+	case changes.VerdictRunning:
+		return t.yellow.render("● Running")
+	case changes.VerdictBlocked:
+		return t.red.render("✕ Blocked")
+	case changes.VerdictBehind:
+		return t.yellow.render("↓ Behind")
+	case changes.VerdictConflicts:
+		return t.red.render("⚠ Conflicts")
+	case changes.VerdictDraft:
+		return t.muted.render("Draft")
+	case changes.VerdictMerged:
+		return t.magenta.render("Merged")
+	case changes.VerdictClosed:
+		return t.muted.render("Closed")
+	}
+	return t.muted.render("Checking")
+}
+
+func reasonGlyph(t theme, reason changes.Reason) string {
+	switch reason.Kind {
+	case changes.ReasonFailing, changes.ReasonProtection:
+		return t.red.render("✕")
+	case changes.ReasonPending, changes.ReasonThreads:
+		return t.yellow.render("●")
+	case changes.ReasonChanges:
+		return t.red.render("✎")
+	case changes.ReasonReview:
+		return t.yellow.render("○")
+	case changes.ReasonConflicts:
+		return t.red.render("⚠")
+	case changes.ReasonBehind:
+		return t.yellow.render("↓")
+	case changes.ReasonStale:
+		return t.yellow.render("?")
+	}
+	return t.green.render("✓")
+}
+
+// reasonSummary is the strip's short form of the reasons, such as 1 failing
+// · changes requested · 3 unresolved.
+func reasonSummary(merge changes.Merge) string {
+	counts := map[string]int{}
+	var kinds []string
+	for _, reason := range merge.Reasons {
+		if counts[reason.Kind] == 0 {
+			kinds = append(kinds, reason.Kind)
+		}
+		counts[reason.Kind]++
+	}
+	var parts []string
+	for _, kind := range kinds {
+		n := strconv.Itoa(counts[kind])
+		switch kind {
+		case changes.ReasonFailing:
+			parts = append(parts, n+" failing")
+		case changes.ReasonPending:
+			parts = append(parts, n+" running")
+		case changes.ReasonChanges:
+			parts = append(parts, "changes requested")
+		case changes.ReasonThreads:
+			for _, reason := range merge.Reasons {
+				if reason.Kind == kind {
+					parts = append(parts, strings.Fields(reason.Text)[0]+" unresolved")
+				}
+			}
+		case changes.ReasonReview:
+			parts = append(parts, "review required")
+		case changes.ReasonConflicts:
+			parts = append(parts, "conflicts")
+		case changes.ReasonBehind:
+			parts = append(parts, "behind")
+		case changes.ReasonProtection:
+			parts = append(parts, "branch protection")
+		case changes.ReasonStale:
+			parts = append(parts, "out of date")
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// changeStrip is the change view's line under its tabs. A pull request shows
+// its verdict, the reasons, which truncate, and the age of the last read, or
+// stale when it failed; a branch or worktree shows how far it is from its base
+// and its uncommitted files.
+func changeStrip(t theme, c changes.Change, facts *changes.Change, r *changes.Review, now time.Time, width int) string {
+	head := stageGlyph(t, c) + " " + textutil.Line(changes.Label(c))
+	if base := strings.TrimPrefix(strings.TrimPrefix(c.Base(), "refs/heads/"), "refs/remotes/"); base != "" && c.Number > 0 {
+		head += t.muted.render(" → " + textutil.Line(base))
+	}
+	if c.Number == 0 || facts == nil || facts.Merge == nil {
+		var parts []string
+		if facts != nil {
+			if facts.Ahead != nil && *facts.Ahead > 0 {
+				parts = append(parts, "↑"+strconv.Itoa(*facts.Ahead))
+			}
+			if facts.Behind != nil && *facts.Behind > 0 {
+				parts = append(parts, "↓"+strconv.Itoa(*facts.Behind))
+			}
+			if facts.Dirty != nil && *facts.Dirty > 0 {
+				parts = append(parts, t.yellow.render(strconv.Itoa(*facts.Dirty)+" dirty"))
+			}
+		}
+		if c.Number > 0 {
+			parts = append(parts, t.muted.render("Checking"))
+		}
+		return ansi.Truncate(strings.Join(append([]string{head}, parts...), "   "), width, "…")
+	}
+	verdict := verdictLabel(t, facts.Merge.Verdict)
+	when := ""
+	if r != nil {
+		when = age(r.Fetched, now)
+		if r.Stale != "" {
+			when = t.yellow.render("stale")
+		}
+	}
+	head = ansi.Truncate(head, max(1, width-ansi.StringWidth(verdict)-ansi.StringWidth(when)-5), "…") + "   " + verdict
+	room := width - ansi.StringWidth(head) - ansi.StringWidth(when) - 2
+	summary := ""
+	if room > 3 {
+		if s := reasonSummary(*facts.Merge); s != "" {
+			summary = "  " + t.muted.render(ansi.Truncate(s, room-2, "…"))
+		}
+	}
+	line := head + summary
+	return line + blank(width-ansi.StringWidth(line)-ansi.StringWidth(when)) + t.muted.render(when)
 }
 
 func reviewStale(r *changes.Review) string {
