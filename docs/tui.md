@@ -67,7 +67,8 @@ shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓
 ([Changes](changes.md)), and appears once any row has one. For an open pull
 request its last glyph is the merge verdict from the list read, first that
 applies: `⚠` conflicts, `✕` checks failing, `✎` changes requested, `↓` behind
-its base, `●` checks running, `○` review required, `✓` ready. A draft, or a
+its base, `●` checks running, `○` review required, `⊘` blocked for a reason
+the list can't see, such as unresolved threads, `✓` ready. A draft, or a
 pull request whose merge state is unknown, shows its checks glyph. Help lists
 these under Change column. As the pane narrows,
 columns drop in this order so the title keeps at least two-fifths of the width:

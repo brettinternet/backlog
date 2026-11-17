@@ -69,6 +69,10 @@ func verdictGlyph(t theme, c changes.Change) string {
 		return t.yellow.render("●")
 	case c.Review == changes.ReviewRequested:
 		return t.yellow.render("○")
+	case merge == changes.VerdictBlocked:
+		// Blocked for a reason the list read can't see, such as unresolved
+		// threads, so it never falls through to a passing checks glyph.
+		return t.red.render("⊘")
 	case merge == changes.VerdictReady:
 		return t.green.render("✓")
 	}

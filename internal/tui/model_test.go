@@ -407,6 +407,8 @@ func TestVerdictGlyph(t *testing.T) {
 		{pr(changes.StateOpen, "behind", changes.ChecksPending, changes.ReviewRequested), "↓"},
 		{pr(changes.StateOpen, "blocked", changes.ChecksPending, changes.ReviewRequested), "●"},
 		{pr(changes.StateOpen, "blocked", changes.ChecksPassing, changes.ReviewRequested), "○"},
+		{pr(changes.StateOpen, "blocked", changes.ChecksPassing, ""), "⊘"},
+		{pr(changes.StateOpen, "blocked", "", ""), "⊘"},
 		{pr(changes.StateOpen, "clean", "", ""), "✓"},
 		{pr(changes.StateDraft, "dirty", changes.ChecksFailing, ""), "✕"},
 		{pr(changes.StateOpen, "unknown", changes.ChecksPending, changes.ReviewRequested), "●"},

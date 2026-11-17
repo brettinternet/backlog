@@ -266,7 +266,8 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 var changeLegend = [][2]string{
 	{"◇", "Worktree"}, {"⎇", "Branch"}, {"⇡", "Pull request"}, {"◆", "Landed"}, {"?", "Unknown or stale"},
 	{"⚠", "Conflicts"}, {"✕", "Checks failing"}, {"✎", "Changes requested"}, {"↓", "Behind base"},
-	{"●", "Checks running"}, {"○", "Review required"}, {"✓", "Ready, or checks passing"},
+	{"●", "Checks running"}, {"○", "Review required"}, {"⊘", "Blocked"},
+	{"✓", "Ready, or checks passing"},
 }
 
 func (m Model) actionRow(a action) launcherRow {
