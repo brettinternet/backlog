@@ -27,6 +27,20 @@ func (s Store) RemoteInitial(ctx context.Context) (source.Delta, error) {
 	return readRemote(ctx, db, 2)
 }
 
+// RemoteCached reads every cached row without taking the refresh lock or
+// making a provider request. A missing cache has no rows.
+func (s Store) RemoteCached(ctx context.Context) (source.Delta, error) {
+	if _, err := os.Stat(s.Path); err != nil {
+		return source.Delta{}, nil
+	}
+	db, err := s.open(ctx)
+	if err != nil {
+		return source.Delta{}, err
+	}
+	defer db.Close()
+	return readRemote(ctx, db, -1)
+}
+
 // RemoteRefresh serializes read/network/commit across processes. Rows and cursor
 // commit atomically. A failed load never advances the cursor. The refresh lock
 // is not a database transaction: warm readers never wait on network I/O.

@@ -8,12 +8,67 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 	"github.com/brettinternet/backlog/internal/source/native"
 )
+
+// A duplicate warning that creates anyway, or a create that never happens
+// after it, defeats the check. Quick-add stays on its line while checking.
+func TestDuplicateTitleCreatesOnSecondEnter(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	dir := filepath.Join(root, "items")
+	backend, err := native.New(native.Options{ID: "tasks", Prefix: "BL", Path: dir, CommonDir: filepath.Join(root, ".git"), Statuses: map[string]model.StatusCategory{"todo": model.Todo}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statuses := []project.StatusConfig{{Key: "todo", Category: "todo"}}
+	cfg := project.Config{Settings: project.Settings{Statuses: statuses, Sources: []project.SourceConfig{{ID: "tasks", Type: "native", Path: dir, Prefix: "BL"}}}}
+	cfg.Discovery.CommonDir = filepath.Join(root, ".git")
+	store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": backend})
+	defer store.Close()
+	if err := <-store.Mutate(model.Mutation{Op: model.Create, Ref: model.Ref{Source: "tasks"}, Item: &model.Item{Title: "Fix login", Status: "todo"}}); err != nil {
+		t.Fatal(err)
+	}
+	checks := 0
+	m := New(Options{Context: ctx, Store: store, Statuses: statuses, DuplicateTitle: func(ctx context.Context, source, title string) error {
+		checks++
+		return engine.DuplicateTitle(ctx, cfg, source, title)
+	}})
+	enter := func() tea.Cmd {
+		t.Helper()
+		cmd := m.updateCapture("enter")
+		if checked, ok := cmd().(titleCheckedMsg); ok {
+			return m.titleChecked(checked)
+		}
+		return cmd
+	}
+	saved := editResultMsg{message: "Item saved."}
+	m.capture = captureState{open: true, line: newLine("Fix  LOGIN #bug"), source: "tasks"}
+	if cmd := enter(); cmd != nil || !strings.Contains(m.capture.errorText, "tasks:BL-1") || m.capture.full {
+		t.Fatalf("first enter: %v %q full=%v", cmd, m.capture.errorText, m.capture.full)
+	}
+	m.updateCapture("esc")
+	if !m.capture.open || m.capture.errorText != "" {
+		t.Fatal("esc closed the prompt instead of dismissing the matches")
+	}
+	enter()
+	if result := m.updateCapture("enter")(); result != saved || checks != 2 {
+		t.Fatalf("second enter: %v checks=%d", result, checks)
+	}
+	m.capture = captureState{open: true, line: newLine("Other work"), source: "tasks"}
+	if result := enter()(); result != saved {
+		t.Fatalf("unmatched title: %v", result)
+	}
+	waitEdit(t, func() bool { return store.Current().Len() == 3 })
+}
 
 // Create and edit must go through the native mutation pipeline: a form that
 // only changes its local copy would lose sections and optional frontmatter.

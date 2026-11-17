@@ -42,6 +42,7 @@ type Options struct {
 	CreateSource, CreateStatus string
 	ValidateItem               func(model.Item) error
 	ResolveRef                 func(context.Context, string, model.Ref) (model.Ref, error)
+	DuplicateTitle             func(ctx context.Context, source, title string) error // engine.DuplicateTitle, run in a command
 	NativeBytes                func(context.Context, model.Item) ([]byte, error)
 	NativeSource               func(string) bool
 	EditorDir                  string
@@ -1092,6 +1093,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.reviewSubmitted(msg)
 	case editSavedMsg:
 		return m.editorSaved(msg)
+	case titleCheckedMsg:
+		return m, m.titleChecked(msg)
 	case editResultMsg:
 		m.editResult(msg)
 		m.refreshClaims()

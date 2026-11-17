@@ -27,6 +27,15 @@ type captureState struct {
 	source                      string
 	refs                        []string        // carried into the new item, such as an adopted pull request
 	scope                       *project.Config // limits create sources to this workspace project
+	// checked is the source and title key whose duplicate check passed or
+	// was shown; enter creates only once the current pair is checked.
+	checked  [2]string
+	checking bool
+}
+
+type titleCheckedMsg struct {
+	source, key string
+	err         error
 }
 type captureField struct {
 	name  string
@@ -438,8 +447,15 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		}
 		return nil
 	}
+	if c.checking && (key == "enter" || key == "ctrl+s") {
+		return nil
+	}
 	switch key {
 	case "esc":
+		if c.checked != [2]string{} && c.errorText != "" {
+			c.checked, c.errorText = [2]string{}, ""
+			return nil
+		}
 		m.capture = captureState{}
 		return nil
 	case "tab":
@@ -465,6 +481,7 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		}
 		return nil
 	case "enter", "ctrl+s":
+		quick := !c.full
 		if !c.full {
 			m.expandCapture(false)
 			if c.errorText != "" {
@@ -497,6 +514,16 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		if err != nil {
 			c.errorText = boundedLine(err.Error())
 			return nil
+		}
+		if titleKey := model.TitleKey(item.Title); c.version == "" && c.checked != [2]string{c.source, titleKey} && m.opts.DuplicateTitle != nil {
+			// Quick-add stays quick-add while checking, so a match shows on
+			// the line the user typed.
+			c.full = c.full && !quick
+			c.checking = true
+			ctx, check, source, title := m.opts.Context, m.opts.DuplicateTitle, c.source, item.Title
+			return func() tea.Msg {
+				return titleCheckedMsg{source: source, key: titleKey, err: check(ctx, source, title)}
+			}
 		}
 		mutation := model.Mutation{Op: model.Create, Ref: model.Ref{Source: c.source}, Item: &item}
 		var sequential []model.Mutation
@@ -645,4 +672,19 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 		c.errorText = ""
 	}
 	return nil
+}
+
+// titleChecked shows a duplicate title's matches, so a second enter creates,
+// or creates at once when nothing matches.
+func (m *Model) titleChecked(msg titleCheckedMsg) tea.Cmd {
+	c := &m.capture
+	if !c.open || !c.checking || c.source != msg.source {
+		return nil
+	}
+	c.checking, c.checked = false, [2]string{msg.source, msg.key}
+	if msg.err != nil {
+		c.errorText = boundedLine(engine.ErrorMessage(msg.err) + "; enter creates anyway")
+		return nil
+	}
+	return m.updateCapture("enter")
 }
