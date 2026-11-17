@@ -81,6 +81,8 @@ type detailRequest struct {
 	poll       bool            // a forge refresh: reread only the shown pull requests' reviews
 	change     *changes.Change // the change view's change
 	checksOpen bool            // the Overview shows passing and skipped checks
+	threads    string          // review threads toggled from their default, one key per line
+	resolved   bool            // Conversation shows its resolved threads
 }
 type detailResult struct {
 	generation uint64
@@ -98,6 +100,7 @@ type detailResult struct {
 	rows       []diffRow  // what each Diff entry shows
 	head       string     // the commit the Diff shows
 	steps      []stepSpan // where the Diff shows each tour step, in tour order
+	threads    []int      // the Diff's entry of each unresolved review thread
 	tour       string     // why the Diff shows no tour steps, when it has a tour
 	dirty      []string   // the change's uncommitted files, which aren't at head
 	review     *changes.Review
@@ -155,6 +158,7 @@ type rendered struct {
 	hunks     []int
 	rows      []diffRow  // what each Diff entry, or each line of a file's diff, shows
 	steps     []stepSpan // where each tour step shows, in tour order
+	threads   []int      // the Diff's entry of each unresolved review thread
 	tour      string     // why a change's tour shows no steps
 	truncated bool
 	size      int
@@ -463,9 +467,9 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			if err == nil {
 				view = worker.loadTour(ctx, request, *request.change, &detail)
 			}
-			page = worker.diffPage(ctx, *request.change, detail, view, request)
+			page = worker.diffPage(ctx, *request.change, detail, view, review, draft, request)
 		} else {
-			page = changeViewPage(*request.change, detail, review, draft, result.draftErr, request, worker.render)
+			page = changeViewPage(*request.change, detail, review, draft, result.draftErr, request, worker.render, worker.commentRender)
 		}
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
@@ -474,7 +478,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		result.lines, result.entries, result.ids, result.links = page.lines, page.entries, page.ids, page.links
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
-		result.steps, result.tour = page.steps, page.tour
+		result.steps, result.tour, result.threads = page.steps, page.tour, page.threads
 		if request.tab == tabChangeCommits {
 			result.commits = detail.Commits
 		}

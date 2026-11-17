@@ -325,7 +325,7 @@ func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Chan
 			} else {
 				unresolved, merge := r.Unresolved(), Verdict(*c, r)
 				c.CheckRuns, c.Unresolved, c.Reason = r.Checks, &unresolved, cmp.Or(c.Reason, r.Stale)
-				c.Merge, c.Reviewers = &merge, r.Reviewers
+				c.Merge, c.Reviewers, c.Threads = &merge, r.Reviewers, r.Threads
 			}
 		}
 		if c.Worktree != "" {
@@ -342,9 +342,9 @@ func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Chan
 }
 
 // Brief is c without the pull request detail only bl changes --detail shows:
-// the verdict, reviewers, and each check's exact state and timing.
+// the verdict, reviewers, threads, and each check's exact state and timing.
 func (c Change) Brief() Change {
-	c.Merge, c.Reviewers = nil, nil
+	c.Merge, c.Reviewers, c.Threads = nil, nil, nil
 	if c.CheckRuns != nil {
 		checks := make([]Check, len(c.CheckRuns))
 		for i, check := range c.CheckRuns {

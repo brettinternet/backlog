@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"image/color"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -242,6 +243,19 @@ type Model struct {
 	changeFacts  *changes.Change // the change view's change as last read, for the verdict strip
 	checksOpen   bool            // the change Overview shows passing and skipped checks
 	reviewEntry  string          // the Conversation entry to select when it arrives
+	// threadsToggled are the Diff's review threads shown or folded against
+	// their default; resolvedOpen shows Conversation's resolved threads.
+	threadsToggled map[string]bool
+	resolvedOpen   bool
+	detailThreads  []int    // the Diff's entry of each unresolved review thread
+	diffTarget     string   // the link the Diff opens at when it arrives
+	changeReturn   *tabStop // the entry backspace returns to from a Diff opened at a link
+}
+
+// tabStop is an entry of a change view tab.
+type tabStop struct {
+	tab    detailTab
+	cursor int
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -467,6 +481,7 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 		change: change, generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
 		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(), checksOpen: m.checksOpen,
+		threads: strings.Join(slices.Sorted(maps.Keys(m.threadsToggled)), "\n"), resolved: m.resolvedOpen,
 	}
 }
 
@@ -943,7 +958,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
 			m.detailLinks, m.changeFacts = result.links, result.facts
-			m.detailSteps, m.detailTour = result.steps, result.tour
+			m.detailSteps, m.detailTour, m.detailThreads = result.steps, result.tour, result.threads
 			if !keep {
 				m.tourStep = -1
 			}
@@ -974,6 +989,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.reviewEntry = ""
+				if m.detailTab == tabChangeDiff && m.diffTarget != "" {
+					m.landDiff(m.diffTarget)
+				}
+				m.diffTarget = ""
 			}
 			if pinned {
 				m.detailScroll = len(m.detailLines)
@@ -1319,6 +1338,10 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
 				m.stepTour(prefix == "]")
 				return m, nil
+			case "u":
+				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
+				m.stepThread(prefix == "]")
+				return m, nil
 			}
 		}
 		// The change view drafts and submits a pull request review.
@@ -1359,8 +1382,11 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				}
 				return m, m.toggleHistoryEntry()
 			}
-			if m.change != nil && m.detailTab == tabChangeOverview {
+			if m.change != nil && (m.detailTab == tabChangeOverview || m.detailTab == tabChangeFiles || m.detailTab == tabChangeConversation) {
 				return m.followChangeLink()
+			}
+			if key := m.cursorThread(); m.change != nil && key != "" {
+				return m, m.foldThread(key, "fold")
 			}
 			if m.change != nil {
 				return m, m.openChangeCommit()
@@ -1623,6 +1649,8 @@ func (m *Model) switchDetailTab(tab detailTab) tea.Cmd {
 	m.detailTab = tab
 	m.detailExpanded = false
 	m.entryCursor = 0
+	// A tab chosen directly leaves the entry a link came from.
+	m.changeReturn = nil
 	return m.showDetail()
 }
 
@@ -1651,7 +1679,7 @@ func (m *Model) closeDetail() {
 	m.detailChanges, m.detailCommits = nil, nil
 	m.detailFiles, m.detailHunks = nil, nil
 	m.detailRows, m.detailHead = nil, ""
-	m.detailSteps, m.detailTour, m.tourStep = nil, "", -1
+	m.detailSteps, m.detailTour, m.tourStep, m.detailThreads = nil, "", -1, nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	if m.change != nil {

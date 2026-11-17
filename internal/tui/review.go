@@ -93,6 +93,17 @@ func (m *Model) beginReviewDraft() tea.Cmd {
 		id = m.detailIDs[m.entryCursor]
 	}
 	switch {
+	case m.cursorThread() != "":
+		// A thread in the Diff takes a reply, as in Conversation.
+		if t := threadAt(m.review.read, m.cursorThread()); t != nil && t.ID != "" {
+			edit.reply = &changes.Reply{Thread: t.ID, Path: t.Path, Line: t.Line}
+			text = ""
+			for _, r := range d.Replies {
+				if r.Thread == t.ID {
+					text = r.Body
+				}
+			}
+		}
 	case m.detailTab == tabChangeDiff:
 		anchors := m.cursorAnchors()
 		if len(anchors) == 0 || anchors[0].line == 0 {
@@ -114,7 +125,7 @@ func (m *Model) beginReviewDraft() tea.Cmd {
 			}
 		}
 	case m.detailTab == tabChangeConversation:
-		entries := m.review.read.Conversation()
+		entries := conversation(m.review.read, m.resolvedOpen)
 		if m.entryCursor >= 0 && m.entryCursor < len(entries) && entries[m.entryCursor].Thread != nil && entries[m.entryCursor].Thread.ID != "" {
 			t := entries[m.entryCursor].Thread
 			edit.reply = &changes.Reply{Thread: t.ID, Path: t.Path, Line: t.Line}

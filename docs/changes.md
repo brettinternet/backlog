@@ -197,10 +197,10 @@ change term load once per call.
 | --- | --- |
 | TUI list | The most advanced change, such as `⇡#45 ✓` ([TUI](tui.md#layout)) |
 | TUI Changes tab | Every change, furthest first, with its actions and URL ([TUI](tui.md#detail)) |
-| TUI change view | A verdict strip, and an overview of merge reasons, checks, and reviewers, files with `+/−`, highlighted diff, commits, and conversation ([TUI](tui.md#detail)) |
+| TUI change view | A verdict strip, and an overview of merge reasons, checks, and reviewers, files with `+/−`, highlighted diff, commits, and conversation, with review threads inline in the diff ([TUI](tui.md#detail)) |
 | History | One group per change: its span, events, and landed commits |
 | Queries | `has:change`, `change:`, `checks:`, `review:` ([Query](query.md#fields)) |
-| `bl changes ID` | The same list as text or JSON; `--detail` adds the verdict, check timing, and reviewers ([CLI](cli.md#bl-changes-id)) |
+| `bl changes ID` | The same list as text or JSON; `--detail` adds the verdict, check timing, reviewers, and review threads ([CLI](cli.md#bl-changes-id)) |
 | MCP `changes` | The same data as `bl changes --json` ([MCP](mcp.md#tools)) |
 | Actions | `{change.number}`, `{change.url}`, `{change.branch}`, `{change.head}`, `{change.base}`, `{change.path}` ([Automation](automation.md#placeholders-and-environment)) |
 

@@ -1297,7 +1297,9 @@ func TestChangeViewReview(t *testing.T) {
 			{ID: "T_b", Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this? " + strings.Repeat("and this ", 400), Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
 		},
 	}
-	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) {
+		return changes.Detail{Files: []changes.File{{Path: "b.go", Status: changes.FileModified, Patch: "@@ -5,3 +5,4 @@\n a\n b\n+c\n d\n"}}}, nil
+	}
 	var fresh atomic.Int32
 	m.detailWorker.changeReview = func(_ context.Context, _ changes.Change, refresh bool) (changes.Review, error) {
 		if refresh {
@@ -1352,8 +1354,12 @@ func TestChangeViewReview(t *testing.T) {
 	m, _ = detailKey(m, 'j', 0)
 	m, _ = detailKey(m, 'j', 0)
 	m, _ = detailKey(m, tea.KeyEnter, 0)
-	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#r1" {
+	if m = settleDetail(t, m); m.detailTab != tabChangeDiff || m.cursorThread() != "T_b" {
 		t.Fatalf("enter on unresolved threads opened tab %d at %d", m.detailTab, m.entryCursor)
+	}
+	// backspace returns to the reason it came from, then closes the change.
+	if m, _ = detailKey(m, tea.KeyBackspace, 0); m.detailTab != tabChangeOverview || m.entryCursor != 2 || m.change == nil {
+		t.Fatalf("backspace from the Diff: tab %d at %d", m.detailTab, m.entryCursor)
 	}
 	// ann approved without a comment, so has no Conversation entry, but has
 	// reviewed.
@@ -1430,8 +1436,17 @@ func TestChangeViewReview(t *testing.T) {
 	_ = m.switchDetailTab(tabChangeConversation)
 	m = settleDetail(t, m)
 	content = strings.Join(m.detailLines, "\n")
-	if b, c, a := strings.Index(content, "b.go:7"), strings.Index(content, "first comment"), strings.Index(content, "a.go:3"); b < 0 || c < b || a < c || !strings.Contains(content, "resolved") {
-		t.Fatalf("Conversation not unresolved first\n%s", content)
+	if b, c, a := strings.Index(content, "b.go:7"), strings.Index(content, "first comment"), strings.Index(content, "✓ 1 resolved thread"); b < 0 || c < b || a < c || strings.Contains(content, "a.go:3") {
+		t.Fatalf("Conversation not unresolved first, resolved folded\n%s", content)
+	}
+	if !strings.Contains(m.View().Content, "Conversation 1") {
+		t.Fatalf("Conversation tab lacks its unresolved count\n%s", m.View().Content)
+	}
+	folded := m
+	folded.entryCursor = len(folded.detailEntries) - 1
+	folded, _ = detailKey(folded, tea.KeyEnter, 0)
+	if folded = settleDetail(t, folded); !strings.Contains(strings.Join(folded.detailLines, "\n"), "a.go:3") || folded.entryCursor != len(folded.detailEntries)-2 {
+		t.Fatalf("enter didn't open the resolved threads\n%s", strings.Join(folded.detailLines, "\n"))
 	}
 	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://github.com/o/r/pull/45#r1" {
 		t.Fatalf("O opened %q, not the thread under the cursor", opened)
@@ -1495,6 +1510,194 @@ func TestChangeViewReview(t *testing.T) {
 	m = settleDetail(t, next.(Model))
 	if m, cmd = detailKey(m, 'c', 0); cmd != nil || !strings.Contains(m.notice, "Pull requests: write") {
 		t.Fatalf("blocked c: %q", m.notice)
+	}
+}
+
+// TestDiffThreads checks that review threads sit under their line on their
+// side, in either layout and on a renamed file, that ]u steps through the
+// unresolved ones, and that held j over a long diff with threads stays
+// within budget.
+func TestDiffThreads(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 1, RenderMarkdown)
+	pr := changes.Change{ID: "pr:45", Stage: changes.StagePR, State: changes.StateOpen, Number: 45, Head: "abc", URL: "https://github.com/o/r/pull/45"}
+	m.data.rows[len(m.data.rows)-1].row.Changes = []changes.Change{pr}
+	comment := func(author, body string) []changes.Comment {
+		return []changes.Comment{{Author: author, Body: body}}
+	}
+	review := changes.Review{Head: "abc", Threads: []changes.Thread{
+		{ID: "T1", Path: "a.go", Line: 2, Comments: comment("ann", "fix z")},
+		{ID: "T2", Path: "a.go", Line: 2, Old: true, Comments: comment("bo", "why y")},
+		{ID: "T3", Path: "old.go", Line: 10, Comments: comment("cy", "rename q")},
+		{ID: "T4", Path: "a.go", Line: 3, Resolved: true, Comments: comment("ann", "fine w")},
+		{ID: "T5", Path: "a.go", Line: 1, Outdated: true, Comments: comment("bo", "gone")},
+	}}
+	files := []changes.File{
+		{Path: "a.go", Status: changes.FileModified, Patch: "@@ -1,3 +1,3 @@\n x\n-y\n+z\n w\n"},
+		{Path: "new.go", From: "old.go", Status: changes.FileRenamed, Patch: "@@ -10,2 +10,2 @@\n-p\n+q\n r\n"},
+	}
+	var mu sync.Mutex
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return changes.Detail{Files: files}, nil
+	}
+	m.detailWorker.changeReview = func(context.Context, changes.Change, bool) (changes.Review, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return review, nil
+	}
+	drafts := &fakeReviewer{draft: changes.Draft{URL: pr.URL, Comments: []changes.LineComment{{Head: "abc", Path: "a.go", Line: 3, Body: "draft note"}}}}
+	m.reviewer, m.detailWorker.changeDraft = drafts, drafts.Draft
+	m.width = 100
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+
+	// Files counts each file's unresolved threads, the outdated one too, and
+	// enter opens the Diff at the file, which backspace returns from.
+	_ = m.switchDetailTab(tabChangeFiles)
+	m = settleDetail(t, m)
+	if l := m.detailLines[m.detailEntries[0]]; !strings.Contains(l, "● 3") {
+		t.Fatalf("Files row lacks its unresolved count: %q", l)
+	}
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeDiff || m.detailEntries[m.entryCursor] != m.detailFiles[1] {
+		t.Fatalf("enter on new.go opened tab %d at line %d", m.detailTab, m.detailEntries[m.entryCursor])
+	}
+	rowOf := func(m Model, key string) int {
+		return slices.IndexFunc(m.detailRows, func(r diffRow) bool { return r.thread == key })
+	}
+	under := func(m Model, key string) diffRow {
+		n := rowOf(m, key)
+		if n < 1 {
+			t.Fatalf("no thread %s in the Diff", key)
+		}
+		return m.detailRows[n-1]
+	}
+	// Each thread is under the row showing its line on its side; the
+	// renamed file's thread names its old path.
+	for key, want := range map[string]diffRow{"T1": {file: "a.go", new: 2}, "T2": {file: "a.go", old: 2}, "T3": {file: "new.go", new: 10}} {
+		if got := under(m, key); got != want {
+			t.Fatalf("%s under %+v, want %+v", key, got, want)
+		}
+	}
+	if rowOf(m, "T5") >= 0 {
+		t.Fatal("the outdated thread shows in the Diff")
+	}
+	text := strings.Join(m.detailLines, "\n")
+	for _, want := range []string{"fix z", "why y", "rename q", "✎ draft", "draft note"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Diff lacks %q\n%s", want, text)
+		}
+	}
+	folded := func(m Model) bool {
+		for _, l := range m.detailLines {
+			if strings.Contains(l, "fine w") {
+				return strings.Contains(l, "✓")
+			}
+		}
+		t.Fatal("Diff lacks the resolved thread")
+		return false
+	}
+	if !folded(m) {
+		t.Fatal("the resolved thread isn't folded")
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeFiles || m.entryCursor != 1 {
+		t.Fatalf("backspace returned to tab %d at %d", m.detailTab, m.entryCursor)
+	}
+	// A tab chosen directly drops the return, so backspace closes the change.
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChangeOverview)
+	if _ = m.switchDetailTab(tabChangeDiff); m.changeReturn != nil {
+		t.Fatalf("a directly chosen Diff returns to %+v", *m.changeReturn)
+	}
+
+	// ]u and [u step through unresolved threads in diff order, wrapping and
+	// skipping resolved and outdated ones; a thread has no line to comment on.
+	_ = m.switchDetailTab(tabChangeDiff)
+	m = settleDetail(t, m)
+	for i, step := range []struct{ keys, want, notice string }{
+		{"]u", "T2", ""}, {"]u", "T1", ""}, {"]u", "T3", ""}, {"]u", "T2", "Wrapped"}, {"[u", "T3", "Wrapped"}, {"[u", "T1", ""},
+	} {
+		m.notice = ""
+		for _, r := range step.keys {
+			m, _ = detailKey(m, r, 0)
+		}
+		if m.cursorThread() != step.want || !strings.Contains(m.notice, step.notice) || step.notice == "" && m.notice != "" {
+			t.Fatalf("step %d %s: on %q, notice %q", i, step.keys, m.cursorThread(), m.notice)
+		}
+	}
+	if anchors := m.cursorAnchors(); len(anchors) != 0 {
+		t.Fatalf("a thread resolves to %v", anchors)
+	}
+	// enter shows the resolved thread whole and keeps the cursor on it; the
+	// cursor stays on a thread as the layout splits, where the old side's
+	// thread is in the left half and the new side's in the right.
+	m.entryCursor = rowOf(m, "T4")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); folded(m) || m.cursorThread() != "T4" {
+		t.Fatalf("enter on a resolved thread: folded %v, cursor on %q", folded(m), m.cursorThread())
+	}
+	m.entryCursor = rowOf(m, "T1")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 400, Height: 24})
+	m = settleDetail(t, next.(Model))
+	if m.cursorThread() != "T1" {
+		t.Fatalf("split moved the cursor to %q", m.cursorThread())
+	}
+	half := (m.detailWidth() - 2*detailPad - 1) / 2
+	for key, left := range map[string]bool{"T1": false, "T2": true} {
+		head := ansi.Strip(m.detailLines[m.detailEntries[rowOf(m, key)]])
+		if column := ansi.StringWidth(head[:strings.Index(head, "●")]); column < half != left {
+			t.Fatalf("%s at column %d of a %d-column half", key, column, half)
+		}
+	}
+	if got := under(m, "T2"); got.old != 2 {
+		t.Fatalf("split T2 under %+v", got)
+	}
+
+	// Held j over a 10,000-line diff with 100 threads stays within the §11
+	// navigation budget, whose in-process time BL_TUI_MEASURE=1 logs.
+	var patch strings.Builder
+	patch.WriteString("@@ -0,0 +1,10000 @@\n")
+	mu.Lock()
+	review.Threads = nil
+	for i := 1; i <= 10000; i++ {
+		fmt.Fprintf(&patch, "+\tline := %d\n", i)
+		if i%100 == 0 {
+			review.Threads = append(review.Threads, changes.Thread{ID: "L" + strconv.Itoa(i), Path: "long.go", Line: i, Comments: comment("ann", "note on "+strconv.Itoa(i))})
+		}
+	}
+	files = []changes.File{{Path: "long.go", Status: changes.FileAdded, Patch: patch.String()}}
+	mu.Unlock()
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = next.(Model)
+	m.detailExpanded = true
+	m.submitDetail(true)
+	m = settleDetail(t, m)
+	if len(m.detailThreads) != 100 {
+		t.Fatalf("long diff shows %d of 100 threads", len(m.detailThreads))
+	}
+	m.entryCursor, m.detailScroll = 0, 0
+	samples := make([]time.Duration, 0, len(m.detailEntries))
+	for m.entryCursor < len(m.detailEntries)-1 {
+		start := time.Now()
+		m, _ = detailKey(m, 'j', 0)
+		_ = m.View()
+		samples = append(samples, time.Since(start))
+	}
+	if len(samples) != len(m.detailEntries)-1 {
+		t.Fatalf("held j took %d presses over %d entries", len(samples), len(m.detailEntries))
+	}
+	if os.Getenv("BL_TUI_MEASURE") == "1" {
+		slices.Sort(samples)
+		t.Logf("held j over 10,000 lines and 100 threads Update+View p95=%s max=%s", samples[(len(samples)*95-1)/100], samples[len(samples)-1])
 	}
 }
 
