@@ -793,9 +793,10 @@ warn  claims        Active without a live claim: BL-7
                     Fix: Resume each with bl claim ID, or move it to todo, done, or canceled
 pass  sources       Sources are configured; no network checks requested
 pass  accounts      Provider source accounts are ready; reads verify them
+pass  forges        github acme/app on github.com, account personal, implicit: ok; 120 pull requests kept, refreshed 2026-11-17T21:55:51Z
 ```
 
-Ten checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`, `accounts`.
+Eleven checks: `config`, `trust`, `hooks`, `control-root`, `local-config`, `cache`, `worklease`, `claims`, `sources`, `accounts`, `forges`.
 Each has a `status` (`pass`, `warn`, `fail`, `skip`), `message`, and `fix`. JSON
 `data.checks` lists all of them. Any failure exits 5 (`rejected`); warnings
 alone exit 0. Invalid config fails `config` and skips the checks that need it.
@@ -827,7 +828,23 @@ alone exit 0. Invalid config fails `config` and skips the checks that need it.
   from user config or can't authenticate, by the same offline rules as
   [`bl auth status`](#bl-auth-status-provider-account-and-bl-auth-loginlogout-provider-account).
   It skips untrusted sources, which are inert.
-- `--online` allows network probes after trust. None are defined yet.
+- `forges` reports each [linked changes forge](changes.md#configuration):
+  its type, host, repository, account, and whether it is explicit
+  (`changes.forges`) or implicit (`origin`). It reads one uncached page of
+  pull requests with their checks and closing references, through the
+  account's credentials, and reports `ok`, `warn` naming checks or closing
+  references the token can't read, or `fail` when it can't read pull
+  requests. It also shows the cache's sync state: pull requests kept, the last
+  refresh, and whether older ones are still being read. A GitHub or GitLab
+  `origin` with no forge warns why: no account for its host, with a user
+  config snippet and `bl auth login`, or several, naming them and a
+  `changes.forges` entry that picks one. An explicit forge that can't be
+  built, such as an untrusted one or one with an unknown account, fails. Any
+  other origin, or none, skips. JSON `data.forges` lists each forge's `type`,
+  `host`, `repo`, `account`, `explicit`, `status`, `unreadable`, `error`, and
+  `sync` (`kept`, `refreshed`, `reading`).
+- `--online` allows network probes of sources after trust. None are defined
+  yet.
 
 ### `bl check [--fix]`
 

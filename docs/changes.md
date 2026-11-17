@@ -90,7 +90,9 @@ one account of that type is configured for its host. Forges reuse accounts,
 credentials, request queues, and redaction from [GitHub
 sources](github.md#linked-changes); a GitLab account with a `read_api` token
 serves only its forge ([GitLab](gitlab.md)). Project-declared forges do nothing
-until `bl trust`.
+until `bl trust`. [`bl doctor`](cli.md#bl-doctor---online) reports each
+forge, whether its token can read pull requests, checks, and closing
+references, and why an origin gave none.
 
 ## Tours
 

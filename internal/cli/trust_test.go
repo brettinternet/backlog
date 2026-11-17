@@ -1,7 +1,10 @@
 package cli_test
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -194,7 +197,7 @@ func assertDoctor(t *testing.T, code int, out string, failed bool) {
 	if result.OK == failed || (failed && code != 5) || (!failed && code != 0) {
 		t.Fatalf("doctor status: %d %s", code, out)
 	}
-	want := []string{"config", "trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources", "accounts"}
+	want := []string{"config", "trust", "hooks", "control-root", "local-config", "cache", "worklease", "claims", "sources", "accounts", "forges"}
 	if len(result.Data.Checks) != len(want) {
 		t.Fatalf("missing checks: %s", out)
 	}
@@ -260,5 +263,126 @@ func TestDoctorReportsCorruptCacheAndInvalidConfig(t *testing.T) {
 	assertDoctor(t, code, out, true)
 	if !strings.Contains(out, `"name":"config","status":"fail"`) {
 		t.Fatal(out)
+	}
+}
+
+// Catches doctor passing while linked pull requests can never appear: a
+// GitHub origin with no account or several, an untrusted explicit forge, or
+// a token that can't read pull requests or their checks.
+func TestDoctorForges(t *testing.T) {
+	root := writeFixture(t)
+	fakeWorklease(t)
+	put(t, filepath.Join(root, ".git/config"), "[core]\n bare = false\n[remote \"origin\"]\n url = https://github.com/owner/repo.git\n")
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(paths.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var deny atomic.Value
+	deny.Store("")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Query string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if strings.Contains(req.Query, "viewer") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"viewer": map[string]any{"login": "alice"}}})
+			return
+		}
+		node := map[string]any{"number": 7, "title": "Fix", "url": "https://github.com/owner/repo/pull/7", "state": "OPEN", "headRefName": "fix", "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-01T00:00:00Z", "closingIssuesReferences": map[string]any{"nodes": []any{}}, "commits": map[string]any{"nodes": []any{}}}
+		var failures []any
+		switch deny.Load() {
+		case "checks":
+			delete(node, "commits")
+			failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests", "nodes", 0, "commits"}})
+		case "pulls":
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests"}}}, "data": map[string]any{"repository": map[string]any{"pullRequests": nil}}})
+			return
+		}
+		page := map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{node}}
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": failures, "data": map[string]any{"repository": map[string]any{"pullRequests": page}}})
+	}))
+	defer server.Close()
+	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}}
+	original := http.DefaultTransport
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = original; transport.CloseIdleConnections() })
+	t.Setenv("BL_FORGE_TOKEN", "forge-test-credential")
+
+	type report struct {
+		Type, Host, Repo, Account, Status string
+		Explicit                          bool
+		Unreadable                        []string
+		Sync                              struct {
+			Kept      int
+			Refreshed string
+		}
+	}
+	doctor := func(wantCode int) (forges struct{ Status, Message, Fix string }, reports []report) {
+		t.Helper()
+		code, out, _ := run("-C", root, "--json", "doctor")
+		var result struct {
+			Data struct {
+				Checks []struct{ Name, Status, Message, Fix string }
+				Forges []report
+			}
+			Error *struct{ Data json.RawMessage }
+		}
+		if err := json.Unmarshal([]byte(out), &result); err != nil {
+			t.Fatal(err, out)
+		}
+		if result.Error != nil && result.Error.Data != nil {
+			_ = json.Unmarshal(result.Error.Data, &result.Data)
+		}
+		if code != wantCode {
+			t.Fatalf("doctor exit %d, want %d: %s", code, wantCode, out)
+		}
+		for _, c := range result.Data.Checks {
+			if c.Name == "forges" {
+				forges.Status, forges.Message, forges.Fix = c.Status, c.Message, c.Fix
+			}
+		}
+		return forges, result.Data.Forges
+	}
+	account := func(name string) string {
+		return "    - {name: " + name + ", host: github.com, user: alice, env: BL_FORGE_TOKEN}\n"
+	}
+
+	c, _ := doctor(0)
+	if c.Status != "warn" || !strings.Contains(c.Message, "no GitHub account for github.com") || !strings.Contains(c.Fix, "accounts: {github: [{name: personal, host: github.com") || !strings.Contains(c.Fix, "bl auth login github personal") {
+		t.Fatalf("no account: %+v", c)
+	}
+
+	put(t, paths.ConfigFile, "accounts:\n  github:\n"+account("personal")+account("work"))
+	if c, _ = doctor(0); c.Status != "warn" || !strings.Contains(c.Message, "personal, work") || !strings.Contains(c.Fix, "changes: {forges: [{type: github, host: github.com, repo: owner/repo, account: personal}]}") {
+		t.Fatalf("two accounts: %+v", c)
+	}
+
+	put(t, paths.ConfigFile, "accounts:\n  github:\n"+account("personal"))
+	if code, out, _ := writeRun(root, "", "changes", "12"); code != 0 {
+		t.Fatalf("changes: %d %s", code, out)
+	}
+	c, reports := doctor(0)
+	if c.Status != "pass" || len(reports) != 1 {
+		t.Fatalf("implicit forge: %+v %+v", c, reports)
+	}
+	if r := reports[0]; r.Type != "github" || r.Host != "github.com" || r.Repo != "owner/repo" || r.Account != "personal" || r.Explicit || r.Status != "ok" || r.Sync.Kept != 1 || r.Sync.Refreshed == "" {
+		t.Fatalf("implicit forge report: %+v", r)
+	}
+	deny.Store("checks")
+	if c, reports = doctor(0); c.Status != "warn" || !strings.Contains(c.Message, "can't read checks") || reports[0].Status != "warn" {
+		t.Fatalf("checks forbidden: %+v %+v", c, reports)
+	}
+	deny.Store("pulls")
+	if c, reports = doctor(5); c.Status != "fail" || !strings.Contains(c.Message, "can't read pull requests") || reports[0].Status != "fail" {
+		t.Fatalf("pull requests forbidden: %+v %+v", c, reports)
+	}
+
+	path := filepath.Join(root, "backlog.yaml")
+	put(t, path, get(t, path)+"changes: {forges: [{type: github, repo: owner/repo, account: personal}]}\n")
+	if c, reports = doctor(5); c.Status != "fail" || !strings.Contains(c.Message, "changes.forges[0] is untrusted") || !strings.Contains(c.Fix, "bl trust") || !reports[0].Explicit {
+		t.Fatalf("untrusted explicit forge: %+v %+v", c, reports)
 	}
 }

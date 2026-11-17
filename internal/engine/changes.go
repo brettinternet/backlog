@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -35,46 +36,91 @@ func TrackChanges(ctx context.Context, cfg project.Config) *changes.Tracker {
 	return changes.Track(ctx, ChangesOptions(cfg))
 }
 
-// forges are p's configured forges, which need trust like sources, else the
-// GitHub or GitLab origin when exactly one account of that type is configured
-// for its host.
+// forges are p's resolved forges, each that couldn't be built reporting why
+// as its refresh failure.
 func forges(p project.Config) []changes.Forge {
+	resolved, _ := ResolveForges(p)
+	var out []changes.Forge
+	for _, f := range resolved {
+		if f.Err != nil {
+			out = append(out, failedForge{f.Type + " " + f.Repo, f.Err})
+			continue
+		}
+		out = append(out, f.Forge)
+	}
+	return out
+}
+
+// ResolvedForge is one of a project's forges: Forge when it could be built,
+// else Err. Explicit ones come from changes.forges, the other from origin;
+// Untrusted ones wait for bl trust. Cache is its pull request cache, empty
+// without one.
+type ResolvedForge struct {
+	Type, Host, Repo, Account string
+	Explicit, Untrusted       bool
+	Cache                     string
+	Forge                     changes.Forge
+	Err                       error
+}
+
+// ForgeGap is why a GitHub or GitLab origin gave no forge: Accounts are the
+// several accounts of Type for Host, or none.
+type ForgeGap struct {
+	Type, Host, Repo string
+	Accounts         []string
+}
+
+// ResolveForges resolves p's configured forges, which need trust like
+// sources, else the GitHub or GitLab origin when exactly one account of that
+// type is configured for its host. Without either, gap says why an origin
+// that looks like GitHub or GitLab gave none; it is nil for any other origin.
+func ResolveForges(p project.Config) (out []ResolvedForge, gap *ForgeGap) {
 	configs := p.Changes.Forges
 	explicit := len(configs) > 0
 	if !explicit {
 		host, repo := project.Origin(p.Discovery)
 		if host == "" {
-			return nil
+			return nil, nil
 		}
 		for _, kind := range []string{"github", "gitlab"} {
-			if len(p.HostAccounts(kind, host)) == 1 {
+			found := p.HostAccounts(kind, host)
+			if len(found) == 1 {
 				configs = append(configs, project.ForgeConfig{Type: kind, Host: host, Repo: repo})
+			} else if len(found) > 1 && gap == nil {
+				gap = &ForgeGap{Type: kind, Host: host, Repo: repo}
+				for _, a := range found {
+					gap.Accounts = append(gap.Accounts, a.Name)
+				}
 			}
 		}
 		if len(configs) != 1 {
-			return nil
+			if gap == nil && len(configs) == 0 {
+				if kind := map[string]string{"github.com": "github", "gitlab.com": "gitlab"}[host]; kind != "" {
+					gap = &ForgeGap{Type: kind, Host: host, Repo: repo}
+				}
+			}
+			return nil, gap
 		}
 	}
-	var out []changes.Forge
 	for i, f := range configs {
 		if f.Host == "" {
 			f.Host = map[string]string{"github": "github.com", "gitlab": "gitlab.com"}[f.Type]
 		}
-		name := f.Type + " " + f.Repo
+		r := ResolvedForge{Type: f.Type, Host: f.Host, Repo: f.Repo, Account: f.Account, Explicit: explicit}
 		if explicit {
-			if err := p.RequireTrusted(fmt.Sprintf("changes.forges[%d]", i)); err != nil {
-				out = append(out, failedForge{name, err})
-				continue
+			r.Err = p.RequireTrusted(fmt.Sprintf("changes.forges[%d]", i))
+			r.Untrusted = r.Err != nil
+		}
+		if r.Err == nil {
+			var account project.AccountConfig
+			if account, r.Err = p.ForgeAccount(f); r.Err == nil {
+				r.Account, r.Cache = cmp.Or(account.Name, account.User), forgePath(p, f, account)
+				r.Forge, r.Err = newForge(p, f)
 			}
 		}
-		forge, err := newForge(p, f)
-		if err != nil {
-			out = append(out, failedForge{name, err})
-			continue
-		}
-		out = append(out, forge)
+		out = append(out, r)
 	}
-	return out
+	return out, nil
 }
 
 func newForge(p project.Config, f project.ForgeConfig) (changes.Forge, error) {
