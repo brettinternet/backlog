@@ -94,6 +94,10 @@ type snapshotMsg struct {
 }
 type projectionMsg engine.Projection
 type changesMsg *changes.State
+
+// forgedMsg is a per-minute forge refresh, which reads the shown pull
+// request again.
+type forgedMsg struct{}
 type foldedMsg struct {
 	serial uint64
 	data   prepared
@@ -343,6 +347,8 @@ func (m Model) waitChanges() tea.Cmd {
 			return nil
 		case <-m.opts.Changes.Updates():
 			return changesMsg(m.opts.Changes.Latest())
+		case <-m.opts.Changes.Forged():
+			return forgedMsg{}
 		}
 	}
 }
@@ -794,6 +800,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.changes = (*changes.State)(msg)
 		m.project()
 		return m, m.waitChanges()
+	case forgedMsg:
+		m.pollPull()
+		return m, m.waitChanges()
 	case projectionMsg:
 		if msg.Request != m.request {
 			return m, m.waitProjection()
@@ -929,6 +938,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailChanges, m.detailCommits = result.changes, result.commits
 			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
+			if notice := m.pullNotice(result); notice != "" {
+				m.notice = notice
+			}
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
 			m.detailLinks, m.changeFacts = result.links, result.facts
 			m.detailSteps, m.detailTour = result.steps, result.tour

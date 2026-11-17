@@ -78,6 +78,7 @@ type detailRequest struct {
 	theme      theme
 	now        time.Time
 	fresh      bool            // R: reread from the source, bypassing both caches
+	poll       bool            // a forge refresh: reread only the shown pull requests' reviews
 	change     *changes.Change // the change view's change
 	checksOpen bool            // the Overview shows passing and skipped checks
 }
@@ -440,7 +441,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 		var review *changes.Review
 		var draft *changes.Draft
 		if request.change.Number > 0 {
-			r, err := worker.loadReview(ctx, *request.change, request.fresh)
+			r, err := worker.loadReview(ctx, *request.change, request.fresh || request.poll)
 			if err != nil {
 				r = changes.Review{Stale: "pull request detail unavailable: " + err.Error()}
 				r.Blocked = r.Stale
@@ -494,7 +495,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 				return changes.Enrich(ctx, cs, nil, fresh)
 			}
 		}
-		page := changeLines(enrich(ctx, request.row.Changes, request.fresh), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
+		page := changeLines(enrich(ctx, request.row.Changes, request.fresh || request.poll), request.theme, cmp.Or(request.now, time.Now()), max(1, request.width))
 		if err := ctx.Err(); err != nil {
 			result.err = textutil.Line(err.Error())
 			return result

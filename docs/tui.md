@@ -262,8 +262,13 @@ Overview, Files, Diff, Commits, and Conversation tabs; `backspace` returns to
 the entry. A strip under the tabs, on every tab, sums up the change: for a
 pull request its head and base, verdict (`Ready`, `Unstable`, `Running`,
 `Blocked`, `Behind`, `Conflicts`, `Draft`, `Merged`, `Closed`, or
-`Checking`), the first reasons, and the age of the read (`stale` when it
-failed); for a branch or worktree its stage, branch, `↑ ↓`, and dirty count.
+`Checking`), the first reasons, and the age of the last successful read
+(`stale` when the latest failed, keeping the last data); for a branch or
+worktree its stage, branch, `↑ ↓`, and dirty count. While a change view or the
+Changes tab shows an open pull request, its detail is read again on each
+per-minute forge refresh, and `R` reads it at once. When a check finishes or
+the verdict changes between reads, the status bar says so until the next key:
+`✕ test (ubuntu-latest) failed`, `✓ checks passed`, `#45 ready`.
 Overview lists, for a pull request, Merge (the verdict and one entry per
 reason: failing checks, requested changes, unresolved threads, required
 review, pending checks, conflicts, behind, branch protection, stale, or

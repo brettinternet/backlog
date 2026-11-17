@@ -984,3 +984,85 @@ func worktreePath(c changes.Change) string {
 	}
 	return c.Worktree
 }
+
+// pollPull reads the shown pull request again on a forge refresh: the change
+// view's, or each open one the Changes tab lists. Only its review is read
+// fresh, on the detail worker; nothing reads a pull request that isn't shown.
+func (m *Model) pollPull() {
+	row, ok := m.selectedRow()
+	if !m.detailOpen || m.detailWorker == nil || !ok {
+		return
+	}
+	open := func(c changes.Change) bool {
+		return c.Number > 0 && (c.State == changes.StateOpen || c.State == changes.StateDraft)
+	}
+	if m.change != nil && !open(m.shownChange()) || m.change == nil && (m.detailTab != tabChanges || !slices.ContainsFunc(row.Changes, open)) {
+		return
+	}
+	request := m.detailRequest(row)
+	request.poll = true
+	m.detailWorker.submit(request)
+}
+
+// pullNotice says what changed on the shown pull request since the last read
+// of the same page: a check that finished, or a new verdict. A stale read
+// says nothing, since it carries no news.
+func (m Model) pullNotice(result detailResult) string {
+	if m.detailShownRef != result.identity.Ref || m.detailShownTab != m.detailTab {
+		return ""
+	}
+	if result.facts != nil {
+		if m.changeFacts == nil || m.review.read == nil || result.review == nil || m.changeFacts.ID != result.facts.ID {
+			return ""
+		}
+		return pullNotice(result.facts.Number, m.review.read.Checks, result.review.Checks, m.changeFacts.Merge, result.facts.Merge)
+	}
+	for _, c := range result.changes {
+		for _, was := range m.detailChanges {
+			if was.ID == c.ID {
+				if notice := pullNotice(c.Number, was.CheckRuns, c.CheckRuns, was.Merge, c.Merge); notice != "" {
+					return notice
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// pullNotice is the status bar's news between two reads of pull request
+// number: the first check that failed, all checks passing, or one that
+// finished, then the verdict if it changed, such as ✕ test failed · #45
+// blocked.
+func pullNotice(number int, before, after []changes.Check, was, now *changes.Merge) string {
+	stale := func(m *changes.Merge) bool {
+		return slices.ContainsFunc(m.Reasons, func(r changes.Reason) bool { return r.Kind == changes.ReasonStale })
+	}
+	if was == nil || now == nil || stale(was) || stale(now) {
+		return ""
+	}
+	running := map[string]bool{}
+	for _, c := range before {
+		running[c.Name] = c.State == changes.ChecksPending
+	}
+	var finished []changes.Check
+	pending, failing := false, false
+	for _, c := range after {
+		pending = pending || c.State == changes.ChecksPending
+		failing = failing || c.State == changes.ChecksFailing
+		if running[c.Name] && c.State != changes.ChecksPending && c.State != changes.ChecksStale {
+			finished = append(finished, c)
+		}
+	}
+	var parts []string
+	if i := slices.IndexFunc(finished, func(c changes.Check) bool { return c.State == changes.ChecksFailing }); i >= 0 {
+		parts = append(parts, "✕ "+textutil.Line(finished[i].Name)+" "+cmp.Or(finished[i].Status, changes.CheckFailed))
+	} else if len(finished) > 0 && !pending && !failing {
+		parts = append(parts, "✓ checks passed")
+	} else if len(finished) > 0 {
+		parts = append(parts, "✓ "+textutil.Line(finished[0].Name)+" "+cmp.Or(finished[0].Status, changes.CheckPassed))
+	}
+	if was.Verdict != now.Verdict {
+		parts = append(parts, "#"+strconv.Itoa(number)+" "+now.Verdict)
+	}
+	return strings.Join(parts, " · ")
+}

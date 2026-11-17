@@ -1523,3 +1523,126 @@ func (f *fakeReviewer) Submit(_ context.Context, _ changes.Change, event string)
 	f.event = event
 	return changes.Draft{URL: f.draft.URL}, nil
 }
+
+// Catches a shown pull request's reader leaking after its view closes or the
+// selection moves, which burns the account's rate limit, a pull request that
+// isn't shown being read, and a finished check or new verdict not reaching the
+// status bar.
+func TestChangeViewPoll(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 2, RenderMarkdown)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	m.opts.Now = func() time.Time { return now }
+	pr := func(n int) changes.Change {
+		return changes.Change{ID: "pr:" + strconv.Itoa(n), Stage: changes.StagePR, State: changes.StateOpen, Number: n, URL: "https://github.com/o/r/pull/" + strconv.Itoa(n)}
+	}
+	last := len(m.data.rows) - 1
+	m.data.rows[last-1].row.Changes = []changes.Change{pr(46)}
+	m.data.rows[last].row.Changes = []changes.Change{pr(45)}
+	m.selected = last
+	var mu sync.Mutex
+	reads := map[int]int{}
+	state := "blocked"
+	checks := []changes.Check{{Name: "test", State: changes.ChecksPending, Status: changes.CheckRunning}, {Name: "lint", State: changes.ChecksPassing, Status: changes.CheckPassed}}
+	set := func(merge string, test, lint changes.Check) {
+		mu.Lock()
+		defer mu.Unlock()
+		state, checks = merge, []changes.Check{test, lint}
+	}
+	read := func(n int) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return reads[n]
+	}
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	m.detailWorker.changeReview = func(_ context.Context, c changes.Change, fresh bool) (changes.Review, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fresh {
+			reads[c.Number]++
+		}
+		return changes.Review{MergeState: state, Checks: slices.Clone(checks)}, nil
+	}
+	review := m.detailWorker.changeReview
+	m.detailWorker.enrich = func(ctx context.Context, cs []changes.Change, fresh bool) []changes.Change {
+		out := slices.Clone(cs)
+		for i := range out {
+			r, _ := review(ctx, out[i], fresh)
+			merge := changes.Verdict(out[i], r)
+			out[i].CheckRuns, out[i].Merge = r.Checks, &merge
+		}
+		return out
+	}
+	refresh := func(m Model) Model {
+		t.Helper()
+		now = now.Add(time.Minute)
+		next, _ := m.Update(forgedMsg{})
+		return settleDetail(t, next.(Model))
+	}
+	idle := func(m Model) Model {
+		t.Helper()
+		now = now.Add(time.Minute)
+		next, _ := m.Update(forgedMsg{})
+		m = next.(Model)
+		select {
+		case <-m.detailWorker.results:
+			t.Fatal("a forge refresh read a pull request that isn't shown")
+		case <-time.After(100 * time.Millisecond):
+		}
+		return m
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	_ = m.switchDetailTab(tabChanges)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if m.change == nil || m.change.Number != 45 {
+		t.Fatalf("change view not open on #45: %+v", m.change)
+	}
+	before := read(45)
+	for range 3 {
+		m = refresh(m)
+	}
+	if read(45) != before+3 || read(46) != 0 || m.notice != "" {
+		t.Fatalf("three refreshes read #45 %d times and #46 %d times, notice %q", read(45)-before, read(46), m.notice)
+	}
+
+	passed := changes.Check{Name: "test", State: changes.ChecksPassing, Status: changes.CheckPassed}
+	lint := changes.Check{Name: "lint", State: changes.ChecksPassing, Status: changes.CheckPassed}
+	set("clean", passed, lint)
+	if m = refresh(m); m.notice != "✓ checks passed · #45 ready" {
+		t.Fatalf("checks finishing: notice %q", m.notice)
+	}
+	if m, _ = detailKey(m, 'j', 0); m.notice != "" {
+		t.Fatalf("a key kept the notice %q", m.notice)
+	}
+	set("blocked", passed, changes.Check{Name: "lint", State: changes.ChecksPending, Status: changes.CheckRunning})
+	if m = refresh(m); m.notice != "#45 running" {
+		t.Fatalf("a rerun: notice %q", m.notice)
+	}
+	set("blocked", passed, changes.Check{Name: "lint", State: changes.ChecksFailing, Status: changes.CheckTimedOut})
+	if m = refresh(m); m.notice != "✕ lint timed out · #45 blocked" {
+		t.Fatalf("a failed check: notice %q", m.notice)
+	}
+
+	// The Changes tab shows #45 too; its Overview, another item, or a closed
+	// detail shows none.
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	before = read(45)
+	if m = refresh(m); m.change != nil || read(45) != before+1 {
+		t.Fatalf("the Changes tab read #45 %d times on a refresh", read(45)-before)
+	}
+	_ = m.switchDetailTab(tabOverview)
+	m = settleDetail(t, m)
+	m = idle(m)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m = idle(m)
+	m, _ = detailKey(m, 'q', 0)
+	m = idle(m)
+	if read(45) != before+1 || read(46) != 0 {
+		t.Fatalf("after the view moved and closed, #45 was read %d more times and #46 %d", read(45)-before-1, read(46))
+	}
+}

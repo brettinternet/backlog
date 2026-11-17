@@ -183,6 +183,11 @@ the browser (`O`) or an action (`!`) ([design](design.md) D46).
 
 The TUI reads local data every five seconds, which starts no process unless the
 default branch moved, and forges every minute, on a worker; `R` reloads both.
+On each per-minute forge refresh it also reads the detail of the open pull
+request a change view or the Changes tab shows, one read per shown pull request
+a minute, on the detail worker through the account's request queue. Nothing
+reads a pull request that isn't shown, and the reads stop when the view closes
+or the selection moves.
 `bl changes`, MCP `changes`, `bl history`, and `bl ls` or MCP `query` with a
 change term load once per call.
 
