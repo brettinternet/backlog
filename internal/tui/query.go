@@ -409,6 +409,16 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 // fold toggles, opens or closes the selected group, or the selected branch in
 // a tree.
 func (m *Model) fold(how string) tea.Cmd {
+	if m.detailOpen && m.detailFocus && m.change != nil {
+		switch {
+		case m.detailTab == tabChangeOverview:
+			return m.toggleChecks(how == "fold-open" || how == "fold" && !m.checksOpen)
+		case m.cursorThread() != "":
+			return m.foldThread(m.cursorThread(), how)
+		case m.detailTab == tabChangeConversation && m.detailCurrent() && m.entryCursor >= 0 && m.entryCursor < len(m.detailLinks) && m.detailLinks[m.entryCursor] == linkFold:
+			return m.toggleResolved(how == "fold-open" || how == "fold" && !m.resolvedOpen)
+		}
+	}
 	if m.selected < 0 || m.selected >= len(m.data.rows) {
 		return nil
 	}

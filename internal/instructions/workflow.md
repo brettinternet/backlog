@@ -96,6 +96,13 @@ case and spacing, is `rejected` with the matches in error.details.matches (MCP
 `matches`). Update the match instead; pass --force (MCP `force`) only when the
 new item is genuinely separate work.
 
+When the item's work is a pull request, read whether it can land and what's
+left (failing checks, requested changes, unresolved threads) before finishing:
+
+```sh
+bl changes ID --detail --json
+```
+
 Finish every acceptance criterion and delivery obligation, including commits or
 integration if required. Persist blockers and the exact next step if genuinely
 blocked; do not mark incomplete work done.

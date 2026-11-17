@@ -50,7 +50,7 @@ by the configured source IDs and types for `source:` filters.
 | `action` | `name`, `id`, `confirm`, `dryRun` | `bl action` |
 | `events` | `since`, `query`, `limit` (0 or omitted: 100) | `bl events --since` (no follow) |
 | `history` | `id`, `limit` (0 or omitted: all), `cursor` | `bl history` |
-| `changes` | `id` | `bl changes` |
+| `changes` | `id`, `detail` | `bl changes`, `bl changes --detail` |
 | `tour` | `id`, and `file` or `tour` to store, or `remove` and optional `change` | `bl tour`, `bl tour --remove` |
 | `claim`, `release` | `id`, `session`, `run`, `agent`, `agentSession` | `bl claim`, `bl release` |
 | `heartbeat` | `session`, `run` | `bl heartbeat` |
@@ -113,7 +113,10 @@ An unknown `cursor` returns `not-found`.
 `changes` returns `changes` and `providers`, like `bl changes --json`, so an
 agent can see whether its pull request is open, green, and approved, which
 checks fail, and how many review threads are unresolved, without calling the
-forge itself.
+forge itself. With `detail: true` it adds the merge verdict and its reasons,
+check timing, reviewers, review threads with their hunk and comments, and,
+for the first five failing check runs, their `steps`, `annotations`, and `log`
+excerpt or `logUnavailable`, like `bl changes --detail --json`.
 
 `tour` stores a tour for the item's linked change whose head is its `ref` and
 returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;

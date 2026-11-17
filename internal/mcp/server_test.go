@@ -238,6 +238,22 @@ func TestFoundationToolsAndWriteGuards(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("stale section replacement changed item bytes")
 	}
+	// A swapped before/after places the item on the wrong side without an error.
+	ranks := func() (string, string) {
+		a, _ := show(ready.Item.ID)
+		b, _ := show(childResult.Item.ID)
+		return a.Metadata["rank"].(string), b.Metadata["rank"].(string)
+	}
+	for _, side := range []string{"after", "before"} {
+		if moved := call("update", map[string]any{"id": childResult.Item.ID, "operation": "move", side: ready.Item.ID}); moved.IsError {
+			t.Fatalf("move %s: %#v", side, moved.Content)
+		}
+		parent, child := ranks()
+		if child == "" || (side == "after") != (parent != "" && parent < child) {
+			t.Fatalf("move %s: parent rank %q, child rank %q", side, parent, child)
+		}
+	}
+	assertErr(call("update", map[string]any{"id": childResult.Item.ID, "operation": "move"}), "usage")
 	appended := call("append", map[string]any{"id": ready.Item.ID, "kind": "note", "text": "note"})
 	if appended.IsError {
 		t.Fatalf("append: %#v", appended)

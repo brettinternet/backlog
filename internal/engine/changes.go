@@ -193,6 +193,17 @@ type ChangesResult struct {
 // changes and MCP. Every item is read so an ID that names several reads as
 // ambiguous, as it does in the TUI.
 func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (ChangesResult, error) {
+	return loadItemChanges(ctx, cfg, ref, false)
+}
+
+// ItemChangesDetail is ItemChanges with each open pull request's verdict,
+// reviewers, check timing, and the first failing runs' steps, annotations,
+// and log excerpts, for bl changes --detail and MCP detail.
+func ItemChangesDetail(ctx context.Context, cfg project.Config, ref model.Ref) (ChangesResult, error) {
+	return loadItemChanges(ctx, cfg, ref, true)
+}
+
+func loadItemChanges(ctx context.Context, cfg project.Config, ref model.Ref, detail bool) (ChangesResult, error) {
 	reads, err := LoadReads(ctx, cfg, false)
 	if err != nil {
 		return ChangesResult{}, err
@@ -213,7 +224,13 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
 	}
+	if detail {
+		changes.AddFailures(ctx, result.Changes, o.Forges)
+	}
 	for i, c := range result.Changes {
+		if !detail {
+			result.Changes[i] = c.Brief()
+		}
 		// A tour that can't be read is left out; bl tour ID reports why.
 		if stored, ok, err := LoadTour(cfg, ref, c.ID); err == nil && ok {
 			result.Changes[i].Tour = &changes.Tour{Ref: stored.Tour.Ref, Steps: len(stored.Tour.Steps), Stale: stored.Tour.Ref != c.Head}
@@ -242,7 +259,7 @@ func MentionsChanges(text string) bool {
 	}
 	for _, t := range q.Terms {
 		switch t.Field {
-		case "change", "checks", "review":
+		case "change", "checks", "review", "merge":
 			return true
 		case "has":
 			for _, v := range t.Values {
@@ -274,7 +291,7 @@ func linkReads(ctx context.Context, cfg project.Config, s *ReadSnapshot) {
 func queryChanges(cs []changes.Change) []query.Change {
 	out := make([]query.Change, len(cs))
 	for n, c := range cs {
-		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review}
+		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review, Merge: changes.ListMerge(c)}
 	}
 	return out
 }

@@ -47,7 +47,8 @@ actions:
     run: [herdr, workspace, create, --cwd, "{root}", --label, "{id}", --no-focus]
 ```
 
-Actions for a linked change, offered on the TUI Changes tab:
+Actions for a linked change, offered on the TUI Changes tab and from the
+change view's merge reasons (`enter` on conflicts, behind, or Ready):
 
 ```yaml
 actions:
@@ -57,6 +58,16 @@ actions:
     run: [lazygit, -p, "{change.path}"]
   - name: review
     run: [nvim, "+DiffviewOpen {change.base}...{change.head}"]
+  - name: merge
+    run: [gh, pr, merge, "{change.number}"]
+  - name: update-branch
+    run: [gh, pr, update-branch, "{change.number}"]
+  - name: ready
+    run: [gh, pr, ready, "{change.number}"]
+  - name: draft
+    run: [gh, pr, ready, --undo, "{change.number}"]
+  - name: rerun
+    run: [gh, run, rerun, "{check.run}", --failed]
 ```
 
 Tests run these examples with fake `tell`, `wt`, `worklease`, and `herdr`, and
@@ -159,10 +170,13 @@ A refused tour fails the run with the reason.
 | `{change.head}` | Head commit SHA |
 | `{change.base}` | Default branch ref the change is compared with |
 | `{change.path}` | Worktree path |
+| `{check.run}` | GitHub Actions run ID of the check shown |
+| `{check.url}` | URL of the check shown |
 
-An action that names a `{change.*}` placeholder runs only on a linked change,
-from the TUI Changes tab; elsewhere it's disabled with
-"runs on a linked change". A value the change lacks refuses the run. Hooks
+An action that names a `{change.*}` or `{check.*}` placeholder runs only on a
+linked change, from the TUI Changes tab; elsewhere it's disabled with
+"runs on a linked change". One that names `{check.*}` also needs a check
+view, and is disabled elsewhere with "runs from a check view". A value the change lacks refuses the run. Hooks
 can't name them.
 
 Placeholders expand inside argv elements and `cwd`. A missing value, control

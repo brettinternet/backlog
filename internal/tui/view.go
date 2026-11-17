@@ -174,8 +174,16 @@ func (m Model) detailPlaceholder() bool {
 
 // detailCurrent reports that the body on screen is the selected item's.
 // Another item's body, kept while this one loads, takes no cursor or clicks.
+// checkView is the check view's link, else "".
+func (m Model) checkView() string {
+	if m.check == nil {
+		return ""
+	}
+	return checkLink(*m.check)
+}
+
 func (m Model) detailCurrent() bool {
-	return m.detailIdentity.Valid && m.detailError == "" && !m.detailPlaceholder() && (!m.detailLoading || m.detailShownRef == m.detailIdentity.Ref)
+	return m.detailIdentity.Valid && m.detailError == "" && !m.detailPlaceholder() && (!m.detailLoading || m.detailShownRef == m.detailIdentity.Ref && m.detailShownCheck == m.checkView())
 }
 
 func (m Model) detailMeta(row engine.Row) string {
@@ -226,7 +234,11 @@ func (m Model) detailTabBar(width int) (string, []span) {
 	names, counts := detailTabNames[:], tabs[:]
 	start, _ := m.tabRange()
 	if m.change != nil {
-		names, counts = changeTabNames[:], nil
+		names, counts = changeTabNames[:], make([]string, len(changeTabNames))
+		// Conversation counts the review threads still to resolve.
+		if r := m.review.read; r != nil && r.Unresolved() > 0 {
+			counts[tabChangeConversation-tabChangeOverview] = strconv.Itoa(r.Unresolved())
+		}
 	}
 	labels := make([]string, len(names))
 	widths := make([]int, len(labels))
@@ -366,6 +378,14 @@ func (m Model) detailPane(width, rows int) []string {
 	put(1, title)
 	tabs, _ := m.detailTabBar(inner)
 	put(2, tabs)
+	if m.change != nil {
+		// The verdict strip, on every change view tab.
+		c, facts := m.shownChange(), m.changeFacts
+		if facts != nil && facts.ID != c.ID {
+			facts = nil
+		}
+		put(3, changeStrip(t, c, facts, m.review.read, m.now(), inner))
+	}
 	line := 4
 	for _, banner := range m.detailBanner() {
 		put(line, banner)

@@ -294,7 +294,8 @@ func MergedBranch(subject string) (string, int) {
 // how far each open branch is ahead of and behind the default branch, how
 // many lines a branch or worktree adds and deletes since its merge base, and
 // how many files are dirty in each worktree, and each open pull request's
-// checks and unresolved threads, read again from the forge when fresh.
+// verdict, checks, reviewers, and unresolved threads, read again from the
+// forge when fresh. Brief drops what only bl changes --detail shows.
 func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Change {
 	out := slices.Clone(cs)
 	for i := range out {
@@ -322,8 +323,9 @@ func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Chan
 			if r, err := LoadReview(ctx, *c, forges, fresh); err != nil {
 				c.Reason = cmp.Or(c.Reason, "pull request detail unavailable: "+err.Error())
 			} else {
-				unresolved := r.Unresolved()
+				unresolved, merge := r.Unresolved(), Verdict(*c, r)
 				c.CheckRuns, c.Unresolved, c.Reason = r.Checks, &unresolved, cmp.Or(c.Reason, r.Stale)
+				c.Merge, c.Reviewers, c.Threads = &merge, r.Reviewers, r.Threads
 			}
 		}
 		if c.Worktree != "" {
@@ -337,4 +339,18 @@ func Enrich(ctx context.Context, cs []Change, forges []Forge, fresh bool) []Chan
 		}
 	}
 	return out
+}
+
+// Brief is c without the pull request detail only bl changes --detail shows:
+// the verdict, reviewers, threads, and each check's exact state and timing.
+func (c Change) Brief() Change {
+	c.Merge, c.Reviewers, c.Threads = nil, nil, nil
+	if c.CheckRuns != nil {
+		checks := make([]Check, len(c.CheckRuns))
+		for i, check := range c.CheckRuns {
+			checks[i] = Check{Name: check.Name, State: check.State, URL: check.URL}
+		}
+		c.CheckRuns = checks
+	}
+	return c
 }

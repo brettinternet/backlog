@@ -80,6 +80,9 @@ type Client struct {
 	BasicUser        string // Jira API tokens use email:token, encoded only inside this boundary.
 	RawAuthorization bool
 	OAuth            bool
+	// Refusals returns a redirect or a refusal other than 401 as a Response
+	// for the caller to read, such as a log download's signed Location.
+	Refusals bool
 }
 
 // Do serializes requests through body consumption. It never retries a write,
@@ -173,7 +176,8 @@ func (c Client) Do(ctx context.Context, request *http.Request, credential Creden
 		}
 		return Response{}, ScheduleDiagnostic{Code: "rate-limited", RetryAt: q.retryAt}
 	}
-	if response.StatusCode >= 300 && response.StatusCode != http.StatusNotModified {
+	refused := response.StatusCode >= 300 && response.StatusCode != http.StatusNotModified
+	if refused && (!c.Refusals || response.StatusCode == http.StatusUnauthorized) {
 		if c.OAuth {
 			code := oauth.CodeProviderDown
 			if response.StatusCode == 401 {

@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"image/color"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -95,6 +96,10 @@ type snapshotMsg struct {
 }
 type projectionMsg engine.Projection
 type changesMsg *changes.State
+
+// forgedMsg is a per-minute forge refresh, which reads the shown pull
+// request again.
+type forgedMsg struct{}
 type foldedMsg struct {
 	serial uint64
 	data   prepared
@@ -220,7 +225,9 @@ type Model struct {
 	heldPlace     int
 	detailHistory []detailStop // items followed from, oldest first
 	catalog       *engine.Catalog
-	mouse         mouseState
+	// pullShown is the pull request item last opened in its change view.
+	pullShown model.Ref
+	mouse     mouseState
 	// change is the linked change or commit the change view shows, opened
 	// from changeTab of changeRef: the Changes entry at changeCursor, or the
 	// History entry changeEntry, found by ID as History rows shift.
@@ -235,6 +242,30 @@ type Model struct {
 	parentCursor int
 	reviewer     reviewer
 	review       reviewState
+	detailLinks  []string        // where enter goes from each change Overview entry
+	changeFacts  *changes.Change // the change view's change as last read, for the verdict strip
+	checksOpen   bool            // the change Overview shows passing and skipped checks
+	// check is the check the check view shows, one level under the change
+	// Overview entry at checkCursor; shownCheck is it as last read, with its
+	// detail, which yl copies and {check.*} names.
+	check            *changes.Check
+	checkCursor      int
+	shownCheck       *changes.Check
+	detailShownCheck string // the check view the page in view shows, else ""
+	reviewEntry      string // the Conversation entry to select when it arrives
+	// threadsToggled are the Diff's review threads shown or folded against
+	// their default; resolvedOpen shows Conversation's resolved threads.
+	threadsToggled map[string]bool
+	resolvedOpen   bool
+	detailThreads  []int    // the Diff's entry of each unresolved review thread
+	diffTarget     string   // the link the Diff opens at when it arrives
+	changeReturn   *tabStop // the entry backspace returns to from a Diff opened at a link
+}
+
+// tabStop is an entry of a change view tab.
+type tabStop struct {
+	tab    detailTab
+	cursor int
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -260,7 +291,7 @@ func New(opts Options) Model {
 		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
 		if tracker := opts.Changes; tracker != nil {
 			model.detailWorker.changeDetail, model.detailWorker.changeReview, model.detailWorker.enrich = tracker.Detail, tracker.Review, tracker.Enrich
-			model.detailWorker.changeDraft = tracker.Draft
+			model.detailWorker.changeDraft, model.detailWorker.changeCheck = tracker.Draft, tracker.Check
 		}
 		model.detailWorker.tour = opts.Tour
 	}
@@ -340,6 +371,8 @@ func (m Model) waitChanges() tea.Cmd {
 			return nil
 		case <-m.opts.Changes.Updates():
 			return changesMsg(m.opts.Changes.Latest())
+		case <-m.opts.Changes.Forged():
+			return forgedMsg{}
 		}
 	}
 }
@@ -401,6 +434,18 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	row, ok := m.selectedRow()
 	if m.change != nil && (!ok || row.Ref != m.changeRef) {
 		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, 0
+		m.check, m.shownCheck = nil, nil
+	}
+	// A pull request item opens in its pull request's change view once each
+	// time it's selected, so backspace keeps its item tabs (design.md D44).
+	if !ok || row.Ref != m.pullShown {
+		m.pullShown = model.Ref{}
+	}
+	if m.detailOpen && ok && m.change == nil && m.pullShown != row.Ref && m.pullItem(row) {
+		if c, at, n := furthestPull(row.Changes); n > 0 {
+			m.showChange(row, c, at, tabChangeOverview)
+			m.pullShown = row.Ref
+		}
 	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
@@ -457,7 +502,8 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 	return detailRequest{
 		change: change, generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
-		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(),
+		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(), checksOpen: m.checksOpen, check: m.check,
+		threads: strings.Join(slices.Sorted(maps.Keys(m.threadsToggled)), "\n"), resolved: m.resolvedOpen,
 	}
 }
 
@@ -791,6 +837,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.changes = (*changes.State)(msg)
 		m.project()
 		return m, m.waitChanges()
+	case forgedMsg:
+		m.pollPull()
+		return m, m.waitChanges()
 	case projectionMsg:
 		if msg.Request != m.request {
 			return m, m.waitProjection()
@@ -902,7 +951,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		result := detailResult(msg)
 		if m.detailOpen && result.generation == m.detailGeneration && result.identity.Ref == m.detailIdentity.Ref {
 			// A new version or length of the page in view keeps its scroll.
-			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab
+			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab && m.detailShownCheck == result.checkView
 			// History read at its end stays there as entries expand or arrive.
 			pinned := same && m.detailTab == tabHistory && m.detailScroll >= len(m.detailLines)-m.detailVisible()
 			m.detailLoading = false
@@ -926,8 +975,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailChanges, m.detailCommits = result.changes, result.commits
 			m.detailFiles, m.detailHunks = result.files, result.hunks
 			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
+			if notice := m.pullNotice(result); notice != "" {
+				m.notice = notice
+			}
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
-			m.detailSteps, m.detailTour = result.steps, result.tour
+			m.detailLinks, m.changeFacts = result.links, result.facts
+			m.shownCheck, m.detailShownCheck = result.check, result.checkView
+			m.detailSteps, m.detailTour, m.detailThreads = result.steps, result.tour, result.threads
 			if !keep {
 				m.tourStep = -1
 			}
@@ -951,6 +1005,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.changeEntry = ""
 				}
+				// Conversation opens on the review or thread enter followed.
+				if m.detailTab == tabChangeConversation && m.reviewEntry != "" {
+					if n := slices.Index(m.detailIDs, m.reviewEntry); n >= 0 {
+						m.entryCursor = n
+					}
+				}
+				m.reviewEntry = ""
+				if m.detailTab == tabChangeDiff && m.diffTarget != "" {
+					m.landDiff(m.diffTarget)
+				}
+				m.diffTarget = ""
 			}
 			if pinned {
 				m.detailScroll = len(m.detailLines)
@@ -1001,6 +1066,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "Action: " + boundedLine(msg.err.Error())
 		} else {
 			m.notice = msg.message
+		}
+		// An action may have merged, updated, or readied the shown pull
+		// request, so it and the list are read again, as R does.
+		if m.detailOpen && m.change != nil && m.change.Number > 0 {
+			cmd := m.scheduleDetail()
+			m.submitDetail(true)
+			if m.opts.Changes != nil {
+				m.opts.Changes.Refresh()
+			}
+			return m, cmd
 		}
 		return m, nil
 	case editPreparedMsg:
@@ -1288,6 +1363,10 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
 				m.stepTour(prefix == "]")
 				return m, nil
+			case "u":
+				m.detailScroll, m.entryCursor = m.diffOrigin, m.diffCursor
+				m.stepThread(prefix == "]")
+				return m, nil
 			}
 		}
 		// The change view drafts and submits a pull request review.
@@ -1327,6 +1406,12 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 					return m, cmd
 				}
 				return m, m.toggleHistoryEntry()
+			}
+			if m.change != nil && (m.detailTab == tabChangeOverview || m.detailTab == tabChangeFiles || m.detailTab == tabChangeConversation) {
+				return m.followChangeLink()
+			}
+			if key := m.cursorThread(); m.change != nil && key != "" {
+				return m, m.foldThread(key, "fold")
 			}
 			if m.change != nil {
 				return m, m.openChangeCommit()
@@ -1372,10 +1457,12 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 			}
 		case "j", "down":
 			// Entries taller than the view, and the description past the
-			// last check, scroll until the next entry shows.
+			// last check, scroll until the next entry shows or starts just
+			// below the view, so one-line entries move one press each.
 			if m.scrollsEntries() {
-				if next := m.entryCursor + 1; next < len(m.detailEntries) && m.detailEntries[next] < m.detailScroll+m.detailVisible() {
+				if next := m.entryCursor + 1; next < len(m.detailEntries) && m.detailEntries[next] <= m.detailScroll+m.detailVisible() {
 					m.entryCursor = next
+					m.keepEntryVisible()
 				} else {
 					m.scrollDetail(1)
 				}
@@ -1585,8 +1672,11 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 // switchDetailTab shows another tab of the item in view.
 func (m *Model) switchDetailTab(tab detailTab) tea.Cmd {
 	m.detailTab = tab
+	m.check, m.shownCheck = nil, nil
 	m.detailExpanded = false
 	m.entryCursor = 0
+	// A tab chosen directly leaves the entry a link came from.
+	m.changeReturn = nil
 	return m.showDetail()
 }
 
@@ -1611,15 +1701,18 @@ func (m *Model) closeDetail() {
 	m.detailLoading = false
 	m.detailLines = nil
 	m.detailEntries, m.detailTargets, m.detailIDs, m.detailHints = nil, nil, nil, nil
+	m.detailLinks, m.changeFacts = nil, nil
 	m.detailChanges, m.detailCommits = nil, nil
 	m.detailFiles, m.detailHunks = nil, nil
 	m.detailRows, m.detailHead = nil, ""
-	m.detailSteps, m.detailTour, m.tourStep = nil, "", -1
+	m.detailSteps, m.detailTour, m.tourStep, m.detailThreads = nil, "", -1, nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
+	m.pullShown = model.Ref{}
 	if m.change != nil {
 		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, m.changeCursor
 	}
+	m.check, m.shownCheck, m.detailShownCheck = nil, nil, ""
 	m.detailTruncated = false
 	m.find = findState{}
 }
@@ -1627,6 +1720,21 @@ func (m *Model) closeDetail() {
 // stepItem moves to the next or previous item, skipping group headers, without
 // changing focus, so detail can page through items in place.
 func (m *Model) stepItem(forward bool) tea.Cmd {
+	from, _ := m.selectedRow()
+	tab, viewing := m.detailTab, m.detailOpen && m.change != nil
+	cmd := m.stepRow(forward)
+	// The change view stays on its tab over the next item's furthest pull
+	// request; an item without one shows its item tabs.
+	if row, ok := m.selectedRow(); viewing && ok && row.Ref != from.Ref {
+		if c, at, n := furthestPull(row.Changes); n > 0 {
+			m.showChange(row, c, at, tab)
+			m.pullShown = row.Ref
+		}
+	}
+	return cmd
+}
+
+func (m *Model) stepRow(forward bool) tea.Cmd {
 	m.count = 0
 	m.inputSerial++
 	if m.detached != nil {

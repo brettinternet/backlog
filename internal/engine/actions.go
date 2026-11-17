@@ -27,7 +27,7 @@ func ActionChoices(ctx context.Context, cfg project.Config, id string) ([]Action
 	return actionChoices(ctx, cfg, id, nil)
 }
 
-// ChangeActionChoices are the actions that name a {change.*} placeholder,
+// ChangeActionChoices are the actions that name a {change.*} or {check.*} placeholder,
 // prepared to run on change (design.md D43).
 func ChangeActionChoices(ctx context.Context, cfg project.Config, id string, change hooks.LinkedChange) ([]ActionChoice, error) {
 	choices, err := actionChoices(ctx, cfg, id, &change)
@@ -79,8 +79,11 @@ func actionChoices(ctx context.Context, cfg project.Config, id string, change *h
 		if err := hooks.CheckAction(cfg, choice.Invocation); err != nil {
 			choice.Disabled = err.Error()
 		}
-		if change == nil && hooks.UsesChange(action) {
+		switch {
+		case change == nil && hooks.UsesChange(action):
 			choice.Disabled = "runs on a linked change"
+		case change != nil && hooks.MissingCheck(action, *change):
+			choice.Disabled = "runs from a check view"
 		}
 		choices = append(choices, choice)
 	}

@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/hooks"
 	"github.com/brettinternet/backlog/internal/model"
@@ -43,6 +46,7 @@ type goToRequest struct {
 	serial  uint64
 	query   string
 	catalog uint64
+	pulls   *engine.Catalog // finds the items showing a pull request query
 }
 type goToResult struct {
 	serial uint64
@@ -91,6 +95,9 @@ func (w *goToWorker) run() {
 			if loadErr == nil {
 				result.rows = searchGoTo(w.ctx, items, r.query)
 			}
+			if match, label, ok := pullQuery(r.query); ok {
+				result.rows, result.err = showingPull(r.pulls, match, label, result.rows)
+			}
 			select {
 			case <-w.results:
 			default:
@@ -134,6 +141,44 @@ func searchGoTo(ctx context.Context, items []GoToItem, text string) []launcherRo
 	}
 	return rows
 }
+
+// pullQuery reads #N or a pull or merge request URL as a match for the
+// changes that are that pull request.
+func pullQuery(text string) (func(changes.Change) bool, string, bool) {
+	text = strings.TrimSpace(text)
+	if n, err := strconv.Atoi(strings.TrimPrefix(text, "#")); err == nil && n > 0 && strings.HasPrefix(text, "#") {
+		return func(c changes.Change) bool { return c.Number == n }, text, true
+	}
+	key := changes.PullKey(text)
+	if key == "" {
+		return nil, "", false
+	}
+	return func(c changes.Change) bool { return c.Number > 0 && changes.PullKey(c.URL) == key }, text, true
+}
+
+// showingPull puts the items showing a pull request before the other matches,
+// or says that no item shows it.
+func showingPull(catalog *engine.Catalog, match func(changes.Change) bool, label string, rows []launcherRow) ([]launcherRow, error) {
+	if catalog == nil {
+		return rows, nil
+	}
+	shown := catalog.Showing(match)
+	if len(shown) == 0 {
+		return rows, fmt.Errorf("no item shows pull request %s", label)
+	}
+	out := make([]launcherRow, 0, len(shown)+len(rows))
+	for i := range shown {
+		item := shown[i]
+		out = append(out, launcherRow{label: textutil.Line(item.Ref.Source + ":" + item.Ref.ID + "  " + item.Title), item: &item})
+	}
+	for _, row := range rows {
+		if !slices.ContainsFunc(shown, func(s engine.Row) bool { return s.Ref == row.item.Ref }) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
 func (m Model) waitGoTo() tea.Cmd {
 	w := m.goToWorker
 	return func() tea.Msg {
@@ -152,7 +197,7 @@ func (m Model) openGoTo() (tea.Model, tea.Cmd) {
 	m.launcherSerial++
 	m.launcher = launcherState{open: true, goTo: true, loading: true}
 	m.goToSession++
-	m.goToWorker.submit(goToRequest{serial: m.launcherSerial, catalog: m.goToSession})
+	m.goToWorker.submit(goToRequest{serial: m.launcherSerial, catalog: m.goToSession, pulls: m.catalog})
 	return m, nil
 }
 func (m Model) receiveGoTo(r goToResult) (tea.Model, tea.Cmd) {
@@ -190,6 +235,11 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 		}
 	}
 	rows = append(rows, rest...)
+	if help {
+		for _, g := range changeLegend {
+			rows = append(rows, launcherRow{label: g[1], keywords: "change column glyph legend", group: "Change column", action: action{label: g[1], bindings: []string{g[0]}}})
+		}
+	}
 	m.launcher = launcherState{open: true, help: help, rows: rows, all: rows}
 	// Configured actions and resumable sessions both come from the selected item.
 	if _, selected := m.selectedRow(); m.opts.Automation != nil && (len(m.opts.Automation.Actions) > 0 || selected) {
@@ -198,6 +248,15 @@ func (m Model) openActions(help bool) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// changeLegend is help's key to the change column's glyphs: the stage, then
+// the verdict or checks, by what to fix first (design.md D46).
+var changeLegend = [][2]string{
+	{"◇", "Worktree"}, {"⎇", "Branch"}, {"⇡", "Pull request"}, {"◆", "Landed"}, {"?", "Unknown or stale"},
+	{"⚠", "Conflicts"}, {"✕", "Checks failing"}, {"✎", "Changes requested"}, {"↓", "Behind base"},
+	{"●", "Checks running"}, {"○", "Review required"}, {"✓", "Ready, or checks passing"},
+}
+
 func (m Model) actionRow(a action) launcherRow {
 	return launcherRow{label: a.label, keywords: a.id + " " + strings.Join(a.bindings, " ") + " " + searchAliases[a.id], reason: m.disabledReason(a), action: a}
 }
@@ -328,7 +387,7 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 	m.launcher.loading = true
 	m.launcher.err = ""
 	if m.launcher.goTo {
-		m.goToWorker.submit(goToRequest{serial: m.launcherSerial, query: m.launcher.query.text, catalog: m.goToSession})
+		m.goToWorker.submit(goToRequest{serial: m.launcherSerial, query: m.launcher.query.text, catalog: m.goToSession, pulls: m.catalog})
 		return m, nil
 	}
 	return m, m.filterLauncher()

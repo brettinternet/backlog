@@ -61,7 +61,12 @@ untrusted adapters aren't opened, but native sources stay browsable.
 **Rows:** priority, ID, status, title with labels, open blockers, child
 progress, linked change, assignee, and time since update. The change column
 shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓`
-([Changes](changes.md)), and appears once any row has one. As the pane narrows,
+([Changes](changes.md)), and appears once any row has one. For an open pull
+request its last glyph is the merge verdict from the list read, first that
+applies: `⚠` conflicts, `✕` checks failing, `✎` changes requested, `↓` behind
+its base, `●` checks running, `○` review required, `✓` ready. A draft, or a
+pull request whose merge state is unknown, shows its checks glyph. Help lists
+these under Change column. As the pane narrows,
 columns drop in this order so the title keeps at least two-fifths of the width:
 updated, assignee, children and change, blockers, claim, then the status name
 (the icon stays).
@@ -186,7 +191,9 @@ more of a cut-off body (otherwise it picks a milestone), and `enter`, `esc`, or
 Changes, and in History opens a commit's diff or expands another entry). Edit and copy keys work in
 detail on the item shown, never on marks. If an edit moves the item out of the
 view, detail keeps showing it until you move. `J`/`K` select the next or
-previous item from either pane, counting from where a moved item was. At split
+previous item from either pane, counting from where a moved item was. From a
+change view they open the next item's furthest open pull request on the same
+tab; an item without one shows its item tabs. At split
 widths, `h` returns to the list without closing detail; a second `h` closes it.
 Filter, sort, group, fold, and layout keys (`f`, `o`, `z`, `F`, `B`, `T`) act
 on the list from split detail too, and detail keeps its item if it leaves the
@@ -198,7 +205,9 @@ through matching lines, wrapping, instead of creating items. The search carries
 across tabs and items; `esc` clears it before closing detail.
 
 `ctrl-p` opens go-to: fuzzy search over every ID and title, including closed and
-archived items (up to 100 matches). `enter` opens detail without changing the
+archived items (up to 100 matches). `#45` or a pull request URL lists first the
+items showing that pull request, the items linking it and its pull request
+item, or says that no item shows it. `enter` opens detail without changing the
 view; `esc` or `q` returns.
 
 `:` opens the palette: every action, its bindings, and why it's disabled if it
@@ -259,18 +268,46 @@ that change; `O` opens its URL. `R` reloads changes along with sources.
 
 `enter` on an entry opens its change view in place of the item's tabs, with
 Overview, Files, Diff, Commits, and Conversation tabs; `backspace` returns to
-the entry. Overview lists the change's state, branch, worktree, base, head,
-checks, review, file and commit counts with `+/−`, and uncommitted files. For a
-pull request it also lists each check run and commit status as an entry (`O`
-opens the one under the cursor), each requested or submitted reviewer with
-their state, the unresolved thread count beside the review, and the
-description. Conversation lists review threads (file, line, resolved or not)
-and comments, unresolved threads first, each with its comments' authors, ages,
-and text; `O` opens the one under the cursor, and `m` shows more when the text
-is cut off. On both, `j` and `k` scroll until the next entry shows, through a
+the entry. `gp`, from the list or detail, opens the item's furthest open pull
+request in its change view, or Changes when it has several. A pull request
+item (`github-pulls`) opens in its own pull request's change view, where
+`backspace` shows its item tabs. A strip under the tabs, on every tab, sums up the change: for a
+pull request its head and base, verdict (`Ready`, `Unstable`, `Running`,
+`Blocked`, `Behind`, `Conflicts`, `Draft`, `Merged`, `Closed`, or
+`Checking`), the first reasons, and the age of the last successful read
+(`stale` when the latest failed, keeping the last data); for a branch or
+worktree its stage, branch, `↑ ↓`, and dirty count. While a change view or the
+Changes tab shows an open pull request, its detail is read again on each
+per-minute forge refresh, and `R` reads it at once. When a check finishes or
+the verdict changes between reads, the status bar says so until the next key:
+`✕ test (ubuntu-latest) failed`, `✓ checks passed`, `#45 ready`.
+Overview lists, for a pull request, Merge (the verdict and one entry per
+reason: failing checks, requested changes, unresolved threads, required
+review, pending checks, conflicts, behind, branch protection, stale, or
+ready), Checks (counts, then one entry per check run or commit status with
+its exact state and duration, failing first; past six, passing and skipped
+checks fold into one entry that `enter` or `za` opens), Reviews (the
+decision, then each reviewer with their state, age, and `outdated` when they
+reviewed another head), the pending review draft, About (branch → base,
+commits, files with `+/−`, head, update age, uncommitted files, worktree,
+URL), and the description; a branch or worktree shows About alone. `enter` on
+a reviewer or requested-changes reason opens Conversation at their latest
+review, on unresolved threads the Diff at the first one, and on conflicts, behind, or
+ready opens `!` with the change's actions (such as `gh pr merge`), after
+which the pull request is re-read; on a check or a failing or pending check
+reason it opens the check view, and `O` opens the check. Conversation lists unresolved review threads by file
+and line, each with the last lines of its diff hunk, then comments by time,
+then one `✓ N resolved threads` entry that `enter` or `za` opens; each shows
+its comments' authors, ages, and Markdown text. `enter` on a thread opens the
+Diff at it (an outdated thread's line isn't there, which a notice says), `O`
+opens the one under the cursor, and `m` shows more when the text is cut off.
+The Conversation tab counts unresolved threads. On both, `j` and `k` scroll until the next entry shows, through a
 long entry or the description past the last check. Files lists one entry per
 changed file: status (`A` added, `M` modified, `D` deleted, `R` renamed,
-`B` binary, `U` uncommitted), path, and `+/−`. Commits lists the change's
+`B` binary, `U` uncommitted), path, `+/−`, and its unresolved threads as
+`● N`; `enter` opens the Diff at the file. `backspace` from a Diff opened
+this way, from Overview, or from Conversation returns to the entry it came
+from. Commits lists the change's
 commits newest first, one line each, and `ys` copies the one under the cursor.
 `enter` on a commit opens that commit's Diff in a change view one level under
 the change; `backspace` returns to Commits with the cursor on it. A local
@@ -280,6 +317,21 @@ forge. Git and forge reads run on the detail worker for the change shown, and
 a worktree's uncommitted files are skipped, saying so, when repository config
 defines a filter driver. `!`, `O`, and `yp` act on the change in view.
 
+The check view sits one level under Overview; `backspace` returns to the
+entry it opened from, and another tab closes it. Its header shows the check's
+name, exact state, duration, and start age. A check run lists its Steps (each
+with its state and duration), its Annotations (file, line, and message),
+and, when it has one, its Output (title and summary as Markdown); a commit
+status shows its Description. A failed GitHub Actions job adds a Log: the
+lines up to and including the first `##[error]` line, or the last ones, at
+most 100, without timestamps, `##[error]` lines red and `##[warning]` lines
+yellow. Over 32 MiB, without Actions: read, or while the job runs, the Log
+line says why. `O` opens the step, annotation, or check under the cursor (the
+job from the Log), `yl` copies the excerpt, and `!` adds actions naming
+`{check.*}`, such as re-running the failed jobs. The read runs on the detail
+worker through the account's request queue, redacted, and is kept by check
+run once the check completes.
+
 Diff shows each file's header line, then its hunks: unified (old and new line
 numbers, sign, code) when the pane is under 120 columns, side by side at 120
 or wider. Code is highlighted by file type, changed lines are tinted green and
@@ -287,11 +339,21 @@ red, and the changed words of a paired line are marked; high contrast marks
 them in reverse and no color leaves them plain. A cursor marks one line: `j`
 and `k` move it, scrolling keeps it on screen, and `]`/`[` move it to the next
 or previous file, `]c`/`[c` to the next or previous hunk, `]t`/`[t` to the next
-or previous step of the change's tour, and `/` to each match.
+or previous step of the change's tour, `]u`/`[u` to the next or previous
+unresolved review thread in any file, wrapping with a notice, and `/` to each
+match.
 Each line is a file and line number on the old or new side at the change's
 head: a context line on both, a split row on each half, and a file or hunk
 header names only its file. The cursor stays on its line when a file expands or
 the layout changes.
+A pull request's review threads, and the draft's line comments and replies,
+show under the line they're on, on its side when split, behind a bar: an
+unresolved thread whole (each comment's author and text, up to ten lines), a
+resolved one folded to its first comment with `✓` and how many comments.
+`enter` or `za` on a thread shows or folds it, and `c` drafts a reply. A
+thread is one cursor stop and names no line. Outdated threads, and threads read
+for another head, show only in Conversation. Held `j` over a 10,000-line diff
+with 100 threads stays within the navigation budget.
 A file's diff over 32 KiB shows its size until `m` draws it; patches are cut
 at 128 KiB, saying so. A branch or worktree diffs against its merge base with
 the default branch, plus a worktree's uncommitted changes; a landed change
@@ -428,6 +490,7 @@ key is `rank` or `next`, in the list layout. Under `next`, priority outranks
 rank, so a move stops at a priority boundary and the status bar points to `p`.
 Elsewhere, including the tree and board, they're disabled with `sort by rank or
 next to reorder`; on a source other than native, the status bar names it.
+On macOS, `alt+j` and `alt+k` need the terminal to send Option as Meta.
 
 **Status keys:** `S` and `D` resolve `workflow.start` and `workflow.done` per
 item source, as `bl start` and `bl done` do. A refused item names its source.
@@ -667,9 +730,12 @@ keys:
 | `next-hunk` | `] c` | Next hunk |
 | `previous-tour-step` | `[ t` | Previous tour step |
 | `next-tour-step` | `] t` | Next tour step |
+| `previous-thread` | `[ u` | Previous unresolved thread |
+| `next-thread` | `] u` | Next unresolved thread |
 | `left` | `h`, `left` | Back / parent / left |
 | `right` | `l`, `right` | Open / child / right |
 | `go-to` | `ctrl+p` | Go to item |
+| `open-pull` | `g p` | Open pull request |
 | `detail` | `enter` | Toggle detail |
 | `next-detail-tab` | `tab` | Next tab |
 | `previous-detail-tab` | `shift+tab` | Previous tab |
@@ -728,6 +794,7 @@ keys:
 | `yank-markdown` | `y m` | Copy Markdown link |
 | `yank-change` | `y p` | Copy change URL |
 | `yank-commit` | `y s` | Copy commit SHA |
+| `yank-log` | `y l` | Copy log excerpt |
 | `help` | `?` | Help |
 | `palette` | `:`, `alt+x` | Commands |
 | `quit` | `q` | Quit / back |
@@ -845,4 +912,10 @@ scripts/tui-snapshot --width 160 --height 48 --keys g t g t g t -- bin/bl -C /pa
 ```
 
 The helper runs a private tmux server, waits for the render to settle, prints the
-pane, and shuts down its own server.
+pane, and shuts down its own server. `--wait TEXT` holds the keys until the
+screen shows TEXT, such as forge data that arrives after the first paint, and a
+bare `@` among the keys waits for the screen to settle before the rest:
+
+```sh
+scripts/tui-snapshot --width 80 --height 40 --wait '⇡#45' --keys Enter @ BTab BTab @ Enter -- bin/bl -C /path/to/project tui
+```

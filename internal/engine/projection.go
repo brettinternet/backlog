@@ -631,3 +631,22 @@ func (p *Projector) run() {
 		}
 	}
 }
+
+// Showing returns the rows whose changes include one match accepts, in ref
+// order. It reads every linked change, so call it from a worker (D14).
+func (c *Catalog) Showing(match func(changes.Change) bool) []Row {
+	var refs []model.Ref
+	for ref, cs := range c.changes {
+		if slices.ContainsFunc(cs, match) {
+			refs = append(refs, ref)
+		}
+	}
+	slices.SortFunc(refs, func(a, b model.Ref) int { return strings.Compare(a.Source+":"+a.ID, b.Source+":"+b.ID) })
+	rows := make([]Row, 0, len(refs))
+	for _, ref := range refs {
+		if row, ok := c.Row(ref); ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}

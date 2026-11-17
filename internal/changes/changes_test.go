@@ -277,6 +277,75 @@ func TestEnrichStaleChecks(t *testing.T) {
 	}
 }
 
+// Catches merge: and the list glyph reading an unknown merge state, a draft, or
+// stale checks as ready.
+func TestListMerge(t *testing.T) {
+	open := Change{Stage: StagePR, State: StateOpen, Number: 1}
+	with := func(c Change, merge, checks string) Change { c.MergeState, c.Checks = merge, checks; return c }
+	draft := open
+	draft.State = StateDraft
+	for _, tc := range []struct {
+		c    Change
+		want string
+	}{
+		{with(open, "clean", ChecksPassing), VerdictReady},
+		{with(open, "has_hooks", ""), VerdictReady},
+		{with(open, "dirty", ChecksPassing), VerdictConflicts},
+		{with(open, "behind", ""), VerdictBehind},
+		{with(open, "unstable", ChecksFailing), VerdictUnstable},
+		{with(open, "blocked", ""), VerdictBlocked},
+		{with(open, "unknown", ChecksPassing), ""},
+		{with(open, "", ChecksPassing), ""},
+		{with(open, "clean", ChecksStale), ""},
+		{with(draft, "clean", ChecksPassing), ""},
+	} {
+		c, want := tc.c, tc.want
+		if got := ListMerge(c); got != want {
+			t.Errorf("%s/%s/%s = %q, want %q", c.State, c.MergeState, c.Checks, got, want)
+		}
+	}
+}
+
+// Catches a pull request reading Ready from a stale read or while a draft,
+// UNSTABLE read as blocked, and reasons out of fix-first order.
+func TestVerdict(t *testing.T) {
+	open := Change{Stage: StagePR, State: StateOpen, Number: 1}
+	checks := []Check{
+		{Name: "lint", State: ChecksPending, Status: CheckRunning},
+		{Name: "test", State: ChecksFailing, Status: CheckTimedOut},
+		{Name: "docs", State: ChecksPassing, Status: CheckPassed},
+	}
+	threads := []Thread{{Comments: []Comment{{Author: "bo"}}}}
+	for _, tc := range []struct {
+		name    string
+		c       Change
+		r       Review
+		verdict string
+		kinds   []string
+	}{
+		{"clean", open, Review{MergeState: "clean"}, VerdictReady, []string{ReasonReady}},
+		{"stale read", open, Review{MergeState: "clean", Stale: "pull request detail unavailable"}, VerdictChecking, []string{ReasonStale}},
+		{"stale checks", Change{Stage: StagePR, State: StateOpen, Number: 1, Checks: ChecksStale}, Review{MergeState: "clean"}, VerdictChecking, []string{ReasonStale}},
+		{"unstable", open, Review{MergeState: "unstable", Checks: checks[1:]}, VerdictUnstable, []string{ReasonFailing}},
+		{"draft", Change{Stage: StagePR, State: StateDraft, Number: 1}, Review{MergeState: "clean"}, VerdictDraft, []string{}},
+		{"only pending", open, Review{MergeState: "blocked", Checks: checks[:1]}, VerdictRunning, []string{ReasonPending}},
+		{"protection", open, Review{MergeState: "blocked"}, VerdictBlocked, []string{ReasonProtection}},
+		{"reason order", Change{Stage: StagePR, State: StateOpen, Number: 1, Review: ReviewChanges}, Review{MergeState: "dirty", Mergeable: "conflicting", Checks: checks, Threads: threads, Reviewers: []Reviewer{{Login: "bo", State: ReviewChanges}}},
+			VerdictConflicts, []string{ReasonFailing, ReasonChanges, ReasonThreads, ReasonPending, ReasonConflicts}},
+		{"no merge state", open, Review{Checks: checks[:1], Mergeable: "mergeable"}, VerdictRunning, []string{ReasonPending}},
+		{"merged", Change{Stage: StagePR, State: StateMerged, Number: 1}, Review{MergeState: "clean"}, VerdictMerged, []string{}},
+	} {
+		got := Verdict(tc.c, tc.r)
+		var kinds []string
+		for _, reason := range got.Reasons {
+			kinds = append(kinds, reason.Kind)
+		}
+		if got.Verdict != tc.verdict || !slices.Equal(kinds, tc.kinds) && len(kinds)+len(tc.kinds) > 0 {
+			t.Errorf("%s: %s %v, want %s %v", tc.name, got.Verdict, kinds, tc.verdict, tc.kinds)
+		}
+	}
+}
+
 // Catches a draft lost or exposed across restarts, an edit of one line's
 // comment replacing another's, an emptied draft left on disk, and a stale or
 // orphaned part not reported as a conflict.
