@@ -16,6 +16,7 @@ func TestShellCompletion(t *testing.T) {
 		{[]string{"set", "12", "status=d"}, "status=doing\tDoing\nstatus=done\tDone\n"},
 		{[]string{"set", "12", "labels+=bug,k"}, "labels+=bug,keep\n"},
 		{[]string{"ls", "-label:b"}, "-label:bug\n"},
+		{[]string{"ls", "label:bug,"}, "label:bug,keep\n"},
 		{[]string{"ls", "status:t"}, "status:todo\tTo Do\n"},
 		{[]string{"ls", "--sort=-pri"}, "--sort=-priority\n"},
 		{[]string{"new", "--source", "t"}, "tasks\tnative\n"},

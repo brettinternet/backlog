@@ -312,17 +312,20 @@ func (c *completer) flagValues(path, name, current string) []candidate {
 		}
 	case "sort", "group":
 		// Sort keys are comma-separated, each optionally reversed with -.
-		before := ""
+		before, chosen := "", []string(nil)
 		if name == "sort" {
-			if i := strings.LastIndexByte(current, ','); i >= 0 {
-				before, current = current[:i+1], current[i+1:]
+			before, current, chosen = lastEntry(current)
+			for i := range chosen {
+				chosen[i] = strings.TrimPrefix(chosen[i], "-")
 			}
 			if strings.HasPrefix(current, "-") {
 				before, current = before+"-", current[1:]
 			}
 		}
 		for _, v := range c.snapshot().Complete(name, current, query.Options{}) {
-			out = append(out, candidate{before + v.Value, v.Name})
+			if !picked(chosen, v.Value) {
+				out = append(out, candidate{before + v.Value, v.Name})
+			}
 		}
 	case "before", "after":
 		out = c.ids(current)
@@ -400,10 +403,11 @@ func (c *completer) set(args []string, current string) []candidate {
 	}
 	before := field + "="
 	name := strings.TrimRight(field, "+-")
+	var chosen []string
 	if engine.ListField(name) {
-		if i := strings.LastIndexByte(value, ','); i >= 0 {
-			before, value = before+value[:i+1], value[i+1:]
-		}
+		var head string
+		head, value, chosen = lastEntry(value)
+		before += head
 	}
 	var values []candidate
 	switch name {
@@ -420,9 +424,12 @@ func (c *completer) set(args []string, current string) []candidate {
 			values = append(values, candidate{v.Value, v.Name})
 		}
 	}
-	out := make([]candidate, len(values))
-	for i, v := range values {
-		out[i] = candidate{before + v.value, v.description}
+	out := make([]candidate, 0, len(values))
+	for _, v := range values {
+		if picked(chosen, v.value) {
+			continue
+		}
+		out = append(out, candidate{before + v.value, v.description})
 	}
 	return out
 }
@@ -491,13 +498,27 @@ func (c *completer) query(current string, options query.Options) []candidate {
 		}
 		return out
 	}
-	before += field + ":"
-	if i := strings.LastIndexByte(value, ','); i >= 0 {
-		before, value = before+value[:i+1], value[i+1:]
-	}
+	head, value, chosen := lastEntry(value)
+	before += field + ":" + head
 	var out []candidate
 	for _, v := range c.snapshot().Complete(field, value, options) {
-		out = append(out, candidate{before + query.Quote(v.Value), v.Name})
+		if !picked(chosen, v.Value) && !picked(chosen, query.Quote(v.Value)) {
+			out = append(out, candidate{before + query.Quote(v.Value), v.Name})
+		}
 	}
 	return out
+}
+
+// lastEntry splits a comma-separated word into its earlier entries, kept
+// with the trailing comma, the entry being typed, and the entries chosen.
+func lastEntry(word string) (head, last string, chosen []string) {
+	i := strings.LastIndexByte(word, ',')
+	if i < 0 {
+		return "", word, nil
+	}
+	return word[:i+1], word[i+1:], strings.Split(word[:i], ",")
+}
+
+func picked(chosen []string, value string) bool {
+	return slices.ContainsFunc(chosen, func(c string) bool { return strings.EqualFold(c, value) })
 }

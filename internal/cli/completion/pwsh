@@ -2,12 +2,29 @@
 
 Register-ArgumentCompleter -Native -CommandName bl -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $words = @($commandAst.CommandElements | Where-Object { $_.Extent.EndOffset -lt $cursorPosition } | ForEach-Object { $_.Extent.Text })
+    # PowerShell parses label:a,b as an array and -label:a as a parameter, so
+    # words come from their source text rather than $wordToComplete.
+    $words = @()
+    $current = ''
+    foreach ($element in @($commandAst.CommandElements | Select-Object -Skip 1)) {
+        $extent = $element.Extent
+        if ($extent.StartOffset -ge $cursorPosition) { break }
+        $text = $extent.Text
+        if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst]) { $text = $element.Value }
+        if ($extent.EndOffset -lt $cursorPosition) {
+            $words += $text
+        } elseif ($extent.EndOffset -eq $cursorPosition) {
+            $current = $text
+        } else {
+            $current = $extent.Text.Substring(0, $cursorPosition - $extent.StartOffset)
+        }
+    }
     $program = $commandAst.CommandElements[0].Extent.Text
-    $rest = @($words | Select-Object -Skip 1)
-    & $program @rest $wordToComplete --generate-shell-completion 2>$null | ForEach-Object {
+    & $program @words $current --generate-shell-completion 2>$null | ForEach-Object {
         $value, $description = $_ -split "`t", 2
         if (-not $description) { $description = $value }
-        [System.Management.Automation.CompletionResult]::new($value, $value, 'ParameterValue', $description)
+        $text = $value
+        if ($value -match '[\s''"`$,;(){}@#|&<>]') { $text = "'" + $value.Replace("'", "''") + "'" }
+        [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $description)
     }
 }
