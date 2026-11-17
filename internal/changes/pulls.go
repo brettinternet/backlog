@@ -3,6 +3,7 @@ package changes
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -34,16 +35,36 @@ type pullCache struct {
 	Pulls   []PullRequest
 }
 
+// PartialPulls is a refresh that read every open pull request but has older
+// ones left to read, which a later refresh resumes. Err is the failed page's
+// error, if one stopped the read.
+type PartialPulls struct {
+	Read int
+	Err  error
+}
+
+func (p *PartialPulls) Error() string {
+	msg := fmt.Sprintf("reading older pull requests, %d read, will resume", p.Read)
+	if p.Err != nil {
+		msg += " after: " + p.Err.Error()
+	}
+	return msg
+}
+
+func (p *PartialPulls) Unwrap() error { return p.Err }
+
 // RefreshPulls merges a forge's newest reads into its cache at path and
 // returns the merged list, redacted before anything is kept or shown, as
-// provider activity is. fetch reads every open pull request, whose checks
-// change without touching its update time, and every other one updated since
-// the cached progress, and returns the progress it reached. A cache refreshed
-// within fresh is returned without a fetch, so readers sharing it add no
-// request. A failed fetch keeps whatever it read, so a large first read
-// converges over later refreshes, and returns the list with the error, so
-// its entries read as stale.
-func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) string, fetch func(PullProgress) (open, updated []PullRequest, next PullProgress, err error)) ([]PullRequest, error) {
+// provider activity is. open reads every open pull request, whose checks
+// change without touching its update time. older reads a bounded number of
+// pages of the others, newest updated since the cached progress first, then
+// continuing an earlier read, and returns the progress it reached. A cache
+// refreshed within fresh is returned without a read, so readers sharing it
+// add no request. A failed read keeps whatever it read, so a large first read
+// converges over later refreshes. A failed open read returns the list with
+// the error, so its entries read as stale; older ones left to read, or a
+// failed older read that can resume, return *PartialPulls.
+func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) string, open func() ([]PullRequest, error), older func(PullProgress) ([]PullRequest, PullProgress, error)) ([]PullRequest, error) {
 	var cached pullCache
 	if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &cached) == nil && cached.Repo != repo {
 		cached = pullCache{}
@@ -52,15 +73,20 @@ func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) st
 	if cached.Repo == repo && started.Sub(cached.Fetched) < fresh {
 		return redactPulls(cached, redact)
 	}
-	open, updated, next, fetchErr := fetch(cached.PullProgress)
-	if fetchErr != nil && open == nil && updated == nil {
-		return cached.Pulls, fetchErr
+	opened, openErr := open()
+	if openErr != nil && opened == nil {
+		return cached.Pulls, openErr
+	}
+	next, fetchErr := cached.PullProgress, openErr
+	var updated []PullRequest
+	if openErr == nil {
+		updated, next, fetchErr = older(cached.PullProgress)
 	}
 	// The later read wins: a pull request merged between the two reads is
 	// merged.
 	seen := map[int]bool{}
 	var merged []PullRequest
-	for _, list := range [][]PullRequest{updated, open, cached.Pulls} {
+	for _, list := range [][]PullRequest{updated, opened, cached.Pulls} {
 		for _, pr := range list {
 			if !seen[pr.Number] {
 				seen[pr.Number] = true
@@ -75,7 +101,7 @@ func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) st
 	}
 	merged = merged[:min(len(merged), MaxPulls)]
 	kept := pullCache{Repo: repo, PullProgress: next, Fetched: started, Pulls: merged}
-	if fetchErr != nil {
+	if openErr != nil {
 		kept.Fetched = cached.Fetched
 	}
 	data, err := json.Marshal(kept)
@@ -89,6 +115,15 @@ func RefreshPulls(path, repo string, fresh time.Duration, redact func(string) st
 	}
 	if path != "" {
 		cache.WriteFile(path, data)
+	}
+	if openErr == nil && next.Resume != "" && len(merged) > 0 {
+		read := 0
+		for _, pr := range merged {
+			if pr.State != StateOpen {
+				read++
+			}
+		}
+		return redacted.Pulls, &PartialPulls{Read: read, Err: fetchErr}
 	}
 	return redacted.Pulls, fetchErr
 }

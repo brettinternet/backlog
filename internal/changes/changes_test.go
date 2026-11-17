@@ -2,6 +2,7 @@ package changes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,7 +11,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/brettinternet/backlog/internal/model"
@@ -493,5 +496,78 @@ func TestReadMoves(t *testing.T) {
 	c.Head = git("rev-parse", "HEAD")
 	if _, ok, err := ReadMoves(context.Background(), c, ref); ok || err != nil {
 		t.Fatalf("rewritten history: ok %v err %v", ok, err)
+	}
+}
+
+// partialForge reads partial while left is above zero, counting down, and
+// records when each read began.
+type partialForge struct {
+	reviewForge
+	mu    sync.Mutex
+	left  int
+	loads []time.Time
+}
+
+func (f *partialForge) PullRequests(context.Context) ([]PullRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loads = append(f.loads, time.Now())
+	if f.left > 0 {
+		f.left--
+		return nil, &PartialPulls{Read: 100 * len(f.loads)}
+	}
+	return nil, nil
+}
+
+// Catches a large repository's backfill, a few pages per refresh, waiting a
+// minute between refreshes, and a tracker that keeps reloading forges every
+// few seconds once none is partial.
+func TestTrackerPartialCadence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		forge := &partialForge{left: 2}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		tracker := Track(ctx, map[string]Options{"p": {Forges: []Forge{forge}}})
+		start := time.Now()
+		check := func(after time.Duration, loads int, status Status) {
+			t.Helper()
+			time.Sleep(after - time.Since(start))
+			synctest.Wait()
+			forge.mu.Lock()
+			defer forge.mu.Unlock()
+			if len(forge.loads) != loads {
+				t.Fatalf("at %v: %d loads, want %d: %v", after, len(forge.loads), loads, forge.loads)
+			}
+			if got := tracker.Latest().Projects["p"].Statuses; !slices.Equal(got, []Status{status}) {
+				t.Fatalf("at %v: published %+v, want %+v", after, got, status)
+			}
+		}
+		check(0, 1, Status{Provider: "fake", State: Partial, Reason: "reading older pull requests, 100 read, will resume"})
+		check(4*time.Second, 1, Status{Provider: "fake", State: Partial, Reason: "reading older pull requests, 100 read, will resume"})
+		check(5*time.Second, 2, Status{Provider: "fake", State: Partial, Reason: "reading older pull requests, 200 read, will resume"})
+		check(10*time.Second, 3, Status{Provider: "fake", State: OK})
+		check(59*time.Second, 3, Status{Provider: "fake", State: OK})
+		check(time.Minute, 4, Status{Provider: "fake", State: OK})
+	})
+}
+
+// Catches a first refresh whose older pages failed partway leaving Fetched at
+// the zero time, though it read every open pull request and can resume.
+func TestRefreshPullsPartialFetched(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "r.pulls.json")
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	started := time.Now()
+	prs, err := RefreshPulls(path, "o/r", 0, func(s string) string { return s },
+		func() ([]PullRequest, error) { return []PullRequest{{Number: 2, State: StateOpen, Updated: at}}, nil },
+		func(PullProgress) ([]PullRequest, PullProgress, error) {
+			return []PullRequest{{Number: 1, State: StateMerged, Updated: at}}, PullProgress{Cursor: at, Resume: "c1", Oldest: at}, errors.New("502")
+		})
+	var partial *PartialPulls
+	if !errors.As(err, &partial) || partial.Read != 1 || partial.Err == nil || len(prs) != 2 {
+		t.Fatalf("refresh: %v, %+v", err, prs)
+	}
+	var kept pullCache
+	if data, err := os.ReadFile(path); err != nil || json.Unmarshal(data, &kept) != nil || kept.Fetched.Before(started) || kept.Resume != "c1" {
+		t.Fatalf("kept: %v %+v", err, kept)
 	}
 }

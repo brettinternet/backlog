@@ -133,20 +133,24 @@ func (f *Forge) authenticate(ctx context.Context) (remote.Credential, error) {
 func (f *Forge) PullRequests(ctx context.Context) ([]changes.PullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return changes.RefreshPulls(f.cache, f.o.Repo, 0, f.o.Secrets.Redact, func(prev changes.PullProgress) ([]changes.PullRequest, []changes.PullRequest, changes.PullProgress, error) {
-		c, err := f.authenticate(ctx)
-		if err != nil {
-			return nil, nil, prev, err
+	var c remote.Credential
+	open := func() ([]changes.PullRequest, error) {
+		var err error
+		if c, err = f.authenticate(ctx); err != nil {
+			return nil, err
 		}
 		open, _, err := f.fetch(ctx, c, "opened", time.Time{})
 		if err != nil {
-			return nil, nil, prev, err
+			return nil, err
 		}
+		return open, nil
+	}
+	return changes.RefreshPulls(f.cache, f.o.Repo, 0, f.o.Secrets.Redact, open, func(prev changes.PullProgress) ([]changes.PullRequest, changes.PullProgress, error) {
 		updated, cursor, err := f.fetch(ctx, c, "", prev.Cursor)
 		if err != nil {
-			return nil, nil, prev, err
+			return nil, prev, err
 		}
-		return open, updated, changes.PullProgress{Cursor: cursor}, nil
+		return updated, changes.PullProgress{Cursor: cursor}, nil
 	})
 }
 

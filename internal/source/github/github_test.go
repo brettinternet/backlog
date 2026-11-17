@@ -86,13 +86,15 @@ type fixture struct {
 	// FORBIDDEN for its checks. pullsFail reports the repository unavailable.
 	// A page over pullsBusy nodes, or from the cursor pullsDown, answers 502,
 	// or null data with a GraphQL error when pullsNull. pullsAsked records
-	// each page's states and size.
-	pulls      []map[string]any
-	pullsFail  bool
-	pullsBusy  int
-	pullsDown  string
-	pullsNull  bool
-	pullsAsked []string
+	// each page's states and size. pullsRemaining, when set, is each page's
+	// X-RateLimit-Remaining of a 5000 limit.
+	pulls          []map[string]any
+	pullsFail      bool
+	pullsBusy      int
+	pullsDown      string
+	pullsNull      bool
+	pullsAsked     []string
+	pullsRemaining string
 	// pullFiles and pullCommits answer pull request 45's REST lists.
 	pullFiles, pullCommits string
 	// review is pull request 45's review node; reviewFail reports it
@@ -463,6 +465,10 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			nodes = append(nodes, n)
 		}
 		page := map[string]any{"hasNextPage": end < len(all), "endCursor": strconv.Itoa(end)}
+		if f.pullsRemaining != "" {
+			w.Header().Set("X-RateLimit-Limit", "5000")
+			w.Header().Set("X-RateLimit-Remaining", f.pullsRemaining)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"errors": failures, "data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": page, "nodes": nodes}}}})
 	case strings.Contains(q, "timelineItems("):
 		// Two pages read newest first: before names the older page.
@@ -1167,53 +1173,103 @@ func TestForgePullRequests(t *testing.T) {
 	}
 }
 
+// largePulls is 130 pull requests, newest updated first, every 40th open.
+func largePulls(f *fixture) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 130 {
+		state := "MERGED"
+		if i%40 == 0 {
+			state = "OPEN"
+		}
+		f.pulls = append(f.pulls, map[string]any{"number": i + 1, "title": "pr", "state": state, "createdAt": at, "updatedAt": at.Add(-time.Duration(i) * time.Hour), "mergeStateStatus": "CLEAN", "reviewDecision": "APPROVED", "commits": map[string]any{"nodes": []any{}}})
+	}
+}
+
+// loadForge reads forge as the changes tracker does, by number.
+func loadForge(forge *Forge) (map[int]changes.PullRequest, changes.Status) {
+	prs, statuses := changes.LoadForges(context.Background(), []changes.Forge{forge})
+	out := map[int]changes.PullRequest{}
+	for _, pr := range prs {
+		out[pr.Number] = pr
+	}
+	return out, statuses[0]
+}
+
 // Catches a large repository whose slow pages GitHub answers with 502, or with
 // null data and a GraphQL error, never listing its open pull requests or never
 // converging, because one failed page discarded every page read; the merge
 // state lost from open pull requests once the closed and merged pass stopped
-// reading it; and that pass reading review and checks or small pages again.
+// reading it; that pass reading review and checks or small pages again; and
+// a failed older page reported unavailable though every open pull request was
+// read and the read resumes.
 func TestForgePullRequestsLarge(t *testing.T) {
 	for _, null := range []bool{false, true} {
 		s, f := newFixture(t)
 		forge := &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
-		at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-		for i := range 130 {
-			state := "MERGED"
-			if i%40 == 0 {
-				state = "OPEN"
-			}
-			f.pulls = append(f.pulls, map[string]any{"number": i + 1, "title": "pr", "state": state, "createdAt": at, "updatedAt": at.Add(-time.Duration(i) * time.Hour), "mergeStateStatus": "CLEAN", "reviewDecision": "APPROVED", "commits": map[string]any{"nodes": []any{}}})
-		}
-		read := func() (map[int]changes.PullRequest, error) {
-			prs, err := forge.PullRequests(context.Background())
-			out := map[int]changes.PullRequest{}
-			for _, pr := range prs {
-				out[pr.Number] = pr
-			}
-			return out, err
-		}
+		largePulls(f)
 		// Pages over 25 time out, and the page after the second of 25 is down.
 		f.pullsBusy, f.pullsDown, f.pullsNull = 25, "50", null
-		prs, err := read()
-		if err == nil || len(prs) != 54 {
-			t.Fatalf("null %v first refresh: %v, %d listed", null, err, len(prs))
+		prs, status := loadForge(forge)
+		if status.State != changes.Partial || !strings.HasPrefix(status.Reason, "reading older pull requests, 50 read, will resume after: ") || len(prs) != 54 {
+			t.Fatalf("null %v first refresh: %+v, %d listed", null, status, len(prs))
 		}
 		if want := []string{"[OPEN] 50", "[CLOSED MERGED] 100", "[CLOSED MERGED] 50", "[CLOSED MERGED] 25", "[CLOSED MERGED] 25", "[CLOSED MERGED] 25", "[CLOSED MERGED] 12"}; !slices.Equal(f.pullsAsked, want) {
 			t.Fatalf("null %v pages asked: %q", null, f.pullsAsked)
 		}
 		for _, n := range []int{1, 41, 81, 121} {
-			if prs[n].State != changes.StateOpen || prs[n].MergeState != "clean" || prs[n].Review != changes.ReviewApproved {
+			if prs[n].State != changes.StateOpen || prs[n].MergeState != "clean" || prs[n].Review != changes.ReviewApproved || prs[n].Stale != "" {
 				t.Fatalf("null %v open #%d: %+v", null, n, prs[n])
 			}
 		}
 		if prs[2].State != changes.StateMerged || prs[2].MergeState != "" || prs[2].Review != "" {
 			t.Fatalf("null %v merged #2: %+v", null, prs[2])
 		}
+		// Each later refresh reads the newly updated, then 3 more pages.
 		f.pullsDown = ""
-		f.pulls[1]["updatedAt"] = at.Add(time.Hour)
-		if prs, err = read(); err != nil || len(prs) != 130 || !prs[2].Updated.Equal(at.Add(time.Hour)) || prs[121].MergeState != "clean" {
-			t.Fatalf("null %v resumed refresh: %v, %d listed, #2 %+v", null, err, len(prs), prs[2])
+		f.pulls[1]["updatedAt"] = time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC)
+		if prs, status = loadForge(forge); status.State != changes.Partial || status.Reason != "reading older pull requests, 125 read, will resume" || len(prs) != 129 || prs[2].Updated.Hour() != 1 {
+			t.Fatalf("null %v second refresh: %+v, %d listed, #2 %+v", null, status, len(prs), prs[2])
 		}
+		if prs, status = loadForge(forge); status.State != changes.OK || len(prs) != 130 || prs[121].MergeState != "clean" {
+			t.Fatalf("null %v resumed refresh: %+v, %d listed", null, status, len(prs))
+		}
+		// A failed open pass leaves every cached entry stale.
+		f.pullsFail = true
+		if prs, status = loadForge(forge); status.State != changes.Unavailable || len(prs) != 130 || prs[1].Stale == "" || prs[2].Stale == "" {
+			t.Fatalf("null %v failed open pass: %+v, %d listed", null, status, len(prs))
+		}
+	}
+}
+
+// Catches a large repository's first refresh reading every closed and merged
+// pull request before showing any (149.5 s on cli/cli), and a backfill that
+// spends the rate limit interactive reads and other tools share.
+func TestForgePullRequestsBackfill(t *testing.T) {
+	s, f := newFixture(t)
+	forge := &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
+	largePulls(f)
+	f.pullsBusy = 25
+	prs, status := loadForge(forge)
+	if want := []string{"[OPEN] 50", "[CLOSED MERGED] 100", "[CLOSED MERGED] 50", "[CLOSED MERGED] 25", "[CLOSED MERGED] 25", "[CLOSED MERGED] 25"}; !slices.Equal(f.pullsAsked, want) {
+		t.Fatalf("pages asked: %q", f.pullsAsked)
+	}
+	if status.State != changes.Partial || status.Reason != "reading older pull requests, 75 read, will resume" || len(prs) != 79 || prs[121].State != changes.StateOpen {
+		t.Fatalf("first refresh: %+v, %d listed", status, len(prs))
+	}
+
+	// Under a tenth of the limit left, the backfill stops after its first
+	// page, while open pull requests are still read.
+	s, f = newFixture(t)
+	forge = &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
+	largePulls(f)
+	f.pullsRemaining = "499"
+	prs, status = loadForge(forge)
+	if want := []string{"[OPEN] 50", "[CLOSED MERGED] 100"}; !slices.Equal(f.pullsAsked, want) || status.State != changes.Partial || status.Reason != "reading older pull requests, 100 read, will resume" || len(prs) != 104 {
+		t.Fatalf("low rate limit: %q %+v, %d listed", f.pullsAsked, status, len(prs))
+	}
+	f.pullsAsked = nil
+	if prs, status = loadForge(forge); !slices.Equal(f.pullsAsked, []string{"[OPEN] 50", "[CLOSED MERGED] 100", "[CLOSED MERGED] 100"}) || status.State != changes.OK || len(prs) != 130 {
+		t.Fatalf("resumed under a low limit: %q %+v, %d listed", f.pullsAsked, status, len(prs))
 	}
 }
 

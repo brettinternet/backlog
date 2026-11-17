@@ -152,8 +152,10 @@ with the default branch, counting a worktree's uncommitted files), `worktree`,
 `events` (`kind`, `time`), `updated`, and `tour` (`ref`, `steps`, `stale`)
 when a tour is stored for the change, stale once its head is another commit;
 `data.providers` lists `git` and each forge with its `state` and
-`reason`. Diff text stays out of JSON. Pull requests come from the forge's
-cache, refreshed incrementally; Git is read from `.git` and never fetched.
+`reason`; a forge is `partial` while a bounded refresh has older pull requests
+left to read on later calls ([changes](changes.md#forge-refresh)). Diff text
+stays out of JSON. Pull requests come from the forge's cache, refreshed
+incrementally; Git is read from `.git` and never fetched.
 
 `--detail` adds, for an open pull request, `merge` (`state`, the forge's merge
 state; `verdict`; and `reasons`, each with `kind`, `text`, and the `check` or
