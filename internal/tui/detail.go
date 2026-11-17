@@ -104,7 +104,8 @@ type detailResult struct {
 	steps      []stepSpan // where the Diff shows each tour step, in tour order
 	threads    []int      // the Diff's entry of each unresolved review thread
 	tour       string     // why the Diff shows no tour steps, when it has a tour
-	dirty      []string   // the change's uncommitted files, which aren't at head
+	diagrams   []diagramCaption
+	dirty      []string // the change's uncommitted files, which aren't at head
 	review     *changes.Review
 	facts      *changes.Change // the change as read: its verdict, or ahead, behind, and dirty
 	draft      *changes.Draft  // the pull request's pending review
@@ -164,6 +165,7 @@ type rendered struct {
 	steps     []stepSpan // where each tour step shows, in tour order
 	threads   []int      // the Diff's entry of each unresolved review thread
 	tour      string     // why a change's tour shows no steps
+	diagrams  []diagramCaption
 	truncated bool
 	size      int
 }
@@ -537,6 +539,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	}
 	if value, ok := worker.cache.render(key); ok && !request.fresh {
 		result.lines, result.entries, result.targets, result.ids, result.hints, result.truncated = value.lines, value.entries, value.targets, value.ids, value.hints, value.truncated
+		result.diagrams = value.diagrams
 		return result
 	}
 	item, ok := worker.cache.item(itemKey{Ref: request.row.Ref, Version: version})
@@ -569,6 +572,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	if value, ok := worker.cache.render(key); ok && !request.fresh {
 		result.identity.Version = version
 		result.lines, result.entries, result.targets, result.ids, result.hints, result.truncated = value.lines, value.entries, value.targets, value.ids, value.hints, value.truncated
+		result.diagrams = value.diagrams
 		return result
 	}
 	var page rendered
@@ -590,6 +594,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 	}
 	result.identity.Version = version
 	result.lines, result.entries, result.targets, result.ids, result.hints, result.truncated = page.lines, page.entries, page.targets, page.ids, page.hints, page.truncated
+	result.diagrams = page.diagrams
 	worker.cache.putRender(key, page)
 	return result
 }
@@ -926,6 +931,7 @@ func detailPage(ctx context.Context, item model.Item, request detailRequest, ren
 	}
 	page.truncated = body.full
 	if text := body.builder.String(); text != "" {
+		text, sources := markDiagrams(text)
 		out, err := render(text, width, t.name)
 		if err != nil {
 			return rendered{}, err
@@ -941,9 +947,11 @@ func detailPage(ctx context.Context, item model.Item, request detailRequest, ren
 		if request.tab == tabOverview {
 			page.lines = append(page.lines, "")
 		}
+		start := len(page.lines)
 		for _, line := range strings.Split(out, "\n") {
 			page.lines = append(page.lines, strings.TrimRight(line, " "))
 		}
+		page.diagrams = takeDiagrams(page.lines[start:], start, sources, t)
 	}
 	for _, line := range page.lines {
 		page.size += len(line) + 1

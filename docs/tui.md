@@ -229,8 +229,8 @@ and pickers match each query word separately, in any order; whole words rank
 above partial and fuzzy matches.
 
 Outside them, a key is shown only where it applies and nothing else suggests
-it, in faint text: `m more` and `⌫ back` in the detail header, and `! resume` on
-a selected session row in History.
+it, in faint text: `m more` and `⌫ back` in the detail header, `g d open` on a diagram's caption,
+and `! resume` on a selected session row in History.
 
 ## Detail
 
@@ -673,7 +673,7 @@ Relations and readiness use only the loaded scope; [workspace references](format
 Click a row to select it; double-click (within 400 ms) to open it. Clicking a
 group header folds or unfolds it. Click tabs to switch, or `‹`/`›`
 to show the hidden tab beside them. In detail, click `⌫ back` or
-`m more`/`m less` to run them. Right-click a row, or detail, to open the item's
+`m more`/`m less` to run them, or a diagram's caption to open it. Right-click a row, or detail, to open the item's
 `!` menu. Clicking a board column
 header focuses it, and its edge `‹`/`›` focus the hidden column beside them; clicking a list header sorts by ID, priority, status, title,
 or update time, and again to reverse. Click a criterion to select it, or its box
@@ -689,7 +689,8 @@ marked card drags every mark, changing only status. Where the view's first sort
 key is `rank` or `next`, the drop also places the card beside its nearest
 same-source neighbor by rank, as the move keys do, and works within a column.
 `esc` cancels; a drop on a header, outside the board, or on the card's own slot
-does nothing, and moving past a board edge scrolls columns. Drag the
+does nothing, and moving past a board edge scrolls columns. In a diagram, the
+wheel scrolls it and other mouse input does nothing. Drag the
 divider to resize. Drag across detail text to select it, moving past an edge to scroll;
 release copies it (OSC 52).
 
@@ -765,6 +766,7 @@ keys:
 | `next-detail-tab` | `tab` | Next tab |
 | `previous-detail-tab` | `shift+tab` | Previous tab |
 | `back` | `backspace` | Back |
+| `open-diagram` | `g d` | Open diagram |
 | `split-left` | `ctrl+left` | Shrink list |
 | `split-right` | `ctrl+right` | Grow list |
 | `next-view` | `g t` | Next view |
@@ -901,6 +903,16 @@ its text on the next line. An unindented fenced block with an info string
 shows the first word, its language, as a dim caption line above the block.
 Both are left as written inside fenced blocks, using the fence rules in
 [format.md](format.md).
+
+A `mermaid` block of type `graph`, `flowchart`, `sequenceDiagram`, or
+`erDiagram` adds `g d open` to its caption. Clicking the caption opens the
+diagram full screen, drawn as text; `g d` opens the first diagram at or below
+the top of the viewport. The view scrolls with the detail keys, `h`/`l` and the
+arrows move sideways, and `0`/`$` jump to its edges; `esc`, `q`, or `backspace`
+returns to detail where it was. Layout runs off the update loop, cached by
+source, width, and theme. A source over 4 KiB, a parse error, or a renderer
+failure shows its reason instead. `NO_COLOR` drops `classDef` colors. Other
+diagram types keep only their source.
 
 Interactive sessions use 20% GC heap growth instead of the CLI's fixed 300 MiB
 soft memory target. Explicit `GOGC` and `GOMEMLIMIT` win and are restored on

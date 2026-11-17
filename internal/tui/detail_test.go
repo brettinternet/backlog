@@ -2037,3 +2037,118 @@ func TestChangeViewPoll(t *testing.T) {
 		t.Fatalf("after the view moved and closed, #45 was read %d more times and #46 %d", read(45)-before-1, read(46))
 	}
 }
+
+// Supported Mermaid captions open a full-screen diagram that scrolls both ways
+// and returns to detail where it was; unsupported and nested ones stay source.
+func TestDetailDiagrams(t *testing.T) {
+	t.Parallel()
+	wide := "graph TD\nA --> B\nB --> C\nC --> D\nD --> E\n"
+	for i := range 14 {
+		wide += fmt.Sprintf("A --> W%d\n", i)
+	}
+	description := "Intro\n\n```mermaid\n" + wide + "```\n\n```mermaid\npie title Pets\n\"Dogs\" : 3\n```\n\n" +
+		"````markdown\n```mermaid\ngraph TD\nX --> Y\n```\n````\n\n```mermaid\ngraph XY\nA --> B\n```\n"
+	m := detailFixture(t, 1, nil)
+	m.width, m.height = 100, 30
+	m.detailWorker.read = func(_ context.Context, ref model.Ref) (model.Item, error) {
+		return model.Item{Ref: ref, Version: "v1", Title: "Diagrams", Status: "todo", Category: model.Todo, Description: description}, nil
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	if len(m.detailDiagrams) != 2 || m.detailDiagrams[0].source != strings.TrimSuffix(wide, "\n") || !strings.HasPrefix(m.detailDiagrams[1].source, "graph XY") {
+		t.Fatalf("diagrams = %+v", m.detailDiagrams)
+	}
+	for _, d := range m.detailDiagrams {
+		if line := ansi.Strip(m.detailLines[d.line]); line != "mermaid  g d open" {
+			t.Fatalf("caption %q", line)
+		}
+	}
+	if opens := strings.Count(strings.Join(m.detailLines, "\n"), "g d open"); opens != 2 || !slices.Contains(m.detailLines, "  pie title Pets") || !slices.Contains(m.detailLines, "  ```mermaid") {
+		t.Fatalf("unsupported or nested diagram changed:\n%s", strings.Join(m.detailLines, "\n"))
+	}
+	keys := func(m Model, s string) (Model, tea.Cmd) {
+		var cmds []tea.Cmd
+		for _, r := range s {
+			var cmd tea.Cmd
+			m, cmd = detailKey(m, r, 0)
+			cmds = append(cmds, cmd)
+		}
+		next, _ := m.Update(tea.BatchMsg(nil))
+		return next.(Model), tea.Batch(cmds...)
+	}
+	run := func(m Model, cmd tea.Cmd) Model {
+		t.Helper()
+		if cmd == nil {
+			t.Fatal("no render command")
+		}
+		var msg tea.Msg = cmd()
+		for batch, ok := msg.(tea.BatchMsg); ok; batch, ok = msg.(tea.BatchMsg) {
+			msg = nil
+			for _, c := range batch {
+				if c != nil {
+					if out := c(); out != nil {
+						if _, diagram := out.(diagramMsg); diagram {
+							msg = out
+						}
+					}
+				}
+			}
+		}
+		next, _ := m.Update(msg)
+		return next.(Model)
+	}
+	// g d opens the first diagram at or below the top of the viewport.
+	m.detailScroll = m.detailDiagrams[0].line + 1
+	m, cmd := keys(m, "gd")
+	m = run(m, cmd)
+	if !m.diagram.open || !strings.Contains(m.View().Content, "! failed to parse graph diagram: unsupported graph direction 'XY'") {
+		t.Fatalf("parse error not shown:\n%s", m.View().Content)
+	}
+	m, _ = detailKey(m, tea.KeyEscape, 0)
+	if m.diagram.open || m.detailScroll != m.detailDiagrams[0].line+1 {
+		t.Fatal("esc did not return to detail in place")
+	}
+	m.detailScroll = 1
+	m, cmd = keys(m, "gd")
+	m = run(m, cmd)
+	rows, inner := m.bodyRows(), m.width-2*detailPad
+	if m.diagram.err != "" || len(m.diagram.lines) <= rows || m.diagram.wide <= inner {
+		t.Fatalf("diagram %dx%d doesn't exceed %dx%d: %s", m.diagram.wide, len(m.diagram.lines), inner, rows, m.diagram.err)
+	}
+	before := m.View().Content
+	m, _ = keys(m, "jjl")
+	if m.diagram.y != 2 || m.diagram.x != 4 || m.View().Content == before {
+		t.Fatalf("scroll = %d,%d", m.diagram.x, m.diagram.y)
+	}
+	m, _ = keys(m, "G$")
+	if m.diagram.y != len(m.diagram.lines)-rows || m.diagram.x != m.diagram.wide-inner {
+		t.Fatalf("far edge = %d,%d", m.diagram.x, m.diagram.y)
+	}
+	m, _ = keys(m, "q")
+	if m.diagram.open || m.detailScroll != 1 || !strings.Contains(m.View().Content, "g d open") {
+		t.Fatal("q did not return to detail in place")
+	}
+	// A click on the caption reopens it from the cache, and the wheel scrolls.
+	y := m.bodyY() + m.detailBodyTop() + m.detailDiagrams[0].line - m.detailScroll
+	next, cmd := m.Update(tea.MouseClickMsg{X: 4, Y: y, Button: tea.MouseLeft})
+	m = next.(Model)
+	if !m.diagram.open || m.diagram.loading || cmd != nil {
+		t.Fatalf("caption click: open=%v loading=%v", m.diagram.open, m.diagram.loading)
+	}
+	next, _ = m.Update(tea.MouseWheelMsg{X: 4, Y: y, Button: tea.MouseWheelDown})
+	if m = next.(Model); m.diagram.y != 3 {
+		t.Fatalf("wheel y = %d", m.diagram.y)
+	}
+	// Oversized input and renderer panics show their reason.
+	var dense strings.Builder
+	dense.WriteString("graph TD\n")
+	for i := 0; dense.Len() < 4018; i++ {
+		fmt.Fprintf(&dense, "N%d --> N%d\n", i%40, (i*13+5)%97)
+	}
+	if _, err := renderDiagram(dense.String(), 200, "no-color"); err == nil || !strings.Contains(err.Error(), "diagram renderer failed") {
+		t.Fatalf("panic: %v", err)
+	}
+	if _, err := renderDiagram(strings.Repeat("A --> B\n", 600), 200, "no-color"); err == nil || !strings.Contains(err.Error(), "over the 4 KiB limit") {
+		t.Fatalf("cap: %v", err)
+	}
+}

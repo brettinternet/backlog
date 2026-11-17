@@ -265,8 +265,11 @@ type Model struct {
 	resolvedOpen   bool
 	threadWrites   map[string]threadWrite // x's resolve or unresolve writes by thread ID
 	detailThreads  []int                  // the Diff's entry of each unresolved review thread
-	diffTarget     string                 // the link the Diff opens at when it arrives
-	changeReturn   *tabStop               // the entry backspace returns to from a Diff opened at a link
+	detailDiagrams []diagramCaption       // the diagram captions of the body in view
+	diagram        diagramView            // the diagram opened full screen from detail
+	diagrams       map[diagramKey]diagramMsg
+	diffTarget     string   // the link the Diff opens at when it arrives
+	changeReturn   *tabStop // the entry backspace returns to from a Diff opened at a link
 }
 
 // tabStop is an entry of a change view tab.
@@ -823,8 +826,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.width < 120 {
 			m.detailFocus = m.detailOpen // the detail pane replaces the list
 		}
+		diagram := m.loadDiagram()
 		if m.detailOpen && m.detailWidth() != oldDetailWidth {
-			return m, m.scheduleDetail()
+			return m, tea.Batch(diagram, m.scheduleDetail())
+		}
+		if diagram != nil {
+			return m, diagram
 		}
 	case claimsPoll:
 		m.refreshClaims()
@@ -1014,6 +1021,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailLinks, m.changeFacts = result.links, result.facts
 			m.shownCheck, m.detailShownCheck = result.check, result.checkView
 			m.detailSteps, m.detailTour, m.detailThreads = result.steps, result.tour, result.threads
+			m.detailDiagrams = result.diagrams
 			if !keep {
 				m.tourStep = -1
 			}
@@ -1140,6 +1148,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openResultMsg:
 		m.notice = msg.err
 		return m, nil
+	case diagramMsg:
+		m.receiveDiagram(msg)
+		return m, nil
 	case tea.KeyPressMsg:
 		m.input = true
 		// Any new input supersedes action preparation still running on a worker.
@@ -1208,6 +1219,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.editor.open {
 			return m.updateQuery(msg)
 		}
+		if m.diagram.open {
+			return m.updateDiagramKey(s)
+		}
 		return m.dispatchKey(s)
 	}
 	m.keepBoardVisible()
@@ -1247,10 +1261,14 @@ func (m Model) plainField() bool {
 func (m *Model) retheme() tea.Cmd {
 	previous := m.theme.key()
 	m.theme = newTheme(m.opts.NoColor, m.opts.HighContrast, m.fg, m.bg)
-	if m.detailOpen && m.theme.key() != previous {
-		return m.scheduleDetail()
+	if m.theme.key() == previous {
+		return nil
 	}
-	return nil
+	diagram := m.loadDiagram()
+	if m.detailOpen {
+		return tea.Batch(diagram, m.scheduleDetail())
+	}
+	return diagram
 }
 
 // keepSelectionVisible scrolls the list viewport to the cursor.
@@ -1756,6 +1774,7 @@ func (m *Model) closeDetail() {
 	m.detailFiles, m.detailHunks = nil, nil
 	m.detailRows, m.detailHead = nil, ""
 	m.detailSteps, m.detailTour, m.tourStep, m.detailThreads = nil, "", -1, nil
+	m.detailDiagrams = nil
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
 	m.pullShown = model.Ref{}
