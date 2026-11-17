@@ -442,6 +442,7 @@ key is `rank` or `next`, in the list layout. Under `next`, priority outranks
 rank, so a move stops at a priority boundary and the status bar points to `p`.
 Elsewhere, including the tree and board, they're disabled with `sort by rank or
 next to reorder`; on a source other than native, the status bar names it.
+On macOS, `alt+j` and `alt+k` need the terminal to send Option as Meta.
 
 **Status keys:** `S` and `D` resolve `workflow.start` and `workflow.done` per
 item source, as `bl start` and `bl done` do. A refused item names its source.
