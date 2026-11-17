@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -82,8 +83,8 @@ type fixture struct {
 	timelineCalls int
 	// pulls are the repository's pull request nodes, paged newest updated
 	// first with the index after a page as its cursor, leaving out a field
-	// the query skips with @include(if:$open); one without commits answers
-	// FORBIDDEN for its checks. pullsFail reports the repository unavailable.
+	// the query doesn't name; one without commits answers FORBIDDEN for its
+	// checks. pullsFail reports the repository unavailable.
 	// A page over pullsBusy nodes, or from the cursor pullsDown, answers 502,
 	// or null data with a GraphQL error when pullsNull. pullsAsked records
 	// each page's states and size. pullsRemaining, when set, is each page's
@@ -95,6 +96,11 @@ type fixture struct {
 	pullsNull      bool
 	pullsAsked     []string
 	pullsRemaining string
+	// listVerdicts records whether a list page named mergeStateStatus,
+	// reviewDecision, or statusCheckRollup; verdictsAsked records each
+	// aliased verdict query's pull request numbers.
+	listVerdicts  bool
+	verdictsAsked [][]int
 	// pullFiles and pullCommits answer pull request 45's REST lists.
 	pullFiles, pullCommits string
 	// review is pull request 45's review node; reviewFail reports it
@@ -417,6 +423,29 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(q, "... on CheckRun{status"):
 		f.checkReads++
 		emit(map[string]any{"node": f.check})
+	case verdictAlias.MatchString(q):
+		var asked []int
+		repository, failures := map[string]any{}, []any{}
+		for _, m := range verdictAlias.FindAllStringSubmatch(q, -1) {
+			number, _ := strconv.Atoi(m[1])
+			asked = append(asked, number)
+			alias := "n" + m[1]
+			repository[alias] = nil
+			for _, n := range f.pulls {
+				if n["number"] == number {
+					node := map[string]any{"number": number, "reviewDecision": n["reviewDecision"], "mergeStateStatus": n["mergeStateStatus"], "commits": n["commits"]}
+					if n["commits"] == nil {
+						failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", alias, "commits"}})
+					}
+					repository[alias] = node
+				}
+			}
+			if repository[alias] == nil {
+				failures = append(failures, map[string]any{"type": "NOT_FOUND", "path": []any{"repository", alias}})
+			}
+		}
+		f.verdictsAsked = append(f.verdictsAsked, asked)
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": failures, "data": map[string]any{"repository": repository}})
 	case strings.Contains(q, "pullRequest(number"):
 		f.reviews++
 		if f.reviewFail {
@@ -448,18 +477,16 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(502)
 			return
 		}
-		asked := func(field string) bool {
-			return strings.Contains(q, field) && (v["open"] == true || !strings.Contains(q, field+" @include(if:$open)"))
-		}
+		f.listVerdicts = f.listVerdicts || strings.Contains(q, "mergeStateStatus") || strings.Contains(q, "reviewDecision") || strings.Contains(q, "statusCheckRollup")
 		nodes, failures := []any{}, []any{}
 		for _, n := range all[start:end] {
 			n = maps.Clone(n)
 			for _, field := range []string{"reviewDecision", "mergeStateStatus", "commits(last:1)"} {
-				if !asked(field) {
+				if !strings.Contains(q, field) {
 					delete(n, strings.TrimSuffix(field, "(last:1)"))
 				}
 			}
-			if n["commits"] == nil && asked("commits(last:1)") {
+			if n["commits"] == nil && strings.Contains(q, "commits(last:1)") {
 				failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests", "nodes", len(nodes), "commits"}})
 			}
 			nodes = append(nodes, n)
@@ -1041,7 +1068,10 @@ func TestActivityTimeline(t *testing.T) {
 }
 
 // Catches checks left stale because an open pull request's update time didn't
-// move, one pull request whose checks the token can't read failing the list,
+// move, the list reading merge state, review, and checks for every open pull
+// request rather than one query for the linked ones (7.2 s against 1.3 s a
+// page on cli/cli), an unlinked one carrying them, one pull request whose
+// checks the token can't read failing the list or the verdicts,
 // a token echoed in a body reaching the cache, a failed refresh dropping
 // what was cached, and a pull request's renamed, binary, or deleted files or
 // commit order read wrongly.
@@ -1058,11 +1088,15 @@ func TestForgePullRequests(t *testing.T) {
 		{"number": 46, "title": "Bump deps", "url": "https://github.com/owner/repo/pull/46", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "deps", "commits": rollup("SUCCESS"), "author": map[string]any{"login": "dependabot", "__typename": "Bot"}},
 		{"number": 44, "title": "Old", "url": "https://github.com/owner/repo/pull/44", "state": "MERGED", "createdAt": at, "updatedAt": at, "mergedAt": at, "headRefName": "old", "mergeCommit": map[string]any{"oid": "mmm"}, "reviewDecision": "APPROVED", "commits": rollup("FAILURE")},
 	}
+	// read loads the list as the changes tracker does, then the verdicts of
+	// pull request 45, linked to an unfinished item, and of one in another
+	// repository.
 	read := func() map[int]changes.PullRequest {
 		t.Helper()
-		prs, err := forge.PullRequests(context.Background())
-		if err != nil {
-			t.Fatal(err)
+		prs, statuses := changes.LoadForges(context.Background(), []changes.Forge{forge})
+		changes.ReadVerdicts(context.Background(), changes.Options{Forges: []changes.Forge{forge}}, prs, statuses, []changes.PullID{{Repo: "other/repo", Number: 45}, {Repo: "Owner/Repo", Number: 45}})
+		if statuses[0].State != changes.OK {
+			t.Fatalf("status: %+v", statuses[0])
 		}
 		out := map[int]changes.PullRequest{}
 		for _, pr := range prs {
@@ -1074,6 +1108,14 @@ func TestForgePullRequests(t *testing.T) {
 	open, merged := prs[45], prs[44]
 	if open.State != changes.StateOpen || open.Head != "bl-12-fix" || open.HeadSHA != "aaa" || open.Review != changes.ReviewApproved || open.Checks != changes.ChecksPending || !slices.Equal(open.Closes, []string{"I_1"}) || strings.Contains(open.Body, "fake-secret") {
 		t.Fatalf("open: %+v", open)
+	}
+	if unlinked := prs[46]; unlinked.Checks != "" || unlinked.Review != "" || unlinked.MergeState != "" || f.listVerdicts || !reflect.DeepEqual(f.verdictsAsked, [][]int{{45}}) {
+		t.Fatalf("unlinked: %+v, list named verdicts %v, verdicts asked %v", unlinked, f.listVerdicts, f.verdictsAsked)
+	}
+	// Checks the token can't read leave the review and merge state.
+	f.pulls[0]["commits"] = nil
+	if prs = read(); prs[45].Review != changes.ReviewApproved || prs[45].Checks != "" {
+		t.Fatalf("checks unreadable: %+v", prs[45])
 	}
 	if merged.State != changes.StateMerged || merged.MergeSHA != "mmm" || merged.Checks != "" || merged.Review != "" {
 		t.Fatalf("merged: %+v", merged)
@@ -1217,7 +1259,7 @@ func TestForgePullRequestsLarge(t *testing.T) {
 			t.Fatalf("null %v pages asked: %q", null, f.pullsAsked)
 		}
 		for _, n := range []int{1, 41, 81, 121} {
-			if prs[n].State != changes.StateOpen || prs[n].MergeState != "clean" || prs[n].Review != changes.ReviewApproved || prs[n].Stale != "" {
+			if prs[n].State != changes.StateOpen || prs[n].MergeState != "" || prs[n].Review != "" || prs[n].Stale != "" {
 				t.Fatalf("null %v open #%d: %+v", null, n, prs[n])
 			}
 		}
@@ -1230,13 +1272,41 @@ func TestForgePullRequestsLarge(t *testing.T) {
 		if prs, status = loadForge(forge); status.State != changes.Partial || status.Reason != "reading older pull requests, 125 read, will resume" || len(prs) != 129 || prs[2].Updated.Hour() != 1 {
 			t.Fatalf("null %v second refresh: %+v, %d listed, #2 %+v", null, status, len(prs), prs[2])
 		}
-		if prs, status = loadForge(forge); status.State != changes.OK || len(prs) != 130 || prs[121].MergeState != "clean" {
+		if prs, status = loadForge(forge); status.State != changes.OK || len(prs) != 130 || prs[121].State != changes.StateOpen {
 			t.Fatalf("null %v resumed refresh: %+v, %d listed", null, status, len(prs))
 		}
 		// A failed open pass leaves every cached entry stale.
 		f.pullsFail = true
 		if prs, status = loadForge(forge); status.State != changes.Unavailable || len(prs) != 130 || prs[1].Stale == "" || prs[2].Stale == "" {
 			t.Fatalf("null %v failed open pass: %+v, %d listed", null, status, len(prs))
+		}
+	}
+}
+
+// Catches more linked pull requests than one query should carry read in one,
+// or out of order, so active items' pull requests wait behind the others.
+func TestForgeVerdictChunks(t *testing.T) {
+	s, f := newFixture(t)
+	forge := &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var linked []changes.PullID
+	var want [][]int
+	for i := range 120 {
+		f.pulls = append(f.pulls, map[string]any{"number": i + 1, "title": "pr", "state": "OPEN", "createdAt": at, "updatedAt": at, "mergeStateStatus": "CLEAN", "commits": map[string]any{"nodes": []any{}}})
+		linked = append(linked, changes.PullID{Repo: "owner/repo", Number: 120 - i})
+		if i%50 == 0 {
+			want = append(want, nil)
+		}
+		want[len(want)-1] = append(want[len(want)-1], 120-i)
+	}
+	prs, statuses := changes.LoadForges(context.Background(), []changes.Forge{forge})
+	changes.ReadVerdicts(context.Background(), changes.Options{Forges: []changes.Forge{forge}}, prs, statuses, linked)
+	if !reflect.DeepEqual(f.verdictsAsked, want) || statuses[0].State != changes.OK {
+		t.Fatalf("asked %v: %+v", f.verdictsAsked, statuses[0])
+	}
+	for _, pr := range prs {
+		if pr.MergeState != "clean" {
+			t.Fatalf("#%d: %+v", pr.Number, pr)
 		}
 	}
 }
@@ -1758,6 +1828,9 @@ func TestSprintConfiguredIterationField(t *testing.T) {
 		t.Fatalf("expected the configured (second, empty) field's catalog, not the other field's: %+v", delta.Sprints)
 	}
 }
+
+// verdictAlias matches one pull request of an aliased verdict query.
+var verdictAlias = regexp.MustCompile(`\bn(\d+):pullRequest\(number:\d+\)`)
 
 func reason(err error, want string) bool {
 	var e *source.Error

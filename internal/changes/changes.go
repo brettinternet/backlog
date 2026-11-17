@@ -161,6 +161,18 @@ type PullRequest struct {
 	Stale           string    `json:"-"`
 }
 
+// PullID names a pull request by its repository and number.
+type PullID struct {
+	Repo   string
+	Number int
+}
+
+// PullVerdict is an open pull request's merge state, review decision, and
+// checks rollup, as PullRequest carries them.
+type PullVerdict struct {
+	MergeState, Review, Checks string
+}
+
 // Status is how one provider of changes fared: git or a forge.
 type Status struct {
 	Provider string `json:"provider"`

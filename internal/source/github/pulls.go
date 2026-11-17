@@ -22,7 +22,8 @@ import (
 // D43), through the account's request queue like the source it reuses. Each
 // refresh reads every open pull request, whose checks change without touching
 // its update time, then a few pages of the others, newest updated since the
-// last refresh first, then continuing an earlier read.
+// last refresh first, then continuing an earlier read. The list skips merge
+// state, review, and checks; Verdicts reads them for linked pull requests.
 type Forge struct {
 	s       *Source
 	cache   string
@@ -46,10 +47,21 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }
 func (f *Forge) Web() string  { return "https://" + f.s.o.Host + "/" + f.s.o.Repo }
 
-// pullsQuery reads mergeStateStatus, reviewDecision, and the checks rollup,
-// which together quadruple a page's time, only when open is set: the list
-// shows them only for an open pull request.
-const pullsQuery = `query($owner:String!,$repo:String!,$first:Int!,$after:String,$states:[PullRequestState!],$open:Boolean!){repository(owner:$owner,name:$repo){pullRequests(first:$first,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision @include(if:$open) mergeStateStatus @include(if:$open) closingIssuesReferences(first:10){nodes{id}} commits(last:1) @include(if:$open){nodes{commit{statusCheckRollup{state}}}}}}}}`
+// pullFields are what the list reads of each pull request. It leaves out
+// mergeStateStatus, reviewDecision, and the checks rollup, which together
+// take most of a page's time; verdictQuery reads them only for the pull
+// requests linked to unfinished items.
+const pullFields = `number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions closingIssuesReferences(first:10){nodes{id}}`
+
+const pullsQuery = `query($owner:String!,$repo:String!,$first:Int!,$after:String,$states:[PullRequestState!]){repository(owner:$owner,name:$repo){pullRequests(first:$first,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{` + pullFields + `}}}}`
+
+// verdictFields are a pull request's merge state, review decision, and
+// checks rollup.
+const verdictFields = `number reviewDecision mergeStateStatus commits(last:1){nodes{commit{statusCheckRollup{state}}}}`
+
+// probeQuery is the list with the checks rollup, so bl doctor learns whether
+// the token can read checks.
+const probeQuery = `query($owner:String!,$repo:String!,$first:Int!){repository(owner:$owner,name:$repo){pullRequests(first:$first,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{` + pullFields + ` commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
 
 const (
 	// openPullsPage and pullsPage are the open and the closed and merged
@@ -74,16 +86,89 @@ type pullNode struct {
 	}
 	MergeCommit             *struct{ Oid string }
 	Additions, Deletions    int
-	ReviewDecision          string
-	MergeStateStatus        string
 	ClosingIssuesReferences struct{ Nodes []struct{ ID string } }
-	Commits                 struct {
+}
+
+type verdictNode struct {
+	Number           int
+	ReviewDecision   string
+	MergeStateStatus string
+	Commits          struct {
 		Nodes []struct {
 			Commit struct {
 				StatusCheckRollup *struct{ State string }
 			}
 		}
 	}
+}
+
+func (n verdictNode) verdict() changes.PullVerdict {
+	v := changes.PullVerdict{
+		Review:     map[string]string{"APPROVED": changes.ReviewApproved, "CHANGES_REQUESTED": changes.ReviewChanges, "REVIEW_REQUIRED": changes.ReviewRequested}[n.ReviewDecision],
+		MergeState: strings.ToLower(textutil.Line(n.MergeStateStatus)),
+	}
+	if len(n.Commits.Nodes) > 0 && n.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
+		v.Checks = map[string]string{"SUCCESS": changes.ChecksPassing, "FAILURE": changes.ChecksFailing, "ERROR": changes.ChecksFailing, "PENDING": changes.ChecksPending, "EXPECTED": changes.ChecksPending}[n.Commits.Nodes[0].Commit.StatusCheckRollup.State]
+	}
+	return v
+}
+
+// maxVerdicts is the most pull requests one verdict query reads.
+const maxVerdicts = 50
+
+// Verdicts reads the merge state, review decision, and checks of this
+// repository's pull requests among pulls, at most maxVerdicts to a query, in
+// pulls' order. Keys for other repositories are skipped. On failure it
+// returns those read with the error.
+func (f *Forge) Verdicts(ctx context.Context, pulls []changes.PullID) (map[changes.PullID]changes.PullVerdict, error) {
+	var numbers []int
+	for _, k := range pulls {
+		if strings.EqualFold(k.Repo, f.s.o.Repo) {
+			numbers = append(numbers, k.Number)
+		}
+	}
+	if len(numbers) == 0 {
+		return nil, nil
+	}
+	c, err := f.s.authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client := f.s.client
+	client.Refusals = true
+	out := map[changes.PullID]changes.PullVerdict{}
+	for chunk := range slices.Chunk(numbers, maxVerdicts) {
+		var q strings.Builder
+		q.WriteString(`query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){`)
+		for _, n := range chunk {
+			fmt.Fprintf(&q, "n%d:pullRequest(number:%d){%s}", n, n, verdictFields)
+		}
+		q.WriteString("}}")
+		response, err := f.s.requestWith(ctx, client, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": q.String(), "variables": f.s.variables()})
+		if err == nil && response.Status >= 300 {
+			err = client.Refusal(response.Status, response.Body)
+		}
+		if err != nil {
+			return out, err
+		}
+		// A pull request deleted since the list, or whose checks the token
+		// can't read, leaves the rest readable.
+		var result struct{ Repository map[string]*verdictNode }
+		if err := decodeAllowing(response.Body, &result, func(kind string, path []any) bool {
+			return (kind == "FORBIDDEN" || kind == "NOT_FOUND") && len(path) >= 2 && path[0] == "repository" && (len(path) == 2 || path[2] == "commits")
+		}); err != nil {
+			return out, err
+		}
+		if result.Repository == nil {
+			return out, source.Refuse("not-found", "repository unavailable")
+		}
+		for _, n := range result.Repository {
+			if n != nil {
+				out[changes.PullID{Repo: f.s.o.Repo, Number: n.Number}] = n.verdict()
+			}
+		}
+	}
+	return out, nil
 }
 
 // PullRequests returns the cached list after merging in this refresh's
@@ -169,7 +254,7 @@ const olderPages = 3
 // from. On failure it returns those read with the page cursor after them.
 func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after string, since time.Time, pages *int) ([]changes.PullRequest, string, error) {
 	vars := f.s.variables()
-	vars["states"], vars["open"] = []string{"CLOSED", "MERGED"}, state == "OPEN"
+	vars["states"] = []string{"CLOSED", "MERGED"}
 	first := pullsPage
 	if state != "" {
 		vars["states"], first = []string{state}, openPullsPage
@@ -250,10 +335,10 @@ func (f *Forge) Probe(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	vars := f.s.variables()
-	vars["first"], vars["merge"] = minPullsPage, false
+	vars["first"] = minPullsPage
 	client := f.s.client
 	client.Refusals = true
-	response, err := f.s.requestWith(ctx, client, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": pullsQuery, "variables": vars})
+	response, err := f.s.requestWith(ctx, client, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": probeQuery, "variables": vars})
 	if err == nil && response.Status >= 300 {
 		err = client.Refusal(response.Status, response.Body)
 	}
@@ -299,8 +384,6 @@ func (n pullNode) pull(repo string) changes.PullRequest {
 		State: strings.ToLower(n.State), Draft: n.IsDraft, CrossRepository: n.IsCrossRepository,
 		Head: n.HeadRefName, HeadSHA: n.HeadRefOid, Additions: n.Additions, Deletions: n.Deletions,
 		Created: n.CreatedAt.UTC(), Updated: n.UpdatedAt.UTC(),
-		Review:     map[string]string{"APPROVED": changes.ReviewApproved, "CHANGES_REQUESTED": changes.ReviewChanges, "REVIEW_REQUIRED": changes.ReviewRequested}[n.ReviewDecision],
-		MergeState: strings.ToLower(textutil.Line(n.MergeStateStatus)),
 	}
 	if n.MergedAt != nil {
 		pr.Merged = n.MergedAt.UTC()
@@ -316,9 +399,6 @@ func (n pullNode) pull(repo string) changes.PullRequest {
 	}
 	for _, issue := range n.ClosingIssuesReferences.Nodes {
 		pr.Closes = append(pr.Closes, issue.ID)
-	}
-	if len(n.Commits.Nodes) > 0 && n.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
-		pr.Checks = map[string]string{"SUCCESS": changes.ChecksPassing, "FAILURE": changes.ChecksFailing, "ERROR": changes.ChecksFailing, "PENDING": changes.ChecksPending, "EXPECTED": changes.ChecksPending}[n.Commits.Nodes[0].Commit.StatusCheckRollup.State]
 	}
 	return pr
 }

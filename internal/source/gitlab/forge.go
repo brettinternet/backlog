@@ -127,6 +127,12 @@ func (f *Forge) authenticate(ctx context.Context) (remote.Credential, error) {
 	})
 }
 
+// Verdicts reads nothing: the list carries each merge request's merge state,
+// approval, and pipeline.
+func (f *Forge) Verdicts(context.Context, []changes.PullID) (map[changes.PullID]changes.PullVerdict, error) {
+	return nil, nil
+}
+
 // PullRequests returns the cached list after merging in every merge request
 // updated since the last refresh. On failure it returns the cached list with
 // the error, so its entries read as stale.

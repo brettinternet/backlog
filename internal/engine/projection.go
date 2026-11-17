@@ -90,6 +90,9 @@ type Projection struct {
 	Completions         []query.Candidate
 	Ungrouped           bool
 	Catalog             *Catalog
+	// Linked is LinkedPulls of the latest link pass, for the changes
+	// tracker's next forge load.
+	Linked []changes.PullID
 }
 type projectionRequest struct {
 	project       string
@@ -386,6 +389,7 @@ func (p *Projector) run() {
 	var catalog *Catalog
 	var linkedState *changes.State
 	var linked map[model.Ref][]changes.Change
+	var verdictPulls []changes.PullID
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -540,6 +544,7 @@ func (p *Projector) run() {
 					}
 				}
 				linkedState, linked = req.changes, LinkChanges(p.cfg, base.Items, req.changes)
+				verdictPulls = LinkedPulls(base.Items, linked)
 				for ref, cs := range linked {
 					if state, ok := base.States[ref]; ok {
 						state.Changes = queryChanges(cs)
@@ -550,7 +555,7 @@ func (p *Projector) run() {
 				next.changes = linked
 				catalog = &next
 			}
-			result.Catalog = catalog
+			result.Catalog, result.Linked = catalog, verdictPulls
 			base.Now = now
 			result.NextClaimExpiry, result.MineClaims = claimExpiry, mineClaims
 			if claimErr != nil {

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 )
 
-// Load reads one project's local changes and every forge once, as bl changes
-// and MCP do.
+// Load reads one project's local changes and every forge's list once, as bl
+// changes and MCP do before linking; ReadVerdicts then reads what the list
+// leaves out for the pull requests linked.
 func Load(ctx context.Context, o Options) Data {
 	d := LoadLocal(ctx, o, Data{})
 	prs, statuses := LoadForges(ctx, o.Forges)
@@ -41,6 +44,60 @@ func LoadForges(ctx context.Context, forges []Forge) ([]PullRequest, []Status) {
 	return prs, statuses
 }
 
+// ReadVerdicts sets the merge state, review, and checks of the open pull
+// requests in prs that linked names, in its order, then of every other open
+// one in o.PullSources' repositories, through o's forges. Others carry none
+// from GitHub, whose list leaves them out. A forge whose read fails keeps
+// what it read and reports why in statuses, unavailable unless already
+// partial.
+func ReadVerdicts(ctx context.Context, o Options, prs []PullRequest, statuses []Status, linked []PullID) {
+	lower := func(k PullID) PullID { return PullID{strings.ToLower(k.Repo), k.Number} }
+	index := map[PullID]int{}
+	for i, pr := range prs {
+		if pr.State == StateOpen && pr.Stale == "" {
+			index[lower(PullID{pr.Repo, pr.Number})] = i
+		}
+	}
+	var want []PullID
+	seen := map[PullID]bool{}
+	add := func(k PullID) {
+		if _, ok := index[lower(k)]; ok && !seen[lower(k)] {
+			seen[lower(k)] = true
+			want = append(want, k)
+		}
+	}
+	for _, k := range linked {
+		add(k)
+	}
+	for _, pr := range prs {
+		if slices.ContainsFunc(o.PullSources, func(repo string) bool { return strings.EqualFold(repo, pr.Repo) }) {
+			add(PullID{pr.Repo, pr.Number})
+		}
+	}
+	if len(want) == 0 {
+		return
+	}
+	for _, f := range o.Forges {
+		read, err := f.Verdicts(ctx, want)
+		for k, v := range read {
+			if i, ok := index[lower(k)]; ok {
+				prs[i].MergeState, prs[i].Review, prs[i].Checks = v.MergeState, v.Review, v.Checks
+			}
+		}
+		if err == nil {
+			continue
+		}
+		for i := range statuses {
+			if s := &statuses[i]; s.Provider == f.Name() {
+				s.Reason = strings.TrimPrefix(s.Reason+"; ", "; ") + "merge state, review, and checks: " + err.Error()
+				if s.State == OK {
+					s.State = Unavailable
+				}
+			}
+		}
+	}
+}
+
 // State is every tracked project's changes, keyed as Track was given them. A
 // new pointer means something changed.
 type State struct {
@@ -51,13 +108,17 @@ type State struct {
 // loop (D14): local refs and worktrees every few seconds, which spawns no
 // process unless the default branch moved, and forges every minute, or a few
 // seconds after the last load while one is partial, still reading older pull
-// requests.
+// requests. Each forge load reads the merge state, review, and checks of the
+// pull requests last given to SetLinked; one that names a pull request the
+// last load didn't read loads forges again.
 type Tracker struct {
 	projects map[string]Options
 	latest   atomic.Pointer[State]
 	updates  chan struct{}
 	refresh  chan struct{}
 	forged   chan struct{}
+	linked   atomic.Pointer[[]PullID]
+	relink   chan struct{}
 }
 
 const (
@@ -76,7 +137,7 @@ func Track(ctx context.Context, projects map[string]Options) *Tracker {
 	if !active {
 		return nil
 	}
-	t := &Tracker{projects: projects, updates: make(chan struct{}, 1), refresh: make(chan struct{}, 1), forged: make(chan struct{}, 1)}
+	t := &Tracker{projects: projects, updates: make(chan struct{}, 1), refresh: make(chan struct{}, 1), forged: make(chan struct{}, 1), relink: make(chan struct{}, 1)}
 	go t.run(ctx)
 	return t
 }
@@ -163,6 +224,20 @@ func (t *Tracker) forges() []Forge {
 	return forges
 }
 
+// SetLinked names the open pull requests linked to unfinished items, active
+// items' first, from the latest link pass. It is cheap enough for the UI
+// loop: the tracker compares them on its own goroutine.
+func (t *Tracker) SetLinked(pulls []PullID) {
+	if t == nil {
+		return
+	}
+	t.linked.Store(&pulls)
+	select {
+	case t.relink <- struct{}{}:
+	default:
+	}
+}
+
 // Refresh reloads local data and every forge now.
 func (t *Tracker) Refresh() {
 	select {
@@ -182,13 +257,27 @@ func (t *Tracker) run(ctx context.Context) {
 	}
 	// again fires partialInterval after a load that left a forge partial.
 	var again <-chan time.Time
+	// read is the linked pull requests the last load read.
+	read := map[PullID]bool{}
+	linked := func() []PullID {
+		if pulls := t.linked.Load(); pulls != nil {
+			return *pulls
+		}
+		return nil
+	}
 	loadForges := func() {
 		partial := false
+		pulls := linked()
 		for key, o := range t.projects {
 			prs[key], forges[key] = LoadForges(ctx, o.Forges)
 			for _, status := range forges[key] {
 				partial = partial || status.State == Partial
 			}
+			ReadVerdicts(ctx, o, prs[key], forges[key], pulls)
+		}
+		clear(read)
+		for _, k := range pulls {
+			read[PullID{strings.ToLower(k.Repo), k.Number}] = true
 		}
 		again = nil
 		if partial {
@@ -229,6 +318,11 @@ func (t *Tracker) run(ctx context.Context) {
 			loadForges()
 			ticked = true
 		case <-again:
+			loadForges()
+		case <-t.relink:
+			if !slices.ContainsFunc(linked(), func(k PullID) bool { return !read[PullID{strings.ToLower(k.Repo), k.Number}] }) {
+				continue
+			}
 			loadForges()
 		case <-t.refresh:
 			loadLocal()

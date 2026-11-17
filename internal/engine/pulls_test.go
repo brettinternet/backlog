@@ -9,8 +9,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/brettinternet/backlog/internal/engine"
@@ -155,5 +159,137 @@ func TestLinkedPullsHidden(t *testing.T) {
 	c := &coordinator{state: model.SessionState{State: "held", Claim: &model.ClaimInfo{ID: "claim", Resources: []string{"prs:#45"}, Session: "loop"}}}
 	if result := engine.ReleaseItem(engine.WithCoordination(ctx, c, model.CallerContext{Session: "loop"}), hidden[0]); result.Outcome != "released" {
 		t.Fatalf("release of a hidden held pull request: %+v", result)
+	}
+}
+
+// Catches one-shot loads (bl changes, bl ls with a change term) reading merge
+// state, review, and checks in the list for every open pull request, or
+// showing none because they read them before linking; the read not putting
+// active items' pull requests first; and a github-pulls source's pull
+// requests losing theirs.
+func TestLinkedVerdicts(t *testing.T) {
+	testkit.Isolate(t)
+	pulls := []map[string]any{
+		{"number": 41, "title": "Fix", "headRefName": "bl-2-fix"},
+		{"number": 42, "title": "BL-1 polish", "headRefName": "feature"},
+		{"number": 43, "title": "Old", "headRefName": "bl-3-old"},
+		{"number": 44, "title": "Unrelated", "headRefName": "unrelated"},
+	}
+	for _, pr := range pulls {
+		pr["url"] = fmt.Sprintf("https://github.com/owner/repo/pull/%d", pr["number"])
+		pr["state"], pr["createdAt"], pr["updatedAt"] = "OPEN", "2026-10-22T00:00:00Z", "2026-10-22T00:00:00Z"
+		pr["author"] = map[string]any{"login": "ann", "__typename": "User"}
+		pr["mergeStateStatus"], pr["reviewDecision"] = "CLEAN", "APPROVED"
+		pr["commits"] = map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"state": "SUCCESS"}}}}}
+	}
+	alias := regexp.MustCompile(`\bn(\d+):pullRequest\(number:\d+\)`)
+	var mu sync.Mutex
+	var asked [][]int
+	listVerdicts := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		var req struct{ Query string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		switch {
+		case strings.Contains(req.Query, "viewer"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"viewer": map[string]any{"login": "alice"}}})
+		case strings.Contains(req.Query, "pullRequests("):
+			listVerdicts = listVerdicts || strings.Contains(req.Query, "mergeStateStatus") || strings.Contains(req.Query, "reviewDecision") || strings.Contains(req.Query, "statusCheckRollup")
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": pulls}}}})
+		case alias.MatchString(req.Query):
+			repository := map[string]any{}
+			var numbers []int
+			for _, m := range alias.FindAllStringSubmatch(req.Query, -1) {
+				number, _ := strconv.Atoi(m[1])
+				numbers = append(numbers, number)
+				repository["n"+m[1]] = pulls[number-41]
+			}
+			asked = append(asked, numbers)
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"repository": repository}})
+		default:
+			t.Errorf("unexpected request %s %q", r.URL.Path, req.Query)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	original := http.DefaultTransport
+	http.DefaultTransport = readRoundTrip(func(r *http.Request) (*http.Response, error) {
+		copy := r.Clone(r.Context())
+		copy.URL.Host = u.Host
+		return server.Client().Transport.RoundTrip(copy)
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+	t.Setenv("BL_PULLS_TOKEN", "pulls-test-credential")
+
+	root := t.TempDir()
+	write := func(path, value string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(root, ".git", "config"), "[core]\n bare = false\n[remote \"origin\"]\n url = https://github.com/owner/repo\n")
+	settings := "version: 1\nproject: {id: a}\nstatuses: [{key: todo, name: Todo, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\n"
+	write(filepath.Join(root, "backlog.yaml"), settings+"sources: [{id: tasks, type: native, path: items, prefix: BL}]\n")
+	for id, status := range map[string]string{"BL-1": "todo", "BL-2": "doing", "BL-3": "done"} {
+		write(filepath.Join(root, "items", id+".md"), fmt.Sprintf("---\nid: %s\ntitle: Item %s\nstatus: %s\ncreated: 2026-10-22T00:00:00Z\nupdated: 2026-10-22T00:00:00Z\n---\n", id, id, status))
+	}
+	paths, err := project.UserPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(paths.ConfigFile, "accounts:\n  github:\n    - name: work\n      host: github.com\n      user: alice\n      env: BL_PULLS_TOKEN\n")
+	resolve := func() project.Config {
+		t.Helper()
+		cfg, err := project.Resolve(paths, root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := cfg.GrantTrust(); err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	cfg := resolve()
+	ctx := context.Background()
+	merges := func(cfg project.Config) map[string]string {
+		t.Helper()
+		reads, err := engine.LoadReads(ctx, cfg, false, "merge:ready")
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for ref, st := range reads.Query.States {
+			for _, c := range st.Changes {
+				out[ref.Source+":"+ref.ID] += c.Merge + "/" + c.Checks + "/" + c.Review
+			}
+		}
+		return out
+	}
+
+	result, err := engine.ItemChanges(ctx, cfg, model.Ref{Source: "tasks", ID: "BL-1"})
+	if err != nil || len(result.Changes) != 1 || result.Changes[0].Number != 42 || result.Changes[0].MergeState != "clean" || result.Changes[0].Checks != "passing" {
+		t.Fatalf("bl changes: %v %+v", err, result.Changes)
+	}
+	if listVerdicts || !reflect.DeepEqual(asked, [][]int{{41, 42}}) {
+		t.Fatalf("list named verdicts %v, verdicts asked %v", listVerdicts, asked)
+	}
+	asked = nil
+	if got := merges(cfg); got["tasks:BL-1"] != "ready/passing/approved" || got["tasks:BL-2"] != "ready/passing/approved" || got["tasks:BL-3"] != "//" || !reflect.DeepEqual(asked, [][]int{{41, 42}}) {
+		t.Fatalf("ls merge:ready: %v, asked %v", got, asked)
+	}
+
+	write(filepath.Join(root, "backlog.yaml"), settings+"sources: [{id: tasks, type: native, path: items, prefix: BL}, {id: prs, type: github-pulls, repo: owner/repo}]\n")
+	cfg = resolve()
+	asked = nil
+	// #44's own item is active, so it comes before todo BL-1's #42; #43,
+	// linked only to done BL-3, comes last as the source's.
+	if got := merges(cfg); got["prs:#44"] != "ready/passing/approved" || got["tasks:BL-3"] != "ready/passing/approved" || !reflect.DeepEqual(asked, [][]int{{41, 44, 42, 43}}) {
+		t.Fatalf("with a github-pulls source: %v, asked %v", got, asked)
 	}
 }

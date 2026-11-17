@@ -874,6 +874,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitProjection()
 		}
 		m.applied = msg.Request
+		m.opts.Changes.SetLinked(msg.Linked)
 		m.claimExpiry, m.mineClaims = msg.NextClaimExpiry, msg.MineClaims
 		// While candidates guide the word being typed, its error or unknown
 		// value would only flash; enter reports it.

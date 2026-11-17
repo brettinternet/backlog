@@ -172,11 +172,15 @@ last stopped until they reach the newest 1,000 or the end. Until then the
 forge reports `partial`, such as `reading older pull requests, 300 read, will
 resume`, and its pull requests are current, not stale; a failed closed and
 merged page that can resume is `partial` too. A failed open pass is
-`unavailable`, with the cached pull requests stale. Only the open pass reads
-the merge state, review decision, and checks, which together quadruple a page's
-time; the closed and merged pass reads 100 per page without them, so a closed
-or merged GitHub pull request shows no list checks or review, and `checks:` and
-`review:` don't match through one. Its change view still reads them. The
+`unavailable`, with the cached pull requests stale. The list read skips the
+merge state, review decision, and checks, which together quadruple a page's
+time. After linking, one aliased GraphQL query reads them for the open pull
+requests linked to unfinished items, active items' first, at most 50 per
+query, plus every open pull request of a repository a `github-pulls` source
+lists. The TUI reads them with each refresh, and refreshes early when the
+linked set gains a pull request. Any other GitHub pull request shows no list checks, review, or merge
+state, and `checks:`, `review:`, and `merge:` don't match through one. Its
+change view still reads them. The
 token needs read access to pull requests, or GitLab's `read_api` scope; a pull
 request whose checks or closing references it can't read still links by
 branch, title, and body.
