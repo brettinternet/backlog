@@ -350,9 +350,35 @@ func TestDoctorForges(t *testing.T) {
 		return "    - {name: " + name + ", host: github.com, user: alice, env: BL_FORGE_TOKEN}\n"
 	}
 
+	type configForge struct {
+		Type, Host, Repo, Account string
+		Implicit                  bool
+	}
+	// config show lists the forges doctor checks, or says why there are none
+	// in doctor's words.
+	configShow := func() (forges []configForge, reason, fix string) {
+		t.Helper()
+		code, out, _ := run("-C", root, "--json", "config", "show")
+		var result struct {
+			Data struct {
+				Changes struct {
+					Forges      []configForge
+					Reason, Fix string
+				}
+			}
+		}
+		if err := json.Unmarshal([]byte(out), &result); err != nil || code != 0 {
+			t.Fatalf("config show: %d %v %s", code, err, out)
+		}
+		return result.Data.Changes.Forges, result.Data.Changes.Reason, result.Data.Changes.Fix
+	}
+
 	c, _ := doctor(0)
 	if c.Status != "warn" || !strings.Contains(c.Message, "no GitHub account for github.com") || !strings.Contains(c.Fix, "accounts: {github: [{name: personal, host: github.com") || !strings.Contains(c.Fix, "bl auth login github personal") {
 		t.Fatalf("no account: %+v", c)
+	}
+	if forges, reason, fix := configShow(); len(forges) != 0 || reason != c.Message || fix != c.Fix {
+		t.Fatalf("config show without account: %+v %q %q", forges, reason, fix)
 	}
 
 	put(t, paths.ConfigFile, "accounts:\n  github:\n"+account("personal")+account("work"))
@@ -361,6 +387,9 @@ func TestDoctorForges(t *testing.T) {
 	}
 
 	put(t, paths.ConfigFile, "accounts:\n  github:\n"+account("personal"))
+	if forges, reason, _ := configShow(); len(forges) != 1 || forges[0] != (configForge{"github", "github.com", "owner/repo", "personal", true}) || reason != "" {
+		t.Fatalf("config show implicit forge: %+v %q", forges, reason)
+	}
 	if code, out, _ := writeRun(root, "", "changes", "12"); code != 0 {
 		t.Fatalf("changes: %d %s", code, out)
 	}
