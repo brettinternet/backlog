@@ -54,7 +54,7 @@ func TestClonedConfigIsInertUntilTrust(t *testing.T) {
 	git(home, "clone", "--quiet", original, clone)
 	// Keep the actual provider out of the test. Version probes are local only.
 	fakeWorklease(t)
-	for _, args := range [][]string{{"--help"}, {"version"}, {"config", "show", "--json"}, {"trust", "--show", "--json"}, {"doctor", "--json"}, {"doctor", "--online", "--json"}, {"ls", "--json"}, {"next", "--json"}, {"show", "1", "--json"}, {"new", "Canary", "--json"}, {"events", "--json"}, {"check", "--json"}, {"mcp"}} {
+	for _, args := range [][]string{{"--help"}, {"version"}, {"config", "show", "--json"}, {"trust", "--show", "--json"}, {"doctor", "--json"}, {"doctor", "--online", "--json"}, {"ls", "--json"}, {"next", "--json"}, {"show", "1", "--json"}, {"new", "Canary", "--json"}, {"events", "--json"}, {"check", "--json"}, {"mcp"}, {"show", "", "--generate-shell-completion"}, {"ls", "status:", "--generate-shell-completion"}} {
 		code, out, _ := run(append([]string{"-C", clone}, args...)...)
 		if args[0] == "doctor" {
 			assertDoctor(t, code, out, true)
@@ -62,7 +62,7 @@ func TestClonedConfigIsInertUntilTrust(t *testing.T) {
 				t.Fatalf("untrusted hooks not reported inert: %s", out)
 			}
 		}
-		if args[0] == "ls" && (code != 6 || !strings.Contains(out, "untrusted")) {
+		if args[0] == "ls" && args[1] == "--json" && (code != 6 || !strings.Contains(out, "untrusted")) {
 			t.Fatalf("source not gated: %d %s", code, out)
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -96,6 +96,15 @@ func TestClonedConfigIsInertUntilTrust(t *testing.T) {
 	code, out, _ = run("-C", clone, "config", "show", "--json")
 	if err := json.Unmarshal([]byte(out), &cfg); err != nil || code != 0 || len(cfg.Data.Untrusted()) != 0 {
 		t.Fatalf("grant not loaded: %d %s %v", code, out, err)
+	}
+	// Completion reads only cached rows, even from trusted sources (D16).
+	for _, args := range [][]string{{"show", "", "--generate-shell-completion"}, {"ls", "label:", "--generate-shell-completion"}} {
+		if code, out, stderr := run(append([]string{"-C", clone}, args...)...); code != 0 || stderr != "" {
+			t.Fatalf("trusted completion %v: %d %s %s", args, code, out, stderr)
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) || requests.Load() != 0 {
+			t.Fatalf("trusted completion %v executed or contacted network: %v", args, err)
+		}
 	}
 	// Trust permits execution, but an executable without a valid handshake is unavailable.
 	code, out, _ = run("-C", clone, "ls", "--json")

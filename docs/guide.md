@@ -35,6 +35,20 @@ later.
 
 To build from source, see [Development](development.md#setup).
 
+### Shell completion
+
+`bl completion SHELL` prints a script that completes commands, item IDs, `bl
+set` fields, and queries. Load it from your shell's startup file:
+
+| Shell | Add |
+| --- | --- |
+| bash (`~/.bashrc`) | `eval "$(bl completion bash)"` |
+| zsh (`~/.zshrc`, after `compinit`) | `source <(bl completion zsh)` |
+| fish | Run `bl completion fish > ~/.config/fish/completions/bl.fish` once |
+| PowerShell (`$PROFILE`) | `bl completion pwsh \| Out-String \| Invoke-Expression` |
+
+See [`bl completion`](cli.md#bl-completion-bashzshfishpwsh).
+
 ## Capture work
 
 The examples in this guide form one session in a fresh Git repository:

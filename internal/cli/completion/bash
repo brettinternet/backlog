@@ -1,0 +1,66 @@
+# bl bash completion. Load it with: eval "$(bl completion bash)"
+
+_bl() {
+    local line=${COMP_LINE:0:COMP_POINT}
+    # Split the line as the shell would, removing quotes and backslashes.
+    # COMP_WORDS also splits on : and =, which query terms contain.
+    local -a words
+    local word= quote= started= opened=0 c i
+    for (( i = 0; i < ${#line}; i++ )); do
+        c=${line:i:1}
+        if [[ $quote == "'" ]]; then
+            if [[ $c == "'" ]]; then quote=; else word+=$c; fi
+        elif [[ $quote == '"' ]]; then
+            if [[ $c == '"' ]]; then
+                quote=
+            elif [[ $c == '\' && ${line:i+1:1} == [\"\\\$\`] ]]; then
+                word+=${line:i+1:1}; (( i++ ))
+            else
+                word+=$c
+            fi
+        elif [[ $c == [\'\"] ]]; then
+            quote=$c started=1 opened=${#word}
+        elif [[ $c == '\' ]]; then
+            word+=${line:i+1:1} started=1; (( i++ ))
+        elif [[ $c == [[:space:]] ]]; then
+            [[ -n $started ]] && words+=("$word")
+            word= started=
+        else
+            word+=$c started=1
+        fi
+    done
+    local output
+    output=$("${words[0]}" "${words[@]:1}" "$word" --generate-shell-completion 2>/dev/null) || return
+    # Bash replaces the text after an open quote, or else after the word's
+    # last COMP_WORDBREAKS character, such as : in status:todo.
+    local strip=
+    if [[ -n $quote ]]; then
+        strip=${word:0:opened}
+    else
+        for (( i = ${#word} - 1; i >= 0; i-- )); do
+            if [[ $COMP_WORDBREAKS == *"${word:i:1}"* ]]; then
+                strip=${word:0:i+1}
+                break
+            fi
+        done
+    fi
+    COMPREPLY=()
+    local value
+    while IFS= read -r value; do
+        value=${value%%$'\t'*}
+        [[ -n $value ]] || continue
+        value=${value#"$strip"}
+        if [[ -z $quote ]]; then
+            [[ $value == *[[:space:]\'\"\\\$\`\;\&\|\<\>\(\)\*\?\[\]\{\}\!\#~]* ]] && printf -v value %q "$value"
+        elif [[ $quote == '"' ]]; then
+            value=${value//\\/\\\\}; value=${value//\"/\\\"}
+            value=${value//\$/\\\$}; value=${value//\`/\\\`}
+        fi
+        COMPREPLY+=("$value")
+    done <<< "$output"
+    if [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == *[:=] ]] && type compopt &>/dev/null; then
+        compopt -o nospace
+    fi
+}
+
+complete -o default -o nosort -F _bl bl 2>/dev/null || complete -o default -F _bl bl

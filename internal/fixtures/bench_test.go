@@ -54,7 +54,7 @@ func BenchmarkCLI(b *testing.B) {
 				return peakRSS(cmd.ProcessState)
 			}
 			seeded, committed := false, false
-			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write", "show-history", "history"} {
+			for _, op := range []string{"cold-load", "warm-load", "ls", "next", "show", "write", "show-history", "history", "complete"} {
 				b.Run(op, func(b *testing.B) {
 					if op == "show-history" || op == "history" {
 						if count != 10000 {
@@ -93,6 +93,9 @@ func BenchmarkCLI(b *testing.B) {
 							return run("show", "BL-1")
 						case "history":
 							return run("history", "BL-1")
+						case "complete":
+							// The worst case: every ID is a candidate.
+							return run("show", "", "--generate-shell-completion")
 						case "write":
 							return run("set", "BL-1", fmt.Sprintf("title=Measured title %d", n))
 						}

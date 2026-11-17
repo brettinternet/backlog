@@ -341,6 +341,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			return mcp.ServeStreams(ctx, cfg, in, out)
 		}},
 		instructionsCommand(&directory, out), adapterCommand(&directory, out), hooksCommand(&directory),
+		completionCommand(out),
 	)
 	root.Commands = append(root.Commands, claimCommands(&directory, in, out, errOut)...)
 	root.Commands = append(root.Commands, maintenanceCommands(&directory, out, errOut)...)
@@ -378,7 +379,7 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				if command == "help" {
 					return action(ctx, selected)
 				}
-				if selected.Name != "mcp" && selected.Name != "version" && selected.Name != "instructions" {
+				if selected.Name != "mcp" && selected.Name != "version" && selected.Name != "instructions" && !strings.HasPrefix(command, "completion") {
 					if cfg, err := loadConfig(selected, directory); err == nil {
 						caller := model.CallerContext{Session: selected.String("session"), Run: os.Getenv("WORKLEASE_RUN_ID")}
 						if caller.Session == "" {
@@ -401,6 +402,12 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 		}
 		return nil
 	})
+	if len(args) > 1 && args[len(args)-1] == completionMarker {
+		if err := complete(ctx, root, args[1:len(args)-1], out); err != nil {
+			return 1
+		}
+		return 0
+	}
 	if err := root.Run(ctx, args); err != nil {
 		var status exitStatus
 		if errors.As(err, &status) {

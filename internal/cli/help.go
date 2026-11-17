@@ -43,6 +43,16 @@ Examples:
   bl set 12 status=in-progress priority=high
   bl set 12 13 label+=bug blocked_by+=7`
 
+const completionHelp = `Prints a script that completes commands, flags, item IDs, bl set fields and
+values, and queries from config and cached items. Completion never runs
+hooks, actions, adapters, or Git, and never contacts a provider.
+
+Examples:
+  eval "$(bl completion bash)"      # ~/.bashrc
+  source <(bl completion zsh)       # ~/.zshrc
+  bl completion fish > ~/.config/fish/completions/bl.fish
+  bl completion pwsh | Out-String | Invoke-Expression   # $PROFILE`
+
 const moveHelp = `Places the items, in the order given, together just before or after X by
 writing new rank keys. Placing beside an unranked item first ranks the
 unranked items shown before it, so nothing else changes position. Native

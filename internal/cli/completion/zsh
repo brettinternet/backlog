@@ -1,0 +1,34 @@
+#compdef bl
+# bl zsh completion. Load it with: source <(bl completion zsh)
+
+_bl() {
+    local -a lines values displays open opendisplays
+    local line value display
+    lines=("${(@f)$(${(Q)words[1]} "${(@Q)words[2,CURRENT-1]}" "${(Q)words[CURRENT]}" --generate-shell-completion 2>/dev/null)}")
+    for line in $lines; do
+        value=${line%%$'\t'*}
+        [[ -n $value ]] || continue
+        display=$value
+        [[ $line == *$'\t'* ]] && display="$value  -- ${line#*$'\t'}"
+        # A field name such as status: or status= is completed without a space.
+        if [[ $value == *[:=] ]]; then
+            open+=("$value")
+            opendisplays+=("$display")
+        else
+            values+=("$value")
+            displays+=("$display")
+        fi
+    done
+    if (( ! $#values && ! $#open )); then
+        _files
+        return
+    fi
+    compadd -V bl -l -d displays -a values
+    compadd -V bl -l -S '' -d opendisplays -a open
+}
+
+if [[ $funcstack[1] == _bl ]]; then
+    _bl "$@"
+else
+    compdef _bl bl
+fi

@@ -1,0 +1,14 @@
+# bl fish completion. Install it with: bl completion fish > ~/.config/fish/completions/bl.fish
+
+function __bl_complete
+    set -l words
+    if commandline -xpc >/dev/null 2>&1
+        set words (commandline -xpc)
+    else
+        set words (commandline -opc)
+    end
+    $words[1] $words[2..-1] (commandline -ct) --generate-shell-completion 2>/dev/null
+end
+
+complete -c bl -e
+complete -c bl -f -k -a '(__bl_complete)'

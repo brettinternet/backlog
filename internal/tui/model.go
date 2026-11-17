@@ -278,6 +278,10 @@ type tabStop struct {
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
 // never ready to work; fb toggles them.
 var viewNames = []string{"Next", "Active", "Mine", "Open", "Board"}
+
+// BuiltinViews names the tabs every TUI has, before saved views.
+func BuiltinViews() []string { return slices.Clone(viewNames) }
+
 var viewQueries = []string{"is:ready sort:next", "category:active group:status", "assignee:me is:open group:status", "is:open group:status", "is:open " + hideDrafts + " group:status"}
 
 // hideDrafts excludes drafts: items in a backlog-category status (design.md D29).
