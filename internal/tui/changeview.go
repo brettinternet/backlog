@@ -79,7 +79,11 @@ func (m Model) followChangeLink() (tea.Model, tea.Cmd) {
 	case strings.HasPrefix(link, linkReview):
 		login := strings.TrimPrefix(link, linkReview)
 		m.reviewEntry = reviewURL(m.review.read, login)
-		if m.reviewEntry == "" && login != "" {
+		// A review without a comment has no Conversation entry, so only a
+		// reviewer still requested hasn't reviewed.
+		if m.reviewEntry == "" && login != "" && m.review.read != nil && slices.ContainsFunc(m.review.read.Reviewers, func(r changes.Reviewer) bool {
+			return r.Login == login && r.State == changes.ReviewRequested
+		}) {
 			m.notice = textutil.Line(login) + " hasn't reviewed yet."
 			return m, nil
 		}

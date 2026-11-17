@@ -854,4 +854,10 @@ scripts/tui-snapshot --width 160 --height 48 --keys g t g t g t -- bin/bl -C /pa
 ```
 
 The helper runs a private tmux server, waits for the render to settle, prints the
-pane, and shuts down its own server.
+pane, and shuts down its own server. `--wait TEXT` holds the keys until the
+screen shows TEXT, such as forge data that arrives after the first paint, and a
+bare `@` among the keys waits for the screen to settle before the rest:
+
+```sh
+scripts/tui-snapshot --width 80 --height 40 --wait '⇡#45' --keys Enter @ BTab BTab @ Enter -- bin/bl -C /path/to/project tui
+```

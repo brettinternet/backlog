@@ -1355,6 +1355,15 @@ func TestChangeViewReview(t *testing.T) {
 	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#r1" {
 		t.Fatalf("enter on unresolved threads opened tab %d at %d", m.detailTab, m.entryCursor)
 	}
+	// ann approved without a comment, so has no Conversation entry, but has
+	// reviewed.
+	_ = m.switchDetailTab(tabChangeOverview)
+	m = settleDetail(t, m)
+	m.entryCursor = slices.Index(m.detailLinks, linkReview+"ann")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || strings.Contains(m.notice, "hasn't reviewed") {
+		t.Fatalf("enter on ann's approval: tab %d, notice %q", m.detailTab, m.notice)
+	}
 
 	// Past six checks, passing ones fold into one entry that enter and za
 	// toggle; a conflict's enter opens ! on the change's actions, and the
