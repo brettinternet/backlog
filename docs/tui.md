@@ -542,6 +542,11 @@ switches it. `N` creates a child of the selected item, in its source. Sources
 that can't create disable both.
 On a board, the focused column sets the status.
 
+When the title matches an open item in the source, as `bl new` checks, `enter`
+shows the matches instead of creating, and a second `enter` creates. `esc`
+dismisses the matches; changing the title checks again. The full form does the
+same.
+
 `+` on a pull request item (`github-pulls`) adopts it: quick-add opens with the
 pull request's title, escaped so it stays the title, and its URL in `refs`. The
 source and status are the ones `n` would pick within the pull request's project,

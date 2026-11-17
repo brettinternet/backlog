@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schema = 4
+const schema = 5
 
 // build identifies the executable that wrote cached rows. Parsed items are
 // opaque gob values, so a parser or model change in a new binary must discard
@@ -267,7 +267,7 @@ func (s Store) open(ctx context.Context) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version != 0 && version != 2 && version != 3 && version != schema {
+	if version != 0 && version != 2 && version != 3 && version != 4 && version != schema {
 		return fail(fmt.Errorf("cache schema %d, expected %d", version, schema))
 	}
 	if version == 0 {
@@ -277,15 +277,26 @@ CREATE TABLE metadata(generation TEXT NOT NULL, build TEXT NOT NULL, revision TE
 INSERT INTO metadata VALUES ('','','');
 CREATE TABLE id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
 CREATE TABLE id_items(id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(id,path));
-PRAGMA user_version=4;`)
+CREATE TABLE titles(path TEXT PRIMARY KEY, key TEXT NOT NULL);
+CREATE INDEX titles_key ON titles(key);
+PRAGMA user_version=5;`)
 		if err != nil {
 			return fail(err)
 		}
-	} else if version == 2 || version == 3 {
-		_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
+	} else if version != schema {
+		migration := ""
+		if version < 4 {
+			migration = `CREATE TABLE IF NOT EXISTS id_directories(path TEXT PRIMARY KEY, identity TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS id_items(id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(id,path));
 ALTER TABLE metadata ADD COLUMN revision TEXT NOT NULL DEFAULT '';
-PRAGMA user_version=4;`)
+`
+		}
+		// Clearing build makes the next refresh reparse every item, which
+		// fills the title index for rows cached before it existed.
+		_, err = db.ExecContext(ctx, migration+`CREATE TABLE IF NOT EXISTS titles(path TEXT PRIMARY KEY, key TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS titles_key ON titles(key);
+UPDATE metadata SET build='';
+PRAGMA user_version=5;`)
 		if err != nil {
 			return fail(err)
 		}
@@ -373,7 +384,7 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 	}
 	var records []*cachedRecord
 	if changed {
-		if _, err = tx.ExecContext(ctx, `DELETE FROM items; DELETE FROM search;`); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM items; DELETE FROM search; DELETE FROM titles;`); err != nil {
 			return Snapshot{}, err
 		}
 	} else {
@@ -436,6 +447,9 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 			if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
 				return Snapshot{}, err
 			}
+			if _, err = tx.ExecContext(ctx, `DELETE FROM titles WHERE path=?`, path); err != nil {
+				return Snapshot{}, err
+			}
 			continue
 		}
 		if !exists || r.Identity != identity {
@@ -447,6 +461,9 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 				}
 			}
 			if _, err = tx.ExecContext(ctx, `INSERT INTO search(path,text) VALUES(?,?)`, path, strings.ToLower(query.SearchText(item))); err != nil {
+				return Snapshot{}, err
+			}
+			if _, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO titles(path,key) VALUES(?,?)`, path, model.TitleKey(item.Title)); err != nil {
 				return Snapshot{}, err
 			}
 		}
@@ -465,6 +482,9 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		}
 		changed = true
 		if _, err = tx.ExecContext(ctx, `DELETE FROM search WHERE path=?`, path); err != nil {
+			return Snapshot{}, err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM titles WHERE path=?`, path); err != nil {
 			return Snapshot{}, err
 		}
 	}
@@ -491,6 +511,54 @@ func refresh(ctx context.Context, db *sql.DB, files []string, covered func(strin
 		return Snapshot{}, err
 	}
 	return snapshot, tx.Commit()
+}
+
+// TitlePaths returns the cached paths whose title has key (model.TitleKey).
+// Rows can be stale: callers reread each path. indexed is false until a
+// refresh by this build has filled the index, including for a missing cache.
+func (s Store) TitlePaths(ctx context.Context, key string) (paths []string, indexed bool, err error) {
+	if _, err := os.Stat(s.Path); err != nil {
+		return nil, false, nil
+	}
+	db, err := s.open(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer db.Close()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback()
+	var written string
+	if err = tx.QueryRowContext(ctx, `SELECT build FROM metadata`).Scan(&written); err != nil || written != build {
+		return nil, false, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT path FROM titles WHERE key=? ORDER BY path`, key)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var path string
+		if err = rows.Scan(&path); err != nil {
+			return nil, false, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, true, rows.Err()
+}
+
+// IndexTitle records path's title after a write, so the next TitlePaths sees
+// it before any refresh. The next refresh replaces the row.
+func (s Store) IndexTitle(ctx context.Context, path, title string) error {
+	db, err := s.open(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.ExecContext(ctx, `INSERT OR REPLACE INTO titles(path,key) VALUES(?,?)`, path, model.TitleKey(title))
+	return err
 }
 
 // Initial reads at most two cached batches without refreshing or changing the

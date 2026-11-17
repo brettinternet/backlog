@@ -517,6 +517,7 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		if err := s.commitWrite(ctx, m, item, []string{path}, func() error { return atomicWrite(path, data, 0644) }); err != nil {
 			return fail(err)
 		}
+		s.indexTitle(ctx, path, item.Title)
 		doc, err := format.Parse(data)
 		if err != nil {
 			return fail(err)
@@ -563,6 +564,9 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 		}); err != nil {
 			return fail(err)
 		}
+		if m.Op == model.Unarchive {
+			s.indexTitle(ctx, target, doc.Item().Title)
+		}
 		return s.item(doc), nil
 	}
 	m.Ref.ID = doc.Item().Ref.ID // permit natural-ID lookup of padded imports
@@ -585,7 +589,53 @@ func (s *Source) Apply(ctx context.Context, m model.Mutation) (model.Item, error
 	if err := s.commitWrite(ctx, m, s.item(next), []string{path}, func() error { return atomicWrite(path, next.Bytes(), info.Mode()) }); err != nil {
 		return fail(err)
 	}
+	if next.Item().Title != doc.Item().Title {
+		s.indexTitle(ctx, path, next.Item().Title)
+	}
 	return s.item(next), nil
+}
+
+// indexTitle keeps the cache's title index current for this write. The cache
+// is disposable, so a failure only lets a duplicate-title check miss the item.
+func (s *Source) indexTitle(ctx context.Context, path, title string) {
+	if s.options.CacheDir != "" {
+		_ = cache.New(s.options.CacheDir, s.options.ProjectID, s.options.ID, s.options.Path).IndexTitle(ctx, path, title)
+	}
+}
+
+// FindTitle reads the cache's title index and rereads each candidate, so a
+// stale row never matches. Without a cache it parses every active item.
+func (s *Source) FindTitle(ctx context.Context, key string) ([]model.Item, error) {
+	var paths []string
+	indexed := false
+	if s.options.CacheDir != "" {
+		var err error
+		if paths, indexed, err = cache.New(s.options.CacheDir, s.options.ProjectID, s.options.ID, s.options.Path).TitlePaths(ctx, key); err != nil {
+			return nil, err
+		}
+	}
+	// Before the first refresh fills the index, every item is a candidate.
+	if !indexed {
+		var err error
+		if paths, err = s.paths(false); err != nil {
+			return nil, err
+		}
+	}
+	var items []model.Item
+	for _, path := range paths {
+		if filepath.Dir(path) != s.options.Path {
+			continue
+		}
+		// A vanished or invalid file isn't an open item; bl check reports it.
+		doc, err := s.document(path)
+		if err != nil {
+			continue
+		}
+		if item := s.item(doc); model.TitleKey(item.Title) == key {
+			items = append(items, item)
+		}
+	}
+	return items, nil
 }
 
 func (s *Source) commitWrite(ctx context.Context, m model.Mutation, item model.Item, paths []string, write func() error) error {

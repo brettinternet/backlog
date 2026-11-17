@@ -413,7 +413,12 @@ func (f *Forge) readLog(ctx context.Context, c remote.Credential, job int64) (st
 	if resp.StatusCode != http.StatusOK {
 		return "", "The log is unavailable.", false
 	}
-	lines, err := changes.Excerpt(resp.Body)
+	lines, err := changes.Excerpt(resp.Body, func(line string, cut bool) string {
+		if cut {
+			return f.s.o.Secrets.RedactCut(line)
+		}
+		return f.s.o.Secrets.Redact(line)
+	})
 	switch {
 	case errors.Is(err, changes.ErrLogTooLarge):
 		return "", "The log is over 32 MiB.", true

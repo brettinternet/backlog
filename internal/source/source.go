@@ -79,6 +79,13 @@ type InitialLoader interface {
 	LoadInitial(context.Context) (Delta, error)
 }
 
+// TitleFinder returns the unarchived items whose model.TitleKey is key, from
+// cached rows, without a provider request or, once a cache is built, a parse
+// of every item. A stale cache may miss a match. Wrappers forward it.
+type TitleFinder interface {
+	FindTitle(ctx context.Context, key string) ([]model.Item, error)
+}
+
 // Prepared holds an optimistic result and a version-bound inverse. Native
 // sources derive it from the lossless document, not a reserialized Item.
 // An empty Inverse.Op marks a nonundoable operation.
@@ -122,10 +129,12 @@ const ActivityLimit = 1000
 
 // Error carries a stable machine-readable refusal reason. Created names the
 // item a create left behind when a later step failed: callers must report it
-// and never repeat the create.
+// and never repeat the create. Matches names the open items whose title a
+// refused create repeats.
 type Error struct {
 	Reason, Message string
 	Created         *model.Ref
+	Matches         []model.Ref
 }
 
 func (e *Error) Error() string            { return e.Reason + ": " + e.Message }
