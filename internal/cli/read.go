@@ -231,7 +231,9 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 			}
 			return writeHistory(out, page)
 		}},
-		{Name: "changes", Usage: "Show an item's linked worktrees, branches, pull requests, and landed commits", ArgsUsage: "ID", Action: func(ctx context.Context, cmd *urfave.Command) error {
+		{Name: "changes", Usage: "Show an item's linked worktrees, branches, pull requests, and landed commits", ArgsUsage: "ID", Flags: []urfave.Flag{
+			&urfave.BoolFlag{Name: "detail", Usage: "Add each open pull request's verdict and reasons, check timing, and reviewers"},
+		}, Action: func(ctx context.Context, cmd *urfave.Command) error {
 			if cmd.Args().Len() != 1 {
 				return &Error{Reason: "usage", Message: "changes requires exactly one ID"}
 			}
@@ -243,7 +245,11 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 			if err != nil {
 				return err
 			}
-			result, err := engine.ItemChanges(ctx, cfg, i.Ref)
+			load := engine.ItemChanges
+			if cmd.Bool("detail") {
+				load = engine.ItemChangesDetail
+			}
+			result, err := load(ctx, cfg, i.Ref)
 			if err != nil {
 				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 			}

@@ -193,6 +193,16 @@ type ChangesResult struct {
 // changes and MCP. Every item is read so an ID that names several reads as
 // ambiguous, as it does in the TUI.
 func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (ChangesResult, error) {
+	return loadItemChanges(ctx, cfg, ref, false)
+}
+
+// ItemChangesDetail is ItemChanges with each open pull request's verdict,
+// reviewers, and check timing, for bl changes --detail and MCP detail.
+func ItemChangesDetail(ctx context.Context, cfg project.Config, ref model.Ref) (ChangesResult, error) {
+	return loadItemChanges(ctx, cfg, ref, true)
+}
+
+func loadItemChanges(ctx context.Context, cfg project.Config, ref model.Ref, detail bool) (ChangesResult, error) {
 	reads, err := LoadReads(ctx, cfg, false)
 	if err != nil {
 		return ChangesResult{}, err
@@ -214,6 +224,9 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 		result.Changes = []changes.Change{}
 	}
 	for i, c := range result.Changes {
+		if !detail {
+			result.Changes[i] = c.Brief()
+		}
 		// A tour that can't be read is left out; bl tour ID reports why.
 		if stored, ok, err := LoadTour(cfg, ref, c.ID); err == nil && ok {
 			result.Changes[i].Tour = &changes.Tour{Ref: stored.Tour.Ref, Steps: len(stored.Tour.Steps), Stale: stored.Tour.Ref != c.Head}

@@ -69,12 +69,15 @@ type Change struct {
 	Ahead     *int   `json:"ahead,omitempty"`
 	Behind    *int   `json:"behind,omitempty"`
 	// CheckRuns and Unresolved are an open pull request's checks and
-	// unresolved review threads, read for the item shown.
-	CheckRuns  []Check   `json:"checkRuns,omitempty"`
-	Unresolved *int      `json:"unresolved,omitempty"`
-	Commits    []Commit  `json:"commits,omitempty"`
-	Events     []Event   `json:"events,omitempty"`
-	Updated    time.Time `json:"updated,omitzero"`
+	// unresolved review threads, read for the item shown. Merge and
+	// Reviewers, and each check's exact state and timing, are what Brief drops.
+	CheckRuns  []Check    `json:"checkRuns,omitempty"`
+	Unresolved *int       `json:"unresolved,omitempty"`
+	Merge      *Merge     `json:"merge,omitempty"`
+	Reviewers  []Reviewer `json:"reviewers,omitempty"`
+	Commits    []Commit   `json:"commits,omitempty"`
+	Events     []Event    `json:"events,omitempty"`
+	Updated    time.Time  `json:"updated,omitzero"`
 	// Tour is the tour kept for the change, read for bl changes.
 	Tour *Tour `json:"tour,omitempty"`
 	// ref is the branch ref ahead/behind compares with base, the default

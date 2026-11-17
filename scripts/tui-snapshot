@@ -16,7 +16,8 @@ def main():
     parser.add_argument('--height', type=int, default=24)
     parser.add_argument('--timeout', type=float, default=15)
     parser.add_argument('--ansi', action='store_true', help='keep color and style escapes')
-    parser.add_argument('--keys', nargs='*', default=[], help='tmux keys sent after the first paint')
+    parser.add_argument('--keys', nargs='*', default=[], help='tmux keys sent after the first paint; a bare @ waits for the screen to settle')
+    parser.add_argument('--wait', default='', help='send keys only once the screen shows this text')
     parser.add_argument('command', nargs=argparse.REMAINDER, help='-- bin/bl -C FIXTURE tui')
     args = parser.parse_args()
     command = args.command
@@ -38,21 +39,33 @@ def main():
              '-y', str(args.height), shlex.join(command))
         tmux('set-option', '-g', 'status', 'off')
         deadline = time.monotonic() + args.timeout
-        keys_sent = False
+        # A bare @ key waits for the screen to settle before the keys after it.
+        groups = [[]]
+        for key in args.keys:
+            if key == '@':
+                groups.append([])
+            else:
+                groups[-1].append(key)
+        groups = [group for group in groups if group]
+        first = True
         previous, stable = None, 0
         capture = ['capture-pane', '-p', '-t', 'snapshot:0.0'] + (['-e'] if args.ansi else [])
         while time.monotonic() < deadline:
             pane = tmux(*capture).stdout
             # Settled: painted, with nothing loading, syncing or searching.
             ready = pane.strip() != '' and not any(busy in pane for busy in ('Loading', '\u21bb', 'Searching'))
-            if ready and not keys_sent and args.keys:
-                tmux('send-keys', '-t', 'snapshot:0.0', *args.keys)
-                keys_sent = True
+            ready = ready and (not first or args.wait in pane)
+            if ready and first and groups:
+                tmux('send-keys', '-t', 'snapshot:0.0', *groups.pop(0))
+                first = False
                 previous, stable = None, 0
             elif ready and pane == previous:
                 # Unchanged for 0.5s, so pending key timeouts have fired.
                 stable += 1
-                if stable >= 10:
+                if stable >= 10 and groups:
+                    tmux('send-keys', '-t', 'snapshot:0.0', *groups.pop(0))
+                    previous, stable = None, 0
+                elif stable >= 10:
                     sys.stdout.write(pane)
                     return 0
             else:

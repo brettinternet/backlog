@@ -409,6 +409,9 @@ func (m *Model) queryMenu(prefix, key string) (bool, tea.Cmd) {
 // fold toggles, opens or closes the selected group, or the selected branch in
 // a tree.
 func (m *Model) fold(how string) tea.Cmd {
+	if m.detailOpen && m.detailFocus && m.change != nil && m.detailTab == tabChangeOverview {
+		return m.toggleChecks(how == "fold-open" || how == "fold" && !m.checksOpen)
+	}
 	if m.selected < 0 || m.selected >= len(m.data.rows) {
 		return nil
 	}

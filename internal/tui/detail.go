@@ -79,6 +79,7 @@ type detailRequest struct {
 	now        time.Time
 	fresh      bool            // R: reread from the source, bypassing both caches
 	change     *changes.Change // the change view's change
+	checksOpen bool            // the Overview shows passing and skipped checks
 }
 type detailResult struct {
 	generation uint64
@@ -90,6 +91,7 @@ type detailResult struct {
 	commits    []changes.Commit  // the commit each change view Commits entry is
 	ids        []string          // the history entry each History entry is, or each commit's SHA
 	hints      []string          // a key to show on each History entry when selected
+	links      []string          // where enter goes from each change Overview entry
 	files      []int             // the Diff tab's line of each file and hunk header
 	hunks      []int
 	rows       []diffRow  // what each Diff entry shows
@@ -98,8 +100,9 @@ type detailResult struct {
 	tour       string     // why the Diff shows no tour steps, when it has a tour
 	dirty      []string   // the change's uncommitted files, which aren't at head
 	review     *changes.Review
-	draft      *changes.Draft // the pull request's pending review
-	draftErr   string         // why the draft can't be read
+	facts      *changes.Change // the change as read: its verdict, or ahead, behind, and dirty
+	draft      *changes.Draft  // the pull request's pending review
+	draftErr   string          // why the draft can't be read
 	truncated  bool
 	err        string
 }
@@ -145,6 +148,7 @@ type rendered struct {
 	targets   []engine.Relation
 	changes   []changes.Change
 	ids       []string
+	links     []string // where enter goes from each change Overview entry
 	hints     []string // a key worth showing on each entry when it is selected
 	files     []int    // the Diff tab's line of each file and hunk header
 	hunks     []int
@@ -381,6 +385,25 @@ func (worker *detailWorker) run() {
 		}
 	}
 }
+
+// changeFacts is what the verdict strip shows: a pull request's verdict, or
+// how far a branch or worktree is from its base and its dirty files.
+func (worker *detailWorker) changeFacts(ctx context.Context, c changes.Change, review *changes.Review) *changes.Change {
+	switch {
+	case review != nil:
+		merge := changes.Verdict(c, *review)
+		c.Merge = &merge
+	case c.Stage == changes.StageBranch || c.Stage == changes.StageWorktree:
+		enrich := worker.enrich
+		if enrich == nil {
+			enrich = func(ctx context.Context, cs []changes.Change, fresh bool) []changes.Change {
+				return changes.Enrich(ctx, cs, nil, fresh)
+			}
+		}
+		c = enrich(ctx, []changes.Change{c}, false)[0]
+	}
+	return &c
+}
 func latestDetail(ch chan detailResult, value detailResult) {
 	select {
 	case ch <- value:
@@ -446,7 +469,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			result.err = textutil.Line(err.Error())
 			return result
 		}
-		result.lines, result.entries, result.ids = page.lines, page.entries, page.ids
+		result.lines, result.entries, result.ids, result.links = page.lines, page.entries, page.ids, page.links
 		result.files, result.hunks, result.truncated = page.files, page.hunks, page.truncated
 		result.rows, result.head = page.rows, request.change.Head
 		result.steps, result.tour = page.steps, page.tour
@@ -454,6 +477,7 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			result.commits = detail.Commits
 		}
 		result.review, result.draft = review, draft
+		result.facts = worker.changeFacts(ctx, *request.change, review)
 		for _, f := range detail.Files {
 			if f.Status == changes.FileUncommitted {
 				result.dirty = append(result.dirty, f.Path)

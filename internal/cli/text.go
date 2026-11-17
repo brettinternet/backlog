@@ -342,6 +342,13 @@ func writeChanges(out io.Writer, result engine.ChangesResult) error {
 		if c.Reason != "" {
 			b.WriteString(p.paint("2", "  "+textutil.Line(c.Reason)) + "\n")
 		}
+		// --detail: the verdict, then one reason per line.
+		if c.Merge != nil {
+			b.WriteString("  " + textutil.Line(c.Merge.Verdict) + "\n")
+			for _, r := range c.Merge.Reasons {
+				b.WriteString("    " + textutil.Line(r.Text) + "\n")
+			}
+		}
 	}
 	_, err := io.WriteString(out, b.String())
 	return err

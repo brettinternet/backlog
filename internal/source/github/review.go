@@ -15,13 +15,13 @@ import (
 	"github.com/brettinternet/backlog/internal/textutil"
 )
 
-const reviewQuery = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){id body headRefOid
+const reviewQuery = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){id body headRefOid mergeStateStatus mergeable
 reviewRequests(first:50){nodes{requestedReviewer{__typename ... on User{login} ... on Bot{login} ... on Mannequin{login} ... on Team{slug}}}}
-latestReviews(first:50){nodes{author{login} state}}
+latestReviews(first:50){nodes{author{login} state submittedAt commit{oid}}}
 reviews(first:100){nodes{author{login} body state submittedAt url}}
 comments(first:100){nodes{author{login} body createdAt url}}
 reviewThreads(first:100){nodes{id isResolved isOutdated path line originalLine comments(first:50){nodes{author{login} body createdAt url}}}}
-commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion detailsUrl url} ... on StatusContext{context state targetUrl}}}}}}}}}}`
+commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion detailsUrl url databaseId startedAt completedAt} ... on StatusContext{context state targetUrl}}}}}}}}}}`
 
 type reviewAuthor struct{ Login string }
 
@@ -40,16 +40,19 @@ func (c reviewComment) comment() changes.Comment {
 }
 
 type reviewNode struct {
-	ID, Body, HeadRefOid string
-	ReviewRequests       struct {
+	ID, Body, HeadRefOid        string
+	MergeStateStatus, Mergeable string
+	ReviewRequests              struct {
 		Nodes []struct {
 			RequestedReviewer *struct{ Login, Slug string }
 		}
 	}
 	LatestReviews struct {
 		Nodes []struct {
-			Author *reviewAuthor
-			State  string
+			Author      *reviewAuthor
+			State       string
+			SubmittedAt time.Time
+			Commit      *struct{ Oid string }
 		}
 	}
 	Reviews struct {
@@ -77,6 +80,8 @@ type reviewNode struct {
 						Nodes []struct {
 							Typename                                  string `json:"__typename"`
 							Name, Status, Conclusion, DetailsURL, URL string
+							DatabaseID                                int64
+							StartedAt, CompletedAt                    time.Time
 							Context, State, TargetURL                 string
 						}
 					}
@@ -91,28 +96,30 @@ var reviewStates = map[string]string{
 	"COMMENTED": changes.ReviewCommented, "DISMISSED": changes.ReviewDismissed,
 }
 
-// checkState maps a check run's conclusion, or a commit status's state, as
-// the rollup does: unfinished runs are pending, and stale never passes.
-func checkState(status, conclusion string) string {
-	if status != "" && status != "COMPLETED" {
-		return changes.ChecksPending
+// checkStatus is a check run's exact state word, from its status until it
+// completes and then its conclusion, or a commit status's.
+func checkStatus(status, conclusion string) string {
+	switch status {
+	case "", "COMPLETED":
+	case "QUEUED", "REQUESTED":
+		return changes.CheckQueued
+	case "IN_PROGRESS":
+		return changes.CheckRunning
+	default:
+		return changes.CheckWaiting
 	}
-	switch conclusion {
-	case "SUCCESS":
-		return changes.ChecksPassing
-	case "NEUTRAL", "SKIPPED":
-		return changes.ChecksSkipped
-	case "STALE":
-		return changes.ChecksStale
-	case "PENDING", "EXPECTED":
-		return changes.ChecksPending
-	}
-	return changes.ChecksFailing
+	return cmp.Or(map[string]string{
+		"SUCCESS": changes.CheckPassed, "NEUTRAL": changes.CheckNeutral, "SKIPPED": changes.CheckSkipped,
+		"STALE": changes.CheckStale, "TIMED_OUT": changes.CheckTimedOut, "CANCELLED": changes.CheckCancelled,
+		"ACTION_REQUIRED": changes.CheckActionRequired, "PENDING": changes.CheckPending, "EXPECTED": changes.CheckWaiting,
+	}[conclusion], changes.CheckFailed)
 }
 
 func (n reviewNode) review() changes.Review {
-	r := changes.Review{ID: n.ID, Head: n.HeadRefOid, Body: textutil.Sanitize(n.Body)}
+	r := changes.Review{ID: n.ID, Head: n.HeadRefOid, Body: textutil.Sanitize(n.Body),
+		MergeState: strings.ToLower(textutil.Line(n.MergeStateStatus)), Mergeable: strings.ToLower(textutil.Line(n.Mergeable))}
 	states := map[string]string{}
+	submitted := map[string]changes.Reviewer{}
 	var order []string
 	set := func(login, state string) {
 		if login == "" || state == "" {
@@ -123,9 +130,11 @@ func (n reviewNode) review() changes.Review {
 		}
 		states[login] = state
 	}
-	for _, n := range n.LatestReviews.Nodes {
-		if n.Author != nil {
-			set(n.Author.Login, reviewStates[n.State])
+	for _, review := range n.LatestReviews.Nodes {
+		if review.Author != nil {
+			set(review.Author.Login, reviewStates[review.State])
+			// A review on another commit than the head is outdated.
+			submitted[review.Author.Login] = changes.Reviewer{SubmittedAt: review.SubmittedAt.UTC(), Outdated: review.Commit != nil && review.Commit.Oid != n.HeadRefOid}
 		}
 	}
 	// A re-requested reviewer is waiting again, whatever they said before.
@@ -135,7 +144,11 @@ func (n reviewNode) review() changes.Review {
 		}
 	}
 	for _, login := range order {
-		r.Reviewers = append(r.Reviewers, changes.Reviewer{Login: textutil.Line(login), State: states[login]})
+		reviewer := changes.Reviewer{Login: textutil.Line(login), State: states[login]}
+		if s, ok := submitted[login]; ok && reviewer.State != changes.ReviewRequested {
+			reviewer.SubmittedAt, reviewer.Outdated = s.SubmittedAt, s.Outdated
+		}
+		r.Reviewers = append(r.Reviewers, reviewer)
 	}
 	for _, n := range n.Reviews.Nodes {
 		if strings.TrimSpace(n.Body) == "" {
@@ -160,11 +173,12 @@ func (n reviewNode) review() changes.Review {
 	}
 	if len(n.Commits.Nodes) > 0 && n.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
 		for _, c := range n.Commits.Nodes[0].Commit.StatusCheckRollup.Contexts.Nodes {
-			check := changes.Check{Name: c.Name, State: checkState(c.Status, c.Conclusion), URL: cmp.Or(c.DetailsURL, c.URL)}
+			check := changes.Check{Name: c.Name, Status: checkStatus(c.Status, c.Conclusion), URL: cmp.Or(c.DetailsURL, c.URL),
+				Run: c.DatabaseID, StartedAt: c.StartedAt.UTC(), CompletedAt: c.CompletedAt.UTC()}
 			if c.Typename == "StatusContext" {
-				check = changes.Check{Name: c.Context, State: checkState("", c.State), URL: c.TargetURL}
+				check = changes.Check{Name: c.Context, Status: checkStatus("", c.State), URL: c.TargetURL}
 			}
-			check.Name, check.URL = textutil.Line(check.Name), textutil.Line(check.URL)
+			check.Name, check.URL, check.State = textutil.Line(check.Name), textutil.Line(check.URL), changes.CheckCategory(check.Status)
 			r.Checks = append(r.Checks, check)
 		}
 	}

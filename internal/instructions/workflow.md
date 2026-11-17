@@ -91,6 +91,13 @@ bl ac ID set 2 "Clearer criterion text." --if-version VERSION --json
 A stale version exits 4 without writing. Reread the item and reassess the
 operation; do not blindly retry. Every successful write returns a new version.
 
+When the item's work is a pull request, read whether it can land and what's
+left (failing checks, requested changes, unresolved threads) before finishing:
+
+```sh
+bl changes ID --detail --json
+```
+
 Finish every acceptance criterion and delivery obligation, including commits or
 integration if required. Persist blockers and the exact next step if genuinely
 blocked; do not mark incomplete work done.

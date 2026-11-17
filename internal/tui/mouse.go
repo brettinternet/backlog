@@ -193,7 +193,7 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case m.detailTab == tabRelations && y >= m.detailBodyTop():
 			return m, m.clickRelation(p.X, p.Y, line)
 		case m.hasEntries() && m.detailTab >= tabChanges && m.detailTab != tabHistory && y >= m.detailBodyTop():
-			return m, m.clickEntry(p.X, p.Y, line)
+			return m.clickEntry(p.X, p.Y, line)
 		case m.detailTab == tabHistory && y >= m.detailBodyTop():
 			return m.clickHistory(x, p.X, p.Y, line, inner, hinted)
 		}
@@ -470,11 +470,11 @@ func (m *Model) clickRelation(x, y, line int) tea.Cmd {
 
 // clickEntry selects the entry drawn on a detail line, any of its lines. Overview
 // checks are one line each, among lines that aren't checks. A double-click on
-// a change or a change's commit opens it as enter does. x and y are the screen
-// cell.
-func (m *Model) clickEntry(x, y, line int) tea.Cmd {
+// a change, a change's commit, or an Overview entry does what enter does. x
+// and y are the screen cell.
+func (m Model) clickEntry(x, y, line int) (tea.Model, tea.Cmd) {
 	if !m.detailCurrent() {
-		return nil
+		return m, nil
 	}
 	found := -1
 	for i, start := range m.detailEntries {
@@ -483,23 +483,26 @@ func (m *Model) clickEntry(x, y, line int) tea.Cmd {
 		}
 	}
 	if found < 0 {
-		return nil
+		return m, nil
 	}
 	m.entryCursor = found
 	id, now := fmt.Sprint(m.detailTab, ":", found), m.now()
 	double := id == m.mouse.lastEntry && x == m.mouse.lastX && y == m.mouse.lastY && now.Sub(m.mouse.lastClick) >= 0 && now.Sub(m.mouse.lastClick) <= 400*time.Millisecond
 	m.mouse.lastClick, m.mouse.lastEntry, m.mouse.lastX, m.mouse.lastY = now, id, x, y
 	if !double {
-		return nil
+		return m, nil
 	}
 	m.mouse.lastEntry = ""
+	if m.change != nil && m.detailTab == tabChangeOverview {
+		return m.followChangeLink()
+	}
 	if m.change != nil {
-		return m.openChangeCommit()
+		return m, m.openChangeCommit()
 	}
 	if c, ok := m.selectedChange(); ok {
-		return m.openChange(c)
+		return m, m.openChange(c)
 	}
-	return nil
+	return m, nil
 }
 
 // clickHistory selects the History entry drawn on a detail line, including

@@ -366,6 +366,14 @@ func (m Model) detailPane(width, rows int) []string {
 	put(1, title)
 	tabs, _ := m.detailTabBar(inner)
 	put(2, tabs)
+	if m.change != nil {
+		// The verdict strip, on every change view tab.
+		c, facts := m.shownChange(), m.changeFacts
+		if facts != nil && facts.ID != c.ID {
+			facts = nil
+		}
+		put(3, changeStrip(t, c, facts, m.review.read, m.now(), inner))
+	}
 	line := 4
 	for _, banner := range m.detailBanner() {
 		put(line, banner)

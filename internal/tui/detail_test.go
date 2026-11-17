@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1275,9 +1276,11 @@ func (m Model) anchorsAt(t *testing.T, text string) []lineAnchor {
 	return nil
 }
 
-// A pull request's change view lists each check as an entry O opens, its
-// reviewers and description, and a Conversation with unresolved threads
-// first; its Changes entry counts the unresolved threads.
+// A pull request's change view shows its verdict and reasons, failing checks
+// first, reviewers, About, and description, each reason, check, and reviewer
+// an entry that O opens and enter follows; passing checks fold past six; its
+// Conversation lists unresolved threads first; its Changes entry counts the
+// unresolved threads; and an action's return reads the pull request again.
 func TestChangeViewReview(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 1, RenderMarkdown)
@@ -1288,14 +1291,20 @@ func TestChangeViewReview(t *testing.T) {
 		Body:      "Closes BL-1 with **care**",
 		Checks:    []changes.Check{{Name: "test", State: changes.ChecksPassing, URL: "https://ci/test"}, {Name: "lint", State: changes.ChecksFailing, URL: "https://ci/lint"}},
 		Reviewers: []changes.Reviewer{{Login: "ann", State: changes.ReviewApproved}, {Login: "bo", State: changes.ReviewChanges}},
-		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}},
+		Comments:  []changes.Comment{{Author: "cy", Body: "first comment", Time: at}, {Author: "bo", State: changes.ReviewChanges, Body: "please fix", Time: at.Add(30 * time.Minute), URL: "https://github.com/o/r/pull/45#review-2"}},
 		Threads: []changes.Thread{
 			{Path: "a.go", Line: 3, Resolved: true, Comments: []changes.Comment{{Author: "ann", Body: "settled", Time: at.Add(2 * time.Hour)}}},
 			{ID: "T_b", Path: "b.go", Line: 7, Comments: []changes.Comment{{Author: "bo", Body: "why this? " + strings.Repeat("and this ", 400), Time: at.Add(time.Hour), URL: "https://github.com/o/r/pull/45#r1"}}},
 		},
 	}
 	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
-	m.detailWorker.changeReview = func(context.Context, changes.Change, bool) (changes.Review, error) { return review, nil }
+	var fresh atomic.Int32
+	m.detailWorker.changeReview = func(_ context.Context, _ changes.Change, refresh bool) (changes.Review, error) {
+		if refresh {
+			fresh.Add(1)
+		}
+		return review, nil
+	}
 	m.detailWorker.enrich = func(_ context.Context, cs []changes.Change, _ bool) []changes.Change {
 		out := slices.Clone(cs)
 		n := review.Unresolved()
@@ -1314,15 +1323,110 @@ func TestChangeViewReview(t *testing.T) {
 	m, _ = detailKey(m, tea.KeyEnter, 0)
 	m = settleDetail(t, m)
 	content := m.View().Content
-	for _, want := range []string{"✓ test", "✕ lint", "ann  approved", "bo  changes requested", "1 unresolved", "Closes BL-1"} {
-		if !strings.Contains(content, want) {
-			t.Fatalf("Overview lacks %q\n%s", want, content)
+	last := -1
+	for _, want := range []string{"✕ Blocked  1 failing · changes requested", "Merge      ✕ Blocked", "✕ lint failed", "✎ bo requested changes", "● 1 unresolved thread", "Checks", "✕ lint", "✓ test", "Reviews", "ann  approved", "bo   changes requested", "About", "Closes BL-1"} {
+		i := strings.Index(content[last+1:], want)
+		if i < 0 {
+			t.Fatalf("Overview lacks %q after the line before it\n%s", want, content)
 		}
+		last += 1 + i
 	}
-	m, _ = detailKey(m, 'j', 0)
-	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/lint" {
+	// Entries: the three reasons, the two checks, then the two reviewers.
+	if m, _ = detailKey(m, tea.KeyEnter, 0); !strings.Contains(m.notice, "Disabled") {
+		t.Fatalf("enter on a failing check: %q", m.notice)
+	}
+	for range 4 {
+		m, _ = detailKey(m, 'j', 0)
+	}
+	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/test" {
 		t.Fatalf("O opened %q, not the check under the cursor", opened)
 	}
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#review-2" {
+		t.Fatalf("enter on bo opened tab %d at %d of %q", m.detailTab, m.entryCursor, m.detailIDs)
+	}
+	_ = m.switchDetailTab(tabChangeOverview)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, 'j', 0)
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || m.detailIDs[m.entryCursor] != "https://github.com/o/r/pull/45#r1" {
+		t.Fatalf("enter on unresolved threads opened tab %d at %d", m.detailTab, m.entryCursor)
+	}
+	// ann approved without a comment, so has no Conversation entry, but has
+	// reviewed.
+	_ = m.switchDetailTab(tabChangeOverview)
+	m = settleDetail(t, m)
+	m.entryCursor = slices.Index(m.detailLinks, linkReview+"ann")
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); m.detailTab != tabChangeConversation || strings.Contains(m.notice, "hasn't reviewed") {
+		t.Fatalf("enter on ann's approval: tab %d, notice %q", m.detailTab, m.notice)
+	}
+
+	// Past six checks, passing ones fold into one entry that enter and za
+	// toggle; a conflict's enter opens ! on the change's actions, and the
+	// action's return reads the pull request again.
+	checks := review.Checks
+	for i := range 6 {
+		review.Checks = append(review.Checks, changes.Check{Name: "unit-" + strconv.Itoa(i), State: changes.ChecksPassing, Status: changes.CheckPassed})
+	}
+	review.MergeState = "dirty"
+	_ = m.switchDetailTab(tabChangeOverview)
+	m = settleDetail(t, m)
+	if content := m.View().Content; !strings.Contains(content, "✓ 7 passing") || strings.Contains(content, "unit-0") || !strings.Contains(content, "⚠ Conflicts") {
+		t.Fatalf("Overview didn't fold passing checks\n%s", content)
+	}
+	fold := slices.Index(m.detailLinks, linkFold)
+	m.entryCursor = fold
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	if m = settleDetail(t, m); !strings.Contains(m.View().Content, "unit-0") || m.entryCursor != fold {
+		t.Fatalf("enter didn't unfold the checks\n%s", m.View().Content)
+	}
+	m, _ = detailKey(m, 'z', 0)
+	m, _ = detailKey(m, 'a', 0)
+	if m = settleDetail(t, m); strings.Contains(m.View().Content, "unit-0") {
+		t.Fatalf("za didn't fold the checks\n%s", m.View().Content)
+	}
+	m.entryCursor = slices.Index(m.detailLinks, linkActions)
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m = next.(Model); !m.launcher.open || m.actionChange == nil || m.actionChange.Number != "45" {
+		t.Fatalf("enter on conflicts: launcher %v, change %+v", m.launcher.open, m.actionChange)
+	}
+	m.launcher = launcherState{}
+	before := fresh.Load()
+	next, _ = m.Update(actionFinishedMsg{message: "merged"})
+	if m = settleDetail(t, next.(Model)); fresh.Load() == before {
+		t.Fatal("an action's return didn't read the pull request again")
+	}
+	// Held j over 300 unfolded checks stays within the §11 navigation
+	// budget, whose in-process time BL_TUI_MEASURE=1 logs.
+	review.Checks = nil
+	for i := range 300 {
+		review.Checks = append(review.Checks, changes.Check{Name: "job-" + strconv.Itoa(i), State: changes.ChecksFailing, Status: changes.CheckFailed, StartedAt: at, CompletedAt: at.Add(time.Minute)})
+	}
+	m.submitDetail(true)
+	m = settleDetail(t, m)
+	m.entryCursor = 0
+	samples := make([]time.Duration, 0, len(m.detailEntries))
+	for range len(m.detailLines) {
+		if m.entryCursor == len(m.detailEntries)-1 {
+			break
+		}
+		start := time.Now()
+		m, _ = detailKey(m, 'j', 0)
+		_ = m.View()
+		samples = append(samples, time.Since(start))
+	}
+	if m.entryCursor != len(m.detailEntries)-1 || len(m.detailEntries) < 600 {
+		t.Fatalf("held j over %d entries stopped at %d", len(m.detailEntries), m.entryCursor)
+	}
+	if os.Getenv("BL_TUI_MEASURE") == "1" {
+		slices.Sort(samples)
+		t.Logf("held j over 300 checks Update+View p95=%s max=%s", samples[(len(samples)*95-1)/100], samples[len(samples)-1])
+	}
+	review.Checks, review.MergeState = checks, ""
 	_ = m.switchDetailTab(tabChangeConversation)
 	m = settleDetail(t, m)
 	content = strings.Join(m.detailLines, "\n")
@@ -1349,7 +1453,7 @@ func TestChangeViewReview(t *testing.T) {
 		t.Fatalf("c on a thread prepared %+v", prepared)
 	}
 	t.Cleanup(func() { _ = os.Remove(prepared.edit.path) })
-	next, _ := m.Update(prepared)
+	next, _ = m.Update(prepared)
 	if err := os.WriteFile(prepared.edit.path, []byte("fixed in abc\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
