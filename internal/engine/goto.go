@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 
+	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
 	"github.com/brettinternet/backlog/internal/source"
 )
@@ -22,10 +23,15 @@ func GoToItems(ctx context.Context, cfg project.Config) ([]Row, error) {
 			return nil, err
 		}
 		for _, item := range delta.Items {
-			row := Row{Ref: item.Ref, Title: item.Title, Version: item.Version, Status: item.Status, Category: item.Category, Priority: item.Priority, Names: item.Names}
-			row.SetCounts(item)
-			rows = append(rows, row)
+			rows = append(rows, CatalogRow(item))
 		}
 	}
 	return rows, nil
+}
+
+// CatalogRow is item's go-to row.
+func CatalogRow(item model.Item) Row {
+	row := Row{Ref: item.Ref, Title: item.Title, Version: item.Version, Status: item.Status, Category: item.Category, Priority: item.Priority, Names: item.Names}
+	row.SetCounts(item)
+	return row
 }

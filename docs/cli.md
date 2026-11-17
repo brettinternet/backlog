@@ -38,6 +38,13 @@ the matches in the message and `error.details.matches`; so does an ID stored
 both active and archived (pick one with a [path selector](#bl-renumber-from-to)).
 A missing ID exits 3.
 
+`.` is the item the current branch names: `bl show .` in a worktree on
+`feat/bl-12-slug` shows BL-12. The branch is the invoking checkout's (`-C DIR`'s),
+read by the rule that [links changes](design.md) (D43): the branch name, or its last
+`/` segment, starts with the ID followed by `-` or the end. A detached HEAD or a
+branch naming no item exits 3; a branch naming several items exits 2 and lists
+them. MCP refuses `.` with `usage`.
+
 ## Read commands
 
 ### `bl ls [QUERY] [--view V] [--sort S] [--group G] [-n N] [--workspace NAME]`

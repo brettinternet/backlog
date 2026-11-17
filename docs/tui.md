@@ -95,6 +95,11 @@ While a source syncs, an empty list stays blank, then shows loading after 300 ms
 never "No matching items." Switching tabs keeps the old rows until the new ones
 are ready, or loading shows.
 
+Started in a checkout whose branch names exactly one item, as `.` does in the
+[CLI](cli.md#ids), the TUI opens that item's detail as go-to does, unless a key
+or click came first. The default branch names none, so the primary
+checkout starts on the list.
+
 `R` refreshes now, with `↻` once it takes over 300 ms. For remote sources it
 runs a full reconciliation, which catches relation edits and deletions that the
 minute poll misses ([linear.md](linear.md#sync)). Remote sources poll once a

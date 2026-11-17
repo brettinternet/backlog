@@ -381,6 +381,10 @@ func ActivityReader(cfg project.Config, ref model.Ref) (reader source.ActivityRe
 // ReadDetail resolves shorthand without parsing or ranking the entire backlog.
 // It returns every match instead of guessing and includes explicitly named archives.
 func ReadDetail(ctx context.Context, cfg project.Config, value string) ([]model.Item, error) {
+	if value == "." {
+		// Only the CLI knows the caller's checkout; it resolves "." first (D19).
+		return nil, source.Refuse("usage", ". names the CLI checkout's branch item; pass an item ID")
+	}
 	sourceID, id, qualified := strings.Cut(value, ":")
 	if !qualified {
 		id = value

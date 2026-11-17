@@ -99,6 +99,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		data := writeData{Outcomes: []writeOutcome{}}
 		var first *Error
 		for _, id := range ids {
+			if resolved, err := itemID(ctx, cfg, id); err == nil {
+				id = resolved
+			}
 			var transition engine.TransitionResult
 			ctx := engine.WithTransitionResult(ctx, &transition)
 			item, err := writeItem(ctx, cfg, id)
@@ -453,6 +456,9 @@ func writeCommands(directory *string, in io.Reader, out, errOut io.Writer) []*ur
 		if err != nil {
 			return err
 		}
+		if args[0], err = itemID(ctx, cfg, args[0]); err != nil {
+			return err
+		}
 		item, err := writeItem(ctx, cfg, args[0])
 		if err != nil {
 			return err
@@ -701,6 +707,10 @@ func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, ch
 }
 
 func writeItem(ctx context.Context, cfg project.Config, id string) (model.Item, error) {
+	id, err := itemID(ctx, cfg, id)
+	if err != nil {
+		return model.Item{}, err
+	}
 	matches, err := engine.ReadDetail(ctx, cfg, id)
 	if e := duplicateFiles(err); e != nil {
 		return model.Item{}, e

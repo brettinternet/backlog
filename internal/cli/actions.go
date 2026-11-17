@@ -26,8 +26,12 @@ func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfa
 			return err
 		}
 		ctx = engine.WithEventCWD(ctx, *directory)
+		id, err := itemID(ctx, cfg, cmd.Args().Get(1))
+		if err != nil {
+			return err
+		}
 		if cmd.Bool("dry-run") {
-			preview, err := engine.PreviewAction(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1))
+			preview, err := engine.PreviewAction(ctx, cfg, cmd.Args().Get(0), id)
 			if err != nil {
 				return writeError(err)
 			}
@@ -36,7 +40,7 @@ func actionCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfa
 			}
 			return writeLine(out, fmt.Sprintf("argv: %s\ncwd:  %s\nenv:  %s", quoteArgv(preview.Argv), preview.CWD, strings.Join(preview.Env, " ")))
 		}
-		choice, err := engine.PrepareAction(ctx, cfg, cmd.Args().Get(0), cmd.Args().Get(1), true)
+		choice, err := engine.PrepareAction(ctx, cfg, cmd.Args().Get(0), id, true)
 		if err != nil {
 			return writeError(err)
 		}
@@ -104,7 +108,11 @@ func resumeCommand(directory *string, in io.Reader, out, errOut io.Writer) *urfa
 			return err
 		}
 		ctx = engine.WithEventCWD(ctx, *directory)
-		choices, err := engine.ResumeChoices(ctx, cfg, cmd.Args().Get(0), command)
+		id, err := itemID(ctx, cfg, cmd.Args().Get(0))
+		if err != nil {
+			return err
+		}
+		choices, err := engine.ResumeChoices(ctx, cfg, id, command)
 		if err != nil {
 			return writeError(err)
 		}

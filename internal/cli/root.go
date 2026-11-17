@@ -222,6 +222,13 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 			EditorDir: directory,
 			Views:     cfg.SavedViews, Filter: filter, View: cmd.String("view"), Session: restored, Warning: warning, Keys: cfg.Keys,
 			GoToItems: func(ctx context.Context) ([]tui.GoToItem, error) { return engine.GoToItems(ctx, cfg) },
+			BranchItem: func(ctx context.Context) (tui.GoToItem, bool) {
+				_, items, err := engine.BranchItems(ctx, cfg)
+				if err != nil || len(items) != 1 {
+					return tui.GoToItem{}, false
+				}
+				return engine.CatalogRow(items[0]), true
+			},
 			SaveView: func(v project.ViewConfig, shared bool) (project.SavedView, error) {
 				path, scope := cfg.Paths.ConfigFile, "user"
 				if shared {

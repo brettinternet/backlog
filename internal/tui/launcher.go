@@ -200,6 +200,18 @@ func (m Model) openGoTo() (tea.Model, tea.Cmd) {
 	m.goToWorker.submit(goToRequest{serial: m.launcherSerial, catalog: m.goToSession, pulls: m.catalog})
 	return m, nil
 }
+
+// branchItemMsg is the item the checkout's branch names, opened at startup.
+type branchItemMsg GoToItem
+
+// openDetached shows item's detail outside the list, as go-to does.
+func (m *Model) openDetached(item GoToItem) tea.Cmd {
+	m.detached, m.heldPlace = &item, 0
+	m.detailHistory = nil
+	m.detailOpen = true
+	m.detailFocus = true
+	return m.scheduleDetail()
+}
 func (m Model) receiveGoTo(r goToResult) (tea.Model, tea.Cmd) {
 	if m.launcher.open && m.launcher.goTo && r.serial == m.launcherSerial {
 		m.launcher.rows, m.launcher.cursor, m.launcher.loading = r.rows, 0, false
@@ -364,12 +376,8 @@ func (m Model) updateLauncher(key, text string) (tea.Model, tea.Cmd) {
 		m.launcher = launcherState{}
 		m.launcherSerial++
 		if row.item != nil {
-			item := *row.item
-			m.detached, m.heldPlace = &item, 0
-			m.detailHistory = nil
-			m.detailOpen = true
-			m.detailFocus = true
-			return m, m.scheduleDetail()
+			cmd := m.openDetached(*row.item)
+			return m, cmd
 		}
 		if row.resume != nil {
 			return m, m.runResume(*row.resume)

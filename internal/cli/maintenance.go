@@ -118,6 +118,9 @@ func maintenanceCommands(directory *string, out, errOut io.Writer) []*urfave.Com
 				return err
 			}
 			args := cmd.Args().Slice()
+			if args[0], err = itemID(ctx, cfg, args[0]); err != nil {
+				return err
+			}
 			result, err := native.Renumber(ctx, backends, args[0], args[1])
 			if err != nil {
 				return maintenanceFailure(err)

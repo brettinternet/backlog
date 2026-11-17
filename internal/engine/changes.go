@@ -295,3 +295,31 @@ func queryChanges(cs []changes.Change) []query.Change {
 	}
 	return out
 }
+
+// BranchItems reads the invoking checkout's current branch, never the control
+// root's (D5), and the items it names under D43's branch rule. A detached HEAD
+// returns no branch and no items.
+func BranchItems(ctx context.Context, cfg project.Config) (string, []model.Item, error) {
+	branch := cfg.Discovery.Branch()
+	if branch == "" {
+		return "", nil, nil
+	}
+	reads, err := LoadReads(ctx, cfg, false)
+	if err != nil {
+		return branch, nil, err
+	}
+	var refs []model.Ref
+	byRef := map[model.Ref]model.Item{}
+	for _, item := range reads.Query.Items {
+		if item.Project != "" && item.Project != cfg.Project.ID {
+			continue
+		}
+		refs = append(refs, item.Ref)
+		byRef[item.Ref] = item
+	}
+	var items []model.Item
+	for _, ref := range changes.BranchItems(refs, branch) {
+		items = append(items, byRef[ref])
+	}
+	return branch, items, nil
+}

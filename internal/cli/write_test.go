@@ -697,3 +697,44 @@ func TestNewResolvesCreateSource(t *testing.T) {
 	put(t, filepath.Join(root, "backlog.local.yaml"), "defaults: {source: nope}\n")
 	refused("unknown defaults.source nope; creatable sources: tasks, issues", "T")
 }
+
+// "." resolves the invoking checkout's branch, not the control root's: here the
+// control root's branch names an item ID two sources share.
+func TestDotNamesBranchItem(t *testing.T) {
+	root := writeFixture(t)
+	put(t, filepath.Join(root, "backlog.yaml"), "version: 1\nsources: [{id: tasks, type: native, path: items, prefix: BL}, {id: mirror, type: native, path: mirror, prefix: BL}]\nstatuses: [{key: todo, name: To Do, category: todo}, {key: doing, name: Doing, category: active}, {key: done, name: Done, category: done}]\nworkflow: {start: doing, done: done}\n")
+	if err := os.MkdirAll(filepath.Join(root, "mirror"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(root, "mirror/BL-012.md"), get(t, filepath.Join(root, "items/BL-012.md")))
+	var created struct{ Data struct{ ID string } }
+	if err := json.Unmarshal([]byte(writeOK(t, root, "", "new", "--source", "tasks", "Branch item")), &created); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(root, ".git/HEAD"), "ref: refs/heads/bl-012-root\n")
+	linked := linkedCoordinationFixture(t, root)
+	head := filepath.Join(root, ".git/worktrees/linked/HEAD")
+
+	put(t, head, "ref: refs/heads/feat/"+strings.ToLower(created.Data.ID)+"-slug\n")
+	if code, out, stderr := writeRun(linked, "", "show", "."); code != 0 || !strings.Contains(out, `"id":"`+created.Data.ID+`"`) {
+		t.Fatalf("show .: %d %s %s", code, out, stderr)
+	}
+	writeOK(t, linked, "", "note", ".", "from the branch")
+	if !strings.Contains(get(t, filepath.Join(root, "items", created.Data.ID+".md")), "from the branch") {
+		t.Fatal("note . missed the branch item")
+	}
+
+	for _, tc := range []struct {
+		head, want string
+		code       int
+	}{
+		{"0123456789abcdef0123456789abcdef01234567\n", "HEAD is detached", 3},
+		{"ref: refs/heads/unlinked\n", "branch unlinked links none", 3},
+		{"ref: refs/heads/bl-012-slug\n", "mirror:BL-012", 2},
+	} {
+		put(t, head, tc.head)
+		if code, out, _ := writeRun(linked, "", "done", "."); code != tc.code || !strings.Contains(out, tc.want) {
+			t.Fatalf("%q: %d %s", tc.head, code, out)
+		}
+	}
+}

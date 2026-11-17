@@ -59,7 +59,10 @@ type Options struct {
 	SaveView                   func(project.ViewConfig, bool) (project.SavedView, error)
 	Keys                       map[string]string
 	GoToItems                  func(context.Context) ([]GoToItem, error)
-	Now                        func() time.Time
+	// BranchItem is the one item the checkout's branch names, if any; startup
+	// opens its detail as go-to does.
+	BranchItem func(context.Context) (GoToItem, bool)
+	Now        func() time.Time
 }
 
 type screenRow struct {
@@ -215,7 +218,10 @@ type Model struct {
 	launcher                 launcherState
 	launcherSerial           uint64
 	goToSession              uint64
-	goToWorker               *goToWorker
+	// input is set by the first key or mouse event, after which the branch
+	// item no longer opens.
+	input      bool
+	goToWorker *goToWorker
 	// detached is an item detail shows outside the list: a go-to result, a
 	// followed relation, or an item focused detail held when it left the view.
 	// heldPlace says where a held item was: 1 where the list selection is now,
@@ -326,6 +332,15 @@ func (m Model) Init() tea.Cmd {
 	}
 	if m.goToWorker != nil {
 		commands = append(commands, m.waitGoTo())
+	}
+	if load := m.opts.BranchItem; load != nil {
+		ctx := m.opts.Context
+		commands = append(commands, func() tea.Msg {
+			if item, ok := load(ctx); ok {
+				return branchItemMsg(item)
+			}
+			return nil
+		})
 	}
 	if m.opts.Changes != nil {
 		commands = append(commands, m.waitChanges())
@@ -773,12 +788,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case goToResult:
 		return m.receiveGoTo(msg)
+	case branchItemMsg:
+		// Whatever the person does first wins.
+		if m.input {
+			return m, nil
+		}
+		cmd := m.openDetached(GoToItem(msg))
+		return m, cmd
 	case launcherFiltered:
 		if m.launcher.open && msg.serial == m.launcherSerial {
 			m.launcher.rows, m.launcher.cursor, m.launcher.loading = msg.rows, 0, false
 		}
 		return m, nil
 	case tea.MouseMsg:
+		m.input = true
 		return m.updateMouse(msg)
 	case tea.BackgroundColorMsg:
 		m.bg = msg.Color
@@ -1100,6 +1123,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = msg.err
 		return m, nil
 	case tea.KeyPressMsg:
+		m.input = true
 		// Any new input supersedes action preparation still running on a worker.
 		// In particular, Enter in a newer modal must never confirm an older action.
 		m.actionSerial++
