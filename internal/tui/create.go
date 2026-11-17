@@ -27,9 +27,9 @@ type captureState struct {
 	source                      string
 	refs                        []string        // carried into the new item, such as an adopted pull request
 	scope                       *project.Config // limits create sources to this workspace project
-	// checked is the title key whose duplicate check passed or was shown;
-	// enter creates only once the current title is checked.
-	checked  string
+	// checked is the source and title key whose duplicate check passed or
+	// was shown; enter creates only once the current pair is checked.
+	checked  [2]string
 	checking bool
 }
 
@@ -452,8 +452,8 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 	}
 	switch key {
 	case "esc":
-		if c.checked != "" && c.errorText != "" {
-			c.checked, c.errorText = "", ""
+		if c.checked != [2]string{} && c.errorText != "" {
+			c.checked, c.errorText = [2]string{}, ""
 			return nil
 		}
 		m.capture = captureState{}
@@ -515,7 +515,7 @@ func (m *Model) updateCapture(key string) tea.Cmd {
 			c.errorText = boundedLine(err.Error())
 			return nil
 		}
-		if titleKey := model.TitleKey(item.Title); c.version == "" && c.checked != titleKey && m.opts.DuplicateTitle != nil {
+		if titleKey := model.TitleKey(item.Title); c.version == "" && c.checked != [2]string{c.source, titleKey} && m.opts.DuplicateTitle != nil {
 			// Quick-add stays quick-add while checking, so a match shows on
 			// the line the user typed.
 			c.full = c.full && !quick
@@ -681,7 +681,7 @@ func (m *Model) titleChecked(msg titleCheckedMsg) tea.Cmd {
 	if !c.open || !c.checking || c.source != msg.source {
 		return nil
 	}
-	c.checking, c.checked = false, msg.key
+	c.checking, c.checked = false, [2]string{msg.source, msg.key}
 	if msg.err != nil {
 		c.errorText = boundedLine(engine.ErrorMessage(msg.err) + "; enter creates anyway")
 		return nil
