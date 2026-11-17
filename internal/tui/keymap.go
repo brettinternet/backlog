@@ -149,6 +149,7 @@ func defaultKeymap() []action {
 		{id: "yank-markdown", label: "Copy Markdown link", canonical: "y m", bindings: []string{"y m"}},
 		{id: "yank-change", label: "Copy change URL", canonical: "y p", bindings: []string{"y p"}},
 		{id: "yank-commit", label: "Copy commit SHA", canonical: "y s", bindings: []string{"y s"}},
+		{id: "yank-log", label: "Copy log excerpt", canonical: "y l", bindings: []string{"y l"}},
 		{group: "General", id: "help", label: "Help", bindings: []string{"?"}},
 		{id: "palette", label: "Commands", bindings: []string{":", "alt+x"}},
 		{id: "quit", label: "Quit / back", canonical: "q", bindings: []string{"q"}},
@@ -388,7 +389,7 @@ func (m Model) executeAction(a action) (tea.Model, tea.Cmd) {
 			}
 		}
 		if c, ok := m.selectedChange(); ok {
-			m.actionChange = new(linkedChange(c))
+			m.actionChange = new(m.actionTarget(c))
 		}
 		return m.openConfiguredActions()
 	case "go-to":
@@ -584,6 +585,9 @@ func (m Model) disabledReason(a action) string {
 		}
 		if a.id == "yank-commit" && m.yankCommit() == "" {
 			return "select a commit in History or a change"
+		}
+		if a.id == "yank-log" && m.yankLog() == "" {
+			return "open a check with a log excerpt"
 		}
 	}
 	return ""

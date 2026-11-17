@@ -174,8 +174,16 @@ func (m Model) detailPlaceholder() bool {
 
 // detailCurrent reports that the body on screen is the selected item's.
 // Another item's body, kept while this one loads, takes no cursor or clicks.
+// checkView is the check view's link, else "".
+func (m Model) checkView() string {
+	if m.check == nil {
+		return ""
+	}
+	return checkLink(*m.check)
+}
+
 func (m Model) detailCurrent() bool {
-	return m.detailIdentity.Valid && m.detailError == "" && !m.detailPlaceholder() && (!m.detailLoading || m.detailShownRef == m.detailIdentity.Ref)
+	return m.detailIdentity.Valid && m.detailError == "" && !m.detailPlaceholder() && (!m.detailLoading || m.detailShownRef == m.detailIdentity.Ref && m.detailShownCheck == m.checkView())
 }
 
 func (m Model) detailMeta(row engine.Row) string {

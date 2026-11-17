@@ -66,6 +66,10 @@ the App is installed, which organization members often can't do themselves.
 | `bl-cli-read` | `Iv23lixJ0srsgnPbExrP` | Metadata, Issues, organization Projects, Pull requests, Checks, Commit statuses: read | `bl auth login` |
 | `bl-cli` | `Iv23liwvINakcZA9rAst` | Issues, organization Projects, Pull requests: read/write; Metadata, Checks, Commit statuses: read | `bl auth login --write` |
 
+A failed Actions job's log excerpt also needs Actions: read. Until an
+installation grants it, the check view and `--detail` say which App lacks it
+and `O` opens the job on GitHub. A token reads logs with its own access.
+
 1. Declare the account with `oauth: true` instead of `credential` or `env`:
 
    ```yaml

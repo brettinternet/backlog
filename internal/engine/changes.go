@@ -197,7 +197,8 @@ func ItemChanges(ctx context.Context, cfg project.Config, ref model.Ref) (Change
 }
 
 // ItemChangesDetail is ItemChanges with each open pull request's verdict,
-// reviewers, and check timing, for bl changes --detail and MCP detail.
+// reviewers, check timing, and the first failing runs' steps, annotations,
+// and log excerpts, for bl changes --detail and MCP detail.
 func ItemChangesDetail(ctx context.Context, cfg project.Config, ref model.Ref) (ChangesResult, error) {
 	return loadItemChanges(ctx, cfg, ref, true)
 }
@@ -222,6 +223,9 @@ func loadItemChanges(ctx context.Context, cfg project.Config, ref model.Ref, det
 	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref], o.Forges, false), Providers: d.Statuses}
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
+	}
+	if detail {
+		changes.AddFailures(ctx, result.Changes, o.Forges)
 	}
 	for i, c := range result.Changes {
 		if !detail {

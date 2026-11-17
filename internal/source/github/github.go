@@ -58,6 +58,7 @@ type Source struct {
 	readOnly        atomic.Bool
 	issueWrite      bool
 	pullWrite       bool
+	actionsRead     bool
 	projectGrants   map[string]bool
 	projectWritable bool
 	// created maps issues this source created to the version create returned,

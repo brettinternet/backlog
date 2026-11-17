@@ -237,7 +237,14 @@ type Model struct {
 	detailLinks  []string        // where enter goes from each change Overview entry
 	changeFacts  *changes.Change // the change view's change as last read, for the verdict strip
 	checksOpen   bool            // the change Overview shows passing and skipped checks
-	reviewEntry  string          // the Conversation entry to select when it arrives
+	// check is the check the check view shows, one level under the change
+	// Overview entry at checkCursor; shownCheck is it as last read, with its
+	// detail, which yl copies and {check.*} names.
+	check            *changes.Check
+	checkCursor      int
+	shownCheck       *changes.Check
+	detailShownCheck string // the check view the page in view shows, else ""
+	reviewEntry      string // the Conversation entry to select when it arrives
 }
 
 // Next is a ranked list, so it is never grouped. Board hides drafts, which are
@@ -263,7 +270,7 @@ func New(opts Options) Model {
 		model.detailWorker.history, model.detailWorker.position = opts.History, opts.HistoryPosition
 		if tracker := opts.Changes; tracker != nil {
 			model.detailWorker.changeDetail, model.detailWorker.changeReview, model.detailWorker.enrich = tracker.Detail, tracker.Review, tracker.Enrich
-			model.detailWorker.changeDraft = tracker.Draft
+			model.detailWorker.changeDraft, model.detailWorker.changeCheck = tracker.Draft, tracker.Check
 		}
 		model.detailWorker.tour = opts.Tour
 	}
@@ -404,6 +411,7 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	row, ok := m.selectedRow()
 	if m.change != nil && (!ok || row.Ref != m.changeRef) {
 		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, 0
+		m.check, m.shownCheck = nil, nil
 	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
@@ -460,7 +468,7 @@ func (m Model) detailRequest(row engine.Row) detailRequest {
 	return detailRequest{
 		change: change, generation: m.detailGeneration, row: row, width: max(1, m.detailWidth()-2*detailPad),
 		tab: m.detailTab, expanded: m.detailExpanded, open: m.historyOpenIDs(row.Ref), milestones: m.opts.Milestones,
-		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(), checksOpen: m.checksOpen,
+		sprints: sprints, statuses: m.opts.Statuses, theme: m.theme, now: m.now(), checksOpen: m.checksOpen, check: m.check,
 	}
 }
 
@@ -905,7 +913,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		result := detailResult(msg)
 		if m.detailOpen && result.generation == m.detailGeneration && result.identity.Ref == m.detailIdentity.Ref {
 			// A new version or length of the page in view keeps its scroll.
-			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab
+			same := m.detailLines != nil && m.detailShownRef == result.identity.Ref && m.detailShownTab == m.detailTab && m.detailShownCheck == result.checkView
 			// History read at its end stays there as entries expand or arrive.
 			pinned := same && m.detailTab == tabHistory && m.detailScroll >= len(m.detailLines)-m.detailVisible()
 			m.detailLoading = false
@@ -931,6 +939,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailRows, m.detailHead, m.detailDirty = result.rows, result.head, result.dirty
 			m.review.read, m.review.draft, m.review.failed = result.review, result.draft, result.draftErr
 			m.detailLinks, m.changeFacts = result.links, result.facts
+			m.shownCheck, m.detailShownCheck = result.check, result.checkView
 			m.detailSteps, m.detailTour = result.steps, result.tour
 			if !keep {
 				m.tourStep = -1
@@ -1609,6 +1618,7 @@ func (m Model) canonicalKey(s string) (tea.Model, tea.Cmd) {
 // switchDetailTab shows another tab of the item in view.
 func (m *Model) switchDetailTab(tab detailTab) tea.Cmd {
 	m.detailTab = tab
+	m.check, m.shownCheck = nil, nil
 	m.detailExpanded = false
 	m.entryCursor = 0
 	return m.showDetail()
@@ -1645,6 +1655,7 @@ func (m *Model) closeDetail() {
 	if m.change != nil {
 		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, m.changeCursor
 	}
+	m.check, m.shownCheck, m.detailShownCheck = nil, nil, ""
 	m.detailTruncated = false
 	m.find = findState{}
 }

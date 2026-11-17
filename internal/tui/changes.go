@@ -206,6 +206,19 @@ func linkedChange(c changes.Change) hooks.LinkedChange {
 	return l
 }
 
+// actionTarget is c for {change.*}, with the check view's check for
+// {check.*}: its GitHub Actions run and URL.
+func (m Model) actionTarget(c changes.Change) hooks.LinkedChange {
+	l := linkedChange(c)
+	if m.change != nil && m.check != nil && m.shownCheck != nil {
+		l.CheckURL = m.shownCheck.URL
+		if m.shownCheck.Workflow > 0 {
+			l.CheckRun = strconv.FormatInt(m.shownCheck.Workflow, 10)
+		}
+	}
+	return l
+}
+
 // selectedChange is the change the change view shows, or the Changes entry
 // under the detail cursor.
 func (m Model) selectedChange() (changes.Change, bool) {

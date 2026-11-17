@@ -92,6 +92,11 @@ func (t *Tracker) Review(ctx context.Context, c Change, fresh bool) (Review, err
 	return LoadReview(ctx, c, t.forges(), fresh)
 }
 
+// Check reads one check's detail on c's forge.
+func (t *Tracker) Check(ctx context.Context, c Change, check Check, fresh bool) (CheckDetail, error) {
+	return LoadCheck(ctx, c, check, t.forges(), fresh)
+}
+
 // Enrich adds Git's and the forges' facts to one item's changes.
 func (t *Tracker) Enrich(ctx context.Context, cs []Change, fresh bool) []Change {
 	return Enrich(ctx, cs, t.forges(), fresh)

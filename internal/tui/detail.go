@@ -80,6 +80,7 @@ type detailRequest struct {
 	fresh      bool            // R: reread from the source, bypassing both caches
 	change     *changes.Change // the change view's change
 	checksOpen bool            // the Overview shows passing and skipped checks
+	check      *changes.Check  // the check view's check, on the Overview tab
 }
 type detailResult struct {
 	generation uint64
@@ -103,6 +104,8 @@ type detailResult struct {
 	facts      *changes.Change // the change as read: its verdict, or ahead, behind, and dirty
 	draft      *changes.Draft  // the pull request's pending review
 	draftErr   string          // why the draft can't be read
+	check      *changes.Check  // the check view's check as read, with its detail
+	checkView  string          // the check view's link, else ""
 	truncated  bool
 	err        string
 }
@@ -317,7 +320,10 @@ type detailWorker struct {
 	// enrich adds Git's and the forges' facts to the Changes tab.
 	changeReview func(context.Context, changes.Change, bool) (changes.Review, error)
 	changeDraft  func(changes.Change) (changes.Draft, error)
-	enrich       func(context.Context, []changes.Change, bool) []changes.Change
+	// changeCheck reads a check's steps, annotations, and log excerpt, which
+	// its forge keeps once the check completes.
+	changeCheck func(context.Context, changes.Change, changes.Check, bool) (changes.CheckDetail, error)
+	enrich      func(context.Context, []changes.Change, bool) []changes.Change
 	// tour reads the tour kept for an item's change, and fileAt a file a
 	// step outside every hunk shows; moves carry a tour for an earlier head
 	// to the change's, and movedFile reads a file as of that head.
@@ -456,7 +462,18 @@ func (worker *detailWorker) prepare(ctx context.Context, request detailRequest) 
 			}
 		}
 		var page rendered
-		if diff && (err == nil || request.change.IsCommit()) {
+		if request.check != nil && request.tab == tabChangeOverview {
+			check := shownCheckIn(review, *request.check)
+			var readErr error
+			if worker.changeCheck != nil {
+				var d changes.CheckDetail
+				if d, readErr = worker.changeCheck(ctx, *request.change, check, request.fresh); readErr == nil {
+					check.CheckDetail = d
+				}
+			}
+			page = checkPage(check, readErr, request, worker.render)
+			result.check, result.checkView = &check, checkLink(*request.check)
+		} else if diff && (err == nil || request.change.IsCommit()) {
 			var view *tourView
 			if err == nil {
 				view = worker.loadTour(ctx, request, *request.change, &detail)

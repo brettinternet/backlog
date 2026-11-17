@@ -149,7 +149,12 @@ cache, refreshed incrementally; Git is read from `.git` and never fetched.
 state; `verdict`; and `reasons`, each with `kind`, `text`, and the `check` or
 `login` it names, in fix-first order), each check run's exact `status`, `run`,
 `startedAt`, and `completedAt`, and `reviewers` (`login`, `state`,
-`submittedAt`, `outdated`) ([Changes](changes.md)). Text output prints the
+`submittedAt`, `outdated`) ([Changes](changes.md)). The first five failing
+check runs of each open pull request also carry their node `id`,
+`workflowRun` (the Actions run), `steps` (`number`, `name`, `status`, `url`),
+`annotations` (`path`, `line`, `level`, `title`, `message`, `url`), and either
+`log`, the failed job's log excerpt, or `logUnavailable` with why there is
+none. Text output prints the
 verdict, then one reason per line. Without it, output is unchanged.
 
 ### `bl tour ID [FILE|-]`

@@ -25,6 +25,7 @@ type Forge struct {
 	cache   string
 	mu      sync.Mutex
 	reviews *changes.Reviews
+	checks  *changes.Checks
 }
 
 // NewForge reads o.Repo's pull requests, caching them redacted at cachePath.
@@ -36,7 +37,7 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 	if o.Repo == "" {
 		return nil, source.Refuse("rejected", "a GitHub forge needs owner/repo")
 	}
-	return &Forge{s: s, cache: cachePath, reviews: changes.NewReviews(cachePath, o.Repo)}, nil
+	return &Forge{s: s, cache: cachePath, reviews: changes.NewReviews(cachePath, o.Repo), checks: changes.NewChecks(cachePath, o.Repo)}, nil
 }
 
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }

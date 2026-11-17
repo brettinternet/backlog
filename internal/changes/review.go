@@ -45,8 +45,9 @@ type Review struct {
 // Check is one check run or commit status on the head commit. Status is its
 // exact state word, such as timed out; State is the rollup category it counts
 // as, so checks: queries and glyphs keep their meaning. Run is the forge's
-// check run ID.
+// check run ID and ID its node ID; the detail is read on demand.
 type Check struct {
+	ID          string    `json:"id,omitempty"`
 	Name        string    `json:"name"`
 	State       string    `json:"state"`
 	URL         string    `json:"url,omitempty"`
@@ -54,6 +55,7 @@ type Check struct {
 	Run         int64     `json:"run,omitempty"`
 	StartedAt   time.Time `json:"startedAt,omitzero"`
 	CompletedAt time.Time `json:"completedAt,omitzero"`
+	CheckDetail
 }
 
 // Exact check state words.

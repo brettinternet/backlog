@@ -61,8 +61,9 @@ func (m *Model) openChangeCommit() tea.Cmd {
 }
 
 // followChangeLink does what enter does on the Overview entry under the
-// cursor: toggles the folded checks, opens a review or the first unresolved
-// thread in Conversation, or opens ! narrowed to the change's actions.
+// cursor: toggles the folded checks, opens a check's view, opens a review or
+// the first unresolved thread in Conversation, or opens ! narrowed to the
+// change's actions.
 func (m Model) followChangeLink() (tea.Model, tea.Cmd) {
 	if !m.detailCurrent() || m.entryCursor < 0 || m.entryCursor >= len(m.detailLinks) {
 		return m, nil
@@ -71,8 +72,8 @@ func (m Model) followChangeLink() (tea.Model, tea.Cmd) {
 	switch {
 	case link == linkFold:
 		return m, m.toggleChecks(!m.checksOpen)
-	case link == linkCheck:
-		m.notice = "Disabled: a check opens in the browser with O"
+	case strings.HasPrefix(link, linkCheck):
+		return m, m.openCheck(link)
 	case link == linkThreads:
 		m.reviewEntry = firstUnresolved(m.review.read)
 		return m, m.switchDetailTab(tabChangeConversation)
@@ -89,7 +90,7 @@ func (m Model) followChangeLink() (tea.Model, tea.Cmd) {
 		}
 		return m, m.switchDetailTab(tabChangeConversation)
 	case link == linkActions:
-		m.actionSession, m.actionChange = "", new(linkedChange(m.shownChange()))
+		m.actionSession, m.actionChange = "", new(m.actionTarget(m.shownChange()))
 		return m.openConfiguredActions()
 	}
 	return m, nil
@@ -117,9 +118,38 @@ func firstUnresolved(r *changes.Review) string {
 	return ""
 }
 
-// closeChange returns to the entry the change view opened from.
+// openCheck opens the check view, one level under the Overview entry under
+// the cursor, on the check link names.
+func (m *Model) openCheck(link string) tea.Cmd {
+	if m.check != nil || m.review.read == nil {
+		return nil
+	}
+	i := slices.IndexFunc(m.review.read.Checks, func(c changes.Check) bool { return checkLink(c) == link })
+	if i < 0 {
+		m.notice = "The check is no longer on the head."
+		return nil
+	}
+	check := m.review.read.Checks[i]
+	m.check, m.shownCheck, m.checkCursor, m.entryCursor = &check, nil, m.entryCursor, 0
+	m.find = findState{}
+	return m.showDetail()
+}
+
+// checkLink names a check for enter: its node ID, else its name.
+func checkLink(c changes.Check) string {
+	return linkCheck + cmp.Or(c.ID, c.Name)
+}
+
+// closeChange returns to the entry the change view opened from, or from the
+// check view to its Overview entry.
 func (m *Model) closeChange() tea.Cmd {
 	m.find = findState{}
+	if m.check != nil {
+		m.check, m.shownCheck = nil, nil
+		cmd := m.showDetail()
+		m.entryCursor = m.checkCursor
+		return cmd
+	}
 	if m.changeParent != nil {
 		cursor := m.parentCursor
 		m.change, m.changeParent = m.changeParent, nil
@@ -389,15 +419,16 @@ func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft
 	if r != nil && c.Number > 0 {
 		merge := changes.Verdict(c, *r)
 		section("Merge", verdictLabel(t, merge.Verdict))
-		urls := map[string]string{}
+		urls, links := map[string]string{}, map[string]string{}
 		for _, check := range r.Checks {
 			urls[check.Name] = cmp.Or(urls[check.Name], check.URL)
+			links[check.Name] = cmp.Or(links[check.Name], checkLink(check))
 		}
 		for _, reason := range merge.Reasons {
 			id, link := c.URL, ""
 			switch reason.Kind {
 			case changes.ReasonFailing, changes.ReasonPending:
-				id, link = cmp.Or(urls[reason.Check], c.URL), linkCheck
+				id, link = cmp.Or(urls[reason.Check], c.URL), links[reason.Check]
 			case changes.ReasonChanges:
 				id, link = cmp.Or(reviewURL(r, reason.Login), c.URL), linkReview+reason.Login
 			case changes.ReasonThreads:
@@ -456,7 +487,7 @@ func changeOverview(c changes.Change, d changes.Detail, r *changes.Review, draft
 
 // Overview entry links: where enter goes from a reason, check, or reviewer.
 const (
-	linkCheck   = "check"   // the check view (BL-178); disabled until then
+	linkCheck   = "check:"  // the check view of the check checkLink names
 	linkReview  = "review:" // the login's latest review in Conversation
 	linkThreads = "threads" // the first unresolved thread in Conversation
 	linkActions = "actions" // ! narrowed to the change's actions
@@ -497,7 +528,7 @@ func checkRows(t theme, checks []changes.Check, open bool, now time.Time, width 
 		}
 		label := ansi.Truncate(textutil.Line(check.Name), max(1, min(name, room)), "…")
 		line := "  " + checkGlyph(t, check) + " " + label + blank(min(name, room)-ansi.StringWidth(label)) + "  " + t.muted.render(state) + duration
-		entry(ansi.Truncate(strings.TrimRight(line, " "), width, "…"), check.URL, linkCheck)
+		entry(ansi.Truncate(strings.TrimRight(line, " "), width, "…"), check.URL, checkLink(check))
 	}
 	for _, check := range shown {
 		row(check)
@@ -983,4 +1014,115 @@ func worktreePath(c changes.Change) string {
 		}
 	}
 	return c.Worktree
+}
+
+// shownCheckIn is check as review has it now, so a refresh shows its new
+// state; one no longer on the head stays as it was.
+func shownCheckIn(r *changes.Review, check changes.Check) changes.Check {
+	if r != nil {
+		for _, c := range r.Checks {
+			if checkLink(c) == checkLink(check) {
+				return c
+			}
+		}
+	}
+	return check
+}
+
+// checkPage draws the check view: the check's name, exact state, duration,
+// and start, then its Steps, Annotations, and Log, or a check run's Output or
+// a commit status's Description. Each line O can open is an entry whose id is
+// its URL; the Log entry opens the job.
+func checkPage(check changes.Check, readErr error, request detailRequest, render func(string, int, string) (string, error)) rendered {
+	t, width := request.theme, max(1, request.width)
+	now := cmp.Or(request.now, time.Now())
+	var page rendered
+	entry := func(line, id string) {
+		page.entries, page.ids, page.links = append(page.entries, len(page.lines)), append(page.ids, id), append(page.links, "")
+		page.lines = append(page.lines, ansi.Truncate(strings.TrimRight(line, " "), width, "…"))
+	}
+	section := func(label string) {
+		page.lines = append(page.lines, "", t.bold.render(label))
+	}
+	// row places right, muted, at the end of a line of left, dropping it when
+	// the line has no room for both.
+	row := func(left, right string) string {
+		room := width - ansi.StringWidth(left) - 2
+		if right == "" || room < ansi.StringWidth(right) {
+			return left
+		}
+		return left + blank(width-ansi.StringWidth(left)-ansi.StringWidth(right)) + t.muted.render(right)
+	}
+	var facts []string
+	for _, fact := range []string{cmp.Or(check.Status, check.State), checkDuration(check, now), age(check.StartedAt, now)} {
+		if fact != "" {
+			facts = append(facts, fact)
+		}
+	}
+	name := ansi.Truncate(textutil.Line(check.Name), max(1, width-4), "…")
+	entry(row(checkGlyph(t, check)+" "+name, strings.Join(facts, " · ")), check.URL)
+	if readErr != nil {
+		page.lines = append(page.lines, "", t.yellow.render(ansi.Truncate("Check detail unavailable: "+textutil.Line(readErr.Error()), width, "…")))
+	}
+	if len(check.Steps) > 0 {
+		section("Steps")
+		for _, step := range check.Steps {
+			s := changes.Check{Status: step.Status, State: changes.CheckCategory(step.Status), StartedAt: step.StartedAt, CompletedAt: step.CompletedAt}
+			label := ansi.Truncate(textutil.Line(step.Name), max(1, width-14), "…")
+			entry(row("  "+checkGlyph(t, s)+" "+label, checkDuration(s, now)), cmp.Or(step.URL, check.URL))
+		}
+	}
+	if len(check.Annotations) > 0 {
+		section("Annotations")
+		for _, a := range check.Annotations {
+			glyph := t.muted.render("•")
+			switch a.Level {
+			case "failure":
+				glyph = t.red.render("✕")
+			case "warning":
+				glyph = t.yellow.render("!")
+			}
+			place := textutil.Line(a.Path)
+			if a.Line > 0 {
+				place += ":" + strconv.Itoa(a.Line)
+			}
+			text := strings.Join(strings.Fields(textutil.Line(cmp.Or(a.Message, a.Title))), " ")
+			entry("  "+glyph+" "+place+"  "+t.muted.render(text), cmp.Or(a.URL, check.URL))
+		}
+	}
+	if check.Title != "" || strings.TrimSpace(check.Summary) != "" {
+		if check.ID == "" {
+			section("Description")
+		} else {
+			section("Output")
+		}
+		if check.Title != "" {
+			page.lines = append(page.lines, ansi.Truncate(textutil.Line(check.Title), width, "…"))
+		}
+		if strings.TrimSpace(check.Summary) != "" {
+			body := cappedBody{limit: bodyLimit}
+			body.write(check.Summary)
+			page.truncated = body.full
+			page.lines = append(page.lines, markdownLines(body.builder.String(), width, t, render)...)
+		}
+	}
+	if check.Log != "" || check.LogUnavailable != "" {
+		section("Log")
+		if check.Log == "" {
+			entry("  "+t.muted.render(textutil.Line(check.LogUnavailable)), check.URL)
+		} else {
+			page.entries, page.ids, page.links = append(page.entries, len(page.lines)), append(page.ids, check.URL), append(page.links, "")
+			for _, line := range strings.Split(check.Log, "\n") {
+				line = ansi.Truncate("  "+textutil.Line(line), width, "…")
+				switch changes.LogLevel(strings.TrimSpace(line)) {
+				case "error":
+					line = t.red.render(line)
+				case "warning":
+					line = t.yellow.render(line)
+				}
+				page.lines = append(page.lines, line)
+			}
+		}
+	}
+	return page
 }

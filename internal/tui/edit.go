@@ -1224,6 +1224,14 @@ func osc52(value string) tea.Cmd {
 	return tea.Raw(sequence)
 }
 
+// yankLog is the log excerpt of the check view's check, which yl copies.
+func (m Model) yankLog() string {
+	if m.check == nil || m.shownCheck == nil {
+		return ""
+	}
+	return m.shownCheck.Log
+}
+
 func (m *Model) yank(key string) tea.Cmd {
 	row, ok := m.selectedRow()
 	if !ok {
@@ -1247,6 +1255,8 @@ func (m *Model) yank(key string) tea.Cmd {
 		value = m.yankChange().URL
 	case "s":
 		value = m.yankCommit()
+	case "l":
+		value = m.yankLog()
 	default:
 		m.notice = "Unknown yank target."
 		return nil
@@ -1256,6 +1266,9 @@ func (m *Model) yank(key string) tea.Cmd {
 		return nil
 	}
 	m.notice = "Copied " + textutil.Line(value)
+	if key == "l" {
+		m.notice = "Copied the log excerpt."
+	}
 	return osc52(value)
 }
 

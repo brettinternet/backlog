@@ -169,6 +169,17 @@ is reused for a minute while the head doesn't move; `R` reads it again. A
 failed read keeps the last one, which shows with why it may be out of date.
 It reads the first 100 checks, comments, reviews, and threads.
 
+A check run's detail (its first 50 steps and annotations, output title and
+summary, and, for a failed GitHub Actions job, a log excerpt) is read only for
+the check shown and the first five failing runs `--detail` reports, through
+the same queue. The log comes from signed storage without the account's
+credential, and needs the token's Actions: read
+([GitHub](github.md)). It streams, keeping at most 100 lines of 2 KiB each,
+stops at the first `##[error]` line, and gives up past 32 MiB. Timestamps and
+terminal sequences are stripped and secrets redacted before a completed run's
+detail is kept, by check run, in a `.checks.json` file beside `.pulls.json`;
+a running job is read again each time.
+
 From that detail, one verdict says whether the pull request can land and
 what's left, in fix-first order: failing checks, requested changes, unresolved
 threads, required review, pending checks, conflicts, behind the base, branch

@@ -1332,8 +1332,39 @@ func TestChangeViewReview(t *testing.T) {
 		last += 1 + i
 	}
 	// Entries: the three reasons, the two checks, then the two reviewers.
-	if m, _ = detailKey(m, tea.KeyEnter, 0); !strings.Contains(m.notice, "Disabled") {
-		t.Fatalf("enter on a failing check: %q", m.notice)
+	// Enter on the failing check's reason opens its check view one level
+	// under Overview, whose log yl copies and whose steps O opens; backspace
+	// returns to the reason.
+	m.detailWorker.changeCheck = func(_ context.Context, _ changes.Change, check changes.Check, _ bool) (changes.CheckDetail, error) {
+		if check.Name != "lint" {
+			return changes.CheckDetail{}, errors.New("read " + check.Name)
+		}
+		return changes.CheckDetail{Steps: []changes.Step{{Number: 1, Name: "Run lint", Status: changes.CheckFailed, URL: "https://ci/lint#step:1:1"}},
+			Annotations: []changes.Annotation{{Path: "a.go", Line: 3, Level: "failure", Message: "unused x"}}, Log: "lint ./...\n##[error]Process completed with exit code 1."}, nil
+	}
+	m, _ = detailKey(m, tea.KeyEnter, 0)
+	m = settleDetail(t, m)
+	content = m.View().Content
+	last = -1
+	for _, want := range []string{"✕ lint", "failing", "Steps", "✕ Run lint", "Annotations", "a.go:3  unused x", "Log", "lint ./...", "##[error]Process completed"} {
+		i := strings.Index(content[last+1:], want)
+		if i < 0 || strings.Contains(content, "Merge ") {
+			t.Fatalf("check view lacks %q after the line before it\n%s", want, content)
+		}
+		last += 1 + i
+	}
+	m, _ = detailKey(m, 'j', 0)
+	if _, cmd := detailKey(m, 'O', 0); cmd == nil || cmd() == nil || opened != "https://ci/lint#step:1:1" {
+		t.Fatalf("O opened %q, not the step under the cursor", opened)
+	}
+	m, _ = detailKey(m, 'y', 0)
+	if m, _ = detailKey(m, 'l', 0); m.notice != "Copied the log excerpt." {
+		t.Fatalf("yl: %q", m.notice)
+	}
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	if content = m.View().Content; m.check != nil || m.entryCursor != 0 || !strings.Contains(content, "Merge      ✕ Blocked") {
+		t.Fatalf("backspace left the check view: cursor %d\n%s", m.entryCursor, content)
 	}
 	for range 4 {
 		m, _ = detailKey(m, 'j', 0)

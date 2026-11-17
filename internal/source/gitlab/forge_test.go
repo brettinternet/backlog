@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -189,7 +190,7 @@ func TestForge(t *testing.T) {
 	}
 	wantReviewers := []changes.Reviewer{{Login: "bob", State: changes.ReviewChanges}, {Login: "cy", State: changes.ReviewApproved}}
 	wantChecks := []changes.Check{{Name: "test", State: changes.ChecksFailing, URL: "https://gitlab.com/grp/sub/app/-/jobs/1"}, {Name: "lint", State: changes.ChecksSkipped}}
-	if !slices.Equal(r.Reviewers, wantReviewers) || !slices.Equal(r.Checks, wantChecks) || len(r.Comments) != 1 || r.Comments[0].Body != "looks fine" {
+	if !slices.Equal(r.Reviewers, wantReviewers) || !reflect.DeepEqual(r.Checks, wantChecks) || len(r.Comments) != 1 || r.Comments[0].Body != "looks fine" {
 		t.Fatalf("review: %+v", r)
 	}
 	if len(r.Threads) != 1 || r.Threads[0].Path != "new.go" || r.Threads[0].Line != 3 || r.Threads[0].Resolved || len(r.Threads[0].Comments) != 2 {

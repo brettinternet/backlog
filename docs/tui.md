@@ -277,8 +277,8 @@ URL), and the description; a branch or worktree shows About alone. `enter` on
 a reviewer or requested-changes reason opens Conversation at their latest
 review, on unresolved threads at the first one, and on conflicts, behind, or
 ready opens `!` with the change's actions (such as `gh pr merge`), after
-which the pull request is re-read; on a check it is disabled until the check
-view, and `O` opens it. Conversation lists review threads (file, line, resolved or not)
+which the pull request is re-read; on a check or a failing or pending check
+reason it opens the check view, and `O` opens the check. Conversation lists review threads (file, line, resolved or not)
 and comments, unresolved threads first, each with its comments' authors, ages,
 and text; `O` opens the one under the cursor, and `m` shows more when the text
 is cut off. On both, `j` and `k` scroll until the next entry shows, through a
@@ -293,6 +293,21 @@ from its landed commits, and a pull request without a local head from the
 forge. Git and forge reads run on the detail worker for the change shown, and
 a worktree's uncommitted files are skipped, saying so, when repository config
 defines a filter driver. `!`, `O`, and `yp` act on the change in view.
+
+The check view sits one level under Overview; `backspace` returns to the
+entry it opened from, and another tab closes it. Its header shows the check's
+name, exact state, duration, and start age. A check run lists its Steps (each
+with its state and duration), its Annotations (file, line, and message),
+and, when it has one, its Output (title and summary as Markdown); a commit
+status shows its Description. A failed GitHub Actions job adds a Log: the
+lines up to and including the first `##[error]` line, or the last ones, at
+most 100, without timestamps, `##[error]` lines red and `##[warning]` lines
+yellow. Over 32 MiB, without Actions: read, or while the job runs, the Log
+line says why. `O` opens the step, annotation, or check under the cursor (the
+job from the Log), `yl` copies the excerpt, and `!` adds actions naming
+`{check.*}`, such as re-running the failed jobs. The read runs on the detail
+worker through the account's request queue, redacted, and is kept by check
+run once the check completes.
 
 Diff shows each file's header line, then its hunks: unified (old and new line
 numbers, sign, code) when the pane is under 120 columns, side by side at 120
@@ -738,6 +753,7 @@ keys:
 | `yank-markdown` | `y m` | Copy Markdown link |
 | `yank-change` | `y p` | Copy change URL |
 | `yank-commit` | `y s` | Copy commit SHA |
+| `yank-log` | `y l` | Copy log excerpt |
 | `help` | `?` | Help |
 | `palette` | `:`, `alt+x` | Commands |
 | `quit` | `q` | Quit / back |

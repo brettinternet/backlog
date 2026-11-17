@@ -110,7 +110,9 @@ An unknown `cursor` returns `not-found`.
 agent can see whether its pull request is open, green, and approved, which
 checks fail, and how many review threads are unresolved, without calling the
 forge itself. With `detail: true` it adds the merge verdict and its reasons,
-check timing, and reviewers, like `bl changes --detail --json`.
+check timing, reviewers, and, for the first five failing check runs, their
+`steps`, `annotations`, and `log` excerpt or `logUnavailable`, like `bl
+changes --detail --json`.
 
 `tour` stores a tour for the item's linked change whose head is its `ref` and
 returns `item`, `change`, `ref`, and `steps`, like `bl tour --json`;
