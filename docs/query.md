@@ -109,10 +109,12 @@ Notes:
   `is:closed -has:change` lists closed items with nothing linked. A landed
   change is `merged`. A worktree or branch is `open` too, so `has:pr` narrows
   to items with a linked pull or merge request in any state, including one
-  that landed. `merge:` reads only open, non-draft pull requests whose
-  forge reports a merge state (GitLab doesn't), and `merge:ready` never
-  matches stale checks. `bl ls` and MCP `query` load changes only when the
-  query names a change term; the TUI keeps them current on a worker.
+  that landed. `checks:` and `review:` don't match through a closed or merged
+  GitHub pull request, whose list read skips both. `merge:` reads only open,
+  non-draft pull requests whose forge reports a merge state (GitLab doesn't),
+  and `merge:ready` never matches stale checks. `bl ls` and MCP `query` load
+  changes only when the query names a change term; the TUI keeps them current
+  on a worker.
 - Hook-only terms need hook parsing mode and are false outside an event.
   `sprint:` is refused in hook mode: events carry no sprint catalog. Change
   terms are refused too: events carry no linked changes.
