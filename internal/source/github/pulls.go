@@ -44,16 +44,19 @@ func NewForge(o Options, cachePath string) (*Forge, error) {
 func (f *Forge) Name() string { return "github " + f.s.o.Repo }
 func (f *Forge) Web() string  { return "https://" + f.s.o.Host + "/" + f.s.o.Repo }
 
-// pullsQuery reads mergeStateStatus, which doubles a page's time, only when
-// merge is set: it means something only for an open pull request.
-const pullsQuery = `query($owner:String!,$repo:String!,$first:Int!,$after:String,$states:[PullRequestState!],$merge:Boolean!){repository(owner:$owner,name:$repo){pullRequests(first:$first,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision mergeStateStatus @include(if:$merge) closingIssuesReferences(first:10){nodes{id}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}`
+// pullsQuery reads mergeStateStatus, reviewDecision, and the checks rollup,
+// which together quadruple a page's time, only when open is set: the list
+// shows them only for an open pull request.
+const pullsQuery = `query($owner:String!,$repo:String!,$first:Int!,$after:String,$states:[PullRequestState!],$open:Boolean!){repository(owner:$owner,name:$repo){pullRequests(first:$first,after:$after,states:$states,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{number title body url state isDraft isCrossRepository createdAt updatedAt mergedAt closedAt headRefName headRefOid author{login __typename} mergeCommit{oid} additions deletions reviewDecision @include(if:$open) mergeStateStatus @include(if:$open) closingIssuesReferences(first:10){nodes{id}} commits(last:1) @include(if:$open){nodes{commit{statusCheckRollup{state}}}}}}}}`
 
 const (
-	// pullsPage is a pull request page's size. A page GitHub fails to serve,
-	// often a 502 from a slow page on a large repository, is read again at
+	// openPullsPage and pullsPage are the open and the closed and merged
+	// passes' page sizes. A page GitHub fails to serve, often a 502 or a
+	// GraphQL error from a slow page on a large repository, is read again at
 	// half the size, down to minPullsPage.
-	pullsPage    = 50
-	minPullsPage = 12
+	openPullsPage = 50
+	pullsPage     = 100
+	minPullsPage  = 12
 )
 
 type pullNode struct {
@@ -143,14 +146,15 @@ func (f *Forge) refresh(ctx context.Context, fresh time.Duration) ([]changes.Pul
 // failure it returns those read with the page cursor after them.
 func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after string, since time.Time) ([]changes.PullRequest, string, error) {
 	vars := f.s.variables()
-	vars["states"], vars["merge"] = []string{"CLOSED", "MERGED"}, state == "OPEN"
+	vars["states"], vars["open"] = []string{"CLOSED", "MERGED"}, state == "OPEN"
+	first := pullsPage
 	if state != "" {
-		vars["states"] = []string{state}
+		vars["states"], first = []string{state}, openPullsPage
 	}
 	client := f.s.client
 	client.Refusals = true
 	var out []changes.PullRequest
-	for first := pullsPage; ; {
+	for {
 		if after != "" {
 			vars["after"] = after
 		}
@@ -178,6 +182,10 @@ func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after str
 			return out, after, err
 		}
 		if err := decodeAllowing(response.Body, &result, pullError); err != nil {
+			if first > minPullsPage {
+				first /= 2
+				continue
+			}
 			return out, after, err
 		}
 		if result.Repository == nil {

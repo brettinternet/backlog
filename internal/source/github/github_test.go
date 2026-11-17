@@ -81,14 +81,18 @@ type fixture struct {
 	timelineStuck bool
 	timelineCalls int
 	// pulls are the repository's pull request nodes, paged newest updated
-	// first with the index after a page as its cursor; one without commits
-	// answers FORBIDDEN for its checks. pullsFail reports the repository
-	// unavailable. A page over pullsBusy nodes, or from the cursor pullsDown,
-	// answers 502.
-	pulls     []map[string]any
-	pullsFail bool
-	pullsBusy int
-	pullsDown string
+	// first with the index after a page as its cursor, leaving out a field
+	// the query skips with @include(if:$open); one without commits answers
+	// FORBIDDEN for its checks. pullsFail reports the repository unavailable.
+	// A page over pullsBusy nodes, or from the cursor pullsDown, answers 502,
+	// or null data with a GraphQL error when pullsNull. pullsAsked records
+	// each page's states and size.
+	pulls      []map[string]any
+	pullsFail  bool
+	pullsBusy  int
+	pullsDown  string
+	pullsNull  bool
+	pullsAsked []string
 	// pullFiles and pullCommits answer pull request 45's REST lists.
 	pullFiles, pullCommits string
 	// review is pull request 45's review node; reviewFail reports it
@@ -433,18 +437,28 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 		after, _ := v["after"].(string)
 		start, _ := strconv.Atoi(after)
 		end := min(len(all), start+int(v["first"].(float64)))
+		f.pullsAsked = append(f.pullsAsked, fmt.Sprint(v["states"], v["first"]))
 		if f.pullsBusy > 0 && end-start > f.pullsBusy || f.pullsDown != "" && after == f.pullsDown {
+			if f.pullsNull {
+				fmt.Fprint(w, `{"data":null,"errors":[{"message":"Something went wrong while executing your query. This may be the result of a timeout."}]}`)
+				return
+			}
 			w.WriteHeader(502)
 			return
 		}
+		asked := func(field string) bool {
+			return strings.Contains(q, field) && (v["open"] == true || !strings.Contains(q, field+" @include(if:$open)"))
+		}
 		nodes, failures := []any{}, []any{}
 		for _, n := range all[start:end] {
-			if n["commits"] == nil {
-				failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests", "nodes", len(nodes), "commits"}})
+			n = maps.Clone(n)
+			for _, field := range []string{"reviewDecision", "mergeStateStatus", "commits(last:1)"} {
+				if !asked(field) {
+					delete(n, strings.TrimSuffix(field, "(last:1)"))
+				}
 			}
-			if v["merge"] != true {
-				n = maps.Clone(n)
-				delete(n, "mergeStateStatus")
+			if n["commits"] == nil && asked("commits(last:1)") {
+				failures = append(failures, map[string]any{"type": "FORBIDDEN", "path": []any{"repository", "pullRequests", "nodes", len(nodes), "commits"}})
 			}
 			nodes = append(nodes, n)
 		}
@@ -1036,7 +1050,7 @@ func TestForgePullRequests(t *testing.T) {
 	f.pulls = []map[string]any{
 		{"number": 45, "title": "BL-12 fix", "body": "token fake-secret", "url": "https://github.com/owner/repo/pull/45", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "bl-12-fix", "headRefOid": "aaa", "reviewDecision": "APPROVED", "closingIssuesReferences": map[string]any{"nodes": []any{map[string]any{"id": "I_1"}}}, "commits": rollup("PENDING"), "author": map[string]any{"login": "ann", "__typename": "User"}},
 		{"number": 46, "title": "Bump deps", "url": "https://github.com/owner/repo/pull/46", "state": "OPEN", "createdAt": at, "updatedAt": at, "headRefName": "deps", "commits": rollup("SUCCESS"), "author": map[string]any{"login": "dependabot", "__typename": "Bot"}},
-		{"number": 44, "title": "Old", "url": "https://github.com/owner/repo/pull/44", "state": "MERGED", "createdAt": at, "updatedAt": at, "mergedAt": at, "headRefName": "old", "mergeCommit": map[string]any{"oid": "mmm"}},
+		{"number": 44, "title": "Old", "url": "https://github.com/owner/repo/pull/44", "state": "MERGED", "createdAt": at, "updatedAt": at, "mergedAt": at, "headRefName": "old", "mergeCommit": map[string]any{"oid": "mmm"}, "reviewDecision": "APPROVED", "commits": rollup("FAILURE")},
 	}
 	read := func() map[int]changes.PullRequest {
 		t.Helper()
@@ -1055,7 +1069,7 @@ func TestForgePullRequests(t *testing.T) {
 	if open.State != changes.StateOpen || open.Head != "bl-12-fix" || open.HeadSHA != "aaa" || open.Review != changes.ReviewApproved || open.Checks != changes.ChecksPending || !slices.Equal(open.Closes, []string{"I_1"}) || strings.Contains(open.Body, "fake-secret") {
 		t.Fatalf("open: %+v", open)
 	}
-	if merged.State != changes.StateMerged || merged.MergeSHA != "mmm" || merged.Checks != "" {
+	if merged.State != changes.StateMerged || merged.MergeSHA != "mmm" || merged.Checks != "" || merged.Review != "" {
 		t.Fatalf("merged: %+v", merged)
 	}
 	if data, err := os.ReadFile(cache); err != nil || strings.Contains(string(data), "fake-secret") {
@@ -1153,47 +1167,53 @@ func TestForgePullRequests(t *testing.T) {
 	}
 }
 
-// Catches a large repository whose slow pages GitHub answers with 502 never
-// listing its open pull requests or never converging, because one failed page
-// discarded every page read, and the merge state lost from open pull requests
-// once the closed and merged pass stopped reading it.
+// Catches a large repository whose slow pages GitHub answers with 502, or with
+// null data and a GraphQL error, never listing its open pull requests or never
+// converging, because one failed page discarded every page read; the merge
+// state lost from open pull requests once the closed and merged pass stopped
+// reading it; and that pass reading review and checks or small pages again.
 func TestForgePullRequestsLarge(t *testing.T) {
-	s, f := newFixture(t)
-	forge := &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
-	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := range 130 {
-		state := "MERGED"
-		if i%40 == 0 {
-			state = "OPEN"
+	for _, null := range []bool{false, true} {
+		s, f := newFixture(t)
+		forge := &Forge{s: s, cache: filepath.Join(t.TempDir(), "forge.pulls.json")}
+		at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for i := range 130 {
+			state := "MERGED"
+			if i%40 == 0 {
+				state = "OPEN"
+			}
+			f.pulls = append(f.pulls, map[string]any{"number": i + 1, "title": "pr", "state": state, "createdAt": at, "updatedAt": at.Add(-time.Duration(i) * time.Hour), "mergeStateStatus": "CLEAN", "reviewDecision": "APPROVED", "commits": map[string]any{"nodes": []any{}}})
 		}
-		f.pulls = append(f.pulls, map[string]any{"number": i + 1, "title": "pr", "state": state, "createdAt": at, "updatedAt": at.Add(-time.Duration(i) * time.Hour), "mergeStateStatus": "CLEAN", "commits": map[string]any{"nodes": []any{}}})
-	}
-	read := func() (map[int]changes.PullRequest, error) {
-		prs, err := forge.PullRequests(context.Background())
-		out := map[int]changes.PullRequest{}
-		for _, pr := range prs {
-			out[pr.Number] = pr
+		read := func() (map[int]changes.PullRequest, error) {
+			prs, err := forge.PullRequests(context.Background())
+			out := map[int]changes.PullRequest{}
+			for _, pr := range prs {
+				out[pr.Number] = pr
+			}
+			return out, err
 		}
-		return out, err
-	}
-	// Pages of 50 time out, and the page after the second of 25 is down.
-	f.pullsBusy, f.pullsDown = 25, "50"
-	prs, err := read()
-	if err == nil || len(prs) != 54 {
-		t.Fatalf("first refresh: %v, %d listed", err, len(prs))
-	}
-	for _, n := range []int{1, 41, 81, 121} {
-		if prs[n].State != changes.StateOpen || prs[n].MergeState != "clean" {
-			t.Fatalf("open #%d: %+v", n, prs[n])
+		// Pages over 25 time out, and the page after the second of 25 is down.
+		f.pullsBusy, f.pullsDown, f.pullsNull = 25, "50", null
+		prs, err := read()
+		if err == nil || len(prs) != 54 {
+			t.Fatalf("null %v first refresh: %v, %d listed", null, err, len(prs))
 		}
-	}
-	if prs[2].State != changes.StateMerged || prs[2].MergeState != "" {
-		t.Fatalf("merged #2: %+v", prs[2])
-	}
-	f.pullsDown = ""
-	f.pulls[1]["updatedAt"] = at.Add(time.Hour)
-	if prs, err = read(); err != nil || len(prs) != 130 || !prs[2].Updated.Equal(at.Add(time.Hour)) || prs[121].MergeState != "clean" {
-		t.Fatalf("resumed refresh: %v, %d listed, #2 %+v", err, len(prs), prs[2])
+		if want := []string{"[OPEN] 50", "[CLOSED MERGED] 100", "[CLOSED MERGED] 50", "[CLOSED MERGED] 25", "[CLOSED MERGED] 25", "[CLOSED MERGED] 25", "[CLOSED MERGED] 12"}; !slices.Equal(f.pullsAsked, want) {
+			t.Fatalf("null %v pages asked: %q", null, f.pullsAsked)
+		}
+		for _, n := range []int{1, 41, 81, 121} {
+			if prs[n].State != changes.StateOpen || prs[n].MergeState != "clean" || prs[n].Review != changes.ReviewApproved {
+				t.Fatalf("null %v open #%d: %+v", null, n, prs[n])
+			}
+		}
+		if prs[2].State != changes.StateMerged || prs[2].MergeState != "" || prs[2].Review != "" {
+			t.Fatalf("null %v merged #2: %+v", null, prs[2])
+		}
+		f.pullsDown = ""
+		f.pulls[1]["updatedAt"] = at.Add(time.Hour)
+		if prs, err = read(); err != nil || len(prs) != 130 || !prs[2].Updated.Equal(at.Add(time.Hour)) || prs[121].MergeState != "clean" {
+			t.Fatalf("null %v resumed refresh: %v, %d listed, #2 %+v", null, err, len(prs), prs[2])
+		}
 	}
 }
 
