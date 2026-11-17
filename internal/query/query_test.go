@@ -100,16 +100,21 @@ func TestFields(t *testing.T) {
 		}
 	}
 	// Change terms match any linked change; hooks can't name them (D43).
-	s.States[item.Ref] = query.State{Changes: []query.Change{{State: "open", Checks: "unknown", Merge: "behind"}, {State: "merged", Checks: "failing", Review: "approved"}}}
-	for q, want := range map[string]bool{`has:change`: true, `-has:change`: false, `change:merged`: true, `change:closed`: false, `checks:failing`: true, `checks:passing`: false, `review:approved`: true, `review:changes`: false, `merge:behind`: true, `merge:ready`: false} {
+	s.States[item.Ref] = query.State{Changes: []query.Change{{State: "open", Checks: "unknown", Merge: "behind"}, {State: "merged", Checks: "failing", Review: "approved", PR: true}}}
+	for q, want := range map[string]bool{`has:change`: true, `-has:change`: false, `has:pr`: true, `change:merged`: true, `change:closed`: false, `checks:failing`: true, `checks:passing`: false, `review:approved`: true, `review:changes`: false, `merge:behind`: true, `merge:ready`: false} {
 		if got := parse(t, q, false).Match(item, s, nil); got != want {
 			t.Fatalf("change %s = %v, want %v", q, got, want)
 		}
 	}
-	for _, q := range []string{`has:change`, `change:merged`, `checks:failing`, `merge:ready`} {
+	for _, q := range []string{`has:change`, `has:pr`, `change:merged`, `checks:failing`, `merge:ready`} {
 		if _, err := query.Parse(q, query.Options{Hook: true}); err == nil {
 			t.Fatalf("hook accepted %s", q)
 		}
+	}
+	// A worktree or branch alone is open but has no pull request.
+	s.States[item.Ref] = query.State{Changes: []query.Change{{State: "open"}}}
+	if !parse(t, "change:open", false).Match(item, s, nil) || parse(t, "has:pr", false).Match(item, s, nil) {
+		t.Fatal("branch-only change matched has:pr")
 	}
 	if _, err := query.Parse(`merge:clean`, query.Options{}); err == nil {
 		t.Fatal("accepted merge:clean")
