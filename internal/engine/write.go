@@ -25,6 +25,9 @@ const WriteFields = "title status type priority assignees labels milestone sprin
 // unqualified ref missing locally takes the qualified ID of the only other
 // native source that has it; otherwise it stays local.
 func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, bool, error) {
+	if ref.ID == "." {
+		return ref, false, source.Refuse("usage", ". names the CLI checkout's branch item; pass an item ID")
+	}
 	if ref.Source == sourceID {
 		ref.Source = ""
 	}

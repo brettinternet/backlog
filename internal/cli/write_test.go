@@ -755,6 +755,16 @@ func TestDotNamesBranchItem(t *testing.T) {
 	}
 	writeOK(t, linked, "", "archive", ".")
 	writeOK(t, linked, "", "unarchive", ".")
+	var child struct{ Data struct{ ID string } }
+	if err := json.Unmarshal([]byte(writeOK(t, linked, "", "new", "--source", "tasks", "Child ^.")), &child); err != nil {
+		t.Fatal(err)
+	}
+	writeOK(t, linked, "", "set", "tasks:BL-012", "blocked_by=.")
+	for _, id := range []string{child.Data.ID, "BL-012"} {
+		if text := get(t, filepath.Join(root, "items", id+".md")); !strings.Contains(text, created.Data.ID) {
+			t.Fatalf("%s does not reference the branch item:\n%s", id, text)
+		}
+	}
 
 	for _, tc := range []struct {
 		head, want string

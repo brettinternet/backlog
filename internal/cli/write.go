@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -696,6 +697,13 @@ func ResolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 }
 
 func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref model.Ref) (model.Ref, bool, error) {
+	if ref.Source == "" && ref.ID == "." {
+		id, err := itemID(ctx, cfg, ref.ID)
+		if err != nil {
+			return ref, false, err
+		}
+		ref.Source, ref.ID, _ = strings.Cut(id, ":")
+	}
 	resolved, found, err := engine.ResolveRef(ctx, cfg, sourceID, ref)
 	if e := duplicateFiles(err); e != nil {
 		return ref, false, e
@@ -708,6 +716,32 @@ func resolveRef(ctx context.Context, cfg project.Config, sourceID string, ref mo
 
 // resolveChanges expands reference shorthand in set mutations for one item.
 func resolveChanges(ctx context.Context, cfg project.Config, sourceID string, changes []model.Mutation) ([]model.Mutation, error) {
+	changes = slices.Clone(changes)
+	for n, m := range changes {
+		switch m.Field {
+		case "parent", "duplicate_of", "blocked_by", "related":
+		default:
+			continue
+		}
+		switch value := m.Value.(type) {
+		case string:
+			id, err := itemID(ctx, cfg, value)
+			if err != nil {
+				return nil, err
+			}
+			changes[n].Value = id
+		case []string:
+			values := make([]string, len(value))
+			for k, raw := range value {
+				id, err := itemID(ctx, cfg, raw)
+				if err != nil {
+					return nil, err
+				}
+				values[k] = id
+			}
+			changes[n].Value = values
+		}
+	}
 	resolved, err := engine.ResolveChanges(ctx, cfg, sourceID, changes)
 	if err != nil {
 		return nil, writeError(err)
