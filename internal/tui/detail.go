@@ -301,6 +301,7 @@ type historyCache struct {
 type changeCache struct {
 	key    string
 	detail changes.Detail
+	err    error
 }
 
 type detailWorker struct {
@@ -590,7 +591,8 @@ func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, li
 
 // loadChange reads a change's files and commits each time, as the Changes
 // tab does, except one without a worktree is kept until its head or update
-// time moves, so a pull request isn't fetched again on every tab. The Diff
+// time moves, so a pull request isn't fetched again on every tab or forge
+// refresh; a failed read is kept the same way until R. The Diff
 // tab asks for patches, which a kept detail without them can't serve.
 func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fresh, patch bool) (changes.Detail, error) {
 	if worker.changeDetail == nil {
@@ -599,13 +601,13 @@ func (worker *detailWorker) loadChange(ctx context.Context, c changes.Change, fr
 	key := ""
 	if c.Worktree == "" {
 		key = strings.Join([]string{c.ID, c.Stage, c.State, c.Head, c.Updated.String()}, "\x00")
-		if cached := worker.recentChange; cached.key == key && !fresh && (cached.detail.Patched || !patch) {
-			return worker.recentChange.detail, nil
+		if cached := worker.recentChange; cached.key == key && !fresh && (cached.err != nil || cached.detail.Patched || !patch) {
+			return cached.detail, cached.err
 		}
 	}
 	detail, err := worker.changeDetail(ctx, c, patch)
-	if err == nil && key != "" && ctx.Err() == nil {
-		worker.recentChange = changeCache{key, detail}
+	if key != "" && ctx.Err() == nil {
+		worker.recentChange = changeCache{key, detail, err}
 	}
 	return detail, err
 }
