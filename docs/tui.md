@@ -65,7 +65,7 @@ shows acceptance criteria progress once any row has criteria; other built-in
 tabs don't. The change column
 shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓`
 ([Changes](changes.md)), and appears once any row has one. For an open pull
-request its last glyph is the merge verdict from the list read, first that
+request its last glyph is the merge verdict from the linked read, first that
 applies: `⚠` conflicts, `✕` checks failing, `✎` changes requested, `↓` behind
 its base, `●` checks running, `○` review required, `⊘` blocked for a reason
 the list can't see, such as unresolved threads, `✓` ready. A draft, or a

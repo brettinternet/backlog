@@ -27,14 +27,17 @@ import (
 const maxLanded = 1000
 
 // Options locate one project's changes. Git reads local refs, worktrees, and
-// landed commits; Forges list pull requests.
+// landed commits; Forges list pull requests. PullSources are the
+// repositories a github-pulls source lists, whose every open pull request
+// counts as linked to an unfinished item (D44).
 type Options struct {
-	Discovery project.Discovery
-	CacheDir  string
-	StateDir  string
-	Trailer   string
-	Git       bool
-	Forges    []Forge
+	Discovery   project.Discovery
+	CacheDir    string
+	StateDir    string
+	Trailer     string
+	Git         bool
+	Forges      []Forge
+	PullSources []string
 }
 
 // Forge lists a repository's pull requests, newest updated first, keeping its
@@ -46,6 +49,10 @@ type Forge interface {
 	// the repository's, or with /- appended for GitLab.
 	Web() string
 	PullRequests(ctx context.Context) ([]PullRequest, error)
+	// Verdicts reads the merge state, review, and checks of its own pull
+	// requests among pulls, in order, skipping the others, when its list
+	// leaves them out. On failure it returns those read with the error.
+	Verdicts(ctx context.Context, pulls []PullID) (map[PullID]PullVerdict, error)
 	// Pull reads one pull request's files and commits.
 	Pull(ctx context.Context, number int) (Detail, error)
 	// Review reads one pull request's review, reusing a recent read for the

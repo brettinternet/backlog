@@ -87,7 +87,7 @@ snapshot.
 | `change` | `open`, `draft`, `merged`, `closed`, `unknown`, `stale`: the state of any linked change ([Changes](changes.md)) |
 | `checks` | `passing`, `failing`, `pending`, `stale`: any linked change's checks |
 | `review` | `approved`, `changes` (changes requested), `requested`: any linked change's review decision |
-| `merge` | `ready`, `unstable`, `blocked`, `behind`, `conflicts`: any open pull request's merge state from the forge's list read |
+| `merge` | `ready`, `unstable`, `blocked`, `behind`, `conflicts`: a linked open pull request's merge state |
 | `changed` | Field name or `readiness`. Hooks only: the event changed it. |
 | `hook`, `action` | Name. Hooks only: matches `hook.finished` or `action.finished` from it. |
 | `outcome` | `ok`, `failed`, `timeout`, `refused`. Hooks only, for `*.finished` events. |
@@ -109,9 +109,11 @@ Notes:
   `is:closed -has:change` lists closed items with nothing linked. A landed
   change is `merged`. A worktree or branch is `open` too, so `has:pr` narrows
   to items with a linked pull or merge request in any state, including one
-  that landed. `checks:` and `review:` don't match through a closed or merged
-  GitHub pull request, whose list read skips both. `merge:` reads only open,
-  non-draft pull requests whose forge reports a merge state (GitLab doesn't),
+  that landed. On GitHub, `checks:`, `review:`, and `merge:` match only through an open
+  pull request linked to an unfinished item or listed by a `github-pulls`
+  source, the only ones whose merge state, review, and checks bl reads.
+  `merge:` reads only open, non-draft pull requests whose forge reports a
+  merge state (GitLab doesn't),
   and `merge:ready` never matches stale checks. `bl ls` and MCP `query` load
   changes only when the query names a change term; the TUI keeps them current
   on a worker.

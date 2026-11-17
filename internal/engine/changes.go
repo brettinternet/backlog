@@ -25,7 +25,13 @@ func ChangesOptions(cfg project.Config) map[string]changes.Options {
 	}
 	out := map[string]changes.Options{}
 	for _, p := range projects {
-		out[p.Project.ID] = changes.Options{Discovery: p.Discovery, CacheDir: p.Paths.CacheDir, StateDir: p.Paths.StateDir, Trailer: p.History.CommitTrailer, Git: p.Changes.Git, Forges: forges(p)}
+		o := changes.Options{Discovery: p.Discovery, CacheDir: p.Paths.CacheDir, StateDir: p.Paths.StateDir, Trailer: p.History.CommitTrailer, Git: p.Changes.Git, Forges: forges(p)}
+		for _, s := range p.Sources {
+			if s.Type == "github-pulls" {
+				o.PullSources = append(o.PullSources, s.PullsForge().Repo)
+			}
+		}
+		out[p.Project.ID] = o
 	}
 	return out
 }
@@ -185,6 +191,9 @@ func (f failedForge) Web() string  { return "" }
 func (f failedForge) PullRequests(context.Context) ([]changes.PullRequest, error) {
 	return nil, f.err
 }
+func (f failedForge) Verdicts(context.Context, []changes.PullID) (map[changes.PullID]changes.PullVerdict, error) {
+	return nil, nil
+}
 func (f failedForge) Pull(context.Context, int) (changes.Detail, error) {
 	return changes.Detail{}, f.err
 }
@@ -214,6 +223,28 @@ func LinkChanges(cfg project.Config, items []model.Item, state *changes.State) m
 	for key, d := range state.Projects {
 		for ref, cs := range changes.Link(byProject[key], d) {
 			out[ref] = cs
+		}
+	}
+	return out
+}
+
+// LinkedPulls are the open pull requests linked to unfinished items, active
+// items' first, whose merge state, review, and checks forge loads read.
+func LinkedPulls(items []model.Item, linked map[model.Ref][]changes.Change) []changes.PullID {
+	var out []changes.PullID
+	seen := map[changes.PullID]bool{}
+	for _, active := range []bool{true, false} {
+		for _, item := range items {
+			if item.Category == model.Done || item.Category == model.Canceled || (item.Category == model.Active) != active {
+				continue
+			}
+			for _, c := range linked[item.Ref] {
+				key := changes.PullID{Repo: c.Repo, Number: c.Number}
+				if c.Stage == changes.StagePR && (c.State == changes.StateOpen || c.State == changes.StateDraft) && c.Number > 0 && !seen[key] {
+					seen[key] = true
+					out = append(out, key)
+				}
+			}
 		}
 	}
 	return out
@@ -265,7 +296,10 @@ func loadItemChanges(ctx context.Context, cfg project.Config, ref model.Ref, det
 		return ChangesResult{}, fmt.Errorf("no project %s", key)
 	}
 	d := changes.Load(ctx, o)
-	linked := LinkChanges(cfg, reads.Query.Items, &changes.State{Projects: map[string]changes.Data{key: d}})
+	state := &changes.State{Projects: map[string]changes.Data{key: d}}
+	linked := LinkChanges(cfg, reads.Query.Items, state)
+	changes.ReadVerdicts(ctx, o, d.PullRequests, d.Statuses, LinkedPulls(reads.Query.Items, linked))
+	linked = LinkChanges(cfg, reads.Query.Items, state)
 	result := ChangesResult{Changes: changes.Enrich(ctx, linked[ref], o.Forges, false), Providers: d.Statuses}
 	if result.Changes == nil {
 		result.Changes = []changes.Change{}
@@ -319,11 +353,17 @@ func MentionsChanges(text string) bool {
 }
 
 // linkReads loads every project's changes once and sets each item's query
-// state from them.
+// state from them: it links, reads the linked pull requests' merge state,
+// review, and checks, and links again.
 func linkReads(ctx context.Context, cfg project.Config, s *ReadSnapshot) {
 	state := &changes.State{Projects: map[string]changes.Data{}}
-	for key, o := range ChangesOptions(cfg) {
+	options := ChangesOptions(cfg)
+	for key, o := range options {
 		state.Projects[key] = changes.Load(ctx, o)
+	}
+	pulls := LinkedPulls(s.Query.Items, LinkChanges(cfg, s.Query.Items, state))
+	for key, o := range options {
+		changes.ReadVerdicts(ctx, o, state.Projects[key].PullRequests, state.Projects[key].Statuses, pulls)
 	}
 	for ref, cs := range LinkChanges(cfg, s.Query.Items, state) {
 		if st, ok := s.Query.States[ref]; ok {

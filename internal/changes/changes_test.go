@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -262,6 +263,9 @@ type reviewForge struct{ review Review }
 func (reviewForge) Name() string { return "fake" }
 func (reviewForge) Web() string  { return "https://github.com/o/r" }
 func (reviewForge) PullRequests(context.Context) ([]PullRequest, error) {
+	return nil, nil
+}
+func (reviewForge) Verdicts(context.Context, []PullID) (map[PullID]PullVerdict, error) {
 	return nil, nil
 }
 func (reviewForge) Pull(context.Context, int) (Detail, error) { return Detail{}, nil }
@@ -548,6 +552,63 @@ func TestTrackerPartialCadence(t *testing.T) {
 		check(10*time.Second, 3, Status{Provider: "fake", State: OK})
 		check(59*time.Second, 3, Status{Provider: "fake", State: OK})
 		check(time.Minute, 4, Status{Provider: "fake", State: OK})
+	})
+}
+
+// verdictForge lists two open pull requests and records each load and
+// verdict read.
+type verdictForge struct {
+	reviewForge
+	mu    sync.Mutex
+	loads int
+	asked [][]PullID
+}
+
+func (f *verdictForge) PullRequests(context.Context) ([]PullRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loads++
+	return []PullRequest{{Repo: "o/r", Number: 1, State: StateOpen}, {Repo: "o/r", Number: 2, State: StateOpen}}, nil
+}
+
+func (f *verdictForge) Verdicts(_ context.Context, pulls []PullID) (map[PullID]PullVerdict, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, pulls)
+	out := map[PullID]PullVerdict{}
+	for _, k := range pulls {
+		out[k] = PullVerdict{MergeState: "clean"}
+	}
+	return out, nil
+}
+
+// Catches a pull request newly linked in the TUI waiting up to a minute for
+// its verdict, an unchanged link pass reloading forges on every projection,
+// and an unlinked pull request keeping a merge state.
+func TestTrackerLinked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		forge := &verdictForge{}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		tracker := Track(ctx, map[string]Options{"p": {Forges: []Forge{forge}}})
+		check := func(loads int, asked [][]PullID, merge ...string) {
+			t.Helper()
+			synctest.Wait()
+			forge.mu.Lock()
+			defer forge.mu.Unlock()
+			var got []string
+			for _, pr := range tracker.Latest().Projects["p"].PullRequests {
+				got = append(got, pr.MergeState)
+			}
+			if forge.loads != loads || !reflect.DeepEqual(forge.asked, asked) || !slices.Equal(got, merge) {
+				t.Fatalf("%d loads, asked %v, merge states %q", forge.loads, forge.asked, got)
+			}
+		}
+		check(1, nil, "", "")
+		tracker.SetLinked([]PullID{{Repo: "O/R", Number: 2}})
+		check(2, [][]PullID{{{Repo: "O/R", Number: 2}}}, "", "clean")
+		tracker.SetLinked([]PullID{{Repo: "o/r", Number: 2}})
+		check(2, [][]PullID{{{Repo: "O/R", Number: 2}}}, "", "clean")
 	})
 }
 
