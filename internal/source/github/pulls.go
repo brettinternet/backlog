@@ -206,6 +206,49 @@ func (f *Forge) fetch(ctx context.Context, c remote.Credential, state, after str
 	}
 }
 
+// Probe reads one page of pull requests with their checks and closing
+// references, without caching it, for bl doctor. It names each part the
+// token can't read, or fails when the pull requests themselves can't be.
+func (f *Forge) Probe(ctx context.Context) ([]string, error) {
+	c, err := f.s.authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	vars := f.s.variables()
+	vars["first"], vars["merge"] = minPullsPage, false
+	client := f.s.client
+	client.Refusals = true
+	response, err := f.s.requestWith(ctx, client, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": pullsQuery, "variables": vars})
+	if err == nil && response.Status >= 300 {
+		err = client.Refusal(response.Status, response.Body)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var result struct{ Repository *struct{} }
+	parts := map[any]string{"commits": "checks", "closingIssuesReferences": "closing references"}
+	denied := map[string]bool{}
+	if err := decodeAllowing(response.Body, &result, func(kind string, path []any) bool {
+		if !pullError(kind, path) {
+			return false
+		}
+		denied[parts[path[4]]] = true
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	if result.Repository == nil {
+		return nil, source.Refuse("not-found", "repository unavailable")
+	}
+	var unreadable []string
+	for _, part := range []string{"checks", "closing references"} {
+		if denied[part] {
+			unreadable = append(unreadable, part)
+		}
+	}
+	return unreadable, nil
+}
+
 // pullError tolerates a pull request whose closing issues or checks the
 // token can't read; its other fields still link it.
 func pullError(kind string, path []any) bool {

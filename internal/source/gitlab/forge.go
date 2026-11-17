@@ -150,6 +150,22 @@ func (f *Forge) PullRequests(ctx context.Context) ([]changes.PullRequest, error)
 	})
 }
 
+// Probe reads one page of merge requests without caching it, for bl doctor.
+func (f *Forge) Probe(ctx context.Context) ([]string, error) {
+	c, err := f.authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result struct{ Project *struct{} }
+	if err := f.query(ctx, c, mergeRequestsQuery, map[string]any{"path": f.o.Repo}, &result); err != nil {
+		return nil, err
+	}
+	if result.Project == nil {
+		return nil, source.Refuse("not-found", "project unavailable")
+	}
+	return nil, nil
+}
+
 // Fields every GitLab edition serves: approval counts and rules are Premium.
 // detailedMergeStatus names only the first blocking check, and is often
 // UNCHECKED, so review reads approved and reviewer states instead.
