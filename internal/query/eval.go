@@ -20,9 +20,9 @@ type State struct {
 	Changes []Change
 }
 
-// Change is what queries match of a linked change: its state, checks, and
-// review decision.
-type Change struct{ State, Checks, Review string }
+// Change is what queries match of a linked change: its state, checks, review
+// decision, and merge verdict from the list read.
+type Change struct{ State, Checks, Review, Merge string }
 type Event struct {
 	Type                  string
 	Changed               []string
@@ -292,7 +292,7 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 		case "change":
 			return len(state.Changes) > 0
 		}
-	case "change", "checks", "review":
+	case "change", "checks", "review", "merge":
 		for _, c := range state.Changes {
 			value := c.State
 			switch f {
@@ -300,6 +300,8 @@ func matchValue(i model.Item, s Snapshot, e *Event, f string, v Value) bool {
 				value = c.Checks
 			case "review":
 				value = c.Review
+			case "merge":
+				value = c.Merge
 			}
 			if value == lower {
 				return true

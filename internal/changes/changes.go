@@ -49,25 +49,28 @@ const (
 // commit are one change. Link says how it was found: branch, title, closes,
 // provider, trailer, merge, or ref.
 type Change struct {
-	ID        string `json:"id"`
-	Stage     string `json:"stage"`
-	State     string `json:"state"`
-	Reason    string `json:"reason,omitempty"`
-	Checks    string `json:"checks,omitempty"`
-	Review    string `json:"review,omitempty"`
-	Link      string `json:"link"`
-	Branch    string `json:"branch,omitempty"`
-	Head      string `json:"head,omitempty"`
-	Title     string `json:"title,omitempty"`
-	URL       string `json:"url,omitempty"`
-	Repo      string `json:"repo,omitempty"`
-	Number    int    `json:"number,omitempty"`
-	Additions int    `json:"additions,omitempty"`
-	Deletions int    `json:"deletions,omitempty"`
-	Worktree  string `json:"worktree,omitempty"`
-	Dirty     *int   `json:"dirty,omitempty"`
-	Ahead     *int   `json:"ahead,omitempty"`
-	Behind    *int   `json:"behind,omitempty"`
+	ID     string `json:"id"`
+	Stage  string `json:"stage"`
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+	Checks string `json:"checks,omitempty"`
+	Review string `json:"review,omitempty"`
+	// MergeState is an open pull request's merge state from the list read,
+	// lowercased, such as clean or blocked; GitLab leaves it empty.
+	MergeState string `json:"mergeState,omitempty"`
+	Link       string `json:"link"`
+	Branch     string `json:"branch,omitempty"`
+	Head       string `json:"head,omitempty"`
+	Title      string `json:"title,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Repo       string `json:"repo,omitempty"`
+	Number     int    `json:"number,omitempty"`
+	Additions  int    `json:"additions,omitempty"`
+	Deletions  int    `json:"deletions,omitempty"`
+	Worktree   string `json:"worktree,omitempty"`
+	Dirty      *int   `json:"dirty,omitempty"`
+	Ahead      *int   `json:"ahead,omitempty"`
+	Behind     *int   `json:"behind,omitempty"`
 	// CheckRuns and Unresolved are an open pull request's checks and
 	// unresolved review threads, read for the item shown. Merge and
 	// Reviewers, and each check's exact state and timing, are what Brief drops.
@@ -145,6 +148,7 @@ type PullRequest struct {
 	Additions       int       `json:"additions,omitempty"`
 	Deletions       int       `json:"deletions,omitempty"`
 	Review          string    `json:"review,omitempty"`
+	MergeState      string    `json:"mergeState,omitempty"`
 	Checks          string    `json:"checks,omitempty"`
 	Closes          []string  `json:"closes,omitempty"`
 	Author          string    `json:"author,omitempty"`

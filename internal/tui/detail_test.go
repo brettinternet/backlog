@@ -820,6 +820,75 @@ func TestChangeView(t *testing.T) {
 	}
 }
 
+// Catches gp opening the wrong pull request or not falling back to Changes, J
+// dropping the change view's tab or keeping a change on an item without one, a
+// pull request item not opening in its change view or reopening after
+// backspace, and gp acting with no pull request.
+func TestOpenPull(t *testing.T) {
+	t.Parallel()
+	m := detailFixture(t, 4, RenderMarkdown)
+	m.opts.Workspace = &project.Config{Settings: project.Settings{Sources: []project.SourceConfig{{ID: "tasks", Type: "native"}, {ID: "prs", Type: "github-pulls"}}}}
+	pull := func(n int, state string) changes.Change {
+		return changes.Change{ID: fmt.Sprintf("pr:%d", n), Stage: changes.StagePR, State: state, Number: n, Branch: fmt.Sprintf("b%d", n)}
+	}
+	branch := changes.Change{ID: "branch:b", Stage: changes.StageBranch, State: changes.StateOpen, Branch: "b"}
+	byID := map[string][]changes.Change{
+		"BL-1": {branch, pull(1, changes.StateMerged), pull(2, changes.StateOpen)},
+		"BL-2": {pull(3, changes.StateOpen), pull(4, changes.StateDraft)},
+		"BL-4": {pull(5, changes.StateOpen)},
+	}
+	for i := range m.data.rows {
+		r := &m.data.rows[i].row
+		r.Changes = byID[r.Ref.ID]
+		if r.Ref.ID == "BL-4" {
+			r.Ref.Source = "prs"
+		}
+	}
+	m.detailWorker.changeDetail = func(context.Context, changes.Change, bool) (changes.Detail, error) { return changes.Detail{}, nil }
+	at := func(m Model, id string, number int, tab detailTab) {
+		t.Helper()
+		row, _ := m.selectedRow()
+		got := 0
+		if m.change != nil {
+			got = m.change.Number
+		}
+		if !m.detailOpen || row.Ref.ID != id || got != number || m.detailTab != tab {
+			t.Fatalf("on %s #%d tab %d, want %s #%d tab %d", row.Ref.ID, got, m.detailTab, id, number, tab)
+		}
+	}
+	m, _ = detailKey(m, 'g', 0)
+	m, _ = detailKey(m, 'p', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-1", 2, tabChangeOverview)
+	m, _ = detailKey(m, tea.KeyTab, 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-2", 3, tabChangeFiles)
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-3", 0, tabChanges)
+	m, _ = detailKey(m, 'g', 0)
+	m, _ = detailKey(m, 'p', 0)
+	if !strings.Contains(m.notice, "no open pull request") {
+		t.Fatalf("gp without a pull request: notice %q", m.notice)
+	}
+	m, _ = detailKey(m, 'J', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-4", 5, tabChangeOverview)
+	m, _ = detailKey(m, tea.KeyBackspace, 0)
+	m = settleDetail(t, m)
+	at(m, "BL-4", 0, tabChanges)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'K', 0)
+	m = settleDetail(t, m)
+	m, _ = detailKey(m, 'g', 0)
+	m, _ = detailKey(m, 'p', 0)
+	m = settleDetail(t, m)
+	at(m, "BL-2", 0, tabChanges)
+}
+
 // Catches the Diff tab losing its unified and split layouts, [ ] and [c ]c
 // landing off the file or hunk, m not drawing a large file, enter on a History
 // commit not opening its diff or backspace not returning to that entry, a

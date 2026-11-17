@@ -255,7 +255,7 @@ func MentionsChanges(text string) bool {
 	}
 	for _, t := range q.Terms {
 		switch t.Field {
-		case "change", "checks", "review":
+		case "change", "checks", "review", "merge":
 			return true
 		case "has":
 			for _, v := range t.Values {
@@ -287,7 +287,7 @@ func linkReads(ctx context.Context, cfg project.Config, s *ReadSnapshot) {
 func queryChanges(cs []changes.Change) []query.Change {
 	out := make([]query.Change, len(cs))
 	for n, c := range cs {
-		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review}
+		out[n] = query.Change{State: c.State, Checks: c.Checks, Review: c.Review, Merge: changes.ListMerge(c)}
 	}
 	return out
 }

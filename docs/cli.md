@@ -133,7 +133,9 @@ change is unknown or stale. JSON returns `data.changes`, each with `id`,
 `stage` (`worktree`, `branch`, `pr`, `landed`), `state` (`open`, `draft`,
 `merged`, `closed`, `unknown`, `stale`), `link` (how it was found: `branch`,
 `title`, `closes`, `provider`, `trailer`, `merge`, `ref`), and optional
-`reason`, `checks`, `review`, `branch`, `head`, `title`, `url`, `repo`,
+`reason`, `checks`, `review`, `mergeState` (the forge's lowercased merge state
+from its list read, such as `clean`, `behind`, or `dirty`; GitHub only),
+`branch`, `head`, `title`, `url`, `repo`,
 `number`, `additions`, `deletions` (a branch or worktree's from its merge base
 with the default branch, counting a worktree's uncommitted files), `worktree`,
 `dirty`, `ahead`, `behind`, an open pull request's `checkRuns` (`name`,

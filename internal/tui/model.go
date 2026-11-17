@@ -219,7 +219,9 @@ type Model struct {
 	heldPlace     int
 	detailHistory []detailStop // items followed from, oldest first
 	catalog       *engine.Catalog
-	mouse         mouseState
+	// pullShown is the pull request item last opened in its change view.
+	pullShown model.Ref
+	mouse     mouseState
 	// change is the linked change or commit the change view shows, opened
 	// from changeTab of changeRef: the Changes entry at changeCursor, or the
 	// History entry changeEntry, found by ID as History rows shift.
@@ -404,6 +406,14 @@ func (m *Model) scheduleDetail() tea.Cmd {
 	row, ok := m.selectedRow()
 	if m.change != nil && (!ok || row.Ref != m.changeRef) {
 		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, 0
+	}
+	// A pull request item opens in its pull request's change view once each
+	// time it's selected, so backspace keeps its item tabs (design.md D44).
+	if m.detailOpen && ok && m.change == nil && m.pullShown != row.Ref && m.pullItem(row) {
+		if c, at, n := furthestPull(row.Changes); n > 0 {
+			m.showChange(row, c, at, tabChangeOverview)
+			m.pullShown = row.Ref
+		}
 	}
 	m.detailIdentity = identityFor(row, ok)
 	m.detailError = ""
@@ -1642,6 +1652,7 @@ func (m *Model) closeDetail() {
 	m.detailSteps, m.detailTour, m.tourStep = nil, "", -1
 	m.historyOpen, m.historyRef = nil, model.Ref{}
 	m.detailHistory = nil
+	m.pullShown = model.Ref{}
 	if m.change != nil {
 		m.change, m.changeParent, m.detailTab, m.entryCursor = nil, nil, m.changeTab, m.changeCursor
 	}
@@ -1652,6 +1663,21 @@ func (m *Model) closeDetail() {
 // stepItem moves to the next or previous item, skipping group headers, without
 // changing focus, so detail can page through items in place.
 func (m *Model) stepItem(forward bool) tea.Cmd {
+	from, _ := m.selectedRow()
+	tab, viewing := m.detailTab, m.detailOpen && m.change != nil
+	cmd := m.stepRow(forward)
+	// The change view stays on its tab over the next item's furthest pull
+	// request; an item without one shows its item tabs.
+	if row, ok := m.selectedRow(); viewing && ok && row.Ref != from.Ref {
+		if c, at, n := furthestPull(row.Changes); n > 0 {
+			m.showChange(row, c, at, tab)
+			m.pullShown = row.Ref
+		}
+	}
+	return cmd
+}
+
+func (m *Model) stepRow(forward bool) tea.Cmd {
 	m.count = 0
 	m.inputSerial++
 	if m.detached != nil {

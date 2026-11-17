@@ -355,3 +355,19 @@ func Ordered(checks []Check) []Check {
 	slices.SortStableFunc(out, func(a, b Check) int { return cmp.Compare(rank[a.State], rank[b.State]) })
 	return out
 }
+
+// ListMerge is an open pull request's verdict from the list read alone, for
+// the list glyph and merge: (design.md D46): ready, unstable, blocked,
+// behind, or conflicts. It is empty for anything else, such as a draft, an
+// unknown or stale state, or a merge state the forge is still computing, and
+// never ready while its checks are stale.
+func ListMerge(c Change) string {
+	if c.Stage != StagePR || c.State != StateOpen {
+		return ""
+	}
+	verdict := map[string]string{"clean": VerdictReady, "has_hooks": VerdictReady, "unstable": VerdictUnstable, "blocked": VerdictBlocked, "behind": VerdictBehind, "dirty": VerdictConflicts}[c.MergeState]
+	if verdict == VerdictReady && c.Checks == ChecksStale {
+		return ""
+	}
+	return verdict
+}

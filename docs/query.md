@@ -87,6 +87,7 @@ snapshot.
 | `change` | `open`, `draft`, `merged`, `closed`, `unknown`, `stale`: the state of any linked change ([Changes](changes.md)) |
 | `checks` | `passing`, `failing`, `pending`, `stale`: any linked change's checks |
 | `review` | `approved`, `changes` (changes requested), `requested`: any linked change's review decision |
+| `merge` | `ready`, `unstable`, `blocked`, `behind`, `conflicts`: any open pull request's merge state from the forge's list read |
 | `changed` | Field name or `readiness`. Hooks only: the event changed it. |
 | `hook`, `action` | Name. Hooks only: matches `hook.finished` or `action.finished` from it. |
 | `outcome` | `ok`, `failed`, `timeout`, `refused`. Hooks only, for `*.finished` events. |
@@ -106,8 +107,10 @@ Notes:
 - Change terms match when any of the item's linked changes does, so
   `is:active checks:failing` lists active items with a failing pull request and
   `is:closed -has:change` lists closed items with nothing linked. A landed
-  change is `merged`. `bl ls` and MCP `query` load changes only when the query
-  names a change term; the TUI keeps them current on a worker.
+  change is `merged`. `merge:` reads only open, non-draft pull requests whose
+  forge reports a merge state (GitLab doesn't), and `merge:ready` never
+  matches stale checks. `bl ls` and MCP `query` load changes only when the
+  query names a change term; the TUI keeps them current on a worker.
 - Hook-only terms need hook parsing mode and are false outside an event.
   `sprint:` is refused in hook mode: events carry no sprint catalog. Change
   terms are refused too: events carry no linked changes.

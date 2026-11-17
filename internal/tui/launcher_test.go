@@ -12,9 +12,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brettinternet/backlog/internal/changes"
 	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/model"
 	"github.com/brettinternet/backlog/internal/project"
+	"github.com/brettinternet/backlog/internal/source"
 )
 
 // Catches go-to excluding archives/closed items, doing I/O on Update, or a
@@ -83,6 +85,69 @@ func TestGoToWorkerAndDetachedDetail(t *testing.T) {
 	m = next.(Model)
 	if m.launcher.open {
 		t.Fatal("stale result reopened picker")
+	}
+}
+
+// Catches go-to with #N or a pull request URL not putting the item linking
+// that pull request first, missing a URL with a suffix, or not saying that no
+// item shows a pull request.
+func TestGoToPull(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := "https://github.com/acme/app/pull/45"
+	items := []model.Item{
+		{Ref: model.Ref{Source: "tasks", ID: "BL-1"}, Version: "v1", Title: "Fix login", Status: "todo", Category: model.Todo, Refs: []string{url}},
+		{Ref: model.Ref{Source: "tasks", ID: "BL-2"}, Version: "v1", Title: "Pull request 45 notes", Status: "todo", Category: model.Todo},
+	}
+	cfg := project.Config{Settings: project.Settings{Statuses: []project.StatusConfig{{Key: "todo", Category: "todo"}}}}
+	store := engine.OpenStore(ctx, cfg, source.Registry{"tasks": &detailSource{items: items}})
+	defer store.Close()
+	projector := engine.NewProjector(ctx, cfg)
+	defer projector.Close()
+	ch, unsub := store.Subscribe()
+	defer unsub()
+	state := &changes.State{Projects: map[string]changes.Data{"": {Repo: "acme/app", PullRequests: []changes.PullRequest{{Repo: "acme/app", Number: 45, URL: url, State: changes.StateOpen, Head: "fix"}}}}}
+	m := New(Options{Context: ctx, NoColor: true, GoToItems: func(context.Context) ([]GoToItem, error) {
+		return []GoToItem{{Ref: items[1].Ref, Title: items[1].Title}, {Ref: items[0].Ref, Title: items[0].Title}}, nil
+	}})
+	for m.catalog == nil {
+		select {
+		case <-ctx.Done():
+			t.Fatal("projection timed out")
+		case snapshot := <-ch:
+			if snapshot.Len() < 2 {
+				continue
+			}
+			projector.RequestQuery(snapshot, engine.ProjectionQuery{Text: "is:open", Changes: state})
+			m.catalog = (<-projector.Results()).Catalog
+		}
+	}
+	m = send(m, "ctrl+p")
+	search := func(text string) Model {
+		t.Helper()
+		m.launcher.query = lineInput{}
+		next, _ := m.updateLauncher("", text)
+		for {
+			select {
+			case r := <-m.goToWorker.results:
+				next, _ = next.(Model).Update(r)
+				if r.serial == next.(Model).launcherSerial {
+					return next.(Model)
+				}
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		}
+	}
+	for _, text := range []string{"#45", url + "/files?w=1"} {
+		got := search(text)
+		if len(got.launcher.rows) == 0 || got.launcher.rows[0].item.Ref != items[0].Ref || got.launcher.err != "" {
+			t.Fatalf("%s: rows %+v err %q", text, got.launcher.rows, got.launcher.err)
+		}
+	}
+	if got := search("#46"); got.launcher.err != "no item shows pull request #46" {
+		t.Fatalf("#46: err %q", got.launcher.err)
 	}
 }
 

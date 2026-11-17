@@ -61,7 +61,12 @@ untrusted adapters aren't opened, but native sources stay browsable.
 **Rows:** priority, ID, status, title with labels, open blockers, child
 progress, linked change, assignee, and time since update. The change column
 shows the furthest stage of the item's most advanced change, such as `⇡#45 ✓`
-([Changes](changes.md)), and appears once any row has one. As the pane narrows,
+([Changes](changes.md)), and appears once any row has one. For an open pull
+request its last glyph is the merge verdict from the list read, first that
+applies: `⚠` conflicts, `✕` checks failing, `✎` changes requested, `↓` behind
+its base, `●` checks running, `○` review required, `✓` ready. A draft, or a
+pull request whose merge state is unknown, shows its checks glyph. Help lists
+these under Change column. As the pane narrows,
 columns drop in this order so the title keeps at least two-fifths of the width:
 updated, assignee, children and change, blockers, claim, then the status name
 (the icon stays).
@@ -186,7 +191,9 @@ more of a cut-off body (otherwise it picks a milestone), and `enter`, `esc`, or
 Changes, and in History opens a commit's diff or expands another entry). Edit and copy keys work in
 detail on the item shown, never on marks. If an edit moves the item out of the
 view, detail keeps showing it until you move. `J`/`K` select the next or
-previous item from either pane, counting from where a moved item was. At split
+previous item from either pane, counting from where a moved item was. From a
+change view they open the next item's furthest open pull request on the same
+tab; an item without one shows its item tabs. At split
 widths, `h` returns to the list without closing detail; a second `h` closes it.
 Filter, sort, group, fold, and layout keys (`f`, `o`, `z`, `F`, `B`, `T`) act
 on the list from split detail too, and detail keeps its item if it leaves the
@@ -198,7 +205,9 @@ through matching lines, wrapping, instead of creating items. The search carries
 across tabs and items; `esc` clears it before closing detail.
 
 `ctrl-p` opens go-to: fuzzy search over every ID and title, including closed and
-archived items (up to 100 matches). `enter` opens detail without changing the
+archived items (up to 100 matches). `#45` or a pull request URL lists first the
+items showing that pull request, the items linking it and its pull request
+item, or says that no item shows it. `enter` opens detail without changing the
 view; `esc` or `q` returns.
 
 `:` opens the palette: every action, its bindings, and why it's disabled if it
@@ -259,7 +268,10 @@ that change; `O` opens its URL. `R` reloads changes along with sources.
 
 `enter` on an entry opens its change view in place of the item's tabs, with
 Overview, Files, Diff, Commits, and Conversation tabs; `backspace` returns to
-the entry. A strip under the tabs, on every tab, sums up the change: for a
+the entry. `gp`, from the list or detail, opens the item's furthest open pull
+request in its change view, or Changes when it has several. A pull request
+item (`github-pulls`) opens in its own pull request's change view, where
+`backspace` shows its item tabs. A strip under the tabs, on every tab, sums up the change: for a
 pull request its head and base, verdict (`Ready`, `Unstable`, `Running`,
 `Blocked`, `Behind`, `Conflicts`, `Draft`, `Merged`, `Closed`, or
 `Checking`), the first reasons, and the age of the read (`stale` when it
@@ -680,6 +692,7 @@ keys:
 | `left` | `h`, `left` | Back / parent / left |
 | `right` | `l`, `right` | Open / child / right |
 | `go-to` | `ctrl+p` | Go to item |
+| `open-pull` | `g p` | Open pull request |
 | `detail` | `enter` | Toggle detail |
 | `next-detail-tab` | `tab` | Next tab |
 | `previous-detail-tab` | `shift+tab` | Previous tab |

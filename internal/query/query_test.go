@@ -100,16 +100,19 @@ func TestFields(t *testing.T) {
 		}
 	}
 	// Change terms match any linked change; hooks can't name them (D43).
-	s.States[item.Ref] = query.State{Changes: []query.Change{{State: "open", Checks: "unknown"}, {State: "merged", Checks: "failing", Review: "approved"}}}
-	for q, want := range map[string]bool{`has:change`: true, `-has:change`: false, `change:merged`: true, `change:closed`: false, `checks:failing`: true, `checks:passing`: false, `review:approved`: true, `review:changes`: false} {
+	s.States[item.Ref] = query.State{Changes: []query.Change{{State: "open", Checks: "unknown", Merge: "behind"}, {State: "merged", Checks: "failing", Review: "approved"}}}
+	for q, want := range map[string]bool{`has:change`: true, `-has:change`: false, `change:merged`: true, `change:closed`: false, `checks:failing`: true, `checks:passing`: false, `review:approved`: true, `review:changes`: false, `merge:behind`: true, `merge:ready`: false} {
 		if got := parse(t, q, false).Match(item, s, nil); got != want {
 			t.Fatalf("change %s = %v, want %v", q, got, want)
 		}
 	}
-	for _, q := range []string{`has:change`, `change:merged`, `checks:failing`} {
+	for _, q := range []string{`has:change`, `change:merged`, `checks:failing`, `merge:ready`} {
 		if _, err := query.Parse(q, query.Options{Hook: true}); err == nil {
 			t.Fatalf("hook accepted %s", q)
 		}
+	}
+	if _, err := query.Parse(`merge:clean`, query.Options{}); err == nil {
+		t.Fatal("accepted merge:clean")
 	}
 	s.States = nil
 	for _, f := range []string{"claimed:none", "is:claimed", "has:claim"} {
@@ -428,7 +431,7 @@ func TestGroupsAndCompletion(t *testing.T) {
 }
 
 func FuzzQuery(f *testing.F) {
-	for _, s := range []string{`is:open label:tui,perf -label:wontfix priority:>=high assignee:me updated:<7d "detail pane"`, `x      lable:tui`, `text:"a\\b\"c"`, `changed:readiness`, `sort:-priority,id group:label`, "", `due:99999999999999999w`} {
+	for _, s := range []string{`is:open label:tui,perf -label:wontfix priority:>=high assignee:me updated:<7d "detail pane"`, `x      lable:tui`, `text:"a\\b\"c"`, `changed:readiness`, `merge:ready,behind -merge:conflicts`, `sort:-priority,id group:label`, "", `due:99999999999999999w`} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, input string) {

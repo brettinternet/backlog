@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brettinternet/backlog/internal/changes"
+	"github.com/brettinternet/backlog/internal/engine"
 	"github.com/brettinternet/backlog/internal/history"
 	"github.com/brettinternet/backlog/internal/textutil"
 	"github.com/charmbracelet/x/ansi"
@@ -24,9 +25,8 @@ import (
 // openChange opens the change view on c, from the Changes tab.
 func (m *Model) openChange(c changes.Change) tea.Cmd {
 	row, _ := m.selectedRow()
-	m.change, m.changeRef, m.changeTab, m.changeCursor = &c, row.Ref, tabChanges, m.entryCursor
-	m.find, m.checksOpen = findState{}, false
-	return m.switchDetailTab(tabChangeOverview)
+	m.showChange(row, c, m.entryCursor, tabChangeOverview)
+	return m.showDetail()
 }
 
 // openCommit opens the History commit under the cursor on the Diff tab; ok
@@ -983,4 +983,54 @@ func worktreePath(c changes.Change) string {
 		}
 	}
 	return c.Worktree
+}
+
+// furthestPull is the furthest of cs's open pull requests, its index in cs,
+// and how many cs has.
+func furthestPull(cs []changes.Change) (changes.Change, int, int) {
+	var first changes.Change
+	at, n := -1, 0
+	for i, c := range cs {
+		if c.Stage == changes.StagePR && c.Number > 0 && (c.State == changes.StateOpen || c.State == changes.StateDraft) {
+			if n == 0 {
+				first, at = c, i
+			}
+			n++
+		}
+	}
+	return first, at, n
+}
+
+// openPull is gp: it opens the selected item's furthest open pull request in
+// the change view, or its Changes tab when it has several.
+func (m *Model) openPull() tea.Cmd {
+	m.count = 0
+	m.inputSerial++
+	row, ok := m.selectedRow()
+	c, at, n := furthestPull(row.Changes)
+	if !ok || n == 0 {
+		m.notice = "Disabled: no open pull request"
+		return nil
+	}
+	m.detailOpen, m.detailFocus = true, true
+	m.change, m.changeParent, m.find = nil, nil, findState{}
+	if n > 1 {
+		return m.switchDetailTab(tabChanges)
+	}
+	m.showChange(row, c, at, tabChangeOverview)
+	return m.showDetail()
+}
+
+// showChange shows c, row's change at index at of its Changes, on tab, so
+// backspace returns to that entry.
+func (m *Model) showChange(row engine.Row, c changes.Change, at int, tab detailTab) {
+	m.change, m.changeParent, m.changeRef, m.changeTab, m.changeCursor = &c, nil, row.Ref, tabChanges, at
+	m.detailTab, m.detailExpanded, m.entryCursor = tab, false, 0
+	m.find, m.checksOpen = findState{}, false
+}
+
+// pullItem reports whether row is a github-pulls item, which detail opens in
+// its own pull request's change view (design.md D44).
+func (m Model) pullItem(row engine.Row) bool {
+	return m.sourceType(row.Ref.Source) == "github-pulls"
 }
