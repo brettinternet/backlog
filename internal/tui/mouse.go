@@ -382,11 +382,8 @@ func (m *Model) dropCard() tea.Cmd {
 		m.startEdit(action)
 		return m.editTargetsCommand(action, false, d.targets)
 	}
-	switch {
-	case own && d.marked:
-		return nil
-	case d.marked || m.opts.Store == nil:
-		return statusOnly()
+	if d.marked || m.opts.Store == nil {
+		return statusOnly() // marks already in the column are left alone
 	}
 	if reason := m.capability(d.row.Ref, model.Set); reason != "" {
 		m.notice = "Disabled: " + reason

@@ -308,13 +308,13 @@ func TestBoardCardDrag(t *testing.T) {
 	}
 
 	keyed, keyBackend := board(t, "")
-	keyed = editPress(keyed, ">")
+	editPress(keyed, ">")
 	m, backend := board(t, "")
 	m, cmd := drag(t, m, "BL-1", "In Progress", 1)
 	if cmd == nil {
 		t.Fatalf("drop issued nothing: %q", m.notice)
 	}
-	m = editPressMessage(m, cmd)
+	editPressMessage(m, cmd)
 	if got, want := statuses(backend), statuses(keyBackend); got != want || got != "BL-1 set status active" {
 		t.Fatalf("drop wrote %q, > wrote %q", got, want)
 	}
