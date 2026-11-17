@@ -483,10 +483,12 @@ token can't read still links by branch, title, and body.
 
 The TUI's change view posts pull request reviews ([TUI](tui.md)): a review
 with its comment, line comments, and approve or request changes, plus replies
-to review threads, in one GraphQL call that is never retried. A classic token
+to review threads, in one GraphQL call that is never retried, and resolves or
+unresolves a thread with one `resolveReviewThread` or `unresolveReviewThread`
+mutation, also never retried. A classic token
 needs `repo` (or `public_repo`). Device login needs `--write` and `bl-cli`'s
 Pull requests read/write permission, an owner step (BL-155): the owner grants
-it on the app and each installation approves it. Until then `c` and `r` are disabled, naming the missing permission.
+it on the app and each installation approves it. Until then `c`, `r`, and `x` are disabled, naming the missing permission.
 
 ## Pull requests as items
 

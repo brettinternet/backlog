@@ -131,6 +131,11 @@ func (t *Tracker) Submit(ctx context.Context, c Change, event string) (Draft, er
 	return d, errors.Join(err, t.SaveDraft(d))
 }
 
+// ResolveThread resolves or unresolves a thread of c's pull request.
+func (t *Tracker) ResolveThread(ctx context.Context, c Change, thread string, resolve bool) error {
+	return ResolveThread(ctx, c, t.forges(), thread, resolve)
+}
+
 func (t *Tracker) stateDir() string {
 	if t != nil {
 		for _, o := range t.projects {

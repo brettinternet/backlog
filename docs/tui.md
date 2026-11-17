@@ -394,8 +394,15 @@ reply's thread is gone; it then sends the review and the replies in one call
 that is never retried. Parts the forge refused stay in the draft with its
 reasons. When the call's outcome is unknown, the draft says so and `r` offers
 only discard: check the pull request before drafting again. Without a forge
-that posts reviews or an account that may write ([GitHub](github.md)), `c`
-and `r` are disabled with the reason.
+that posts reviews or an account that may write ([GitHub](github.md)), `c`,
+`r`, and `x` are disabled with the reason.
+
+`x` on a thread in the Diff or Conversation resolves it, or unresolves a
+resolved one, with one forge call that is never retried. The thread shows
+`… resolving` (or `… unresolving`), and `x` on it sends nothing more, until a
+fresh read of the pull request shows its state; that read also decides after
+an unknown outcome. A refusal stays on the thread as `✕` with the forge's
+reason until `x` tries again. GitLab forges don't resolve threads.
 Review actions on a single commit's Diff are disabled with the reason, since
 drafts anchor to the pull request's head.
 `enter` on a commit in History opens that commit's Diff in the change view;
@@ -765,7 +772,7 @@ keys:
 | `comment` | `c` | Comment |
 | `review` | `r` | Submit review… |
 | `note` | `i` | Edit notes |
-| `criterion` | `x` | Toggle criterion |
+| `criterion` | `x` | Toggle criterion / resolve thread |
 | `claim` | `C` | Claim / release |
 | `archive` | `d d` | Archive |
 | `new` | `n` | New item / next match |

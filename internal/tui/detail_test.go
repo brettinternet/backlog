@@ -1618,6 +1618,9 @@ func TestChangeViewReview(t *testing.T) {
 	if m, cmd = detailKey(m, 'c', 0); cmd != nil || !strings.Contains(m.notice, "Pull requests: write") {
 		t.Fatalf("blocked c: %q", m.notice)
 	}
+	if m, cmd = detailKey(m, 'x', 0); cmd != nil || !strings.Contains(m.notice, "Pull requests: write") {
+		t.Fatalf("blocked x: %q", m.notice)
+	}
 }
 
 // TestDiffThreads checks that review threads sit under their line on their
@@ -1649,9 +1652,13 @@ func TestDiffThreads(t *testing.T) {
 		defer mu.Unlock()
 		return changes.Detail{Files: files}, nil
 	}
-	m.detailWorker.changeReview = func(context.Context, changes.Change, bool) (changes.Review, error) {
+	freshReads := 0
+	m.detailWorker.changeReview = func(_ context.Context, _ changes.Change, fresh bool) (changes.Review, error) {
 		mu.Lock()
 		defer mu.Unlock()
+		if fresh {
+			freshReads++
+		}
 		return review, nil
 	}
 	drafts := &fakeReviewer{draft: changes.Draft{URL: pr.URL, Comments: []changes.LineComment{{Head: "abc", Path: "a.go", Line: 3, Body: "draft note"}}}}
@@ -1769,6 +1776,70 @@ func TestDiffThreads(t *testing.T) {
 		t.Fatalf("split T2 under %+v", got)
 	}
 
+	// x resolves the Diff thread under the cursor once: it shows pending, a
+	// second x sends nothing that could toggle it back, and after an unknown
+	// outcome a fresh re-read decides what shows.
+	written := func(cmd tea.Cmd) threadWrittenMsg {
+		t.Helper()
+		if cmd != nil {
+			for _, c := range cmd().(tea.BatchMsg) {
+				if c == nil {
+					continue
+				}
+				if msg, ok := c().(threadWrittenMsg); ok {
+					return msg
+				}
+			}
+		}
+		t.Fatal("x sent no thread write")
+		return threadWrittenMsg{}
+	}
+	drafts.resolveErr = source.Refuse("unknown-outcome", "sent but unconfirmed")
+	m, cmd := detailKey(m, 'x', 0)
+	write := written(cmd)
+	if m = settleDetail(t, m); !strings.Contains(strings.Join(m.detailLines, "\n"), "… resolving") {
+		t.Fatalf("x shows no pending mark\n%s", strings.Join(m.detailLines, "\n"))
+	}
+	if m, cmd = detailKey(m, 'x', 0); cmd != nil || !strings.Contains(m.notice, "being confirmed") {
+		t.Fatalf("second x while pending: %q", m.notice)
+	}
+	mu.Lock()
+	review.Threads[0].Resolved = true // GitHub applied it despite the lost reply.
+	reads := freshReads
+	mu.Unlock()
+	next, _ = m.Update(write)
+	m = settleDetail(t, next.(Model))
+	mu.Lock()
+	reads = freshReads - reads
+	mu.Unlock()
+	if text := strings.Join(m.detailLines, "\n"); reads == 0 || strings.Contains(text, "resolving") || len(m.threadWrites) != 0 || !slices.Equal(drafts.resolved, []string{"T1 true"}) {
+		t.Fatalf("re-read after an unknown outcome: %d fresh reads, writes %v, sent %v\n%s", reads, m.threadWrites, drafts.resolved, text)
+	}
+	// A refusal stays on the thread with GitHub's reason, and x in
+	// Conversation tries the thread under its cursor again.
+	m.entryCursor = rowOf(m, "T2")
+	drafts.resolveErr = source.Refuse("rejected", "GitHub refused: thread is locked")
+	m, cmd = detailKey(m, 'x', 0)
+	next, _ = m.Update(written(cmd))
+	if m = settleDetail(t, next.(Model)); !strings.Contains(strings.Join(m.detailLines, "\n"), "✕ GitHub refused: thread is locked") {
+		t.Fatalf("refusal not shown\n%s", strings.Join(m.detailLines, "\n"))
+	}
+	_ = m.switchDetailTab(tabChangeConversation)
+	m = settleDetail(t, m)
+	m.entryCursor = slices.Index(m.detailLinks, linkThread+"T2")
+	if text := strings.Join(m.detailLines, "\n"); m.entryCursor < 0 || !strings.Contains(text, "✕ GitHub refused") {
+		t.Fatalf("Conversation lacks the refusal at %d\n%s", m.entryCursor, text)
+	}
+	drafts.resolveErr = nil
+	m, cmd = detailKey(m, 'x', 0)
+	_ = written(cmd)
+	if m = settleDetail(t, m); !slices.Equal(drafts.resolved, []string{"T1 true", "T2 true", "T2 true"}) || !strings.Contains(strings.Join(m.detailLines, "\n"), "… resolving") {
+		t.Fatalf("x in Conversation sent %v\n%s", drafts.resolved, strings.Join(m.detailLines, "\n"))
+	}
+	m.threadWrites = nil
+	_ = m.switchDetailTab(tabChangeDiff)
+	m = settleDetail(t, m)
+
 	// Held j over a 10,000-line diff with 100 threads stays within the §11
 	// navigation budget, whose in-process time BL_TUI_MEASURE=1 logs.
 	var patch strings.Builder
@@ -1808,11 +1879,21 @@ func TestDiffThreads(t *testing.T) {
 	}
 }
 
-// fakeReviewer keeps one draft in memory and records the submitted event.
+// fakeReviewer keeps one draft in memory and records the submitted event
+// and each thread write, which answers resolveErr.
 type fakeReviewer struct {
-	mu    sync.Mutex
-	draft changes.Draft
-	event string
+	mu         sync.Mutex
+	draft      changes.Draft
+	event      string
+	resolved   []string
+	resolveErr error
+}
+
+func (f *fakeReviewer) ResolveThread(_ context.Context, _ changes.Change, thread string, resolve bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolved = append(f.resolved, thread+" "+strconv.FormatBool(resolve))
+	return f.resolveErr
 }
 
 func (f *fakeReviewer) Draft(changes.Change) (changes.Draft, error) { return f.saved(), nil }

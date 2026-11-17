@@ -95,6 +95,11 @@ type fixture struct {
 	// answers it, or a 502 after dispatch when empty.
 	submitted   []map[string]any
 	submitReply string
+	// resolved records each thread resolve or unresolve as its mutation
+	// name and thread ID; resolveReply answers it, or a 502 after dispatch
+	// when empty.
+	resolved     []string
+	resolveReply string
 	// check is the check run node the detail query reads, counted by
 	// checkReads. Its job log redirects to /blob/log, which serves log, or
 	// 33 MiB when hugeLog, and records each request's Authorization in
@@ -378,6 +383,15 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		return input
+	}
+	if name, _, ok := strings.Cut(q, "ReviewThread("); ok && strings.HasPrefix(q, "mutation") {
+		f.resolved = append(f.resolved, name[strings.LastIndex(name, "{")+1:]+"ReviewThread "+fmt.Sprint(v["id"]))
+		if f.resolveReply == "" {
+			w.WriteHeader(502)
+			return
+		}
+		fmt.Fprint(w, f.resolveReply)
+		return
 	}
 	if strings.Contains(q, "addPullRequestReview") {
 		f.submitted = append(f.submitted, v)
@@ -1161,6 +1175,28 @@ func TestForgeSubmitReview(t *testing.T) {
 	pr := changes.Change{URL: draft.URL, Number: 45}
 	if _, err := changes.SubmitReview(ctx, pr, []changes.Forge{forge}, left, changes.EventComment); err == nil || !strings.Contains(err.Error(), "unknown") || len(f.submitted) != 2 {
 		t.Fatalf("unknown draft resent: %v sent=%d", err, len(f.submitted))
+	}
+}
+
+// Catches a thread write retried after dispatch, which would toggle the
+// thread back, an unknown outcome reported as a refusal, and a refusal that
+// drops GitHub's reason or leaks a secret in it.
+func TestForgeResolveThread(t *testing.T) {
+	s, f := newFixture(t)
+	forge := &Forge{s: s}
+	ctx := context.Background()
+	f.resolveReply = `{"data":{"resolveReviewThread":{"thread":{"id":"T_1","isResolved":true}}}}`
+	if err := forge.ResolveThread(ctx, "T_1", true); err != nil || !slices.Equal(f.resolved, []string{"resolveReviewThread T_1"}) {
+		t.Fatalf("resolve: %v %v", err, f.resolved)
+	}
+	f.resolveReply = ""
+	if err := forge.ResolveThread(ctx, "T_1", false); !reason(err, "unknown-outcome") || !slices.Equal(f.resolved, []string{"resolveReviewThread T_1", "unresolveReviewThread T_1"}) {
+		t.Fatalf("unknown outcome: %v %v", err, f.resolved)
+	}
+	f.resolveReply = `{"data":{"unresolveReviewThread":null},"errors":[{"message":"thread is locked fake-secret"}]}`
+	err := forge.ResolveThread(ctx, "T_1", false)
+	if !reason(err, "rejected") || !strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "fake-secret") || len(f.resolved) != 3 {
+		t.Fatalf("refusal: %v %v", err, f.resolved)
 	}
 }
 

@@ -36,7 +36,7 @@ const (
 func (worker *detailWorker) diffPage(ctx context.Context, c changes.Change, d changes.Detail, view *tourView, r *changes.Review, draft *changes.Draft, request detailRequest) rendered {
 	t, width := request.theme, max(1, request.width)
 	var page rendered
-	notes := reviewNotes(c, r, draft, request.threads)
+	notes := reviewNotes(c, r, draft, request.threads, request.marks)
 	if c.IsCommit() {
 		page = commitMessage(c, d, request)
 	}

@@ -114,3 +114,47 @@ func (f *Forge) SubmitReview(ctx context.Context, number int, d changes.Draft, e
 	left.Error = "GitHub refused part of the review: " + strings.Join(reasons, "; ")
 	return left, source.Refuse("rejected", left.Error)
 }
+
+// ResolveThread resolves or unresolves one review thread in one GraphQL
+// mutation, never retried. GitHub's refusal comes back with its reason; a
+// failure after dispatch is an unknown outcome, which a re-read settles,
+// since the mutation is idempotent.
+func (f *Forge) ResolveThread(ctx context.Context, thread string, resolve bool) error {
+	c, err := f.s.authenticate(ctx)
+	if err != nil {
+		return err
+	}
+	if reason := f.reviewBlocked(c); reason != "" {
+		return source.Refuse("rejected", reason)
+	}
+	name := "unresolveReviewThread"
+	if resolve {
+		name = "resolveReviewThread"
+	}
+	query := "mutation($id:ID!){" + name + "(input:{threadId:$id}){thread{id isResolved}}}"
+	response, err := f.s.request(ctx, c, http.MethodPost, f.s.endpoint(), map[string]any{"query": query, "variables": map[string]any{"id": thread}})
+	if err != nil {
+		if unsent(err) {
+			return err
+		}
+		return source.Refuse("unknown-outcome", "GitHub thread change sent but unconfirmed")
+	}
+	var result struct {
+		Data   map[string]*struct{ Thread *struct{ ID string } }
+		Errors []struct{ Message string }
+	}
+	if json.Unmarshal(response.Body, &result) != nil {
+		return source.Refuse("unknown-outcome", "GitHub thread change sent but its response was unreadable")
+	}
+	if done := result.Data[name]; done != nil && done.Thread != nil {
+		return nil
+	}
+	var reasons []string
+	for _, e := range result.Errors {
+		reasons = append(reasons, textutil.Line(f.s.o.Secrets.Redact(e.Message)))
+	}
+	if len(reasons) == 0 {
+		return source.Refuse("unknown-outcome", "GitHub returned no result for the thread change")
+	}
+	return source.Refuse("rejected", "GitHub refused: "+strings.Join(reasons, "; "))
+}

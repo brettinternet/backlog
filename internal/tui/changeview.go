@@ -1133,6 +1133,7 @@ func conversationLines(r *changes.Review, request detailRequest, render func(str
 		if e.Thread.Outdated {
 			state += t.muted.render(" · outdated")
 		}
+		state = threadMark(t, request.marks[e.Thread.ID], state)
 		where := textutil.Line(e.Thread.Path)
 		if e.Thread.Line > 0 {
 			where += ":" + strconv.Itoa(e.Thread.Line)
