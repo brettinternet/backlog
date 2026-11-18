@@ -14,7 +14,9 @@ import (
 
 // RemoteInitial reads at most two batches without taking the refresh lock. WAL
 // readers can paint while another process waits on the network. The caller must
-// mark these cached rows stale until the provider revalidates them.
+// mark these cached rows stale until the provider revalidates them. Rows another
+// build wrote still paint, without their cursor, so an upgrade keeps a warm start
+// while its first refresh re-enumerates; rows it cannot decode are skipped.
 func (s Store) RemoteInitial(ctx context.Context) (source.Delta, error) {
 	if _, err := os.Stat(s.Path); err != nil {
 		return source.Delta{}, err
@@ -24,7 +26,7 @@ func (s Store) RemoteInitial(ctx context.Context) (source.Delta, error) {
 		return source.Delta{}, err
 	}
 	defer db.Close()
-	return readRemote(ctx, db, 2)
+	return readRemote(ctx, db, 2, true)
 }
 
 // RemoteCached reads every cached row without taking the refresh lock or
@@ -38,7 +40,7 @@ func (s Store) RemoteCached(ctx context.Context) (source.Delta, error) {
 		return source.Delta{}, err
 	}
 	defer db.Close()
-	return readRemote(ctx, db, -1)
+	return readRemote(ctx, db, -1, false)
 }
 
 // RemoteRefresh serializes read/network/commit across processes. Rows and cursor
@@ -54,7 +56,7 @@ func (s Store) RemoteSprints(ctx context.Context) bool {
 		return false
 	}
 	defer db.Close()
-	delta, err := readRemote(ctx, db, 0)
+	delta, err := readRemote(ctx, db, 0, false)
 	return err == nil && delta.Cursor.Sprints
 }
 
@@ -73,7 +75,7 @@ func (s Store) RemoteRefresh(ctx context.Context, load func(source.Cursor) (sour
 CREATE TABLE IF NOT EXISTS remote_rows(batch INTEGER PRIMARY KEY, data BLOB NOT NULL);`); err != nil {
 		return source.Delta{}, err
 	}
-	previous, err := readRemote(ctx, db, -1)
+	previous, err := readRemote(ctx, db, -1, false)
 	if err != nil {
 		return source.Delta{}, err
 	}
@@ -208,7 +210,9 @@ func (s Store) RemoteObserve(ctx context.Context, ref model.Ref, item *model.Ite
 	return true, tx.Commit()
 }
 
-func readRemote(ctx context.Context, db *sql.DB, limit int) (source.Delta, error) {
+// readRemote treats rows another build wrote as absent unless anyBuild allows
+// them for display; those carry no cursor and decode failures yield no rows.
+func readRemote(ctx context.Context, db *sql.DB, limit int, anyBuild bool) (source.Delta, error) {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return source.Delta{}, err
@@ -217,14 +221,26 @@ func readRemote(ctx context.Context, db *sql.DB, limit int) (source.Delta, error
 	var data []byte
 	var written string
 	err = tx.QueryRowContext(ctx, `SELECT build,data FROM remote_state WHERE id=1`).Scan(&written, &data)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && written != build {
+	other := err == nil && written != build
+	if errors.Is(err, sql.ErrNoRows) || other && !anyBuild {
 		return source.Delta{Coverage: source.Unknown}, nil
 	}
 	if err != nil {
 		return source.Delta{}, err
 	}
+	delta, err := decodeRemote(ctx, tx, data, limit)
+	if other {
+		if err != nil {
+			return source.Delta{Coverage: source.Unknown}, nil
+		}
+		delta.Cursor, delta.Coverage = source.Cursor{}, source.Unknown
+	}
+	return delta, err
+}
+
+func decodeRemote(ctx context.Context, tx *sql.Tx, data []byte, limit int) (source.Delta, error) {
 	var delta source.Delta
-	if err = gob.NewDecoder(bytes.NewReader(data)).Decode(&delta); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&delta); err != nil {
 		return source.Delta{}, err
 	}
 	delta.Stale, delta.Archived = map[model.Ref]bool{}, map[model.Ref]bool{}
