@@ -318,7 +318,7 @@ type detailWorker struct {
 	ctx      context.Context
 	read     func(context.Context, model.Ref) (model.Item, error)
 	render   func(body string, width int, theme string) (string, error)
-	history  func(context.Context, model.Item, []changes.Change) history.Result
+	history  func(context.Context, model.Item, []changes.Change, func(context.Context, changes.Change) (changes.Review, error)) history.Result
 	position func(model.Ref) string // the event log's position, so new events redraw History
 	recent   historyCache
 	// changeDetail reads a change's files and commits, with their patches when
@@ -609,7 +609,13 @@ func (worker *detailWorker) loadHistory(ctx context.Context, item model.Item, li
 	if worker.history == nil {
 		return history.Result{Providers: []history.Status{{Provider: "history", State: history.Unavailable, Reason: "not configured"}}}
 	}
-	result := worker.history(ctx, item, linked)
+	var review func(context.Context, changes.Change) (changes.Review, error)
+	if worker.changeReview != nil {
+		review = func(ctx context.Context, c changes.Change) (changes.Review, error) {
+			return worker.changeReview(ctx, c, fresh)
+		}
+	}
+	result := worker.history(ctx, item, linked, review)
 	if ctx.Err() == nil {
 		worker.recent = historyCache{key, result}
 	}

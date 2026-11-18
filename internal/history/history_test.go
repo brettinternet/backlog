@@ -220,9 +220,83 @@ func TestEditEntriesSayWhatChanged(t *testing.T) {
 func TestLandedChangeSpan(t *testing.T) {
 	commit := changes.Commit{SHA: "c1", Subject: "Merge branch 'bl-9-x'", Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	for state, want := range map[string]string{changes.StateMerged: "landed", changes.StateUnknown: changes.StateUnknown} {
-		got := changeEntries([]changes.Change{{ID: "bl-9-x", Stage: changes.StageLanded, State: state, Commits: []changes.Commit{commit}}})
+		got := changeEntries([]changes.Change{{ID: "bl-9-x", Stage: changes.StageLanded, State: state, Commits: []changes.Commit{commit}}}, nil)
 		if len(got) == 0 || got[0].Span == nil || got[0].Span.State != want {
 			t.Fatalf("%s: %+v", state, got)
 		}
+	}
+}
+
+// Catches an approval with a body listed twice (once as its comment, once as
+// the reviewer's latest verdict), a comment after the merge stretching the
+// change's span, and review entries escaping their pull request's group.
+func TestChangeReviewEntries(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 1, 1, 0, m, 0, 0, time.UTC) }
+	pr := changes.Change{ID: "pr:45", Stage: changes.StagePR, State: changes.StateMerged, Number: 45, URL: "https://github.com/o/r/pull/45",
+		Events: []changes.Event{{Kind: "opened", Time: at(0)}, {Kind: "merged", Time: at(10)}}}
+	review := changes.Review{
+		Comments: []changes.Comment{
+			{Author: "alice", Body: "LGTM", State: changes.ReviewApproved, URL: "u1", Time: at(5)},
+			{Author: "dave", Body: "Shipped?", URL: "u2", Time: at(20)},
+		},
+		Reviewers: []changes.Reviewer{
+			{Login: "alice", State: changes.ReviewApproved, SubmittedAt: at(5)},
+			{Login: "bob", State: changes.ReviewChanges, SubmittedAt: at(3)},
+			{Login: "carol", State: changes.ReviewCommented, SubmittedAt: at(2)},
+			{Login: "erin", State: changes.ReviewRequested},
+		},
+		Threads: []changes.Thread{{ID: "t1", Path: "a.go", Line: 7, Resolved: true, Comments: []changes.Comment{
+			{Author: "carol", Body: "nit", Time: at(2)}, {Author: "pat", Body: "fixed", Time: at(4)},
+		}}},
+	}
+	entries := changeEntries([]changes.Change{pr}, map[string]changes.Review{pr.ID: review})
+	if span := entries[0].Span; span == nil || !span.End.Equal(at(10)) {
+		t.Fatalf("span %+v, want end at the merge", entries[0].Span)
+	}
+	var got []string
+	for _, e := range entries[1:] {
+		if e.Group != "change:pr:45" {
+			t.Fatalf("%s escaped its group: %+v", e.ID, e)
+		}
+		if strings.HasPrefix(e.Kind, "review") {
+			got = append(got, Label(e)+" "+e.Actor+" "+e.Summary+" | "+e.Detail)
+		}
+	}
+	want := []string{
+		"review alice approved | LGTM",
+		"review dave commented | Shipped?",
+		"review bob requested changes | ",
+		"review carol commented on a.go:7 · 2 comments · resolved | carol:\nnit\n\npat:\nfixed",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("review entries\n got %q\nwant %q", got, want)
+	}
+}
+
+// Catches one pull request's failed read hiding the others' reviews, and an
+// item linking many pull requests reading every one on each History open.
+func TestReadReviewsPartial(t *testing.T) {
+	var cs []changes.Change
+	for n := 1; n <= maxReviewReads+2; n++ {
+		cs = append(cs, changes.Change{ID: fmt.Sprint(n), Number: n, URL: fmt.Sprintf("https://github.com/o/r/pull/%d", n), Updated: time.Unix(int64(n), 0)})
+	}
+	cs = append(cs, changes.Change{ID: "branch", Branch: "bl-1-x"})
+	var asked []int
+	reviews, err := readReviews(context.Background(), cs, func(_ context.Context, c changes.Change) (changes.Review, error) {
+		asked = append(asked, c.Number)
+		if c.Number == 12 {
+			return changes.Review{}, errors.New("rate limited")
+		}
+		return changes.Review{Body: "ok"}, nil
+	})
+	var partial partialError
+	if !errors.As(err, &partial) || !strings.Contains(err.Error(), "#12: rate limited") || !strings.Contains(err.Error(), "10 newest") {
+		t.Fatalf("err = %v, want partial naming the failure and the cap", err)
+	}
+	if want := []int{12, 11, 10, 9, 8, 7, 6, 5, 4, 3}; !slices.Equal(asked, want) {
+		t.Fatalf("asked %v, want %v", asked, want)
+	}
+	if _, ok := reviews["11"]; !ok || len(reviews) != 9 {
+		t.Fatalf("reviews %v", reviews)
 	}
 }

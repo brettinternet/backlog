@@ -373,7 +373,7 @@ func (s *Server) history(ctx context.Context, _ *mcp.CallToolRequest, args Histo
 	if err != nil {
 		return failed[any](reason(err), err.Error())
 	}
-	page, err := history.Load(ctx, s.cfg, s.coordinator, item, engine.LinkedChanges(s.cfg, item.Ref)).Page(args.Cursor, args.Limit)
+	page, err := history.Load(ctx, s.cfg, s.coordinator, item, engine.LinkedChanges(s.cfg, item.Ref), engine.LinkedReviews(s.cfg)).Page(args.Cursor, args.Limit)
 	if err != nil {
 		return failed[any](reason(err), engine.ErrorMessage(err))
 	}

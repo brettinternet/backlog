@@ -580,7 +580,7 @@ func TestHistoryTabOpensAtNewestAndExpandsGroups(t *testing.T) {
 	t.Parallel()
 	m := detailFixture(t, 1, RenderMarkdown)
 	at := func(minute int) time.Time { return time.Date(2026, 1, 1, 0, minute, 0, 0, time.UTC) }
-	m.detailWorker.history = func(ctx context.Context, _ model.Item, _ []changes.Change) history.Result {
+	m.detailWorker.history = func(ctx context.Context, _ model.Item, _ []changes.Change, _ func(context.Context, changes.Change) (changes.Review, error)) history.Result {
 		return history.Compose(ctx,
 			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
 				var entries []history.Entry
@@ -694,7 +694,7 @@ func TestHistoryMeasurement(t *testing.T) {
 	}
 	m := detailFixture(t, 1, RenderMarkdown)
 	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
-	m.detailWorker.history = func(ctx context.Context, _ model.Item, _ []changes.Change) history.Result {
+	m.detailWorker.history = func(ctx context.Context, _ model.Item, _ []changes.Change, _ func(context.Context, changes.Change) (changes.Review, error)) history.Result {
 		return history.Compose(ctx,
 			history.Provider{Name: "events", Load: func(context.Context) ([]history.Entry, error) {
 				var entries []history.Entry
@@ -935,7 +935,7 @@ func TestChangeDiff(t *testing.T) {
 		return changes.Detail{Files: files, Commits: commits, Patched: patch}, nil
 	}
 	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
-	m.detailWorker.history = func(context.Context, model.Item, []changes.Change) history.Result {
+	m.detailWorker.history = func(context.Context, model.Item, []changes.Change, func(context.Context, changes.Change) (changes.Review, error)) history.Result {
 		return history.Result{Entries: []history.Entry{
 			{ID: "git:abc1234", Time: at(1), Kind: "commit", Summary: "edit BL-1", Provider: "git"},
 			{ID: "event:1", Time: at(2), Kind: "item.updated", Summary: "title changed", Provider: "events"},

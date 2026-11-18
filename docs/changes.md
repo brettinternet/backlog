@@ -240,7 +240,7 @@ change term load once per call, so on a large repository they report the forge
 | TUI list | The most advanced change, such as `⇡#45 ✓` ([TUI](tui.md#layout)) |
 | TUI Changes tab | Every change, furthest first, with its actions and URL ([TUI](tui.md#detail)) |
 | TUI change view | A verdict strip, and an overview of merge reasons, checks, and reviewers, files with `+/−`, highlighted diff, commits, and conversation, with review threads inline in the diff ([TUI](tui.md#detail)) |
-| History | One group per change: its span, events, and landed commits |
+| History | One group per change: its span, events, landed commits, and a pull request's reviews, conversation comments, and review threads, read when History opens |
 | Queries | `has:change`, `has:pr`, `change:`, `checks:`, `review:`, `merge:` ([Query](query.md#fields)) |
 | `bl changes ID` | The same list as text or JSON; `--detail` adds the verdict, check timing, reviewers, and review threads ([CLI](cli.md#bl-changes-id)) |
 | MCP `changes` | The same data as `bl changes --json` ([MCP](mcp.md#tools)) |
