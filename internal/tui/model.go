@@ -48,7 +48,7 @@ type Options struct {
 	EditorDir                  string
 	OpenURL                    func(context.Context, string) error
 	Read                       func(context.Context, model.Ref) (model.Item, error)
-	History                    func(context.Context, model.Item, []changes.Change) history.Result
+	History                    func(context.Context, model.Item, []changes.Change, func(context.Context, changes.Change) (changes.Review, error)) history.Result
 	HistoryPosition            func(model.Ref) string // changes when the item's event log grows
 	Render                     func(string, int) (string, error)
 	Views                      []project.SavedView

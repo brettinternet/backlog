@@ -252,7 +252,7 @@ new version) keeps its body and shows loading on the header row.
 | Comments | Comments |
 | Relations | Blockers → item → what it blocks, then parent, children with progress, duplicate of, related, each with live status. Blocking, children, and related include inbound links; related omits items linked by blocks. |
 | Changes | Linked worktrees, branches, pull requests, and landed commits, furthest first ([Changes](changes.md)) |
-| History | Events, claims, sessions, comments, linked changes, commits to the item file, and provider activity (`github:`, `linear:`, `jira:`), oldest first (design.md D40) |
+| History | Events, claims, sessions, comments, linked changes with their pull requests' reviews, comments, and review threads, commits to the item file, and provider activity (`github:`, `linear:`, `jira:`), oldest first (design.md D40) |
 
 In Criteria and Relations, `j`/`k` move a cursor over the entries. In
 Relations, `enter` opens the entry's item in detail, as go-to does: the view and

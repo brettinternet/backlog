@@ -270,9 +270,9 @@ func Run(ctx context.Context, args []string, build BuildInfo, in io.Reader, out,
 				store.Observe(ref, item, err)
 				return item, err
 			},
-			History: func(ctx context.Context, item model.Item, linked []changes.Change) history.Result {
+			History: func(ctx context.Context, item model.Item, linked []changes.Change, review func(context.Context, changes.Change) (changes.Review, error)) history.Result {
 				c, _ := engine.Coordination(ctx)
-				return history.Load(ctx, cfg, c, item, func(context.Context) ([]changes.Change, error) { return linked, nil })
+				return history.Load(ctx, cfg, c, item, func(context.Context) ([]changes.Change, error) { return linked, nil }, review)
 			},
 			Changes: engine.TrackChanges(session, cfg),
 			Tour: func(ref model.Ref, change string) (tour.Stored, bool, error) {

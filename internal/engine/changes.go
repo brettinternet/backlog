@@ -330,6 +330,21 @@ func LinkedChanges(cfg project.Config, ref model.Ref) func(context.Context) ([]c
 	}
 }
 
+// LinkedReviews reads a linked pull request's reviews through cfg's forges,
+// resolved on first use, for bl history and MCP history.
+func LinkedReviews(cfg project.Config) func(context.Context, changes.Change) (changes.Review, error) {
+	all := sync.OnceValue(func() []changes.Forge {
+		var out []changes.Forge
+		for _, o := range ChangesOptions(cfg) {
+			out = append(out, o.Forges...)
+		}
+		return out
+	})
+	return func(ctx context.Context, c changes.Change) (changes.Review, error) {
+		return changes.LoadReview(ctx, c, all(), false)
+	}
+}
+
 // MentionsChanges reports whether text filters by linked changes, so reads
 // load them only then. Unparsable text mentions nothing.
 func MentionsChanges(text string) bool {

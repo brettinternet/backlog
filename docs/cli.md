@@ -698,9 +698,13 @@ that touched its file (native and Backlog.md sources, following renames), and
 provider activity (GitHub timeline, Linear history, Jira changelog), and its
 linked changes. Each line
 reads time, source label (`item`, `claim`, `agent`, `handoff`, `comment`,
-`change`, `git`, `action`, `hook`, or the provider, such as `github`), and
-summary. A change's row spans it and its events and landed commits follow it,
-indented. An
+`change`, `review`, `git`, `action`, `hook`, or the provider, such as
+`github`), and summary. A change's row spans it and its events, landed
+commits, and, for a pull request, its reviews, conversation comments, and
+review threads (`review`, with the author as `actor` and the body as
+`detail`) follow it, indented. Reviews are read for at most the 10 most
+recently updated pull requests, through the forge's minute cache; a failed
+read or the cap makes `changes` `partial`. An
 edit's summary names each changed field, such as `labels +windows -human` or
 `criteria 2/5 → 3/5`, and its `detail` holds what the summary abbreviates:
 per field, lines marked `+ ` or `- ` (`…` for skipped unchanged lines) and

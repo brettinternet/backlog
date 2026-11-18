@@ -222,7 +222,7 @@ func readCommands(directory *string, in io.Reader, out, errOut io.Writer) []*urf
 				return err
 			}
 			c, _ := engine.Coordination(ctx)
-			page, err := history.Load(ctx, cfg, c, i, engine.LinkedChanges(cfg, i.Ref)).Page(cmd.String("cursor"), cmd.Int("limit"))
+			page, err := history.Load(ctx, cfg, c, i, engine.LinkedChanges(cfg, i.Ref), engine.LinkedReviews(cfg)).Page(cmd.String("cursor"), cmd.Int("limit"))
 			if err != nil {
 				return &Error{Reason: engine.ErrorReason(err), Message: engine.ErrorMessage(err)}
 			}
