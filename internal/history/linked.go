@@ -35,6 +35,9 @@ func readReviews(ctx context.Context, cs []changes.Change, review func(context.C
 	}
 	out := map[string]changes.Review{}
 	for _, c := range pulls {
+		if ctx.Err() != nil {
+			return out, ctx.Err()
+		}
 		r, err := review(ctx, c)
 		switch {
 		case err != nil:
