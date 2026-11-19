@@ -5,7 +5,7 @@ go 1.27
 require (
 	charm.land/bubbletea/v2 v2.1.1
 	charm.land/glamour/v2 v2.0.1
-	charm.land/lipgloss/v2 v2.1.0
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/AlexanderGrooff/mermaid-ascii v0.0.0-20261117200642-e7a2d2f81cdb
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/x/ansi v0.11.9
