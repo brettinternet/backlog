@@ -48,6 +48,10 @@ func (s *Secrets) add(value string) {
 	}
 	s.values = append(s.values, value)
 }
+func secretVariants(value string) []string {
+	encoded, _ := json.Marshal(value)
+	return []string{value, string(encoded[1 : len(encoded)-1])}
+}
 func (s *Secrets) Redact(text string) string {
 	if s == nil {
 		return text
@@ -55,9 +59,9 @@ func (s *Secrets) Redact(text string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, value := range s.values {
-		encoded, _ := json.Marshal(value)
-		text = strings.ReplaceAll(text, string(encoded[1:len(encoded)-1]), "[REDACTED]")
-		text = strings.ReplaceAll(text, value, "[REDACTED]")
+		for _, variant := range secretVariants(value) {
+			text = strings.ReplaceAll(text, variant, "[REDACTED]")
+		}
 	}
 	return text
 }
@@ -73,8 +77,7 @@ func (s *Secrets) RedactCut(text string) string {
 	defer s.mu.RUnlock()
 	end := len(text)
 	for _, value := range s.values {
-		encoded, _ := json.Marshal(value)
-		for _, v := range []string{value, string(encoded[1 : len(encoded)-1])} {
+		for _, v := range secretVariants(value) {
 			for n := min(len(v)-1, len(text)); n > 0; n-- {
 				if strings.HasSuffix(text, v[:n]) {
 					end = min(end, len(text)-n)
